@@ -1,0 +1,23 @@
+services:
+  questdb:
+    image: questdb/questdb:8.2.2
+    container_name: wan-monitor-questdb
+    ports:
+      - '9000:9000'  # REST API and Web Console
+      - '9009:9009'  # InfluxDB line protocol
+      - '8812:8812'  # PostgreSQL wire protocol
+      - '9003:9003'  # Min health server
+    environment:
+      - QDB_TELEMETRY_ENABLED=false
+    volumes:
+      - questdb-data:/var/lib/questdb
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/status || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  questdb-data:
+    driver: local

@@ -14,6 +14,8 @@ A self-hosted network monitoring dashboard that tracks WAN connectivity, latency
 ## Tech Stack
 
 - **Frontend**: React 18 + TypeScript + Vite
+- **Backend**: Fastify + Effect-TS
+- **Database**: QuestDB (time-series)
 - **UI Library**: Chakra UI
 - **Charts**: Recharts
 - **Testing**: Vitest + React Testing Library
@@ -37,7 +39,13 @@ nvm use
 # Install dependencies
 pnpm install
 
-# Start dev server (http://localhost:3000)
+# Start QuestDB (required for backend)
+docker-compose up -d
+
+# Start backend server (http://localhost:3001)
+pnpm dev:server
+
+# Start frontend dev server (http://localhost:3000)
 pnpm dev
 
 # Run tests
