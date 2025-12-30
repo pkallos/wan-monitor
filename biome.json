@@ -8,6 +8,13 @@
   "files": {
     "ignoreUnknown": false
   },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -32,5 +39,11 @@
       "trailingCommas": "es5",
       "semicolons": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["src/**/*.ts", "src/**/*.tsx"],
+      "plugins": ["./.grit/no-relative-imports.grit"]
+    }
+  ]
 }

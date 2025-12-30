@@ -1,0 +1,22 @@
+language js
+
+or {
+  `import $specifiers from $source` where {
+    $source <: or {
+      `"../$_"`,
+      `'../$_'`,
+      `"./$_"`,
+      `'./$_'`
+    },
+    register_diagnostic(span=$source, message="Relative imports are not allowed. Replace with '@/' to use the path alias (e.g., '../database/foo' → '@/database/foo')")
+  },
+  `export $specifiers from $source` where {
+    $source <: or {
+      `"../$_"`,
+      `'../$_'`,
+      `"./$_"`,
+      `'./$_'`
+    },
+    register_diagnostic(span=$source, message="Relative exports are not allowed. Replace with '@/' to use the path alias (e.g., '../database/foo' → '@/database/foo')")
+  }
+}

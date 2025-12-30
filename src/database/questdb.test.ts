@@ -1,12 +1,12 @@
 import { Effect, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
-import { ConfigService, ConfigServiceLive } from '../services/config.js';
 import {
   DatabaseConnectionError,
   DatabaseWriteError,
   QuestDB,
   QuestDBLive,
-} from './questdb.js';
+} from '@/database/questdb.js';
+import { ConfigService, ConfigServiceLive } from '@/services/config.js';
 
 describe('ConfigService', () => {
   it('should load config with default values', async () => {
