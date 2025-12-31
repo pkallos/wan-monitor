@@ -34,6 +34,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@chakra-ui/icons": "^2.2.4",
     "@chakra-ui/react": "^2.8.2",
     "@effect/platform": "^0.94.0",
     "@effect/platform-node": "^0.104.0",
