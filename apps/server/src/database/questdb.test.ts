@@ -117,7 +117,11 @@ describe('QuestDB Integration', () => {
           requestTimeout: 10000,
           retryTimeout: 1000,
         },
-        ping: { timeout: 5, retries: 1, hosts: ['8.8.8.8', '1.1.1.1'] },
+        ping: {
+          timeout: 5,
+          trainCount: 10,
+          hosts: ['8.8.8.8', '1.1.1.1'],
+        },
       });
 
       const MainLive = Layer.provide(QuestDBLive, BadConfigLive);

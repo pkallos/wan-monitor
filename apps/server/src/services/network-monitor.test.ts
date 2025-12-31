@@ -81,7 +81,7 @@ describe('NetworkMonitor', () => {
     ping: {
       hosts: ['8.8.8.8', '1.1.1.1'],
       timeout: 5000,
-      retries: 3,
+      trainCount: 10,
     },
   });
 

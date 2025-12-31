@@ -17,7 +17,7 @@ export interface AppConfig {
   };
   readonly ping: {
     readonly timeout: number;
-    readonly retries: number;
+    readonly trainCount: number;
     readonly hosts: readonly string[];
   };
 }
@@ -59,8 +59,8 @@ const makeConfig = Effect.gen(function* () {
   const pingTimeout = yield* Config.number('PING_TIMEOUT').pipe(
     Config.withDefault(5)
   );
-  const pingRetries = yield* Config.number('PING_RETRIES').pipe(
-    Config.withDefault(1)
+  const pingTrainCount = yield* Config.number('PING_TRAIN_COUNT').pipe(
+    Config.withDefault(10)
   );
   const pingHostsStr = yield* Config.string('PING_HOSTS').pipe(
     Config.withDefault('8.8.8.8,1.1.1.1,cloudflare.com')
@@ -83,7 +83,7 @@ const makeConfig = Effect.gen(function* () {
     },
     ping: {
       timeout: pingTimeout,
-      retries: pingRetries,
+      trainCount: pingTrainCount,
       hosts: pingHosts,
     },
   };
