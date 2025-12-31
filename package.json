@@ -80,7 +80,7 @@
       "biome check --write",
       "biome format --write"
     ],
-    "*.{json,md,yml,yaml}": [
+    "*.{json,yml,yaml}": [
       "biome format --write"
     ]
   }

@@ -184,6 +184,71 @@ pnpm build
 4. **Squash feature commits** - one commit per PR
 5. **Never commit sensitive data** - use environment variables
 
+## Non-Interactive Commands (CRITICAL)
+
+**AI agents cannot interact with terminal prompts or editors.** Commands that open vim, nano, or wait for user input will hang indefinitely in Windsurf.
+
+### Commands to AVOID
+
+| ❌ Avoid | Why |
+|----------|-----|
+| `git rebase -i` | Opens editor for interactive rebase |
+| `git commit` (without `-m`) | Opens editor for commit message |
+| `vim`, `nano`, `vi` | Interactive editors |
+| `less`, `more` | Interactive pagers |
+| Any command prompting for input | Hangs waiting for response |
+
+### Non-Interactive Alternatives
+
+**Squashing commits** (instead of `git rebase -i`):
+```bash
+# Reset and recommit
+git reset --soft HEAD~N
+git commit -m "feat: combined commit message"
+```
+
+**Amending commits**:
+```bash
+# Always use --no-edit to skip editor
+git commit --amend --no-edit
+
+# Or with a new message
+git commit --amend -m "new message"
+```
+
+**Rebasing**:
+```bash
+# Non-interactive rebase onto main
+git rebase origin/main
+
+# If conflicts, resolve then:
+git add .
+git rebase --continue
+```
+
+**Aborting operations**:
+```bash
+git rebase --abort
+git merge --abort
+git cherry-pick --abort
+```
+
+**Viewing logs** (use limits to avoid paging):
+```bash
+git log -n 10 --oneline
+git diff HEAD~1
+```
+
+### Environment Variables
+
+If you must use a command that normally opens an editor, override with:
+```bash
+GIT_EDITOR=true git rebase --continue
+EDITOR=true git commit --amend
+```
+
+**Remember:** If a command hangs, it's likely waiting for interactive input. Always prefer flags like `--no-edit`, `-m`, or explicit non-interactive alternatives.
+
 ## Environment Setup
 
 - Node.js 24+ (LTS)
