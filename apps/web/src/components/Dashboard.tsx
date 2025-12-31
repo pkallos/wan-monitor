@@ -11,7 +11,7 @@ import {
   useColorModeValue,
   VStack,
 } from '@chakra-ui/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { FiPause, FiPlay, FiRefreshCw } from 'react-icons/fi';
 import { useMetrics } from '@/api/hooks/useMetrics';
 import { JitterChart } from '@/components/charts/JitterChart';
@@ -21,7 +21,7 @@ import { SpeedChart } from '@/components/charts/SpeedChart';
 import { DateRangeSelector } from '@/components/DateRangeSelector';
 import { MetricCard } from '@/components/MetricCard';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
-import type { TimeRange } from '@/utils/timeRange';
+import { usePersistedTimeRange } from '@/hooks/usePersistedTimeRange';
 import { getTimeRangeDates } from '@/utils/timeRange';
 
 const CHART_SYNC_ID = 'network-metrics';
@@ -30,7 +30,7 @@ export function Dashboard() {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
-  const [timeRange, setTimeRange] = useState<TimeRange>('24h');
+  const { timeRange, setTimeRange } = usePersistedTimeRange();
   const { startTime, endTime } = useMemo(
     () => getTimeRangeDates(timeRange),
     [timeRange]
