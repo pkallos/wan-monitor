@@ -1,6 +1,6 @@
 import { Effect, Layer } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
-import { ConfigService } from '@/services/config.js';
+import { ConfigService } from '@/services/config';
 import {
   PingHostUnreachableError,
   PingNetworkError,
@@ -8,7 +8,7 @@ import {
   PingService,
   PingServiceLive,
   PingTimeoutError,
-} from '@/services/ping.js';
+} from '@/services/ping';
 
 // Mock the ping module
 vi.mock('ping', () => ({

@@ -5,8 +5,8 @@ import {
   DatabaseWriteError,
   QuestDB,
   QuestDBLive,
-} from '@/database/questdb.js';
-import { ConfigService, ConfigServiceLive } from '@/services/config.js';
+} from '@/database/questdb';
+import { ConfigService, ConfigServiceLive } from '@/services/config';
 
 describe('ConfigService', () => {
   it('should load config with default values', async () => {
