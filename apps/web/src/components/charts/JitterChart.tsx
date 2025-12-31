@@ -19,6 +19,10 @@ export interface JitterChartProps {
   startTime?: Date;
   endTime?: Date;
   host?: string;
+  syncId?: string;
+  compact?: boolean;
+  data?: PingMetric[];
+  isLoading?: boolean;
 }
 
 interface ChartDataPoint {
@@ -105,15 +109,31 @@ function mergeDataIntoTimeRange(
   });
 }
 
-export function JitterChart({ startTime, endTime, host }: JitterChartProps) {
-  const { data, isLoading, error } = usePingMetrics({
+export function JitterChart({
+  startTime,
+  endTime,
+  host,
+  syncId,
+  compact = false,
+  data: externalData,
+  isLoading: externalLoading,
+}: JitterChartProps) {
+  const {
+    data: fetchedData,
+    isLoading: fetchedLoading,
+    error,
+  } = usePingMetrics({
     startTime,
     endTime,
     host,
+    enabled: externalData === undefined,
   });
   const theme = useChartTheme();
 
-  if (error) {
+  const data = externalData ?? fetchedData?.data ?? [];
+  const isLoading = externalLoading ?? fetchedLoading;
+
+  if (error && externalData === undefined) {
     return <ErrorState message="Failed to load jitter data" />;
   }
 
@@ -125,35 +145,37 @@ export function JitterChart({ startTime, endTime, host }: JitterChartProps) {
   const intervalMinutes = rangeHours <= 1 ? 1 : rangeHours <= 24 ? 30 : 60;
 
   const timeRange = generateTimeRange(start, end, intervalMinutes);
-  const chartData = mergeDataIntoTimeRange(timeRange, data?.data ?? []);
+  const chartData = mergeDataIntoTimeRange(timeRange, data);
 
-  const stats = calculateStats(data?.data ?? []);
+  const stats = calculateStats(data);
 
   return (
     <Box>
-      <StatGroup mb={4}>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Current
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.current} ms</StatNumber>
-        </Stat>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Avg
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.avg} ms</StatNumber>
-        </Stat>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Stability
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.stability}%</StatNumber>
-        </Stat>
-      </StatGroup>
+      {!compact && (
+        <StatGroup mb={4}>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Current
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.current} ms</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Avg
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.avg} ms</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Stability
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.stability}%</StatNumber>
+          </Stat>
+        </StatGroup>
+      )}
 
-      <ChartContainer height={250} isLoading={isLoading}>
-        <ComposedChart data={chartData}>
+      <ChartContainer height={compact ? 180 : 250} isLoading={isLoading}>
+        <ComposedChart data={chartData} syncId={syncId}>
           <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
 
           <XAxis
@@ -172,6 +194,7 @@ export function JitterChart({ startTime, endTime, host }: JitterChartProps) {
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: '6px',
             }}
+            formatter={(value: number) => [`${value?.toFixed(2)} ms`, 'Jitter']}
           />
 
           {/* Acceptable jitter threshold line */}

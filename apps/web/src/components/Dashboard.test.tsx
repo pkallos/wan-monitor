@@ -45,33 +45,61 @@ describe('Dashboard', () => {
     expect(getByText('WAN Monitor')).toBeTruthy();
   });
 
-  it('should render all metric cards', () => {
+  it('should render metric cards in top row', () => {
     const { getByText } = render(<Dashboard />, {
       wrapper: createWrapper(),
     });
 
     expect(getByText('Connectivity')).toBeTruthy();
-    expect(getByText('Latency')).toBeTruthy();
-    expect(getByText('Packet Loss')).toBeTruthy();
-    expect(getByText('Jitter')).toBeTruthy();
     expect(getByText('Download Speed')).toBeTruthy();
     expect(getByText('Upload Speed')).toBeTruthy();
   });
 
-  it('should render refresh button', () => {
-    const { getByLabelText } = render(<Dashboard />, {
-      wrapper: createWrapper(),
-    });
-
-    expect(getByLabelText('Refresh data')).toBeTruthy();
-  });
-
-  it('should display placeholder values', () => {
+  it('should render network quality section with chart labels', () => {
     const { getByText } = render(<Dashboard />, {
       wrapper: createWrapper(),
     });
 
-    expect(getByText('Online')).toBeTruthy();
-    // Packet Loss now shows real data from PacketLossChart, not static "0.0"
+    expect(getByText('Network Quality')).toBeTruthy();
+    expect(getByText('Latency (ms)')).toBeTruthy();
+    expect(getByText('Packet Loss (%)')).toBeTruthy();
+    expect(getByText('Jitter (ms)')).toBeTruthy();
+  });
+
+  it('should display ISP name placeholder when no data', () => {
+    const { getByText } = render(<Dashboard />, {
+      wrapper: createWrapper(),
+    });
+
+    expect(getByText('Unknown ISP')).toBeTruthy();
+  });
+
+  it('should display offline status when no ping data', () => {
+    const { getByText } = render(<Dashboard />, {
+      wrapper: createWrapper(),
+    });
+
+    // When no data, connectivity_status is undefined, so shows Offline
+    expect(getByText('Offline')).toBeTruthy();
+  });
+
+  it('should display online status when ping data shows up', async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ connectivity_status: 'up', latency: 10, packet_loss: 0 }],
+        meta: {
+          startTime: new Date().toISOString(),
+          endTime: new Date().toISOString(),
+          count: 1,
+        },
+      }),
+    });
+
+    const { findByText } = render(<Dashboard />, {
+      wrapper: createWrapper(),
+    });
+
+    expect(await findByText('Online')).toBeTruthy();
   });
 });
