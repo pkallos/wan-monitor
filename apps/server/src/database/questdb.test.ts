@@ -123,6 +123,12 @@ describe('QuestDB Integration', () => {
         trainCount: 10,
         hosts: ['8.8.8.8', '1.1.1.1'],
       },
+      auth: {
+        username: 'admin',
+        password: 'testpassword',
+        jwtSecret: 'test-secret',
+        jwtExpiresIn: '1h',
+      },
     });
 
     const MainLive = Layer.provide(QuestDBLive, BadConfigLive);

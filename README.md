@@ -167,6 +167,46 @@ docker volume rm wan-monitor-data
 |------|-------------|
 | `/var/lib/questdb` | QuestDB data directory |
 
+## Configuration
+
+All configuration is done via environment variables. Copy `.env.example` to `.env` and customize as needed.
+
+### Server Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SERVER_PORT` | `3001` | Port the backend API server listens on |
+| `SERVER_HOST` | `0.0.0.0` | Host address the server binds to |
+
+### Database Configuration (QuestDB)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | `localhost` | QuestDB hostname |
+| `DB_PORT` | `9000` | QuestDB HTTP port |
+| `DB_PROTOCOL` | `http` | Protocol for QuestDB connection (`http` or `tcp`) |
+| `DB_AUTO_FLUSH_ROWS` | `100` | Number of rows before auto-flush |
+| `DB_AUTO_FLUSH_INTERVAL` | `1000` | Auto-flush interval in milliseconds |
+| `DB_REQUEST_TIMEOUT` | `10000` | Request timeout in milliseconds |
+| `DB_RETRY_TIMEOUT` | `1000` | Retry timeout in milliseconds |
+
+### Ping Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PING_TIMEOUT` | `5` | Ping timeout in seconds |
+| `PING_TRAIN_COUNT` | `10` | Number of ICMP packets per ping train (for packet loss measurement) |
+| `PING_HOSTS` | `8.8.8.8,1.1.1.1,cloudflare.com` | Comma-separated list of hosts to ping |
+
+### Authentication Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WAN_MONITOR_USERNAME` | `admin` | Username for dashboard login |
+| `WAN_MONITOR_PASSWORD` | *(empty)* | Password for dashboard login (**required** - set a strong password) |
+| `JWT_SECRET` | *(default)* | Secret key for JWT signing (**required** - set a random secret in production) |
+| `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`) |
+
 ## Project Structure
 
 ```

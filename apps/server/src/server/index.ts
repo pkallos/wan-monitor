@@ -1,6 +1,7 @@
 import { Effect, Layer } from 'effect';
 import { QuestDB, QuestDBLive } from '@/database/questdb';
 import { createApp } from '@/server/app';
+import { authRoutes } from '@/server/routes/auth';
 import { healthRoutes } from '@/server/routes/health';
 import { metricsRoutes } from '@/server/routes/metrics';
 import { pingRoutes } from '@/server/routes/ping';
@@ -43,8 +44,9 @@ const program = Effect.gen(function* () {
   const speedTestService = yield* SpeedTestService;
   const networkMonitor = yield* NetworkMonitor;
 
-  // Create Fastify app
-  const app = createApp();
+  // Create Fastify app with JWT secret and auth config
+  const authRequired = Boolean(config.auth.password);
+  const app = createApp({ jwtSecret: config.auth.jwtSecret, authRequired });
 
   // Create app context with Effect services
   const context: AppContext = {
@@ -90,6 +92,18 @@ const program = Effect.gen(function* () {
       );
     },
     catch: (error) => new Error(`Failed to register metrics routes: ${error}`),
+  });
+
+  yield* Effect.tryPromise({
+    try: async () => {
+      await app.register(
+        async (instance) => {
+          await authRoutes(instance, context);
+        },
+        { prefix: '/api/auth' }
+      );
+    },
+    catch: (error) => new Error(`Failed to register auth routes: ${error}`),
   });
 
   // Start server

@@ -82,6 +82,12 @@ describe('NetworkMonitor', () => {
       timeout: 5000,
       trainCount: 10,
     },
+    auth: {
+      username: 'admin',
+      password: 'testpassword',
+      jwtSecret: 'test-secret',
+      jwtExpiresIn: '1h',
+    },
   });
 
   const TestLayer = NetworkMonitorLive.pipe(

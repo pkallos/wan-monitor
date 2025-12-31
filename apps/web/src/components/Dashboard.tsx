@@ -12,7 +12,7 @@ import {
   VStack,
 } from '@chakra-ui/react';
 import { useEffect, useMemo } from 'react';
-import { FiPause, FiPlay, FiRefreshCw } from 'react-icons/fi';
+import { FiLogOut, FiPause, FiPlay, FiRefreshCw } from 'react-icons/fi';
 import { useMetrics } from '@/api/hooks/useMetrics';
 import { JitterChart } from '@/components/charts/JitterChart';
 import { LatencyChart } from '@/components/charts/LatencyChart';
@@ -20,6 +20,7 @@ import { PacketLossChart } from '@/components/charts/PacketLossChart';
 import { SpeedChart } from '@/components/charts/SpeedChart';
 import { DateRangeSelector } from '@/components/DateRangeSelector';
 import { MetricCard } from '@/components/MetricCard';
+import { useAuth } from '@/context/AuthContext';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 import { usePersistedTimeRange } from '@/hooks/usePersistedTimeRange';
 import { getTimeRangeDates } from '@/utils/timeRange';
@@ -27,6 +28,7 @@ import { getTimeRangeDates } from '@/utils/timeRange';
 const CHART_SYNC_ID = 'network-metrics';
 
 export function Dashboard() {
+  const { logout, authRequired, username } = useAuth();
   const bg = useColorModeValue('gray.50', 'gray.900');
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -150,6 +152,17 @@ export function Dashboard() {
               </Tooltip>
             </HStack>
             <DateRangeSelector value={timeRange} onChange={setTimeRange} />
+            {authRequired && (
+              <Tooltip label={`Logout${username ? ` (${username})` : ''}`}>
+                <IconButton
+                  aria-label="Logout"
+                  icon={<FiLogOut />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => logout()}
+                />
+              </Tooltip>
+            )}
           </HStack>
         </Box>
 

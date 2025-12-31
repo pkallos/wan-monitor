@@ -1,9 +1,23 @@
+import type { JWT } from '@fastify/jwt';
 import type { FastifyInstance } from 'fastify';
 import type { QuestDBService } from '@/database/questdb';
 import type { AppConfig } from '@/services/config';
 import type { NetworkMonitorInterface } from '@/services/network-monitor';
 import type { PingExecutorInterface } from '@/services/ping-executor';
 import type { SpeedTestServiceInterface } from '@/services/speedtest';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    jwt: JWT;
+  }
+}
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: { username: string };
+    user: { username: string };
+  }
+}
 
 /**
  * Application context containing Effect services
