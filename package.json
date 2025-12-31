@@ -10,6 +10,7 @@
     "url": "git@github.com:pkallos/wan-monitor.git"
   },
   "scripts": {
+    "preinstall": "node scripts/check-node-version.cjs",
     "dev": "vite",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:all": "concurrently -n frontend,backend -c blue,green \"pnpm dev\" \"pnpm dev:server\"",
