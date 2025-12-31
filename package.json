@@ -16,12 +16,15 @@
     "build:server": "tsc --project tsconfig.server.json",
     "start:server": "node dist/server/index.js",
     "preview": "vite preview",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
+    "typecheck": "tsc --noEmit && tsc --noEmit --project tsconfig.server.json",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
+    "format:check": "biome format .",
     "check": "biome check --write ."
   },
   "dependencies": {

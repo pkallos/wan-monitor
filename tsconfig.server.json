@@ -6,7 +6,11 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "noEmit": false,
-    "allowImportingTsExtensions": false
+    "allowImportingTsExtensions": false,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": [
     "src/server/**/*",

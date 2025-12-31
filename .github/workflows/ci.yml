@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    name: Lint, Typecheck & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run linter
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Run typecheck
+        run: pnpm typecheck
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build backend
+        run: pnpm build:server
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      questdb:
+        image: questdb/questdb:8.2.2
+        ports:
+          - 9000:9000
+          - 9009:9009
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for QuestDB
+        run: |
+          echo "Waiting for QuestDB to be ready..."
+          for i in {1..60}; do
+            if curl -sf http://localhost:9000/exec?query=SELECT%201 > /dev/null 2>&1; then
+              echo "QuestDB is ready!"
+              exit 0
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 2
+          done
+          echo "QuestDB failed to start"
+          exit 1
+
+      - name: Run integration tests
+        run: pnpm test
+        env:
+          QUESTDB_AVAILABLE: 'true'
+          DB_HOST: localhost
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t wan-monitor:test .
