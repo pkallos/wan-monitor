@@ -5,8 +5,19 @@ import type {
   NetworkMetric,
 } from '@wan-monitor/shared/metrics';
 import { Context, Effect, Layer, Schedule } from 'effect';
-import { Client as PgClient } from 'pg';
+import { Client as PgClient, types } from 'pg';
 import { ConfigService } from '@/services/config';
+
+// Disable pg's automatic timestamp parsing - return as ISO strings instead
+// This prevents timezone conversion issues where pg interprets timestamps
+// as local time instead of UTC
+// QuestDB returns timestamps like "2025-12-31 10:20:57.001000" - convert to ISO format
+types.setTypeParser(types.builtins.TIMESTAMP, (val: string) =>
+  val ? `${val.replace(' ', 'T')}Z` : val
+);
+types.setTypeParser(types.builtins.TIMESTAMPTZ, (val: string) =>
+  val ? `${val.replace(' ', 'T')}Z` : val
+);
 
 // Database errors
 export class DatabaseConnectionError {
