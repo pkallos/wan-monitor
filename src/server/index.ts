@@ -6,6 +6,7 @@ import { metricsRoutes } from '@/server/routes/metrics';
 import { pingRoutes } from '@/server/routes/ping';
 import type { AppContext } from '@/server/types';
 import { ConfigService, ConfigServiceLive } from '@/services/config';
+import { NetworkMonitor, NetworkMonitorLive } from '@/services/network-monitor';
 import { PingServiceLive } from '@/services/ping';
 import { PingExecutor, PingExecutorLive } from '@/services/ping-executor';
 
@@ -17,13 +18,18 @@ const PingExecutorLayer = Layer.provide(
   PingExecutorLive,
   Layer.merge(Layer.merge(ConfigLayer, QuestDBLayer), PingLayer)
 );
+const NetworkMonitorLayer = Layer.provide(
+  NetworkMonitorLive,
+  Layer.merge(ConfigLayer, PingExecutorLayer)
+);
 
 // Combine all layers
 const MainLive = Layer.mergeAll(
   ConfigLayer,
   QuestDBLayer,
   PingLayer,
-  PingExecutorLayer
+  PingExecutorLayer,
+  NetworkMonitorLayer
 );
 
 // Main server program
@@ -31,6 +37,7 @@ const program = Effect.gen(function* () {
   const config = yield* ConfigService;
   const db = yield* QuestDB;
   const pingExecutor = yield* PingExecutor;
+  const networkMonitor = yield* NetworkMonitor;
 
   // Create Fastify app
   const app = createApp();
@@ -39,6 +46,7 @@ const program = Effect.gen(function* () {
   const context: AppContext = {
     db,
     pingExecutor,
+    networkMonitor,
     config,
   };
 
@@ -89,6 +97,10 @@ const program = Effect.gen(function* () {
   });
 
   yield* Effect.log(`Server listening on ${host}:${port}`);
+
+  // Start network monitoring
+  yield* networkMonitor.start();
+  yield* Effect.log('Network monitoring started');
 
   // Keep server running until interrupted
   yield* Effect.never;
