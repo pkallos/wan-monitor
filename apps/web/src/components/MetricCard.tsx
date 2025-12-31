@@ -5,6 +5,7 @@ export interface MetricCardProps {
   title: string;
   value?: string | number;
   unit?: string;
+  subtitle?: string;
   status?: 'good' | 'warning' | 'error';
   children?: ReactNode;
 }
@@ -13,6 +14,7 @@ export function MetricCard({
   title,
   value,
   unit,
+  subtitle,
   status,
   children,
 }: MetricCardProps) {
@@ -49,6 +51,17 @@ export function MetricCard({
           {unit && (
             <Text as="span" fontSize="md" ml={1} fontWeight="normal">
               {unit}
+            </Text>
+          )}
+          {subtitle && (
+            <Text
+              as="span"
+              fontSize="xs"
+              color="gray.500"
+              ml={2}
+              fontWeight="normal"
+            >
+              {subtitle}
             </Text>
           )}
         </Text>

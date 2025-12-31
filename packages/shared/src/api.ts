@@ -39,3 +39,37 @@ export interface SpeedMetricsResponse {
     count: number;
   };
 }
+
+export interface Metric {
+  timestamp: string;
+  source: 'ping' | 'speedtest';
+  host?: string;
+  latency?: number;
+  jitter?: number;
+  packet_loss?: number;
+  connectivity_status?: string;
+  download_speed?: number;
+  upload_speed?: number;
+  server_location?: string;
+  isp?: string;
+}
+
+export interface MetricsResponse {
+  data: Metric[];
+  meta: {
+    startTime: string;
+    endTime: string;
+    count: number;
+  };
+}
+
+export type Granularity = '1m' | '5m' | '15m' | '1h' | '6h' | '1d';
+
+export const VALID_GRANULARITIES: Granularity[] = [
+  '1m',
+  '5m',
+  '15m',
+  '1h',
+  '6h',
+  '1d',
+];

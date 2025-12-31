@@ -9,9 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { usePingMetrics } from '@/api/hooks/usePingMetrics';
 import { ChartContainer } from '@/components/charts/ChartContainer';
-import { ErrorState } from '@/components/charts/ChartStates';
 import { useChartTheme } from '@/components/charts/useChartTheme';
 
 export interface LatencyChartProps {
@@ -56,91 +54,41 @@ function calculateStats(data: PingMetric[]): Stats {
   };
 }
 
-function generateTimeRange(
-  start: Date,
-  end: Date,
-  intervalMinutes: number
-): ChartDataPoint[] {
-  const points: ChartDataPoint[] = [];
-  const current = new Date(start);
-
-  while (current <= end) {
-    points.push({
-      time: current.toLocaleTimeString('en-US', {
+function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
+  return [...data]
+    .sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
+    .map((d) => ({
+      time: new Date(d.timestamp).toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
       }),
-      timestamp: current.getTime(),
-      latency: null,
-    });
-    current.setMinutes(current.getMinutes() + intervalMinutes);
-  }
-
-  return points;
-}
-
-function mergeDataIntoTimeRange(
-  timeRange: ChartDataPoint[],
-  actualData: PingMetric[]
-): ChartDataPoint[] {
-  return timeRange.map((point) => {
-    // Find closest data point within 5 minutes
-    const closestData = actualData.find((d) => {
-      const diff = Math.abs(new Date(d.timestamp).getTime() - point.timestamp);
-      return diff < 5 * 60 * 1000; // 5 minutes tolerance
-    });
-
-    return {
-      ...point,
-      latency: closestData?.latency ?? null,
-    };
-  });
+      timestamp: new Date(d.timestamp).getTime(),
+      latency: d.latency ?? null,
+    }));
 }
 
 export function LatencyChart({
   startTime,
   endTime,
-  host,
   syncId,
   compact = false,
-  data: externalData,
-  isLoading: externalLoading,
+  data: externalData = [],
+  isLoading = false,
 }: LatencyChartProps) {
-  const {
-    data: fetchedData,
-    isLoading: fetchedLoading,
-    error,
-  } = usePingMetrics({
-    startTime,
-    endTime,
-    host,
-    enabled: externalData === undefined,
-  });
   const theme = useChartTheme();
+  const data = externalData;
 
-  const data = externalData ?? fetchedData?.data ?? [];
-  const isLoading = externalLoading ?? fetchedLoading;
-
-  if (error && externalData === undefined) {
-    return <ErrorState message="Failed to load latency data" />;
-  }
-
-  // Default to last hour if not specified
-  const now = new Date();
-  const start = startTime ?? new Date(now.getTime() - 60 * 60 * 1000);
-  const end = endTime ?? now;
-
-  // Calculate appropriate interval based on time range
-  const rangeHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-  const intervalMinutes = rangeHours <= 1 ? 1 : rangeHours <= 24 ? 30 : 60;
-
-  // Generate full time range
-  const timeRange = generateTimeRange(start, end, intervalMinutes);
-
-  // Merge actual data into time range
-  const chartData = mergeDataIntoTimeRange(timeRange, data);
-
+  const chartData = formatDataForChart(data);
   const stats = calculateStats(data);
+
+  // Calculate X-axis domain from time range props or data bounds
+  const xDomain: [number, number] | ['dataMin', 'dataMax'] =
+    startTime && endTime
+      ? [startTime.getTime(), endTime.getTime()]
+      : ['dataMin', 'dataMax'];
 
   // Calculate Y-axis domain with padding
   const maxLatency = stats.max !== '-' ? Number.parseFloat(stats.max) : 100;
@@ -179,7 +127,16 @@ export function LatencyChart({
         <LineChart data={chartData} syncId={syncId}>
           <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
           <XAxis
-            dataKey="time"
+            dataKey="timestamp"
+            type="number"
+            scale="time"
+            domain={xDomain}
+            tickFormatter={(ts: number) =>
+              new Date(ts).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }
             tick={{ fill: theme.textColor, fontSize: 11 }}
           />
           <YAxis
@@ -194,6 +151,14 @@ export function LatencyChart({
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: '6px',
             }}
+            labelFormatter={(ts: number) =>
+              new Date(ts).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }
             formatter={(value: number) => [
               `${value?.toFixed(1)} ms`,
               'Latency',

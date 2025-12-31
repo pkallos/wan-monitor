@@ -1,6 +1,7 @@
 import { HttpClient } from '@effect/platform';
 import { NodeHttpClient } from '@effect/platform-node';
 import { Sender } from '@questdb/nodejs-client';
+import type { Granularity } from '@wan-monitor/shared';
 import type {
   DatabaseHealth,
   NetworkMetric,
@@ -24,40 +25,27 @@ export class DatabaseQueryError {
   constructor(readonly message: string) {}
 }
 
-// Query result types
-export interface PingMetricRow {
-  readonly timestamp: string; // ISO8601
-  readonly host: string;
-  readonly latency: number;
-  readonly packet_loss: number;
-  readonly connectivity_status: string;
+// Query result type
+export interface MetricRow {
+  readonly timestamp: string;
+  readonly source: 'ping' | 'speedtest';
+  readonly host?: string;
+  readonly latency?: number;
   readonly jitter?: number;
-}
-
-export interface SpeedMetricRow {
-  readonly timestamp: string; // ISO8601
-  readonly download_speed: number; // Mbps
-  readonly upload_speed: number; // Mbps
-  readonly latency: number; // ms
-  readonly jitter?: number; // ms
-  readonly server_id?: string;
-  readonly server_name?: string;
+  readonly packet_loss?: number;
+  readonly connectivity_status?: string;
+  readonly download_speed?: number;
+  readonly upload_speed?: number;
   readonly server_location?: string;
-  readonly server_country?: string;
   readonly isp?: string;
 }
 
-export interface QueryPingMetricsParams {
+export interface QueryMetricsParams {
   readonly startTime?: Date;
   readonly endTime?: Date;
   readonly host?: string;
   readonly limit?: number;
-}
-
-export interface QuerySpeedMetricsParams {
-  readonly startTime?: Date;
-  readonly endTime?: Date;
-  readonly limit?: number;
+  readonly granularity?: Granularity;
 }
 
 // QuestDB service interface
@@ -65,12 +53,9 @@ export interface QuestDBService {
   readonly writeMetric: (
     metric: NetworkMetric
   ) => Effect.Effect<void, DatabaseWriteError>;
-  readonly queryPingMetrics: (
-    params: QueryPingMetricsParams
-  ) => Effect.Effect<readonly PingMetricRow[], DatabaseQueryError>;
-  readonly querySpeedMetrics: (
-    params: QuerySpeedMetricsParams
-  ) => Effect.Effect<readonly SpeedMetricRow[], DatabaseQueryError>;
+  readonly queryMetrics: (
+    params: QueryMetricsParams
+  ) => Effect.Effect<readonly MetricRow[], DatabaseQueryError>;
   readonly health: () => Effect.Effect<DatabaseHealth, DatabaseConnectionError>;
   readonly close: () => Effect.Effect<void>;
 }
@@ -164,20 +149,61 @@ const make = Effect.gen(function* () {
       })
     );
 
-  const queryPingMetrics = (params: QueryPingMetricsParams) =>
+  const queryMetrics = (params: QueryMetricsParams) =>
     Effect.gen(function* () {
-      // Build SQL query
-      const query = `
-        SELECT timestamp, host, latency, packet_loss, connectivity_status, jitter
+      const startTime =
+        params.startTime?.toISOString() ??
+        new Date(Date.now() - 3600000).toISOString();
+      const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
+      const hostFilter = params.host ? `AND host = '${params.host}'` : '';
+
+      // If granularity is specified, use SAMPLE BY for aggregation
+      // NOTE: Filter out negative latency values (written on ping failures)
+      // to avoid skewing averages.
+      const query = params.granularity
+        ? `
+        SELECT
+          timestamp,
+          source,
+          first(host) as host,
+          avg(latency) as latency,
+          avg(jitter) as jitter,
+          max(packet_loss) as packet_loss,
+          last(connectivity_status) as connectivity_status,
+          avg(download_bandwidth) as download_bandwidth,
+          avg(upload_bandwidth) as upload_bandwidth,
+          last(server_location) as server_location,
+          last(isp) as isp
         FROM network_metrics
-        WHERE timestamp >= '${params.startTime?.toISOString() ?? new Date(Date.now() - 3600000).toISOString()}'
-          AND timestamp <= '${params.endTime?.toISOString() ?? new Date().toISOString()}'
-          ${params.host ? `AND host = '${params.host}'` : ''}
+        WHERE timestamp >= '${startTime}'
+          AND timestamp <= '${endTime}'
+          AND (latency IS NULL OR latency >= 0)
+          ${hostFilter}
+        SAMPLE BY ${params.granularity}
+        ORDER BY timestamp DESC
+        ${params.limit ? `LIMIT ${params.limit}` : ''}
+      `
+        : `
+        SELECT
+          timestamp,
+          source,
+          host,
+          latency,
+          jitter,
+          packet_loss,
+          connectivity_status,
+          download_bandwidth,
+          upload_bandwidth,
+          server_location,
+          isp
+        FROM network_metrics
+        WHERE timestamp >= '${startTime}'
+          AND timestamp <= '${endTime}'
+          ${hostFilter}
         ORDER BY timestamp DESC
         ${params.limit ? `LIMIT ${params.limit}` : ''}
       `;
 
-      // Query QuestDB HTTP API
       const response = yield* httpClient
         .get(`http://${config.database.host}:${config.database.port}/exec`, {
           urlParams: { query },
@@ -191,61 +217,10 @@ const make = Effect.gen(function* () {
           )
         );
 
-      // Parse response
       const data = response as {
         query: string;
         columns: Array<{ name: string; type: string }>;
-        dataset?: Array<Array<string | number>>;
-        count: number;
-      };
-
-      // Handle empty or missing dataset
-      if (!data.dataset || data.dataset.length === 0) {
-        return [];
-      }
-
-      // Map rows to PingMetricRow
-      const rows = data.dataset.map((row) => ({
-        timestamp: row[0] as string,
-        host: row[1] as string,
-        latency: row[2] as number,
-        packet_loss: row[3] as number,
-        connectivity_status: row[4] as string,
-        jitter: row[5] as number | undefined,
-      }));
-
-      return rows;
-    });
-
-  const querySpeedMetrics = (params: QuerySpeedMetricsParams) =>
-    Effect.gen(function* () {
-      const query = `
-        SELECT timestamp, download_bandwidth, upload_bandwidth, latency, jitter, server_location, isp
-        FROM network_metrics
-        WHERE source = 'speedtest'
-          AND timestamp >= '${params.startTime?.toISOString() ?? new Date(Date.now() - 86400000).toISOString()}'
-          AND timestamp <= '${params.endTime?.toISOString() ?? new Date().toISOString()}'
-        ORDER BY timestamp DESC
-        ${params.limit ? `LIMIT ${params.limit}` : ''}
-      `;
-
-      const response = yield* httpClient
-        .get(`http://${config.database.host}:${config.database.port}/exec`, {
-          urlParams: { query },
-        })
-        .pipe(
-          Effect.flatMap((res) => res.json),
-          Effect.catchAll((error) =>
-            Effect.fail(
-              new DatabaseQueryError(`Failed to query speed metrics: ${error}`)
-            )
-          )
-        );
-
-      const data = response as {
-        query: string;
-        columns: Array<{ name: string; type: string }>;
-        dataset?: Array<Array<string | number>>;
+        dataset?: Array<Array<string | number | null>>;
         count: number;
       };
 
@@ -253,14 +228,18 @@ const make = Effect.gen(function* () {
         return [];
       }
 
-      const rows = data.dataset.map((row) => ({
+      const rows: MetricRow[] = data.dataset.map((row) => ({
         timestamp: row[0] as string,
-        download_speed: (row[1] as number) / 1_000_000,
-        upload_speed: (row[2] as number) / 1_000_000,
-        latency: row[3] as number,
+        source: row[1] as 'ping' | 'speedtest',
+        host: row[2] as string | undefined,
+        latency: row[3] as number | undefined,
         jitter: row[4] as number | undefined,
-        server_location: row[5] as string | undefined,
-        isp: row[6] as string | undefined,
+        packet_loss: row[5] as number | undefined,
+        connectivity_status: row[6] as string | undefined,
+        download_speed: row[7] ? (row[7] as number) / 1_000_000 : undefined,
+        upload_speed: row[8] ? (row[8] as number) / 1_000_000 : undefined,
+        server_location: row[9] as string | undefined,
+        isp: row[10] as string | undefined,
       }));
 
       return rows;
@@ -311,7 +290,12 @@ const make = Effect.gen(function* () {
       })
     );
 
-  return { writeMetric, queryPingMetrics, querySpeedMetrics, health, close };
+  return {
+    writeMetric,
+    queryMetrics,
+    health,
+    close,
+  };
 });
 
 // Create layer with cleanup - provide HttpClient dependency

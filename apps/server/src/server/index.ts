@@ -4,7 +4,6 @@ import { createApp } from '@/server/app';
 import { healthRoutes } from '@/server/routes/health';
 import { metricsRoutes } from '@/server/routes/metrics';
 import { pingRoutes } from '@/server/routes/ping';
-import { speedRoutes } from '@/server/routes/speed';
 import type { AppContext } from '@/server/types';
 import { ConfigService, ConfigServiceLive } from '@/services/config';
 import { NetworkMonitor, NetworkMonitorLive } from '@/services/network-monitor';
@@ -91,18 +90,6 @@ const program = Effect.gen(function* () {
       );
     },
     catch: (error) => new Error(`Failed to register metrics routes: ${error}`),
-  });
-
-  yield* Effect.tryPromise({
-    try: async () => {
-      await app.register(
-        async (instance) => {
-          await speedRoutes(instance, context);
-        },
-        { prefix: '/api/speed' }
-      );
-    },
-    catch: (error) => new Error(`Failed to register speed routes: ${error}`),
   });
 
   // Start server

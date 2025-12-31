@@ -47,8 +47,7 @@ describe('NetworkMonitor', () => {
 
   const MockQuestDB = Layer.succeed(QuestDB, {
     writeMetric: vi.fn(() => Effect.void),
-    queryPingMetrics: vi.fn(),
-    querySpeedMetrics: vi.fn(),
+    queryMetrics: vi.fn(),
     health: vi.fn(),
     close: vi.fn(),
   });
