@@ -1,0 +1,14 @@
+# post-checkout hook receives 3 args:
+# $1 = ref of previous HEAD
+# $2 = ref of new HEAD
+# $3 = flag (1 = branch checkout, 0 = file checkout)
+
+# Only run on branch checkout, not file checkout
+if [ "$3" = "1" ]; then
+  # Check if package.json or pnpm-lock.yaml changed
+  CHANGED=$(git diff --name-only "$1" "$2" -- package.json pnpm-lock.yaml 2>/dev/null)
+  if [ -n "$CHANGED" ]; then
+    echo "📦 Dependencies changed, running pnpm install..."
+    pnpm install
+  fi
+fi
