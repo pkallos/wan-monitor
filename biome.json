@@ -30,6 +30,19 @@
       },
       "suspicious": {
         "noExplicitAny": "warn"
+      },
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["../*"],
+                "message": "Parent directory imports are not allowed. Use '@/' path alias instead (e.g., '../types' → '@/server/types')"
+              }
+            ]
+          }
+        }
       }
     }
   },
@@ -39,11 +52,5 @@
       "trailingCommas": "es5",
       "semicolons": "always"
     }
-  },
-  "overrides": [
-    {
-      "includes": ["src/**/*.ts", "src/**/*.tsx"],
-      "plugins": ["./.grit/no-relative-imports.grit"]
-    }
-  ]
+  }
 }

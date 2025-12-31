@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import type { AppContext, AppInstance } from '../types';
+import type { AppContext, AppInstance } from '@/server/types';
 
 /**
  * Health check routes
