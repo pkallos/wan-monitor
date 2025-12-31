@@ -7,8 +7,12 @@ on:
     branches: [main]
 
 jobs:
-  lint-and-test:
-    name: Lint, Typecheck & Test
+  # Dependency installation shared across jobs
+  # pnpm cache is handled by actions/setup-node with cache: 'pnpm'
+  # This caches the pnpm store (~/.pnpm-store) across runs
+
+  lint:
+    name: Lint & Format
     runs-on: ubuntu-latest
 
     steps:
@@ -35,11 +39,78 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+  typecheck:
+    name: TypeScript Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Run typecheck
         run: pnpm typecheck
 
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Run tests
         run: pnpm test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Build frontend
         run: pnpm build
@@ -99,10 +170,24 @@ jobs:
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
+    # Skip Docker build on draft PRs to save CI time
+    if: github.event.pull_request.draft == false || github.event_name == 'push'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Use Docker Buildx for better caching support
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build with GitHub Actions cache
+      # This caches Docker layers between runs for faster builds
       - name: Build Docker image
-        run: docker build -t wan-monitor:test .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: wan-monitor:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
