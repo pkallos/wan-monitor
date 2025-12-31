@@ -200,7 +200,7 @@ describe('PingService', () => {
 
       expect(mockProbe).toHaveBeenCalledWith('1.1.1.1', {
         timeout: 10,
-        extra: ['-c', '5'],
+        extra: ['-c', '5', '-i', '0.25'],
       });
     });
   });
