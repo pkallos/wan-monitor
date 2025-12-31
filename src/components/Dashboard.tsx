@@ -9,6 +9,7 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { useState } from 'react';
+import { JitterChart } from '@/components/charts/JitterChart';
 import { LatencyChart } from '@/components/charts/LatencyChart';
 import { PacketLossChart } from '@/components/charts/PacketLossChart';
 import { DateRangeSelector } from '@/components/DateRangeSelector';
@@ -47,7 +48,9 @@ export function Dashboard() {
           <MetricCard title="Packet Loss">
             <PacketLossChart startTime={startTime} endTime={endTime} />
           </MetricCard>
-          <MetricCard title="Jitter" value="2.1" unit="ms" status="good" />
+          <MetricCard title="Jitter">
+            <JitterChart startTime={startTime} endTime={endTime} />
+          </MetricCard>
           <MetricCard
             title="Download Speed"
             value="245.6"
