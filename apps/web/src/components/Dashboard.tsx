@@ -258,6 +258,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
+                granularity={connectivityGranularity}
               />
             </Box>
 
@@ -273,6 +274,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
+                granularity={connectivityGranularity}
               />
             </Box>
 
@@ -288,6 +290,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
+                granularity={connectivityGranularity}
               />
             </Box>
           </VStack>
