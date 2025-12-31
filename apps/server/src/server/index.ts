@@ -21,6 +21,7 @@ import { Effect, Layer } from "effect";
 import { QuestDB, QuestDBLive } from "@/database/questdb";
 import { createApp } from "@/server/app";
 import { authRoutes } from "@/server/routes/auth";
+import { connectivityStatusRoutes } from "@/server/routes/connectivity-status";
 import { healthRoutes } from "@/server/routes/health";
 import { metricsRoutes } from "@/server/routes/metrics";
 import { pingRoutes } from "@/server/routes/ping";
@@ -123,6 +124,19 @@ const program = Effect.gen(function* () {
       );
     },
     catch: (error) => new Error(`Failed to register auth routes: ${error}`),
+  });
+
+  yield* Effect.tryPromise({
+    try: async () => {
+      await app.register(
+        async (instance) => {
+          await connectivityStatusRoutes(instance, context);
+        },
+        { prefix: "/api/connectivity-status" }
+      );
+    },
+    catch: (error) =>
+      new Error(`Failed to register connectivity status routes: ${error}`),
   });
 
   // Start server

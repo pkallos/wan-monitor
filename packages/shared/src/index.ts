@@ -1,5 +1,8 @@
 export type {
   ApiError,
+  ConnectivityStatus,
+  ConnectivityStatusPoint,
+  ConnectivityStatusResponse,
   Granularity,
   Metric,
   MetricsResponse,
