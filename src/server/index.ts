@@ -1,6 +1,10 @@
 import { Effect, Layer } from 'effect';
 import { QuestDB, QuestDBLive } from '@/database/questdb';
 import { createApp } from '@/server/app';
+import { healthRoutes } from '@/server/routes/health';
+import { metricsRoutes } from '@/server/routes/metrics';
+import { pingRoutes } from '@/server/routes/ping';
+import type { AppContext } from '@/server/types';
 import { ConfigService, ConfigServiceLive } from '@/services/config';
 import { PingServiceLive } from '@/services/ping';
 import { PingExecutor, PingExecutorLive } from '@/services/ping-executor';
@@ -31,93 +35,40 @@ const program = Effect.gen(function* () {
   // Create Fastify app
   const app = createApp();
 
-  // Enhanced health check with database
-  app.get('/api/health', async (_request, reply) => {
-    try {
-      const dbHealth = await Effect.runPromise(db.health());
-      return reply.code(200).send({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        database: dbHealth,
-      });
-    } catch (error) {
-      return reply.code(503).send({
-        status: 'unhealthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        error: String(error),
-      });
-    }
-  });
+  // Create app context with Effect services
+  const context: AppContext = {
+    db,
+    pingExecutor,
+    config,
+  };
 
-  // Ping trigger endpoint - execute pings and write to database
-  app.post('/api/ping/trigger', async (request, reply) => {
-    try {
-      const body = request.body as { hosts?: string[] } | undefined;
-      const hosts = body?.hosts;
+  // Register modular routes with prefixes
+  yield* Effect.promise(() =>
+    app.register(
+      async (instance) => {
+        await healthRoutes(instance, context);
+      },
+      { prefix: '/api' }
+    )
+  );
 
-      const results = hosts
-        ? await Effect.runPromise(pingExecutor.executeHosts(hosts))
-        : await Effect.runPromise(pingExecutor.executeAll());
+  yield* Effect.promise(() =>
+    app.register(
+      async (instance) => {
+        await pingRoutes(instance, context);
+      },
+      { prefix: '/api/ping' }
+    )
+  );
 
-      return reply.code(200).send({
-        success: true,
-        timestamp: new Date().toISOString(),
-        results,
-      });
-    } catch (error) {
-      return reply.code(500).send({
-        success: false,
-        timestamp: new Date().toISOString(),
-        error: String(error),
-      });
-    }
-  });
-
-  // Get configured ping hosts
-  app.get('/api/ping/hosts', async (_request, reply) => {
-    return reply.code(200).send({
-      hosts: config.ping.hosts,
-    });
-  });
-
-  // Get ping metrics
-  app.get('/api/metrics/ping', async (request, reply) => {
-    try {
-      const query = request.query as {
-        startTime?: string;
-        endTime?: string;
-        host?: string;
-        limit?: string;
-      };
-
-      const params = {
-        startTime: query.startTime ? new Date(query.startTime) : undefined,
-        endTime: query.endTime ? new Date(query.endTime) : undefined,
-        host: query.host,
-        limit: query.limit ? Number.parseInt(query.limit, 10) : undefined,
-      };
-
-      const data = await Effect.runPromise(db.queryPingMetrics(params));
-
-      return reply.code(200).send({
-        data,
-        meta: {
-          startTime:
-            params.startTime?.toISOString() ??
-            new Date(Date.now() - 3600000).toISOString(),
-          endTime: params.endTime?.toISOString() ?? new Date().toISOString(),
-          count: data.length,
-        },
-      });
-    } catch (error) {
-      return reply.code(500).send({
-        error: 'Failed to query metrics',
-        message: String(error),
-      });
-    }
-  });
+  yield* Effect.promise(() =>
+    app.register(
+      async (instance) => {
+        await metricsRoutes(instance, context);
+      },
+      { prefix: '/api/metrics' }
+    )
+  );
 
   // Start server
   const port = config.server.port;
