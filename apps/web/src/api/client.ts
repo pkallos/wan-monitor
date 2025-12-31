@@ -1,4 +1,14 @@
+import { TOKEN_KEY } from '@/constants/auth';
+
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
 
 export class ApiError extends Error {
   constructor(
@@ -30,7 +40,11 @@ export const apiClient = {
       }
     }
 
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -51,6 +65,7 @@ export const apiClient = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getAuthHeaders(),
       },
       body: JSON.stringify(body),
     });

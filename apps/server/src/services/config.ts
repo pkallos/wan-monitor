@@ -20,6 +20,12 @@ export interface AppConfig {
     readonly trainCount: number;
     readonly hosts: readonly string[];
   };
+  readonly auth: {
+    readonly username: string;
+    readonly password: string;
+    readonly jwtSecret: string;
+    readonly jwtExpiresIn: string;
+  };
 }
 
 // Config service tag
@@ -67,6 +73,19 @@ const makeConfig = Effect.gen(function* () {
   );
   const pingHosts = pingHostsStr.split(',').map((h) => h.trim());
 
+  const authUsername = yield* Config.string('WAN_MONITOR_USERNAME').pipe(
+    Config.withDefault('admin')
+  );
+  const authPassword = yield* Config.string('WAN_MONITOR_PASSWORD').pipe(
+    Config.withDefault('')
+  );
+  const jwtSecret = yield* Config.string('JWT_SECRET').pipe(
+    Config.withDefault('wan-monitor-default-secret-change-in-production')
+  );
+  const jwtExpiresIn = yield* Config.string('JWT_EXPIRES_IN').pipe(
+    Config.withDefault('24h')
+  );
+
   return {
     server: {
       port: serverPort,
@@ -85,6 +104,12 @@ const makeConfig = Effect.gen(function* () {
       timeout: pingTimeout,
       trainCount: pingTrainCount,
       hosts: pingHosts,
+    },
+    auth: {
+      username: authUsername,
+      password: authPassword,
+      jwtSecret,
+      jwtExpiresIn,
     },
   };
 });

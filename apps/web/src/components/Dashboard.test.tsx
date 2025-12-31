@@ -1,24 +1,19 @@
-import { ChakraProvider } from '@chakra-ui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '@/components/Dashboard';
+import { createTestWrapper } from '@/test/utils';
 
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <ChakraProvider>{children}</ChakraProvider>
-    </QueryClientProvider>
-  );
-};
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    isLoading: false,
+    username: 'admin',
+    authRequired: true,
+    login: vi.fn(),
+    logout: vi.fn(),
+    checkAuth: vi.fn(),
+  }),
+}));
 
 describe('Dashboard', () => {
   beforeEach(() => {
@@ -39,7 +34,7 @@ describe('Dashboard', () => {
 
   it('should render dashboard title', () => {
     const { getByText } = render(<Dashboard />, {
-      wrapper: createWrapper(),
+      wrapper: createTestWrapper(),
     });
 
     expect(getByText('WAN Monitor')).toBeTruthy();
@@ -47,7 +42,7 @@ describe('Dashboard', () => {
 
   it('should render metric cards in top row', () => {
     const { getByText } = render(<Dashboard />, {
-      wrapper: createWrapper(),
+      wrapper: createTestWrapper(),
     });
 
     expect(getByText('Connectivity')).toBeTruthy();
@@ -57,7 +52,7 @@ describe('Dashboard', () => {
 
   it('should render network quality section with chart labels', () => {
     const { getByText } = render(<Dashboard />, {
-      wrapper: createWrapper(),
+      wrapper: createTestWrapper(),
     });
 
     expect(getByText('Network Quality')).toBeTruthy();
@@ -68,7 +63,7 @@ describe('Dashboard', () => {
 
   it('should display ISP name placeholder when no data', () => {
     const { getByText } = render(<Dashboard />, {
-      wrapper: createWrapper(),
+      wrapper: createTestWrapper(),
     });
 
     expect(getByText('Unknown ISP')).toBeTruthy();
@@ -76,7 +71,7 @@ describe('Dashboard', () => {
 
   it('should display offline status when no ping data', () => {
     const { getByText } = render(<Dashboard />, {
-      wrapper: createWrapper(),
+      wrapper: createTestWrapper(),
     });
 
     // When no data, connectivity_status is undefined, so shows Offline
@@ -106,7 +101,7 @@ describe('Dashboard', () => {
     });
 
     const { findByText } = render(<Dashboard />, {
-      wrapper: createWrapper(),
+      wrapper: createTestWrapper(),
     });
 
     expect(await findByText('Online')).toBeTruthy();

@@ -1,52 +1,101 @@
-import { ChakraProvider } from '@chakra-ui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '@/App';
-
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <ChakraProvider>{children}</ChakraProvider>
-    </QueryClientProvider>
-  );
-};
+import { createTestWrapper } from '@/test/utils';
 
 describe('App', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    localStorage.clear();
     global.fetch = vi.fn();
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [],
-        meta: {
-          startTime: new Date().toISOString(),
-          endTime: new Date().toISOString(),
-          count: 0,
-        },
-      }),
+  });
+
+  it('renders the dashboard when auth is not required', async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      (url: string) => {
+        if (url.includes('/auth/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ authRequired: false }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: [],
+            meta: {
+              startTime: new Date().toISOString(),
+              endTime: new Date().toISOString(),
+              count: 0,
+            },
+          }),
+        });
+      }
+    );
+
+    render(<App />, { wrapper: createTestWrapper() });
+
+    await waitFor(() => {
+      const heading = screen.getByRole('heading', { name: /WAN Monitor/i });
+      expect(heading).toBeInTheDocument();
     });
   });
 
-  it('renders the dashboard', () => {
-    render(<App />, { wrapper: createWrapper() });
-    const heading = screen.getByRole('heading', { name: /WAN Monitor/i });
-    expect(heading).toBeInTheDocument();
+  it('renders login page when auth is required and not authenticated', async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      (url: string) => {
+        if (url.includes('/auth/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ authRequired: true }),
+          });
+        }
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: 'Not authenticated' }),
+        });
+      }
+    );
+
+    render(<App />, { wrapper: createTestWrapper() });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Sign in to access the dashboard')
+      ).toBeInTheDocument();
+    });
   });
 
-  it('renders metric cards', () => {
-    render(<App />, { wrapper: createWrapper() });
-    expect(screen.getByText('Connectivity')).toBeInTheDocument();
-    expect(screen.getByText('Download Speed')).toBeInTheDocument();
-    expect(screen.getByText('Upload Speed')).toBeInTheDocument();
+  it('renders metric cards when authenticated', async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      (url: string) => {
+        if (url.includes('/auth/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ authRequired: false }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: [],
+            meta: {
+              startTime: new Date().toISOString(),
+              endTime: new Date().toISOString(),
+              count: 0,
+            },
+          }),
+        });
+      }
+    );
+
+    render(<App />, { wrapper: createTestWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByText('Connectivity')).toBeInTheDocument();
+      expect(screen.getByText('Download Speed')).toBeInTheDocument();
+      expect(screen.getByText('Upload Speed')).toBeInTheDocument();
+    });
   });
 });
