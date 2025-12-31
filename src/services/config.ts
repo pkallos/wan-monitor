@@ -10,6 +10,10 @@ export interface AppConfig {
     readonly host: string;
     readonly port: number;
   };
+  readonly ping: {
+    readonly timeout: number;
+    readonly retries: number;
+  };
 }
 
 // Config service tag
@@ -31,6 +35,13 @@ const makeConfig = Effect.gen(function* () {
   );
   const dbPort = yield* Config.number('DB_PORT').pipe(Config.withDefault(9000));
 
+  const pingTimeout = yield* Config.number('PING_TIMEOUT').pipe(
+    Config.withDefault(5)
+  );
+  const pingRetries = yield* Config.number('PING_RETRIES').pipe(
+    Config.withDefault(1)
+  );
+
   return {
     server: {
       port: serverPort,
@@ -39,6 +50,10 @@ const makeConfig = Effect.gen(function* () {
     database: {
       host: dbHost,
       port: dbPort,
+    },
+    ping: {
+      timeout: pingTimeout,
+      retries: pingRetries,
     },
   };
 });
