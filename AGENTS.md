@@ -30,11 +30,22 @@ Before working on any feature:
 - The task should include a **full detailed description** of what needs to be done
 - Tasks should be scoped to be completable in **one PR with a simple changeset**
 - Break down large features into multiple smaller, incremental tasks
+- **When you start working on a task, immediately update its Linear status to "In Progress"**
 
 ### 2. Branch Management
 
 For each task:
-- Create a new feature branch from `main`
+- **Always create feature branches from the tip of `origin/main`** (not a potentially stale local `main`):
+  ```bash
+  git fetch origin
+  git checkout -b feat/feature-name origin/main
+  ```
+  Or if already on main, pull first:
+  ```bash
+  git checkout main
+  git pull origin main
+  git checkout -b feat/feature-name
+  ```
 - Use conventional branch naming:
   - `feat/feature-name` - for new features
   - `fix/bug-name` - for bug fixes
@@ -112,8 +123,21 @@ When the feature is complete:
 
 5. **After Merge:**
    - Delete the feature branch
-   - Update the Linear task status to complete
+   - **Update the Linear task status to "Done"** (when user confirms PR is merged)
    - Move on to the next task
+
+### 6. Linear Task Status Management
+
+**Keep Linear task statuses synchronized with actual work progress:**
+
+| When | Action |
+|------|--------|
+| Starting work on a task | Set status → **In Progress** |
+| PR is merged (user confirms) | Set status → **Done** |
+| Blocked on something | Update status + add comment explaining blocker |
+| Pausing to work on something else | Consider updating status |
+
+**Important:** When the user tells you a PR has been merged, immediately update the corresponding Linear task status to "Done".
 
 ## Code Quality Standards
 
