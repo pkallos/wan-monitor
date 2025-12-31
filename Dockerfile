@@ -11,9 +11,14 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Build Frontend
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS frontend-builder
+# Using bookworm (Debian) instead of Alpine to ensure native modules are
+# compiled with glibc, matching the Ubuntu production image
+FROM node:22-bookworm AS frontend-builder
 
-RUN apk add --no-cache python3 make g++
+# Install build dependencies for native modules (lzma-native requires liblzma-dev)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ liblzma-dev \
+    && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
@@ -32,9 +37,14 @@ RUN pnpm exec turbo run build --filter=@wan-monitor/web
 # -----------------------------------------------------------------------------
 # Stage 2: Build Backend
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS backend-builder
+# Using bookworm (Debian) instead of Alpine to ensure native modules are
+# compiled with glibc, matching the Ubuntu production image
+FROM node:22-bookworm AS backend-builder
 
-RUN apk add --no-cache python3 make g++
+# Install build dependencies for native modules (lzma-native requires liblzma-dev)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ liblzma-dev \
+    && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
