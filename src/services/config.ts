@@ -13,6 +13,7 @@ export interface AppConfig {
   readonly ping: {
     readonly timeout: number;
     readonly retries: number;
+    readonly hosts: readonly string[];
   };
 }
 
@@ -41,6 +42,10 @@ const makeConfig = Effect.gen(function* () {
   const pingRetries = yield* Config.number('PING_RETRIES').pipe(
     Config.withDefault(1)
   );
+  const pingHostsStr = yield* Config.string('PING_HOSTS').pipe(
+    Config.withDefault('8.8.8.8,1.1.1.1,cloudflare.com')
+  );
+  const pingHosts = pingHostsStr.split(',').map((h) => h.trim());
 
   return {
     server: {
@@ -54,6 +59,7 @@ const makeConfig = Effect.gen(function* () {
     ping: {
       timeout: pingTimeout,
       retries: pingRetries,
+      hosts: pingHosts,
     },
   };
 });

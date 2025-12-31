@@ -249,6 +249,104 @@ EDITOR=true git commit --amend
 
 **Remember:** If a command hangs, it's likely waiting for interactive input. Always prefer flags like `--no-edit`, `-m`, or explicit non-interactive alternatives.
 
+## Effect-TS Best Practices
+
+This project uses Effect-TS for functional programming. Follow these idiomatic patterns:
+
+### Pattern Matching and Type Guards
+
+**❌ DON'T** check `_tag` directly:
+```typescript
+// Bad - direct _tag checks
+if (result._tag === 'Left') { ... }
+if (exit._tag === 'Failure') { ... }
+if (option._tag === 'Some') { ... }
+```
+
+**✅ DO** use Effect's type guards and pattern matching:
+
+```typescript
+// Either - use Either.match or type guards
+import { Either } from 'effect';
+
+// Pattern matching
+Either.match(result, {
+  onLeft: (error) => { /* handle error */ },
+  onRight: (value) => { /* handle success */ },
+});
+
+// Type guards
+if (Either.isLeft(result)) {
+  const error = result.left;
+}
+if (Either.isRight(result)) {
+  const value = result.right;
+}
+
+// Exit - use Exit.match or type guards
+import { Exit } from 'effect';
+
+if (Exit.isFailure(exit)) {
+  const cause = exit.cause;
+}
+if (Exit.isSuccess(exit)) {
+  const value = exit.value;
+}
+
+// Option - use Option.match or type guards
+import { Option } from 'effect';
+
+if (Option.isSome(option)) {
+  const value = option.value;
+}
+if (Option.isNone(option)) {
+  // handle none
+}
+```
+
+### Error Handling
+
+**❌ DON'T** use `Effect.either` and manual checks:
+```typescript
+// Bad - manual Either handling
+const result = yield* someEffect.pipe(Effect.either);
+if (result._tag === 'Left') {
+  // handle error
+} else {
+  // handle success
+}
+```
+
+**✅ DO** use `Effect.flatMap` and `Effect.catchAll`:
+```typescript
+// Good - idiomatic Effect error handling
+someEffect.pipe(
+  Effect.flatMap((value) => {
+    // Success path
+    return nextEffect(value);
+  }),
+  Effect.catchAll((error) => {
+    // Error path
+    return fallbackEffect(error);
+  })
+);
+
+// Or use Effect.match for both paths
+someEffect.pipe(
+  Effect.match({
+    onFailure: (error) => handleError(error),
+    onSuccess: (value) => handleSuccess(value),
+  })
+);
+```
+
+### Why This Matters
+
+- **Type Safety**: Type guards provide better TypeScript inference
+- **Maintainability**: Idiomatic patterns are easier to understand
+- **Future-Proof**: Effect-TS may change internal `_tag` implementations
+- **Readability**: Pattern matching is more declarative
+
 ## Environment Setup
 
 - Node.js 24+ (LTS)
