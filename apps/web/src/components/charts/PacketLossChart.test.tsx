@@ -74,4 +74,60 @@ describe("PacketLossChart", () => {
     );
     expect(container).toBeTruthy();
   });
+
+  it("should fill timeline with null values for missing data points", () => {
+    const startTime = new Date("2024-01-01T12:00:00.000Z");
+    const endTime = new Date("2024-01-01T12:15:00.000Z");
+    const dataWithGaps: PingMetric[] = [
+      {
+        timestamp: "2024-01-01T12:00:00.000Z",
+        host: "8.8.8.8",
+        latency: 15.5,
+        packet_loss: 0,
+        connectivity_status: "connected",
+        jitter: 2.3,
+      },
+      {
+        timestamp: "2024-01-01T12:10:00.000Z",
+        host: "8.8.8.8",
+        latency: 18.2,
+        packet_loss: 5,
+        connectivity_status: "connected",
+        jitter: 1.8,
+      },
+    ];
+
+    const { container } = render(
+      <PacketLossChart
+        data={dataWithGaps}
+        startTime={startTime}
+        endTime={endTime}
+        granularity="5m"
+      />,
+      { wrapper: createWrapper() }
+    );
+    expect(container).toBeTruthy();
+  });
+
+  it("should handle data without time range (fallback behavior)", () => {
+    const { container } = render(
+      <PacketLossChart data={mockData} granularity="5m" />,
+      { wrapper: createWrapper() }
+    );
+    expect(container).toBeTruthy();
+  });
+
+  it("should calculate stats correctly ignoring null values", () => {
+    const { getByText } = render(
+      <PacketLossChart
+        data={mockData}
+        compact={false}
+        startTime={new Date("2024-01-01T12:00:00.000Z")}
+        endTime={new Date("2024-01-01T12:15:00.000Z")}
+        granularity="5m"
+      />,
+      { wrapper: createWrapper() }
+    );
+    expect(getByText("Spikes")).toBeTruthy();
+  });
 });

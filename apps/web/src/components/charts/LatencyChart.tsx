@@ -1,5 +1,5 @@
 import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
-import type { PingMetric } from "@wan-monitor/shared";
+import type { Granularity, PingMetric } from "@wan-monitor/shared";
 import {
   CartesianGrid,
   Line,
@@ -11,6 +11,8 @@ import {
 } from "recharts";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { useChartTheme } from "@/components/charts/useChartTheme";
+import { granularityToMs } from "@/utils/granularity";
+import { alignTimestampToGranularity } from "@/utils/timeAlignment";
 
 export interface LatencyChartProps {
   startTime?: Date;
@@ -20,6 +22,7 @@ export interface LatencyChartProps {
   compact?: boolean;
   data?: PingMetric[];
   isLoading?: boolean;
+  granularity?: Granularity;
 }
 
 interface ChartDataPoint {
@@ -54,20 +57,64 @@ function calculateStats(data: PingMetric[]): Stats {
   };
 }
 
-function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
-  return [...data]
-    .sort(
-      (a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    )
-    .map((d) => ({
-      time: new Date(d.timestamp).toLocaleTimeString([], {
+function formatDataForChart(
+  data: PingMetric[],
+  startTime?: Date,
+  endTime?: Date,
+  granularity: Granularity = "5m"
+): ChartDataPoint[] {
+  // If no time range specified, can't fill timeline
+  if (!startTime || !endTime) {
+    return [...data]
+      .sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      )
+      .map((d) => ({
+        time: new Date(d.timestamp).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        timestamp: new Date(d.timestamp).getTime(),
+        latency: d.latency ?? null,
+      }));
+  }
+
+  // Calculate expected interval in milliseconds
+  const intervalMs = granularityToMs(granularity);
+
+  // Create a map of existing data points for quick lookup
+  // Align data timestamps to granularity boundaries for matching
+  const dataMap = new Map(
+    data.map((point) => {
+      const alignedMs = alignTimestampToGranularity(
+        new Date(point.timestamp),
+        granularity
+      );
+      return [alignedMs, point];
+    })
+  );
+
+  const result: ChartDataPoint[] = [];
+  // Align start and end times to granularity boundaries
+  const startMs = alignTimestampToGranularity(startTime, granularity);
+  const endMs = alignTimestampToGranularity(endTime, granularity);
+
+  // Generate all time slots from start to end (exclusive of end to avoid off-by-one)
+  for (let currentMs = startMs; currentMs < endMs; currentMs += intervalMs) {
+    const dataPoint = dataMap.get(currentMs);
+
+    result.push({
+      time: new Date(currentMs).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
-      timestamp: new Date(d.timestamp).getTime(),
-      latency: d.latency ?? null,
-    }));
+      timestamp: currentMs,
+      latency: dataPoint?.latency ?? null,
+    });
+  }
+
+  return result;
 }
 
 export function LatencyChart({
@@ -77,11 +124,12 @@ export function LatencyChart({
   compact = false,
   data: externalData = [],
   isLoading = false,
+  granularity = "5m",
 }: LatencyChartProps) {
   const theme = useChartTheme();
   const data = externalData;
 
-  const chartData = formatDataForChart(data);
+  const chartData = formatDataForChart(data, startTime, endTime, granularity);
   const stats = calculateStats(data);
 
   // Calculate X-axis domain from time range props or data bounds
