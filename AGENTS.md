@@ -34,7 +34,17 @@ Before working on any feature:
 ### 2. Branch Management
 
 For each task:
-- Create a new feature branch from `main`
+- **Always create feature branches from the tip of `origin/main`** (not a potentially stale local `main`):
+  ```bash
+  git fetch origin
+  git checkout -b feat/feature-name origin/main
+  ```
+  Or if already on main, pull first:
+  ```bash
+  git checkout main
+  git pull origin main
+  git checkout -b feat/feature-name
+  ```
 - Use conventional branch naming:
   - `feat/feature-name` - for new features
   - `fix/bug-name` - for bug fixes
