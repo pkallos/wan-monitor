@@ -1,25 +1,25 @@
-import { ChakraProvider } from '@chakra-ui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render } from '@testing-library/react';
-import type { PingMetric } from '@wan-monitor/shared';
-import { describe, expect, it } from 'vitest';
-import { LatencyChart } from '@/components/charts/LatencyChart';
+import { ChakraProvider } from "@chakra-ui/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
+import type { PingMetric } from "@wan-monitor/shared";
+import { describe, expect, it } from "vitest";
+import { LatencyChart } from "@/components/charts/LatencyChart";
 
 const mockData: PingMetric[] = [
   {
-    timestamp: '2024-01-01T12:00:00.000Z',
-    host: '8.8.8.8',
+    timestamp: "2024-01-01T12:00:00.000Z",
+    host: "8.8.8.8",
     latency: 15.5,
     packet_loss: 0,
-    connectivity_status: 'connected',
+    connectivity_status: "connected",
     jitter: 2.3,
   },
   {
-    timestamp: '2024-01-01T12:01:00.000Z',
-    host: '8.8.8.8',
+    timestamp: "2024-01-01T12:01:00.000Z",
+    host: "8.8.8.8",
     latency: 16.2,
     packet_loss: 0,
-    connectivity_status: 'connected',
+    connectivity_status: "connected",
     jitter: 1.8,
   },
 ];
@@ -35,39 +35,39 @@ const createWrapper = () => {
   );
 };
 
-describe('LatencyChart', () => {
-  it('should render without errors', () => {
+describe("LatencyChart", () => {
+  it("should render without errors", () => {
     const { container } = render(<LatencyChart data={mockData} />, {
       wrapper: createWrapper(),
     });
     expect(container).toBeTruthy();
   });
 
-  it('should display stats in non-compact mode', () => {
+  it("should display stats in non-compact mode", () => {
     const { getByText } = render(
       <LatencyChart data={mockData} compact={false} />,
       { wrapper: createWrapper() }
     );
-    expect(getByText('Current')).toBeTruthy();
-    expect(getByText('Avg')).toBeTruthy();
+    expect(getByText("Current")).toBeTruthy();
+    expect(getByText("Avg")).toBeTruthy();
   });
 
-  it('should hide stats in compact mode', () => {
+  it("should hide stats in compact mode", () => {
     const { queryByText } = render(
       <LatencyChart data={mockData} compact={true} />,
       { wrapper: createWrapper() }
     );
-    expect(queryByText('Current')).toBeNull();
+    expect(queryByText("Current")).toBeNull();
   });
 
-  it('should handle empty data', () => {
+  it("should handle empty data", () => {
     const { container } = render(<LatencyChart data={[]} />, {
       wrapper: createWrapper(),
     });
     expect(container).toBeTruthy();
   });
 
-  it('should accept syncId prop', () => {
+  it("should accept syncId prop", () => {
     const { container } = render(
       <LatencyChart data={mockData} syncId="test-sync" />,
       { wrapper: createWrapper() }

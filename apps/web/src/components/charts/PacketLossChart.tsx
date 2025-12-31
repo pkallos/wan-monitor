@@ -1,5 +1,5 @@
-import { Box, Stat, StatGroup, StatLabel, StatNumber } from '@chakra-ui/react';
-import type { PingMetric } from '@wan-monitor/shared';
+import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
+import type { PingMetric } from "@wan-monitor/shared";
 import {
   CartesianGrid,
   Line,
@@ -8,9 +8,9 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
-import { ChartContainer } from '@/components/charts/ChartContainer';
-import { useChartTheme } from '@/components/charts/useChartTheme';
+} from "recharts";
+import { ChartContainer } from "@/components/charts/ChartContainer";
+import { useChartTheme } from "@/components/charts/useChartTheme";
 
 export interface PacketLossChartProps {
   startTime?: Date;
@@ -37,20 +37,20 @@ interface Stats {
 
 function calculateStats(data: PingMetric[]): Stats {
   if (data.length === 0) {
-    return { current: '-', avg: '-', max: '-', spikes: 0 };
+    return { current: "-", avg: "-", max: "-", spikes: 0 };
   }
 
   const losses = data.map((d) => d.packet_loss).filter((l) => l >= 0);
 
   if (losses.length === 0) {
-    return { current: '-', avg: '-', max: '-', spikes: 0 };
+    return { current: "-", avg: "-", max: "-", spikes: 0 };
   }
 
   const avg = losses.reduce((a, b) => a + b, 0) / losses.length;
   const spikes = losses.filter((l) => l > 5).length;
 
   return {
-    current: losses[losses.length - 1]?.toFixed(1) ?? '-',
+    current: losses[losses.length - 1]?.toFixed(1) ?? "-",
     avg: avg.toFixed(1),
     max: Math.max(...losses).toFixed(1),
     spikes,
@@ -65,8 +65,8 @@ function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
     )
     .map((d) => ({
       time: new Date(d.timestamp).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
+        hour: "2-digit",
+        minute: "2-digit",
       }),
       timestamp: new Date(d.timestamp).getTime(),
       packetLoss: d.packet_loss ?? null,
@@ -88,10 +88,10 @@ export function PacketLossChart({
   const stats = calculateStats(data);
 
   // Calculate X-axis domain from time range props or data bounds
-  const xDomain: [number, number] | ['dataMin', 'dataMax'] =
+  const xDomain: [number, number] | ["dataMin", "dataMax"] =
     startTime && endTime
       ? [startTime.getTime(), endTime.getTime()]
-      : ['dataMin', 'dataMax'];
+      : ["dataMin", "dataMax"];
 
   return (
     <Box>
@@ -159,8 +159,8 @@ export function PacketLossChart({
             domain={xDomain}
             tickFormatter={(ts: number) =>
               new Date(ts).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
             tick={{ fill: theme.textColor, fontSize: 11 }}
@@ -169,25 +169,25 @@ export function PacketLossChart({
             unit="%"
             tick={{ fill: theme.textColor, fontSize: 11 }}
             width={45}
-            domain={[0, 'auto']}
+            domain={[0, "auto"]}
           />
           <Tooltip
             contentStyle={{
               backgroundColor: theme.tooltipBg,
               border: `1px solid ${theme.tooltipBorder}`,
-              borderRadius: '6px',
+              borderRadius: "6px",
             }}
             labelFormatter={(ts: number) =>
               new Date(ts).toLocaleString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
             formatter={(value: number) => [
               `${value?.toFixed(1)}%`,
-              'Packet Loss',
+              "Packet Loss",
             ]}
           />
           <Line

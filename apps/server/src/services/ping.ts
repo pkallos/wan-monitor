@@ -1,13 +1,13 @@
-import { Context, Effect, Layer, Schema } from 'effect';
-import ping from 'ping';
-import { ConfigService } from '@/services/config';
+import { Context, Effect, Layer, Schema } from "effect";
+import ping from "ping";
+import { ConfigService } from "@/services/config";
 
 // ============================================================================
 // Error Types
 // ============================================================================
 
 export class PingNetworkError {
-  readonly _tag = 'PingNetworkError';
+  readonly _tag = "PingNetworkError";
   constructor(
     readonly host: string,
     readonly message: string
@@ -15,7 +15,7 @@ export class PingNetworkError {
 }
 
 export class PingTimeoutError {
-  readonly _tag = 'PingTimeoutError';
+  readonly _tag = "PingTimeoutError";
   constructor(
     readonly host: string,
     readonly timeoutMs: number
@@ -23,7 +23,7 @@ export class PingTimeoutError {
 }
 
 export class PingHostUnreachableError {
-  readonly _tag = 'PingHostUnreachableError';
+  readonly _tag = "PingHostUnreachableError";
   constructor(
     readonly host: string,
     readonly message: string
@@ -87,7 +87,7 @@ export interface PingServiceInterface {
 // Service Tag
 // ============================================================================
 
-export class PingService extends Context.Tag('PingService')<
+export class PingService extends Context.Tag("PingService")<
   PingService,
   PingServiceInterface
 >() {}
@@ -112,13 +112,13 @@ export const PingServiceLive = Layer.effect(
         try: async () => {
           const result = await ping.promise.probe(host, {
             timeout: pingConfig.timeout,
-            extra: ['-c', String(pingConfig.trainCount), '-i', '0.25'],
+            extra: ["-c", String(pingConfig.trainCount), "-i", "0.25"],
           });
 
           if (!result.alive) {
             throw new PingHostUnreachableError(
               host,
-              result.output || 'Host unreachable'
+              result.output || "Host unreachable"
             );
           }
 
@@ -126,8 +126,8 @@ export const PingServiceLive = Layer.effect(
           const parseNumeric = (
             val: string | number | undefined
           ): number | undefined => {
-            if (val === undefined || val === 'unknown') return undefined;
-            return typeof val === 'number' ? val : Number.parseFloat(val);
+            if (val === undefined || val === "unknown") return undefined;
+            return typeof val === "number" ? val : Number.parseFloat(val);
           };
 
           return {
@@ -145,7 +145,7 @@ export const PingServiceLive = Layer.effect(
           if (error instanceof PingHostUnreachableError) {
             return error;
           }
-          if (error instanceof Error && error.message.includes('timeout')) {
+          if (error instanceof Error && error.message.includes("timeout")) {
             return new PingTimeoutError(host, pingConfig.timeout * 1000);
           }
           return new PingNetworkError(

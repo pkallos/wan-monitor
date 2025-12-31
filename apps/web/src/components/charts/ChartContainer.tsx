@@ -1,6 +1,6 @@
-import { Box, Skeleton } from '@chakra-ui/react';
-import type { ReactElement } from 'react';
-import { ResponsiveContainer } from 'recharts';
+import { Box, Skeleton } from "@chakra-ui/react";
+import type { ReactElement } from "react";
+import { ResponsiveContainer } from "recharts";
 
 export interface ChartContainerProps {
   height?: number;

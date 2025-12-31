@@ -1,13 +1,13 @@
-import { render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Dashboard } from '@/components/Dashboard';
-import { createTestWrapper } from '@/test/utils';
+import { render } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Dashboard } from "@/components/Dashboard";
+import { createTestWrapper } from "@/test/utils";
 
-vi.mock('@/context/AuthContext', () => ({
+vi.mock("@/context/AuthContext", () => ({
   useAuth: () => ({
     isAuthenticated: true,
     isLoading: false,
-    username: 'admin',
+    username: "admin",
     authRequired: true,
     login: vi.fn(),
     logout: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('@/context/AuthContext', () => ({
   }),
 }));
 
-describe('Dashboard', () => {
+describe("Dashboard", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     global.fetch = vi.fn();
@@ -32,63 +32,63 @@ describe('Dashboard', () => {
     });
   });
 
-  it('should render dashboard title', () => {
+  it("should render dashboard title", () => {
     const { getByText } = render(<Dashboard />, {
       wrapper: createTestWrapper(),
     });
 
-    expect(getByText('WAN Monitor')).toBeTruthy();
+    expect(getByText("WAN Monitor")).toBeTruthy();
   });
 
-  it('should render metric cards in top row', () => {
+  it("should render metric cards in top row", () => {
     const { getByText } = render(<Dashboard />, {
       wrapper: createTestWrapper(),
     });
 
-    expect(getByText('Connectivity')).toBeTruthy();
-    expect(getByText('Download Speed')).toBeTruthy();
-    expect(getByText('Upload Speed')).toBeTruthy();
+    expect(getByText("Connectivity")).toBeTruthy();
+    expect(getByText("Download Speed")).toBeTruthy();
+    expect(getByText("Upload Speed")).toBeTruthy();
   });
 
-  it('should render network quality section with chart labels', () => {
+  it("should render network quality section with chart labels", () => {
     const { getByText } = render(<Dashboard />, {
       wrapper: createTestWrapper(),
     });
 
-    expect(getByText('Network Quality')).toBeTruthy();
-    expect(getByText('Latency (ms)')).toBeTruthy();
-    expect(getByText('Packet Loss (%)')).toBeTruthy();
-    expect(getByText('Jitter (ms)')).toBeTruthy();
+    expect(getByText("Network Quality")).toBeTruthy();
+    expect(getByText("Latency (ms)")).toBeTruthy();
+    expect(getByText("Packet Loss (%)")).toBeTruthy();
+    expect(getByText("Jitter (ms)")).toBeTruthy();
   });
 
-  it('should display ISP name placeholder when no data', () => {
+  it("should display ISP name placeholder when no data", () => {
     const { getByText } = render(<Dashboard />, {
       wrapper: createTestWrapper(),
     });
 
-    expect(getByText('Unknown ISP')).toBeTruthy();
+    expect(getByText("Unknown ISP")).toBeTruthy();
   });
 
-  it('should display offline status when no ping data', () => {
+  it("should display offline status when no ping data", () => {
     const { getByText } = render(<Dashboard />, {
       wrapper: createTestWrapper(),
     });
 
     // When no data, connectivity_status is undefined, so shows Offline
-    expect(getByText('Offline')).toBeTruthy();
+    expect(getByText("Offline")).toBeTruthy();
   });
 
-  it('should display online status when ping data shows up', async () => {
+  it("should display online status when ping data shows up", async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: async () => ({
         data: [
           {
-            source: 'ping',
-            connectivity_status: 'up',
+            source: "ping",
+            connectivity_status: "up",
             latency: 10,
             packet_loss: 0,
-            host: '8.8.8.8',
+            host: "8.8.8.8",
             timestamp: new Date().toISOString(),
           },
         ],
@@ -104,6 +104,6 @@ describe('Dashboard', () => {
       wrapper: createTestWrapper(),
     });
 
-    expect(await findByText('Online')).toBeTruthy();
+    expect(await findByText("Online")).toBeTruthy();
   });
 });

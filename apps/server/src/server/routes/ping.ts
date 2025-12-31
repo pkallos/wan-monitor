@@ -1,5 +1,5 @@
-import { Effect } from 'effect';
-import type { AppContext, AppInstance } from '@/server/types';
+import { Effect } from "effect";
+import type { AppContext, AppInstance } from "@/server/types";
 
 /**
  * Ping-related routes
@@ -9,7 +9,7 @@ export async function pingRoutes(
   context: AppContext
 ): Promise<void> {
   // Ping trigger endpoint - execute pings and write to database
-  app.post('/trigger', async (request, reply) => {
+  app.post("/trigger", async (request, reply) => {
     try {
       const body = request.body as { hosts?: string[] } | undefined;
       const hosts = body?.hosts;
@@ -33,7 +33,7 @@ export async function pingRoutes(
   });
 
   // Get configured ping hosts
-  app.get('/hosts', async (_request, reply) => {
+  app.get("/hosts", async (_request, reply) => {
     return reply.code(200).send({
       hosts: context.config.ping.hosts,
     });

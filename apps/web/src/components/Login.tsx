@@ -13,24 +13,24 @@ import {
   Text,
   useColorModeValue,
   VStack,
-} from '@chakra-ui/react';
-import type { FormEvent } from 'react';
-import { useState } from 'react';
-import { FiEye, FiEyeOff } from 'react-icons/fi';
-import { ApiError } from '@/api/client';
-import { useAuth } from '@/context/AuthContext';
+} from "@chakra-ui/react";
+import type { FormEvent } from "react";
+import { useState } from "react";
+import { FiEye, FiEyeOff } from "react-icons/fi";
+import { ApiError } from "@/api/client";
+import { useAuth } from "@/context/AuthContext";
 
 export function Login() {
   const { login } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const bg = useColorModeValue('gray.50', 'gray.900');
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const bg = useColorModeValue("gray.50", "gray.900");
+  const cardBg = useColorModeValue("white", "gray.800");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -41,15 +41,15 @@ export function Login() {
       await login(username, password);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setError('Incorrect username or password. Please try again.');
+        setError("Incorrect username or password. Please try again.");
       } else if (err instanceof ApiError && err.status === 429) {
         setError(
-          'Too many login attempts. Please wait a moment and try again.'
+          "Too many login attempts. Please wait a moment and try again."
         );
-      } else if (err instanceof Error && err.message.includes('fetch')) {
-        setError('Unable to connect to server. Please check your connection.');
+      } else if (err instanceof Error && err.message.includes("fetch")) {
+        setError("Unable to connect to server. Please check your connection.");
       } else {
-        setError('Something went wrong. Please try again.');
+        setError("Something went wrong. Please try again.");
       }
     } finally {
       setIsLoading(false);
@@ -98,7 +98,7 @@ export function Login() {
               <FormLabel>Password</FormLabel>
               <InputGroup>
                 <Input
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password"
@@ -110,7 +110,7 @@ export function Login() {
                     size="sm"
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={
-                      showPassword ? 'Hide password' : 'Show password'
+                      showPassword ? "Hide password" : "Show password"
                     }
                   >
                     {showPassword ? <FiEyeOff /> : <FiEye />}

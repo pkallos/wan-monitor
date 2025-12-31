@@ -1,5 +1,5 @@
-import { Box, Stat, StatGroup, StatLabel, StatNumber } from '@chakra-ui/react';
-import type { PingMetric } from '@wan-monitor/shared';
+import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
+import type { PingMetric } from "@wan-monitor/shared";
 import {
   CartesianGrid,
   Line,
@@ -8,9 +8,9 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
-import { ChartContainer } from '@/components/charts/ChartContainer';
-import { useChartTheme } from '@/components/charts/useChartTheme';
+} from "recharts";
+import { ChartContainer } from "@/components/charts/ChartContainer";
+import { useChartTheme } from "@/components/charts/useChartTheme";
 
 export interface LatencyChartProps {
   startTime?: Date;
@@ -37,17 +37,17 @@ interface Stats {
 
 function calculateStats(data: PingMetric[]): Stats {
   if (data.length === 0) {
-    return { current: '-', avg: '-', min: '-', max: '-' };
+    return { current: "-", avg: "-", min: "-", max: "-" };
   }
 
   const latencies = data.map((d) => d.latency).filter((l) => l >= 0);
 
   if (latencies.length === 0) {
-    return { current: '-', avg: '-', min: '-', max: '-' };
+    return { current: "-", avg: "-", min: "-", max: "-" };
   }
 
   return {
-    current: latencies[latencies.length - 1]?.toFixed(1) ?? '-',
+    current: latencies[latencies.length - 1]?.toFixed(1) ?? "-",
     avg: (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(1),
     min: Math.min(...latencies).toFixed(1),
     max: Math.max(...latencies).toFixed(1),
@@ -62,8 +62,8 @@ function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
     )
     .map((d) => ({
       time: new Date(d.timestamp).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
+        hour: "2-digit",
+        minute: "2-digit",
       }),
       timestamp: new Date(d.timestamp).getTime(),
       latency: d.latency ?? null,
@@ -85,13 +85,13 @@ export function LatencyChart({
   const stats = calculateStats(data);
 
   // Calculate X-axis domain from time range props or data bounds
-  const xDomain: [number, number] | ['dataMin', 'dataMax'] =
+  const xDomain: [number, number] | ["dataMin", "dataMax"] =
     startTime && endTime
       ? [startTime.getTime(), endTime.getTime()]
-      : ['dataMin', 'dataMax'];
+      : ["dataMin", "dataMax"];
 
   // Calculate Y-axis domain: always start at 0, add padding to max
-  const maxLatency = stats.max !== '-' ? Number.parseFloat(stats.max) : 100;
+  const maxLatency = stats.max !== "-" ? Number.parseFloat(stats.max) : 100;
   const padding = maxLatency * 0.2 || 10;
   const yAxisDomain: [number, number] = [0, Math.ceil(maxLatency + padding)];
 
@@ -132,8 +132,8 @@ export function LatencyChart({
             domain={xDomain}
             tickFormatter={(ts: number) =>
               new Date(ts).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
             tick={{ fill: theme.textColor, fontSize: 11 }}
@@ -149,27 +149,27 @@ export function LatencyChart({
             contentStyle={{
               backgroundColor: theme.tooltipBg,
               border: `1px solid ${theme.tooltipBorder}`,
-              borderRadius: '6px',
+              borderRadius: "6px",
             }}
             labelFormatter={(ts: number) =>
               new Date(ts).toLocaleString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
             formatter={(value: number) => [
               `${value?.toFixed(1)} ms`,
-              'Latency',
+              "Latency",
             ]}
           />
-          {stats.avg !== '-' && (
+          {stats.avg !== "-" && (
             <ReferenceLine
               y={Number.parseFloat(stats.avg)}
               stroke={theme.colors.info}
               strokeDasharray="3 3"
-              label={{ value: 'Avg', fill: theme.textColor, fontSize: 10 }}
+              label={{ value: "Avg", fill: theme.textColor, fontSize: 10 }}
             />
           )}
           <Line

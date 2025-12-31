@@ -1,5 +1,5 @@
-import { Box, Stat, StatGroup, StatLabel, StatNumber } from '@chakra-ui/react';
-import type { SpeedMetric } from '@wan-monitor/shared';
+import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
+import type { SpeedMetric } from "@wan-monitor/shared";
 import {
   CartesianGrid,
   Legend,
@@ -8,9 +8,9 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
-import { ChartContainer } from '@/components/charts/ChartContainer';
-import { useChartTheme } from '@/components/charts/useChartTheme';
+} from "recharts";
+import { ChartContainer } from "@/components/charts/ChartContainer";
+import { useChartTheme } from "@/components/charts/useChartTheme";
 
 export interface SpeedChartProps {
   startTime?: Date;
@@ -38,10 +38,10 @@ interface Stats {
 function calculateStats(data: SpeedMetric[]): Stats {
   if (data.length === 0) {
     return {
-      avgDownload: '-',
-      avgUpload: '-',
-      maxDownload: '-',
-      maxUpload: '-',
+      avgDownload: "-",
+      avgUpload: "-",
+      maxDownload: "-",
+      maxUpload: "-",
     };
   }
 
@@ -54,10 +54,10 @@ function calculateStats(data: SpeedMetric[]): Stats {
 
   if (downloads.length === 0 && uploads.length === 0) {
     return {
-      avgDownload: '-',
-      avgUpload: '-',
-      maxDownload: '-',
-      maxUpload: '-',
+      avgDownload: "-",
+      avgUpload: "-",
+      maxDownload: "-",
+      maxUpload: "-",
     };
   }
 
@@ -88,8 +88,8 @@ function formatDataForChart(data: SpeedMetric[]): ChartDataPoint[] {
     )
     .map((d) => ({
       time: new Date(d.timestamp).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
+        hour: "2-digit",
+        minute: "2-digit",
       }),
       timestamp: new Date(d.timestamp).getTime(),
       download: d.download_speed ?? null,
@@ -112,10 +112,10 @@ export function SpeedChart({
   const stats = calculateStats(data);
 
   // Calculate X-axis domain from time range props or data bounds
-  const xDomain: [number, number] | ['dataMin', 'dataMax'] =
+  const xDomain: [number, number] | ["dataMin", "dataMax"] =
     startTime && endTime
       ? [startTime.getTime(), endTime.getTime()]
-      : ['dataMin', 'dataMax'];
+      : ["dataMin", "dataMax"];
 
   return (
     <Box>
@@ -150,8 +150,8 @@ export function SpeedChart({
             domain={xDomain}
             tickFormatter={(ts: number) =>
               new Date(ts).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
             tick={{ fill: theme.textColor, fontSize: 11 }}
@@ -160,25 +160,25 @@ export function SpeedChart({
             unit=" Mbps"
             tick={{ fill: theme.textColor, fontSize: 11 }}
             width={65}
-            domain={[0, 'auto']}
+            domain={[0, "auto"]}
           />
           <Tooltip
             contentStyle={{
               backgroundColor: theme.tooltipBg,
               border: `1px solid ${theme.tooltipBorder}`,
-              borderRadius: '6px',
+              borderRadius: "6px",
             }}
             labelFormatter={(ts: number) =>
               new Date(ts).toLocaleString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
             formatter={(value: number, name: string) => [
               `${value?.toFixed(1)} Mbps`,
-              name === 'download' ? 'Download' : 'Upload',
+              name === "download" ? "Download" : "Upload",
             ]}
           />
           {!compact && <Legend />}

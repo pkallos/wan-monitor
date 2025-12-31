@@ -1,4 +1,4 @@
-import type { AppContext, AppInstance } from '@/server/types';
+import type { AppContext, AppInstance } from "@/server/types";
 
 interface LoginBody {
   username: string;
@@ -19,20 +19,20 @@ export async function authRoutes(
   context: AppContext
 ): Promise<void> {
   // Login endpoint
-  app.post<{ Body: LoginBody }>('/login', async (request, reply) => {
+  app.post<{ Body: LoginBody }>("/login", async (request, reply) => {
     const { username, password } = request.body;
 
     // Validate credentials
     if (!username || !password) {
       return reply.code(400).send({
-        error: 'Username and password are required',
+        error: "Username and password are required",
       });
     }
 
     // Check if auth is disabled (no password configured)
     if (!context.config.auth.password) {
       return reply.code(401).send({
-        error: 'Authentication is not configured. Set WAN_MONITOR_PASSWORD.',
+        error: "Authentication is not configured. Set WAN_MONITOR_PASSWORD.",
       });
     }
 
@@ -42,7 +42,7 @@ export async function authRoutes(
       password !== context.config.auth.password
     ) {
       return reply.code(401).send({
-        error: 'Invalid username or password',
+        error: "Invalid username or password",
       });
     }
 
@@ -66,15 +66,15 @@ export async function authRoutes(
   });
 
   // Logout endpoint (client-side token removal, but we can track it server-side if needed)
-  app.post('/logout', async (_request, reply) => {
+  app.post("/logout", async (_request, reply) => {
     return reply.code(200).send({
       success: true,
-      message: 'Logged out successfully',
+      message: "Logged out successfully",
     });
   });
 
   // Get current user info (authentication handled by global hook in app.ts)
-  app.get('/me', async (request, reply) => {
+  app.get("/me", async (request, reply) => {
     const user = request.user as JwtPayload;
     return reply.code(200).send({
       username: user.username,
@@ -83,7 +83,7 @@ export async function authRoutes(
   });
 
   // Check if auth is required (public endpoint)
-  app.get('/status', async (_request, reply) => {
+  app.get("/status", async (_request, reply) => {
     const authRequired = Boolean(context.config.auth.password);
     return reply.code(200).send({
       authRequired,

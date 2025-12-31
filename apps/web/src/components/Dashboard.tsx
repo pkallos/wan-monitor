@@ -10,28 +10,28 @@ import {
   Tooltip,
   useColorModeValue,
   VStack,
-} from '@chakra-ui/react';
-import { useEffect, useMemo } from 'react';
-import { FiLogOut, FiPause, FiPlay, FiRefreshCw } from 'react-icons/fi';
-import { useMetrics } from '@/api/hooks/useMetrics';
-import { JitterChart } from '@/components/charts/JitterChart';
-import { LatencyChart } from '@/components/charts/LatencyChart';
-import { PacketLossChart } from '@/components/charts/PacketLossChart';
-import { SpeedChart } from '@/components/charts/SpeedChart';
-import { DateRangeSelector } from '@/components/DateRangeSelector';
-import { MetricCard } from '@/components/MetricCard';
-import { useAuth } from '@/context/AuthContext';
-import { useAutoRefresh } from '@/hooks/useAutoRefresh';
-import { usePersistedTimeRange } from '@/hooks/usePersistedTimeRange';
-import { getTimeRangeDates } from '@/utils/timeRange';
+} from "@chakra-ui/react";
+import { useEffect, useMemo } from "react";
+import { FiLogOut, FiPause, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { useMetrics } from "@/api/hooks/useMetrics";
+import { JitterChart } from "@/components/charts/JitterChart";
+import { LatencyChart } from "@/components/charts/LatencyChart";
+import { PacketLossChart } from "@/components/charts/PacketLossChart";
+import { SpeedChart } from "@/components/charts/SpeedChart";
+import { DateRangeSelector } from "@/components/DateRangeSelector";
+import { MetricCard } from "@/components/MetricCard";
+import { useAuth } from "@/context/AuthContext";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { usePersistedTimeRange } from "@/hooks/usePersistedTimeRange";
+import { getTimeRangeDates } from "@/utils/timeRange";
 
-const CHART_SYNC_ID = 'network-metrics';
+const CHART_SYNC_ID = "network-metrics";
 
 export function Dashboard() {
   const { logout, authRequired, username } = useAuth();
-  const bg = useColorModeValue('gray.50', 'gray.900');
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const bg = useColorModeValue("gray.50", "gray.900");
+  const cardBg = useColorModeValue("white", "gray.800");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
   const { timeRange, setTimeRange } = usePersistedTimeRange();
   const { startTime, endTime } = useMemo(
     () => getTimeRangeDates(timeRange),
@@ -71,21 +71,21 @@ export function Dashboard() {
       ? secondsSinceUpdate < 60
         ? `${secondsSinceUpdate}s ago`
         : `${Math.floor(secondsSinceUpdate / 60)}m ago`
-      : 'Loading...';
+      : "Loading...";
 
   const latestSpeed = speedMetrics[0];
   const latestPing = pingMetrics[0];
 
-  const isConnected = latestPing?.connectivity_status === 'up';
-  const connectivityStatus = isConnected ? 'good' : 'error';
-  const connectivityText = isConnected ? 'Online' : 'Offline';
+  const isConnected = latestPing?.connectivity_status === "up";
+  const connectivityStatus = isConnected ? "good" : "error";
+  const connectivityText = isConnected ? "Online" : "Offline";
 
-  const downloadSpeed = latestSpeed?.download_speed?.toFixed(1) ?? '-';
-  const uploadSpeed = latestSpeed?.upload_speed?.toFixed(1) ?? '-';
-  const ispName = latestSpeed?.isp ?? 'Unknown ISP';
+  const downloadSpeed = latestSpeed?.download_speed?.toFixed(1) ?? "-";
+  const uploadSpeed = latestSpeed?.upload_speed?.toFixed(1) ?? "-";
+  const ispName = latestSpeed?.isp ?? "Unknown ISP";
 
   const formatTimeAgo = (timestamp: string | undefined): string => {
-    if (!timestamp) return '';
+    if (!timestamp) return "";
     const seconds = Math.floor(
       (Date.now() - new Date(timestamp).getTime()) / 1000
     );
@@ -103,9 +103,9 @@ export function Dashboard() {
       <Container maxW="container.xl" py={8}>
         <Box
           display="flex"
-          flexDirection={{ base: 'column', md: 'row' }}
+          flexDirection={{ base: "column", md: "row" }}
           justifyContent="space-between"
-          alignItems={{ base: 'stretch', md: 'center' }}
+          alignItems={{ base: "stretch", md: "center" }}
           gap={4}
           mb={6}
         >
@@ -120,7 +120,7 @@ export function Dashboard() {
           <HStack
             spacing={4}
             flexWrap="wrap"
-            justify={{ base: 'space-between', md: 'flex-end' }}
+            justify={{ base: "space-between", md: "flex-end" }}
           >
             <HStack spacing={2}>
               {isRefetching && <Spinner size="sm" color="blue.500" />}
@@ -138,11 +138,11 @@ export function Dashboard() {
                 />
               </Tooltip>
               <Tooltip
-                label={isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+                label={isPaused ? "Resume auto-refresh" : "Pause auto-refresh"}
               >
                 <IconButton
                   aria-label={
-                    isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'
+                    isPaused ? "Resume auto-refresh" : "Pause auto-refresh"
                   }
                   icon={isPaused ? <FiPlay /> : <FiPause />}
                   size="sm"
@@ -153,7 +153,7 @@ export function Dashboard() {
             </HStack>
             <DateRangeSelector value={timeRange} onChange={setTimeRange} />
             {authRequired && (
-              <Tooltip label={`Logout${username ? ` (${username})` : ''}`}>
+              <Tooltip label={`Logout${username ? ` (${username})` : ""}`}>
                 <IconButton
                   aria-label="Logout"
                   icon={<FiLogOut />}

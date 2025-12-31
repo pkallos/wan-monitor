@@ -1,13 +1,13 @@
-import { Context, Effect, Layer, Schema } from 'effect';
-import speedTest from 'speedtest-net';
+import { Context, Effect, Layer, Schema } from "effect";
+import speedTest from "speedtest-net";
 
 export class SpeedTestExecutionError {
-  readonly _tag = 'SpeedTestExecutionError';
+  readonly _tag = "SpeedTestExecutionError";
   constructor(readonly message: string) {}
 }
 
 export class SpeedTestTimeoutError {
-  readonly _tag = 'SpeedTestTimeoutError';
+  readonly _tag = "SpeedTestTimeoutError";
   constructor(readonly timeoutMs: number) {}
 }
 
@@ -31,7 +31,7 @@ export interface SpeedTestServiceInterface {
   readonly runTest: () => Effect.Effect<SpeedTestResult, SpeedTestError, never>;
 }
 
-export class SpeedTestService extends Context.Tag('SpeedTestService')<
+export class SpeedTestService extends Context.Tag("SpeedTestService")<
   SpeedTestService,
   SpeedTestServiceInterface
 >() {}
@@ -41,7 +41,7 @@ export const SpeedTestServiceLive = Layer.succeed(
   SpeedTestService.of({
     runTest: () =>
       Effect.gen(function* () {
-        yield* Effect.logInfo('Starting speed test...');
+        yield* Effect.logInfo("Starting speed test...");
 
         const result = yield* Effect.tryPromise({
           try: async () => {
@@ -52,7 +52,7 @@ export const SpeedTestServiceLive = Layer.succeed(
             return testResult;
           },
           catch: (error) => {
-            if (error instanceof Error && error.message.includes('timeout')) {
+            if (error instanceof Error && error.message.includes("timeout")) {
               return new SpeedTestTimeoutError(30000);
             }
             return new SpeedTestExecutionError(
@@ -85,10 +85,10 @@ export const SpeedTestServiceLive = Layer.succeed(
           `Speed test complete:\n` +
             `  Download: ${downloadSpeedMbps.toFixed(2)} Mbps\n` +
             `  Upload: ${uploadSpeedMbps.toFixed(2)} Mbps\n` +
-            `  Latency: ${result.ping?.latency?.toFixed(2) ?? 'N/A'} ms\n` +
-            `  Jitter: ${result.ping?.jitter?.toFixed(2) ?? 'N/A'} ms\n` +
-            `  Server: ${result.server?.name ?? 'Unknown'} (${result.server?.location ?? 'Unknown'})\n` +
-            `  ISP: ${result.isp ?? 'Unknown'}`
+            `  Latency: ${result.ping?.latency?.toFixed(2) ?? "N/A"} ms\n` +
+            `  Jitter: ${result.ping?.jitter?.toFixed(2) ?? "N/A"} ms\n` +
+            `  Server: ${result.server?.name ?? "Unknown"} (${result.server?.location ?? "Unknown"})\n` +
+            `  ISP: ${result.isp ?? "Unknown"}`
         );
 
         return speedTestResult;

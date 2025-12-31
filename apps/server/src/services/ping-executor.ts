@@ -1,8 +1,8 @@
-import type { NetworkMetric } from '@wan-monitor/shared/metrics';
-import { Context, Effect, Layer } from 'effect';
-import { QuestDB } from '@/database/questdb';
-import { ConfigService } from '@/services/config';
-import { type PingResult, PingService } from '@/services/ping';
+import type { NetworkMetric } from "@wan-monitor/shared/metrics";
+import { Context, Effect, Layer } from "effect";
+import { QuestDB } from "@/database/questdb";
+import { ConfigService } from "@/services/config";
+import { type PingResult, PingService } from "@/services/ping";
 
 // ============================================================================
 // Types
@@ -44,7 +44,7 @@ export interface PingExecutorInterface {
 // Service Tag
 // ============================================================================
 
-export class PingExecutor extends Context.Tag('PingExecutor')<
+export class PingExecutor extends Context.Tag("PingExecutor")<
   PingExecutor,
   PingExecutorInterface
 >() {}
@@ -55,12 +55,12 @@ export class PingExecutor extends Context.Tag('PingExecutor')<
 
 const pingResultToMetric = (result: PingResult): NetworkMetric => ({
   timestamp: new Date(),
-  source: 'ping' as const,
+  source: "ping" as const,
   host: result.host,
   latency: result.latency,
   packetLoss: result.packetLoss,
   jitter: result.stddev,
-  connectivityStatus: result.alive ? 'up' : 'down',
+  connectivityStatus: result.alive ? "up" : "down",
 });
 
 // ============================================================================
@@ -104,11 +104,11 @@ export const PingExecutorLive = Layer.effect(
         Effect.catchAll((pingError) => {
           const errorMetric: NetworkMetric = {
             timestamp: new Date(),
-            source: 'ping',
+            source: "ping",
             host,
             // latency omitted - no measurement available on failure
             packetLoss: 100,
-            connectivityStatus: 'down',
+            connectivityStatus: "down",
           };
 
           return db.writeMetric(errorMetric).pipe(
@@ -127,7 +127,7 @@ export const PingExecutorLive = Layer.effect(
     const executeHosts = (
       hosts: readonly string[]
     ): Effect.Effect<readonly PingExecutionResult[]> =>
-      Effect.all(hosts.map(executePing), { concurrency: 'unbounded' });
+      Effect.all(hosts.map(executePing), { concurrency: "unbounded" });
 
     const executeAll = (): Effect.Effect<readonly PingExecutionResult[]> =>
       executeHosts(config.ping.hosts);

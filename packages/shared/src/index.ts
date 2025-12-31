@@ -7,6 +7,6 @@ export type {
   PingMetricsResponse,
   SpeedMetric,
   SpeedMetricsResponse,
-} from './api';
+} from "./api";
 
-export { VALID_GRANULARITIES } from './api';
+export { VALID_GRANULARITIES } from "./api";

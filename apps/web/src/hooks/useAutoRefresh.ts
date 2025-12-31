@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
 const AUTO_REFRESH_INTERVAL = 30_000; // 30 seconds
 

@@ -1,25 +1,25 @@
-import { Effect, Fiber, Layer, Logger, LogLevel } from 'effect';
-import { describe, expect, it, vi } from 'vitest';
-import { QuestDB } from '@/database/questdb';
-import { ConfigService } from '@/services/config';
+import { Effect, Fiber, Layer, Logger, LogLevel } from "effect";
+import { describe, expect, it, vi } from "vitest";
+import { QuestDB } from "@/database/questdb";
+import { ConfigService } from "@/services/config";
 import {
   type MonitorStats,
   NetworkMonitor,
   NetworkMonitorLive,
-} from '@/services/network-monitor';
+} from "@/services/network-monitor";
 import {
   type PingExecutionResult,
   PingExecutor,
-} from '@/services/ping-executor';
-import { SpeedTestService } from '@/services/speedtest';
+} from "@/services/ping-executor";
+import { SpeedTestService } from "@/services/speedtest";
 
-describe('NetworkMonitor', () => {
+describe("NetworkMonitor", () => {
   const mockPingResults: readonly PingExecutionResult[] = [
     {
-      host: '8.8.8.8',
+      host: "8.8.8.8",
       success: true,
       result: {
-        host: '8.8.8.8',
+        host: "8.8.8.8",
         alive: true,
         latency: 15.5,
         packetLoss: 0,
@@ -27,10 +27,10 @@ describe('NetworkMonitor', () => {
       },
     },
     {
-      host: '1.1.1.1',
+      host: "1.1.1.1",
       success: true,
       result: {
-        host: '1.1.1.1',
+        host: "1.1.1.1",
         alive: true,
         latency: 12.3,
         packetLoss: 0,
@@ -56,9 +56,9 @@ describe('NetworkMonitor', () => {
     runTest: vi.fn(() =>
       Effect.fail(
         new (class SpeedTestExecutionError {
-          readonly _tag = 'SpeedTestExecutionError' as const;
+          readonly _tag = "SpeedTestExecutionError" as const;
           constructor(readonly message: string) {}
-        })('Mock error')
+        })("Mock error")
       )
     ),
   });
@@ -66,27 +66,27 @@ describe('NetworkMonitor', () => {
   const MockConfig = Layer.succeed(ConfigService, {
     server: {
       port: 3001,
-      host: '0.0.0.0',
+      host: "0.0.0.0",
     },
     database: {
-      host: 'localhost',
+      host: "localhost",
       port: 9000,
-      protocol: 'http' as const,
+      protocol: "http" as const,
       autoFlushRows: 100,
       autoFlushInterval: 1000,
       requestTimeout: 10000,
       retryTimeout: 1000,
     },
     ping: {
-      hosts: ['8.8.8.8', '1.1.1.1'],
+      hosts: ["8.8.8.8", "1.1.1.1"],
       timeout: 5000,
       trainCount: 10,
     },
     auth: {
-      username: 'admin',
-      password: 'testpassword',
-      jwtSecret: 'test-secret',
-      jwtExpiresIn: '1h',
+      username: "admin",
+      password: "testpassword",
+      jwtSecret: "test-secret",
+      jwtExpiresIn: "1h",
     },
   });
 
@@ -98,7 +98,7 @@ describe('NetworkMonitor', () => {
     Layer.provide(Logger.minimumLogLevel(LogLevel.None))
   );
 
-  it('should get initial stats', async () => {
+  it("should get initial stats", async () => {
     const program = Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const stats: MonitorStats = yield* monitor.getStats();
@@ -115,7 +115,7 @@ describe('NetworkMonitor', () => {
     await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
   });
 
-  it('should start monitoring and update stats after initial ping', async () => {
+  it("should start monitoring and update stats after initial ping", async () => {
     const program = Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
@@ -123,7 +123,7 @@ describe('NetworkMonitor', () => {
       const fiber = yield* Effect.fork(monitor.start());
 
       // Wait briefly for async effects
-      yield* Effect.sleep('100 millis');
+      yield* Effect.sleep("100 millis");
 
       const stats: MonitorStats = yield* monitor.getStats();
 
@@ -140,14 +140,14 @@ describe('NetworkMonitor', () => {
     await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
   });
 
-  it('should respect custom ping interval from config', async () => {
+  it("should respect custom ping interval from config", async () => {
     // Test with environment variable
-    process.env.PING_INTERVAL_SECONDS = '30';
+    process.env.PING_INTERVAL_SECONDS = "30";
 
     const program = Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const fiber = yield* Effect.fork(monitor.start());
-      yield* Effect.sleep('100 millis');
+      yield* Effect.sleep("100 millis");
       const stats: MonitorStats = yield* monitor.getStats();
 
       // Should have run initial ping
