@@ -204,8 +204,8 @@ const make = Effect.gen(function* () {
         }
 
         // If granularity is specified, use SAMPLE BY for aggregation
-        // NOTE: Filter out negative latency values (written on ping failures)
-        // to avoid skewing averages.
+        // NOTE: Filter out negative latency values for historical data compatibility
+        // (ping failures used to write latency=-1, now they write NULL)
         const query = params.granularity
           ? `
           SELECT
