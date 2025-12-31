@@ -20,7 +20,11 @@
         "SERVER_HOST",
         "DB_HOST",
         "DB_PORT",
-        "DB_PROTOCOL"
+        "DB_PROTOCOL",
+        "WAN_MONITOR_USERNAME",
+        "WAN_MONITOR_PASSWORD",
+        "JWT_SECRET",
+        "JWT_EXPIRES_IN"
       ]
     },
     "dev": {
@@ -38,9 +42,12 @@
         "DB_REQUEST_TIMEOUT",
         "DB_RETRY_TIMEOUT",
         "PING_TIMEOUT",
-        "PING_RETRIES",
+        "PING_TRAIN_COUNT",
         "PING_HOSTS",
-        "PING_INTERVAL_SECONDS"
+        "WAN_MONITOR_USERNAME",
+        "WAN_MONITOR_PASSWORD",
+        "JWT_SECRET",
+        "JWT_EXPIRES_IN"
       ]
     },
     "typecheck": {
@@ -65,12 +72,7 @@
         "package.json"
       ],
       "outputs": [],
-      "env": [
-        "QUESTDB_AVAILABLE",
-        "DB_HOST",
-        "DB_PORT",
-        "PING_INTERVAL_SECONDS"
-      ]
+      "env": ["QUESTDB_AVAILABLE", "DB_HOST", "DB_PORT"]
     },
     "lint": {
       "inputs": [

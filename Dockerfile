@@ -110,6 +110,36 @@ EXPOSE 80
 # Volume for QuestDB data persistence
 VOLUME ["/var/lib/questdb"]
 
+# =============================================================================
+# Environment Variables
+# =============================================================================
+# These can be overridden at runtime via:
+#   docker run -e VAR=value
+#   docker-compose.yml environment section
+#   .env file with docker-compose
+# =============================================================================
+
+# Server configuration (with defaults)
+ENV NODE_ENV=production
+ENV SERVER_PORT=3001
+ENV SERVER_HOST=0.0.0.0
+
+# Database configuration (with defaults for embedded QuestDB)
+ENV DB_HOST=localhost
+ENV DB_PORT=9000
+ENV DB_PROTOCOL=http
+
+# Ping configuration (with defaults)
+ENV PING_TIMEOUT=5
+ENV PING_TRAIN_COUNT=10
+ENV PING_HOSTS=8.8.8.8,1.1.1.1,cloudflare.com
+
+# Authentication configuration (no defaults - set at runtime for security)
+# ENV WAN_MONITOR_USERNAME=admin  # Default is 'admin' if not set
+# ENV WAN_MONITOR_PASSWORD=       # Required to enable auth
+# ENV JWT_SECRET=                 # Required for secure token signing
+# ENV JWT_EXPIRES_IN=24h          # Default is '24h' if not set
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost/api/health || exit 1

@@ -1,3 +1,22 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { config } from 'dotenv';
+
+// Load environment variables from .env.local (dev) or .env (prod)
+// Try monorepo root first (when running via turbo), then package root
+// dotenv will not override existing environment variables, so .env.local takes precedence
+const envPaths = [
+  resolve(process.cwd(), '.env.local'),
+  resolve(process.cwd(), '../../.env.local'),
+  resolve(process.cwd(), '.env'),
+  resolve(process.cwd(), '../../.env'),
+];
+for (const envPath of envPaths) {
+  if (existsSync(envPath)) {
+    config({ path: envPath });
+  }
+}
+
 import { Effect, Layer } from 'effect';
 import { QuestDB, QuestDBLive } from '@/database/questdb';
 import { createApp } from '@/server/app';

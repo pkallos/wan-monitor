@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file=../../.env.local src/server/index.ts",
+    "dev": "tsx watch src/server/index.ts",
     "build": "tsup",
     "start": "node ../../dist/server/index.js",
     "test": "vitest run",
@@ -21,6 +21,7 @@
     "@fastify/jwt": "^10.0.0",
     "@questdb/nodejs-client": "^4.2.0",
     "@types/pg": "^8.16.0",
+    "dotenv": "^17.2.3",
     "effect": "^3.19.13",
     "fastify": "^5.6.2",
     "pg": "^8.16.3",
