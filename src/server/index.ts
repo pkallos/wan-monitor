@@ -1,7 +1,7 @@
 import { Effect, Layer } from 'effect';
-import { QuestDB, QuestDBLive } from '@/database/questdb.js';
-import { createApp } from '@/server/app.js';
-import { ConfigService, ConfigServiceLive } from '@/services/config.js';
+import { QuestDB, QuestDBLive } from '@/database/questdb';
+import { createApp } from '@/server/app';
+import { ConfigService, ConfigServiceLive } from '@/services/config';
 
 // Application layers - combine both layers
 const MainLive = Layer.merge(

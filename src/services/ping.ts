@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Schema } from 'effect';
 import ping from 'ping';
-import { ConfigService } from '@/services/config.js';
+import { ConfigService } from '@/services/config';
 
 // ============================================================================
 // Error Types

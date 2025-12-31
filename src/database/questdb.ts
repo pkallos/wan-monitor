@@ -1,7 +1,7 @@
 import { Sender } from '@questdb/nodejs-client';
 import { Context, Effect, Layer } from 'effect';
-import { ConfigService } from '@/services/config.js';
-import type { DatabaseHealth, NetworkMetric } from '@/types/metrics.js';
+import { ConfigService } from '@/services/config';
+import type { DatabaseHealth, NetworkMetric } from '@/types/metrics';
 
 // Database errors
 export class DatabaseConnectionError {
