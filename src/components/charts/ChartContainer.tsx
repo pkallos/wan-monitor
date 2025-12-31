@@ -18,7 +18,7 @@ export function ChartContainer({
   }
 
   return (
-    <Box height={`${height}px`} width="100%">
+    <Box height={`${height}px`} width="100%" overflow="visible" py={2}>
       <ResponsiveContainer width="100%" height="100%">
         {children}
       </ResponsiveContainer>
