@@ -1,14 +1,14 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { describe, expect, it } from "vitest";
 
-const isMacArm64 = process.platform === 'darwin' && process.arch === 'arm64';
+const isMacArm64 = process.platform === "darwin" && process.arch === "arm64";
 
-describe.skipIf(!isMacArm64)('SpeedTest - speedtest-net ARM64 patch', () => {
-  it('should have darwin arm64 platform support in speedtest-net', () => {
+describe.skipIf(!isMacArm64)("SpeedTest - speedtest-net ARM64 patch", () => {
+  it("should have darwin arm64 platform support in speedtest-net", () => {
     const speedtestIndexPath = path.join(
       __dirname,
-      '../../../../node_modules/.pnpm/speedtest-net@2.2.0/node_modules/speedtest-net/index.js'
+      "../../../../node_modules/.pnpm/speedtest-net@2.2.0/node_modules/speedtest-net/index.js"
     );
 
     if (!fs.existsSync(speedtestIndexPath)) {
@@ -17,7 +17,7 @@ describe.skipIf(!isMacArm64)('SpeedTest - speedtest-net ARM64 patch', () => {
       );
     }
 
-    const content = fs.readFileSync(speedtestIndexPath, 'utf-8');
+    const content = fs.readFileSync(speedtestIndexPath, "utf-8");
 
     // Check for darwin arm64 platform entry
     const hasDarwinArm64 =
@@ -38,13 +38,13 @@ describe.skipIf(!isMacArm64)('SpeedTest - speedtest-net ARM64 patch', () => {
     expect(darwinX64Match).toBeTruthy();
   });
 
-  it('should have correct binary information for darwin arm64', () => {
+  it("should have correct binary information for darwin arm64", () => {
     const speedtestIndexPath = path.join(
       __dirname,
-      '../../../../node_modules/.pnpm/speedtest-net@2.2.0/node_modules/speedtest-net/index.js'
+      "../../../../node_modules/.pnpm/speedtest-net@2.2.0/node_modules/speedtest-net/index.js"
     );
 
-    const content = fs.readFileSync(speedtestIndexPath, 'utf-8');
+    const content = fs.readFileSync(speedtestIndexPath, "utf-8");
 
     // Verify darwin arm64 entry has proper binary info
     const platformsSection = content.match(/const platforms = \[([\s\S]+?)\];/);

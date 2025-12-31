@@ -1,12 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from "@tanstack/react-query";
 import type {
   Granularity,
   MetricsResponse,
   PingMetric,
   SpeedMetric,
-} from '@wan-monitor/shared';
-import { useMemo } from 'react';
-import { apiClient } from '@/api/client';
+} from "@wan-monitor/shared";
+import { useMemo } from "react";
+import { apiClient } from "@/api/client";
 
 export interface UseMetricsOptions {
   startTime?: Date;
@@ -33,9 +33,9 @@ function getGranularityForRange(
   const rangeHours = rangeMs / (1000 * 60 * 60);
 
   // 1h or less: 1-minute buckets (~60 points)
-  if (rangeHours <= 1) return '1m';
+  if (rangeHours <= 1) return "1m";
   // All other ranges: 5-minute buckets
-  return '5m';
+  return "5m";
 }
 
 export function useMetrics(options: UseMetricsOptions = {}) {
@@ -54,7 +54,7 @@ export function useMetrics(options: UseMetricsOptions = {}) {
     explicitGranularity ?? getGranularityForRange(startTime, endTime);
 
   const query = useQuery({
-    queryKey: ['metrics', { startTime, endTime, host, limit, granularity }],
+    queryKey: ["metrics", { startTime, endTime, host, limit, granularity }],
     queryFn: () => {
       const params: Record<string, string | undefined> = {};
 
@@ -64,7 +64,7 @@ export function useMetrics(options: UseMetricsOptions = {}) {
       if (limit) params.limit = limit.toString();
       if (granularity) params.granularity = granularity;
 
-      return apiClient.get<MetricsResponse>('/metrics', params);
+      return apiClient.get<MetricsResponse>("/metrics", params);
     },
     refetchInterval,
     enabled,
@@ -73,13 +73,13 @@ export function useMetrics(options: UseMetricsOptions = {}) {
   const pingMetrics = useMemo((): PingMetric[] => {
     if (!query.data?.data) return [];
     return query.data.data
-      .filter((m) => m.source === 'ping')
+      .filter((m) => m.source === "ping")
       .map((m) => ({
         timestamp: m.timestamp,
-        host: m.host ?? '',
+        host: m.host ?? "",
         latency: m.latency ?? 0,
         packet_loss: m.packet_loss ?? 0,
-        connectivity_status: m.connectivity_status ?? 'down',
+        connectivity_status: m.connectivity_status ?? "down",
         jitter: m.jitter,
       }));
   }, [query.data]);
@@ -87,7 +87,7 @@ export function useMetrics(options: UseMetricsOptions = {}) {
   const speedMetrics = useMemo((): SpeedMetric[] => {
     if (!query.data?.data) return [];
     return query.data.data
-      .filter((m) => m.source === 'speedtest')
+      .filter((m) => m.source === "speedtest")
       .map((m) => ({
         timestamp: m.timestamp,
         download_speed: m.download_speed ?? 0,

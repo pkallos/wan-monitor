@@ -1,13 +1,13 @@
-import { Schema } from 'effect';
+import { Schema } from "effect";
 
 // Connectivity status enum
-export const ConnectivityStatus = Schema.Literal('up', 'down', 'degraded');
+export const ConnectivityStatus = Schema.Literal("up", "down", "degraded");
 export type ConnectivityStatus = typeof ConnectivityStatus.Type;
 
 // Network metric schema
 export const NetworkMetric = Schema.Struct({
   timestamp: Schema.Date,
-  source: Schema.Literal('ping', 'speedtest'),
+  source: Schema.Literal("ping", "speedtest"),
   host: Schema.optional(Schema.String),
   latency: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),

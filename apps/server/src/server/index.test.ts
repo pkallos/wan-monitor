@@ -1,5 +1,5 @@
-import { Effect } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
 
 /**
  * Regression test for PHI-31: TypeError: evaluate(...).then is not a function
@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest';
  * in async functions and Effect.tryPromise to prevent the TypeError that
  * occurred when using Effect.promise with non-thenable returns.
  */
-describe('Server Startup - Effect.tryPromise Usage', () => {
-  it('should properly wrap async operations in Effect.tryPromise', async () => {
+describe("Server Startup - Effect.tryPromise Usage", () => {
+  it("should properly wrap async operations in Effect.tryPromise", async () => {
     // This test verifies the pattern used in src/server/index.ts
     // The fix required wrapping app.register() calls in async functions
 
@@ -35,7 +35,7 @@ describe('Server Startup - Effect.tryPromise Usage', () => {
     expect(result).toBeUndefined();
   });
 
-  it('should demonstrate the TypeError that would occur with incorrect usage', () => {
+  it("should demonstrate the TypeError that would occur with incorrect usage", () => {
     // This documents what happens with the incorrect pattern
 
     // Mock a function that returns a non-Promise thenable (like Fastify instance)
@@ -49,13 +49,13 @@ describe('Server Startup - Effect.tryPromise Usage', () => {
 
     // Verify the mock doesn't have a proper .then method
     const result = mockFastifyRegister();
-    expect(result).not.toHaveProperty('then');
+    expect(result).not.toHaveProperty("then");
 
     // This would cause: TypeError: evaluate(...).then is not a function
     // if we tried to use Effect.promise(() => mockFastifyRegister())
   });
 
-  it('should verify async wrapper returns a proper Promise', async () => {
+  it("should verify async wrapper returns a proper Promise", async () => {
     // The fix wraps the operation in an async function
     const asyncWrapper = async () => {
       // Simulate Fastify register
@@ -66,13 +66,13 @@ describe('Server Startup - Effect.tryPromise Usage', () => {
 
     // Verify it returns a Promise (not a Fastify instance)
     expect(result).toBeInstanceOf(Promise);
-    expect(typeof result.then).toBe('function');
+    expect(typeof result.then).toBe("function");
 
     await result; // Should not throw
   });
 
-  it('should handle errors in Effect.tryPromise wrapper', async () => {
-    const errorMessage = 'Registration failed';
+  it("should handle errors in Effect.tryPromise wrapper", async () => {
+    const errorMessage = "Registration failed";
 
     const failingEffect = Effect.tryPromise({
       try: async () => {
@@ -82,6 +82,6 @@ describe('Server Startup - Effect.tryPromise Usage', () => {
     });
 
     // Verify the effect fails with our error
-    await expect(Effect.runPromise(failingEffect)).rejects.toThrow('Caught:');
+    await expect(Effect.runPromise(failingEffect)).rejects.toThrow("Caught:");
   });
 });

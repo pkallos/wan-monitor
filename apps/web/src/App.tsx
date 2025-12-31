@@ -1,7 +1,7 @@
-import { Center, Spinner } from '@chakra-ui/react';
-import { Dashboard } from '@/components/Dashboard';
-import { Login } from '@/components/Login';
-import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { Center, Spinner } from "@chakra-ui/react";
+import { Dashboard } from "@/components/Dashboard";
+import { Login } from "@/components/Login";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 
 function AppContent() {
   const { isAuthenticated, isLoading, authRequired } = useAuth();

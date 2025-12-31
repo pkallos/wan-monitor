@@ -1,7 +1,7 @@
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,19 +11,19 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src'),
+      "@": resolve(__dirname, "./src"),
     },
   },
   build: {
-    outDir: resolve(__dirname, '../../dist'),
+    outDir: resolve(__dirname, "../../dist"),
     emptyOutDir: true,
   },
   server: {
     port: 3000,
     host: true,
     proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
+      "/api": {
+        target: "http://localhost:3001",
         changeOrigin: true,
       },
     },
@@ -34,17 +34,17 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/test/setup.ts',
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
     coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      provider: "v8",
+      reporter: ["text", "json", "html"],
       exclude: [
-        'node_modules/',
-        'src/test/',
-        '**/*.d.ts',
-        '**/*.config.*',
-        '**/mockData',
+        "node_modules/",
+        "src/test/",
+        "**/*.d.ts",
+        "**/*.config.*",
+        "**/mockData",
       ],
     },
   },

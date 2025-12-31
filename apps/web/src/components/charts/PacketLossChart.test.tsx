@@ -1,25 +1,25 @@
-import { ChakraProvider } from '@chakra-ui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render } from '@testing-library/react';
-import type { PingMetric } from '@wan-monitor/shared';
-import { describe, expect, it } from 'vitest';
-import { PacketLossChart } from '@/components/charts/PacketLossChart';
+import { ChakraProvider } from "@chakra-ui/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
+import type { PingMetric } from "@wan-monitor/shared";
+import { describe, expect, it } from "vitest";
+import { PacketLossChart } from "@/components/charts/PacketLossChart";
 
 const mockData: PingMetric[] = [
   {
-    timestamp: '2024-01-01T12:00:00.000Z',
-    host: '8.8.8.8',
+    timestamp: "2024-01-01T12:00:00.000Z",
+    host: "8.8.8.8",
     latency: 15.5,
     packet_loss: 0,
-    connectivity_status: 'connected',
+    connectivity_status: "connected",
     jitter: 2.3,
   },
   {
-    timestamp: '2024-01-01T12:01:00.000Z',
-    host: '8.8.8.8',
+    timestamp: "2024-01-01T12:01:00.000Z",
+    host: "8.8.8.8",
     latency: 16.2,
     packet_loss: 5,
-    connectivity_status: 'connected',
+    connectivity_status: "connected",
     jitter: 1.8,
   },
 ];
@@ -35,39 +35,39 @@ const createWrapper = () => {
   );
 };
 
-describe('PacketLossChart', () => {
-  it('should render without errors', () => {
+describe("PacketLossChart", () => {
+  it("should render without errors", () => {
     const { container } = render(<PacketLossChart data={mockData} />, {
       wrapper: createWrapper(),
     });
     expect(container).toBeTruthy();
   });
 
-  it('should display stats in non-compact mode', () => {
+  it("should display stats in non-compact mode", () => {
     const { getByText } = render(
       <PacketLossChart data={mockData} compact={false} />,
       { wrapper: createWrapper() }
     );
-    expect(getByText('Max')).toBeTruthy();
-    expect(getByText('Spikes')).toBeTruthy();
+    expect(getByText("Max")).toBeTruthy();
+    expect(getByText("Spikes")).toBeTruthy();
   });
 
-  it('should hide stats in compact mode', () => {
+  it("should hide stats in compact mode", () => {
     const { queryByText } = render(
       <PacketLossChart data={mockData} compact={true} />,
       { wrapper: createWrapper() }
     );
-    expect(queryByText('Max')).toBeNull();
+    expect(queryByText("Max")).toBeNull();
   });
 
-  it('should handle empty data', () => {
+  it("should handle empty data", () => {
     const { container } = render(<PacketLossChart data={[]} />, {
       wrapper: createWrapper(),
     });
     expect(container).toBeTruthy();
   });
 
-  it('should accept syncId prop', () => {
+  it("should accept syncId prop", () => {
     const { container } = render(
       <PacketLossChart data={mockData} syncId="test-sync" />,
       { wrapper: createWrapper() }

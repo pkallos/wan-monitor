@@ -1,9 +1,9 @@
-import { useCallback, useState } from 'react';
-import type { TimeRange } from '@/utils/timeRange';
+import { useCallback, useState } from "react";
+import type { TimeRange } from "@/utils/timeRange";
 
-const STORAGE_KEY = 'wan-monitor-date-range';
-const DEFAULT_RANGE: TimeRange = '1h';
-const VALID_RANGES: TimeRange[] = ['1h', '24h', '7d', '30d'];
+const STORAGE_KEY = "wan-monitor-date-range";
+const DEFAULT_RANGE: TimeRange = "1h";
+const VALID_RANGES: TimeRange[] = ["1h", "24h", "7d", "30d"];
 
 function isValidTimeRange(value: string | null): value is TimeRange {
   return value !== null && VALID_RANGES.includes(value as TimeRange);

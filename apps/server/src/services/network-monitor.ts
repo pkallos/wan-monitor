@@ -1,7 +1,7 @@
-import { Config, Context, Effect, Layer, Schedule } from 'effect';
-import { QuestDB } from '@/database/questdb';
-import { PingExecutor } from '@/services/ping-executor';
-import { SpeedTestService } from '@/services/speedtest';
+import { Config, Context, Effect, Layer, Schedule } from "effect";
+import { QuestDB } from "@/database/questdb";
+import { PingExecutor } from "@/services/ping-executor";
+import { SpeedTestService } from "@/services/speedtest";
 
 // ============================================================================
 // Types
@@ -37,7 +37,7 @@ export interface NetworkMonitorInterface {
 // Service Tag
 // ============================================================================
 
-export class NetworkMonitor extends Context.Tag('NetworkMonitor')<
+export class NetworkMonitor extends Context.Tag("NetworkMonitor")<
   NetworkMonitor,
   NetworkMonitorInterface
 >() {}
@@ -55,12 +55,12 @@ export const NetworkMonitorLive = Layer.effect(
 
     // Read ping interval from config (default: 60 seconds)
     const pingIntervalSeconds = yield* Config.number(
-      'PING_INTERVAL_SECONDS'
+      "PING_INTERVAL_SECONDS"
     ).pipe(Config.withDefault(60));
 
     // Read speedtest interval from config (default: 1 hour = 3600 seconds)
     const speedTestIntervalSeconds = yield* Config.number(
-      'SPEEDTEST_INTERVAL_SECONDS'
+      "SPEEDTEST_INTERVAL_SECONDS"
     ).pipe(Config.withDefault(3600));
 
     // Stats tracking
@@ -78,7 +78,7 @@ export const NetworkMonitorLive = Layer.effect(
     const executePingCycle = Effect.gen(function* () {
       const timestamp = new Date();
 
-      yield* Effect.logInfo('Starting ping cycle');
+      yield* Effect.logInfo("Starting ping cycle");
 
       const results = yield* pingExecutor.executeAll();
 
@@ -104,9 +104,9 @@ export const NetworkMonitorLive = Layer.effect(
         Effect.catchAll((error) => {
           failedSpeedTests++;
           const errorMessage =
-            error._tag === 'SpeedTestExecutionError'
+            error._tag === "SpeedTestExecutionError"
               ? error.message
-              : error._tag === 'SpeedTestTimeoutError'
+              : error._tag === "SpeedTestTimeoutError"
                 ? `Timeout after ${error.timeoutMs}ms`
                 : String(error);
           return Effect.flatMap(
@@ -122,7 +122,7 @@ export const NetworkMonitorLive = Layer.effect(
       const writeSucceeded = yield* db
         .writeMetric({
           timestamp: result.timestamp,
-          source: 'speedtest' as const,
+          source: "speedtest" as const,
           latency: result.latency,
           jitter: result.jitter,
           downloadBandwidth: Math.round(result.downloadSpeed * 1_000_000),
@@ -192,7 +192,7 @@ export const NetworkMonitorLive = Layer.effect(
           Effect.fork
         );
 
-        yield* Effect.logInfo('Network monitor started successfully');
+        yield* Effect.logInfo("Network monitor started successfully");
       });
 
     /**

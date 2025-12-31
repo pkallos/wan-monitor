@@ -1,6 +1,6 @@
-import * as matchers from '@testing-library/jest-dom/matchers';
-import { cleanup } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, expect } from 'vitest';
+import * as matchers from "@testing-library/jest-dom/matchers";
+import { cleanup } from "@testing-library/react";
+import { afterAll, afterEach, beforeAll, expect } from "vitest";
 
 expect.extend(matchers);
 
@@ -23,9 +23,9 @@ beforeAll(() => {
   console.error = (...args: unknown[]) => {
     const message = args[0];
     if (
-      typeof message === 'string' &&
+      typeof message === "string" &&
       message.includes(
-        'The width(0) and height(0) of chart should be greater than 0'
+        "The width(0) and height(0) of chart should be greater than 0"
       )
     ) {
       return;
@@ -36,9 +36,9 @@ beforeAll(() => {
   console.warn = (...args: unknown[]) => {
     const message = args[0];
     if (
-      typeof message === 'string' &&
+      typeof message === "string" &&
       message.includes(
-        'The width(0) and height(0) of chart should be greater than 0'
+        "The width(0) and height(0) of chart should be greater than 0"
       )
     ) {
       return;

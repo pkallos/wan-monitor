@@ -5,9 +5,9 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
-import { ChartContainer } from '@/components/charts/ChartContainer';
-import { useChartTheme } from '@/components/charts/useChartTheme';
+} from "recharts";
+import { ChartContainer } from "@/components/charts/ChartContainer";
+import { useChartTheme } from "@/components/charts/useChartTheme";
 
 export interface TimeSeriesChartProps<T extends Record<string, unknown>> {
   data: T[];
@@ -39,7 +39,7 @@ export function TimeSeriesChart<T extends Record<string, unknown>>({
   const xAxisFormatter = formatXAxis || ((value: unknown) => String(value));
   const yAxisFormatter = formatYAxis || ((value: unknown) => String(value));
   const tooltipFormatter =
-    formatTooltip || ((value: unknown) => `${value}${unit || ''}`);
+    formatTooltip || ((value: unknown) => `${value}${unit || ""}`);
 
   return (
     <ChartContainer height={height} isLoading={isLoading}>
@@ -59,7 +59,7 @@ export function TimeSeriesChart<T extends Record<string, unknown>>({
           contentStyle={{
             backgroundColor: theme.tooltipBg,
             border: `1px solid ${theme.tooltipBorder}`,
-            borderRadius: '6px',
+            borderRadius: "6px",
           }}
           formatter={tooltipFormatter}
         />

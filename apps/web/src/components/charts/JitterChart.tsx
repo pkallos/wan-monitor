@@ -1,5 +1,5 @@
-import { Box, Stat, StatGroup, StatLabel, StatNumber } from '@chakra-ui/react';
-import type { PingMetric } from '@wan-monitor/shared';
+import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
+import type { PingMetric } from "@wan-monitor/shared";
 import {
   Area,
   CartesianGrid,
@@ -9,9 +9,9 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
-import { ChartContainer } from '@/components/charts/ChartContainer';
-import { useChartTheme } from '@/components/charts/useChartTheme';
+} from "recharts";
+import { ChartContainer } from "@/components/charts/ChartContainer";
+import { useChartTheme } from "@/components/charts/useChartTheme";
 
 export interface JitterChartProps {
   startTime?: Date;
@@ -39,7 +39,7 @@ const ACCEPTABLE_JITTER_THRESHOLD = 10; // ms
 
 function calculateStats(data: PingMetric[]): Stats {
   if (data.length === 0) {
-    return { current: '-', avg: '-', stability: '-' };
+    return { current: "-", avg: "-", stability: "-" };
   }
 
   const jitters = data
@@ -47,7 +47,7 @@ function calculateStats(data: PingMetric[]): Stats {
     .filter((j): j is number => j !== null && j !== undefined && j >= 0);
 
   if (jitters.length === 0) {
-    return { current: '-', avg: '-', stability: '-' };
+    return { current: "-", avg: "-", stability: "-" };
   }
 
   const avg = jitters.reduce((a, b) => a + b, 0) / jitters.length;
@@ -61,7 +61,7 @@ function calculateStats(data: PingMetric[]): Stats {
   const stability = Math.max(0, Math.min(100, 100 * (1 - cv))); // 0-100 scale
 
   return {
-    current: jitters[jitters.length - 1]?.toFixed(1) ?? '-',
+    current: jitters[jitters.length - 1]?.toFixed(1) ?? "-",
     avg: avg.toFixed(1),
     stability: stability.toFixed(0),
   };
@@ -75,8 +75,8 @@ function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
     )
     .map((d) => ({
       time: new Date(d.timestamp).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
+        hour: "2-digit",
+        minute: "2-digit",
       }),
       timestamp: new Date(d.timestamp).getTime(),
       jitter: d.jitter ?? null,
@@ -98,10 +98,10 @@ export function JitterChart({
   const stats = calculateStats(data);
 
   // Calculate X-axis domain from time range props or data bounds
-  const xDomain: [number, number] | ['dataMin', 'dataMax'] =
+  const xDomain: [number, number] | ["dataMin", "dataMax"] =
     startTime && endTime
       ? [startTime.getTime(), endTime.getTime()]
-      : ['dataMin', 'dataMax'];
+      : ["dataMin", "dataMax"];
 
   return (
     <Box>
@@ -139,8 +139,8 @@ export function JitterChart({
             domain={xDomain}
             tickFormatter={(ts: number) =>
               new Date(ts).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
             tick={{ fill: theme.textColor, fontSize: 11 }}
@@ -149,23 +149,23 @@ export function JitterChart({
             unit=" ms"
             tick={{ fill: theme.textColor, fontSize: 11 }}
             width={50}
-            domain={[0, 'auto']}
+            domain={[0, "auto"]}
           />
           <Tooltip
             contentStyle={{
               backgroundColor: theme.tooltipBg,
               border: `1px solid ${theme.tooltipBorder}`,
-              borderRadius: '6px',
+              borderRadius: "6px",
             }}
             labelFormatter={(ts: number) =>
               new Date(ts).toLocaleString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
               })
             }
-            formatter={(value: number) => [`${value?.toFixed(2)} ms`, 'Jitter']}
+            formatter={(value: number) => [`${value?.toFixed(2)} ms`, "Jitter"]}
           />
 
           {/* Acceptable jitter threshold line */}
@@ -175,8 +175,8 @@ export function JitterChart({
             strokeDasharray="5 5"
             strokeWidth={1.5}
             label={{
-              value: 'Acceptable',
-              position: 'insideTopRight',
+              value: "Acceptable",
+              position: "insideTopRight",
               fill: theme.colors.warning,
               fontSize: 10,
             }}

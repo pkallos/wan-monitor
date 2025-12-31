@@ -42,7 +42,7 @@ export interface SpeedMetricsResponse {
 
 export interface Metric {
   timestamp: string;
-  source: 'ping' | 'speedtest';
+  source: "ping" | "speedtest";
   host?: string;
   latency?: number;
   jitter?: number;
@@ -63,13 +63,13 @@ export interface MetricsResponse {
   };
 }
 
-export type Granularity = '1m' | '5m' | '15m' | '1h' | '6h' | '1d';
+export type Granularity = "1m" | "5m" | "15m" | "1h" | "6h" | "1d";
 
 export const VALID_GRANULARITIES: Granularity[] = [
-  '1m',
-  '5m',
-  '15m',
-  '1h',
-  '6h',
-  '1d',
+  "1m",
+  "5m",
+  "15m",
+  "1h",
+  "6h",
+  "1d",
 ];

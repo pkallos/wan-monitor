@@ -1,15 +1,15 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { config } from 'dotenv';
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { config } from "dotenv";
 
 // Load environment variables from .env.local (dev) or .env (prod)
 // Try monorepo root first (when running via turbo), then package root
 // dotenv will not override existing environment variables, so .env.local takes precedence
 const envPaths = [
-  resolve(process.cwd(), '.env.local'),
-  resolve(process.cwd(), '../../.env.local'),
-  resolve(process.cwd(), '.env'),
-  resolve(process.cwd(), '../../.env'),
+  resolve(process.cwd(), ".env.local"),
+  resolve(process.cwd(), "../../.env.local"),
+  resolve(process.cwd(), ".env"),
+  resolve(process.cwd(), "../../.env"),
 ];
 for (const envPath of envPaths) {
   if (existsSync(envPath)) {
@@ -17,19 +17,19 @@ for (const envPath of envPaths) {
   }
 }
 
-import { Effect, Layer } from 'effect';
-import { QuestDB, QuestDBLive } from '@/database/questdb';
-import { createApp } from '@/server/app';
-import { authRoutes } from '@/server/routes/auth';
-import { healthRoutes } from '@/server/routes/health';
-import { metricsRoutes } from '@/server/routes/metrics';
-import { pingRoutes } from '@/server/routes/ping';
-import type { AppContext } from '@/server/types';
-import { ConfigService, ConfigServiceLive } from '@/services/config';
-import { NetworkMonitor, NetworkMonitorLive } from '@/services/network-monitor';
-import { PingServiceLive } from '@/services/ping';
-import { PingExecutor, PingExecutorLive } from '@/services/ping-executor';
-import { SpeedTestService, SpeedTestServiceLive } from '@/services/speedtest';
+import { Effect, Layer } from "effect";
+import { QuestDB, QuestDBLive } from "@/database/questdb";
+import { createApp } from "@/server/app";
+import { authRoutes } from "@/server/routes/auth";
+import { healthRoutes } from "@/server/routes/health";
+import { metricsRoutes } from "@/server/routes/metrics";
+import { pingRoutes } from "@/server/routes/ping";
+import type { AppContext } from "@/server/types";
+import { ConfigService, ConfigServiceLive } from "@/services/config";
+import { NetworkMonitor, NetworkMonitorLive } from "@/services/network-monitor";
+import { PingServiceLive } from "@/services/ping";
+import { PingExecutor, PingExecutorLive } from "@/services/ping-executor";
+import { SpeedTestService, SpeedTestServiceLive } from "@/services/speedtest";
 
 // Application layers - build dependency graph
 const ConfigLayer = ConfigServiceLive;
@@ -83,7 +83,7 @@ const program = Effect.gen(function* () {
         async (instance) => {
           await healthRoutes(instance, context);
         },
-        { prefix: '/api' }
+        { prefix: "/api" }
       );
     },
     catch: (error) => new Error(`Failed to register health routes: ${error}`),
@@ -95,7 +95,7 @@ const program = Effect.gen(function* () {
         async (instance) => {
           await pingRoutes(instance, context);
         },
-        { prefix: '/api/ping' }
+        { prefix: "/api/ping" }
       );
     },
     catch: (error) => new Error(`Failed to register ping routes: ${error}`),
@@ -107,7 +107,7 @@ const program = Effect.gen(function* () {
         async (instance) => {
           await metricsRoutes(instance, context);
         },
-        { prefix: '/api/metrics' }
+        { prefix: "/api/metrics" }
       );
     },
     catch: (error) => new Error(`Failed to register metrics routes: ${error}`),
@@ -119,7 +119,7 @@ const program = Effect.gen(function* () {
         async (instance) => {
           await authRoutes(instance, context);
         },
-        { prefix: '/api/auth' }
+        { prefix: "/api/auth" }
       );
     },
     catch: (error) => new Error(`Failed to register auth routes: ${error}`),
@@ -138,7 +138,7 @@ const program = Effect.gen(function* () {
 
   // Start network monitoring
   yield* networkMonitor.start();
-  yield* Effect.log('Network monitoring started');
+  yield* Effect.log("Network monitoring started");
 
   // Keep server running until interrupted
   yield* Effect.never;

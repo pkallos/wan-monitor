@@ -1,6 +1,6 @@
-import { TOKEN_KEY } from '@/constants/auth';
+import { TOKEN_KEY } from "@/constants/auth";
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -17,7 +17,7 @@ export class ApiError extends Error {
     public details?: unknown
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
 
@@ -27,7 +27,7 @@ export const apiClient = {
     params?: Record<string, string | undefined>
   ): Promise<T> => {
     // Construct full path by combining API_BASE with the relative path
-    const fullPath = path.startsWith('/')
+    const fullPath = path.startsWith("/")
       ? `${API_BASE}${path}`
       : `${API_BASE}/${path}`;
     const url = new URL(fullPath, window.location.origin);
@@ -56,15 +56,15 @@ export const apiClient = {
 
   post: async <T>(path: string, body: unknown): Promise<T> => {
     // Construct full path by combining API_BASE with the relative path
-    const fullPath = path.startsWith('/')
+    const fullPath = path.startsWith("/")
       ? `${API_BASE}${path}`
       : `${API_BASE}/${path}`;
     const url = new URL(fullPath, window.location.origin);
 
     const res = await fetch(url.toString(), {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...getAuthHeaders(),
       },
       body: JSON.stringify(body),

@@ -1,6 +1,6 @@
-import { type Granularity, VALID_GRANULARITIES } from '@wan-monitor/shared';
-import { Effect } from 'effect';
-import type { AppContext, AppInstance } from '@/server/types';
+import { type Granularity, VALID_GRANULARITIES } from "@wan-monitor/shared";
+import { Effect } from "effect";
+import type { AppContext, AppInstance } from "@/server/types";
 
 /**
  * Metrics query route - returns all network metrics (ping + speedtest)
@@ -9,7 +9,7 @@ export async function metricsRoutes(
   app: AppInstance,
   context: AppContext
 ): Promise<void> {
-  app.get('/', async (request, reply) => {
+  app.get("/", async (request, reply) => {
     try {
       const query = request.query as {
         startTime?: string;
@@ -47,7 +47,7 @@ export async function metricsRoutes(
       });
     } catch (error) {
       return reply.code(500).send({
-        error: 'Failed to query metrics',
+        error: "Failed to query metrics",
         message: String(error),
       });
     }
