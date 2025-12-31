@@ -108,6 +108,7 @@ COPY --from=backend-builder /tmp/server-deploy/node_modules /app/node_modules
 # Copy configuration files
 COPY docker/nginx.prod.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/questdb-log.conf /var/lib/questdb/conf/log.conf
 
 # Remove default nginx config
 RUN rm -f /etc/nginx/sites-enabled/default \
@@ -133,6 +134,10 @@ VOLUME ["/var/lib/questdb"]
 ENV NODE_ENV=production
 ENV SERVER_PORT=3001
 ENV SERVER_HOST=0.0.0.0
+
+# Logging configuration (with defaults)
+ENV LOG_LEVEL=warn
+ENV LOG_PRETTY=false
 
 # Database configuration (with defaults for embedded QuestDB)
 ENV DB_HOST=localhost

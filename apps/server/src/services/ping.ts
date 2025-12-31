@@ -112,7 +112,7 @@ export const PingServiceLive = Layer.effect(
         try: async () => {
           const result = await ping.promise.probe(host, {
             timeout: pingConfig.timeout,
-            extra: ['-c', String(pingConfig.trainCount)],
+            extra: ['-c', String(pingConfig.trainCount), '-i', '0.25'],
           });
 
           if (!result.alive) {

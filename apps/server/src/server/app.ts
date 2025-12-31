@@ -1,6 +1,7 @@
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import Fastify from 'fastify';
+import { loggerConfig } from '@/logger';
 
 export interface AppOptions {
   jwtSecret: string;
@@ -9,9 +10,7 @@ export interface AppOptions {
 
 export const createApp = (options: AppOptions) => {
   const app = Fastify({
-    logger: {
-      level: 'info',
-    },
+    logger: loggerConfig,
   });
 
   // Register CORS
