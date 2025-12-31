@@ -1,4 +1,4 @@
-import { Effect, Layer } from 'effect';
+import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigService } from '@/services/config';
 import {
@@ -29,7 +29,7 @@ const mockProbe = ping.promise.probe as ReturnType<typeof vi.fn>;
 const TestConfigLive = Layer.succeed(ConfigService, {
   server: { port: 3001, host: '0.0.0.0' },
   database: { host: 'localhost', port: 9000 },
-  ping: { timeout: 5, retries: 1 },
+  ping: { timeout: 5, retries: 1, hosts: ['8.8.8.8', '1.1.1.1'] },
 });
 
 const TestPingServiceLive = Layer.provide(PingServiceLive, TestConfigLive);
@@ -93,13 +93,16 @@ describe('PingService', () => {
         Effect.provide(program, TestPingServiceLive)
       );
 
-      expect(result._tag).toBe('Failure');
-      if (result._tag === 'Failure') {
-        const error = result.cause._tag === 'Fail' ? result.cause.error : null;
-        expect(error).toMatchObject({
-          _tag: 'PingHostUnreachableError',
-          host: '192.168.255.255',
-        });
+      expect(Exit.isFailure(result)).toBe(true);
+      if (Exit.isFailure(result)) {
+        const error = Cause.failureOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toMatchObject({
+            _tag: 'PingHostUnreachableError',
+            host: '192.168.255.255',
+          });
+        }
       }
     });
 
@@ -115,14 +118,17 @@ describe('PingService', () => {
         Effect.provide(program, TestPingServiceLive)
       );
 
-      expect(result._tag).toBe('Failure');
-      if (result._tag === 'Failure') {
-        const error = result.cause._tag === 'Fail' ? result.cause.error : null;
-        expect(error).toMatchObject({
-          _tag: 'PingNetworkError',
-          host: '8.8.8.8',
-          message: 'Network is down',
-        });
+      expect(Exit.isFailure(result)).toBe(true);
+      if (Exit.isFailure(result)) {
+        const error = Cause.failureOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toMatchObject({
+            _tag: 'PingNetworkError',
+            host: '8.8.8.8',
+            message: 'Network is down',
+          });
+        }
       }
     });
 
@@ -138,13 +144,16 @@ describe('PingService', () => {
         Effect.provide(program, TestPingServiceLive)
       );
 
-      expect(result._tag).toBe('Failure');
-      if (result._tag === 'Failure') {
-        const error = result.cause._tag === 'Fail' ? result.cause.error : null;
-        expect(error).toMatchObject({
-          _tag: 'PingTimeoutError',
-          host: '8.8.8.8',
-        });
+      expect(Exit.isFailure(result)).toBe(true);
+      if (Exit.isFailure(result)) {
+        const error = Cause.failureOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toMatchObject({
+            _tag: 'PingTimeoutError',
+            host: '8.8.8.8',
+          });
+        }
       }
     });
   });
