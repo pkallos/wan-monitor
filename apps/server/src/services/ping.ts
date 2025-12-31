@@ -53,7 +53,7 @@ export type PingResult = typeof PingResult.Type;
 
 export const PingConfig = Schema.Struct({
   timeout: Schema.Number,
-  retries: Schema.Number,
+  trainCount: Schema.Number,
 });
 export type PingConfig = typeof PingConfig.Type;
 
@@ -97,7 +97,7 @@ export class PingService extends Context.Tag('PingService')<
 // ============================================================================
 
 const DEFAULT_TIMEOUT = 5; // seconds
-const DEFAULT_RETRIES = 1;
+const DEFAULT_TRAIN_COUNT = 10; // packets per train
 
 export const PingServiceLive = Layer.effect(
   PingService,
@@ -112,7 +112,7 @@ export const PingServiceLive = Layer.effect(
         try: async () => {
           const result = await ping.promise.probe(host, {
             timeout: pingConfig.timeout,
-            extra: ['-c', String(pingConfig.retries + 1)], // +1 because we want at least 1 ping
+            extra: ['-c', String(pingConfig.trainCount)],
           });
 
           if (!result.alive) {
@@ -168,7 +168,7 @@ export const PingServiceLive = Layer.effect(
     ): Effect.Effect<PingResult, PingError, never> =>
       pingWithConfig(host, {
         timeout: config.ping?.timeout ?? DEFAULT_TIMEOUT,
-        retries: config.ping?.retries ?? DEFAULT_RETRIES,
+        trainCount: config.ping?.trainCount ?? DEFAULT_TRAIN_COUNT,
       });
 
     const isReachable = (

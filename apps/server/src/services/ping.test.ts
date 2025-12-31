@@ -37,7 +37,7 @@ const TestConfigLive = Layer.succeed(ConfigService, {
     requestTimeout: 10000,
     retryTimeout: 1000,
   },
-  ping: { timeout: 5, retries: 1, hosts: ['8.8.8.8', '1.1.1.1'] },
+  ping: { timeout: 5, trainCount: 10, hosts: ['8.8.8.8', '1.1.1.1'] },
 });
 
 const TestPingServiceLive = Layer.provide(PingServiceLive, TestConfigLive);
@@ -167,7 +167,7 @@ describe('PingService', () => {
   });
 
   describe('pingWithConfig', () => {
-    it('should use custom timeout and retries', async () => {
+    it('should use custom timeout and trainCount', async () => {
       mockProbe.mockResolvedValueOnce({
         inputHost: '1.1.1.1',
         host: '1.1.1.1',
@@ -186,7 +186,7 @@ describe('PingService', () => {
         const pingService = yield* PingService;
         return yield* pingService.pingWithConfig('1.1.1.1', {
           timeout: 10,
-          retries: 3,
+          trainCount: 5,
         });
       });
 
@@ -194,7 +194,7 @@ describe('PingService', () => {
 
       expect(mockProbe).toHaveBeenCalledWith('1.1.1.1', {
         timeout: 10,
-        extra: ['-c', '4'], // retries + 1
+        extra: ['-c', '5'],
       });
     });
   });
