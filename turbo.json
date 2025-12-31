@@ -1,0 +1,92 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env", ".env.local", ".env.*.local"],
+  "globalEnv": ["CI", "NODE_ENV"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "index.html",
+        "*.config.{ts,js,cjs,mjs}",
+        "tsconfig*.json",
+        "package.json"
+      ],
+      "outputs": ["dist/**", "../../dist/**"],
+      "env": [
+        "VITE_API_URL",
+        "SERVER_PORT",
+        "SERVER_HOST",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_PROTOCOL"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "env": [
+        "VITE_API_URL",
+        "SERVER_PORT",
+        "SERVER_HOST",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_PROTOCOL",
+        "DB_AUTO_FLUSH_ROWS",
+        "DB_AUTO_FLUSH_INTERVAL",
+        "DB_REQUEST_TIMEOUT",
+        "DB_RETRY_TIMEOUT",
+        "PING_TIMEOUT",
+        "PING_RETRIES",
+        "PING_HOSTS",
+        "PING_INTERVAL_SECONDS"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "*.d.ts",
+        "tsconfig*.json",
+        "package.json"
+      ],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "**/*.test.{ts,tsx}",
+        "**/*.spec.{ts,tsx}",
+        "**/test/**",
+        "*.config.{ts,js,cjs,mjs}",
+        "tsconfig*.json",
+        "package.json"
+      ],
+      "outputs": ["coverage/**"],
+      "env": [
+        "QUESTDB_AVAILABLE",
+        "DB_HOST",
+        "DB_PORT",
+        "PING_INTERVAL_SECONDS"
+      ]
+    },
+    "lint": {
+      "inputs": [
+        "src/**/*.{ts,tsx,js,jsx}",
+        "biome.json",
+        ".biome.json",
+        "package.json"
+      ],
+      "outputs": []
+    },
+    "format": {
+      "inputs": ["src/**/*.{ts,tsx,js,jsx,json}", "biome.json", ".biome.json"],
+      "outputs": []
+    },
+    "format:check": {
+      "inputs": ["src/**/*.{ts,tsx,js,jsx,json}", "biome.json", ".biome.json"],
+      "outputs": []
+    }
+  }
+}
