@@ -104,7 +104,13 @@ pnpm build
 pnpm preview
 ```
 
-## Docker
+## Docker Deployment
+
+The Docker image is an all-in-one container that includes:
+- **Frontend** (nginx serving static files)
+- **Backend** (Node.js Fastify API server)
+- **QuestDB** (embedded time-series database)
+- **Supervisord** (process manager)
 
 ### Build Image
 
@@ -115,19 +121,51 @@ docker build -t wan-monitor .
 ### Run Container
 
 ```bash
+# Basic usage
 docker run -d \
   --name wan-monitor \
-  -p 3000:80 \
-  -e WAN_MONITOR_USER=admin \
-  -e WAN_MONITOR_PASSWORD=changeme \
+  -p 80:80 \
+  wan-monitor
+
+# With data persistence (recommended)
+docker run -d \
+  --name wan-monitor \
+  -p 80:80 \
+  -v wan-monitor-data:/var/lib/questdb \
   wan-monitor
 ```
 
-### Environment Variables
+### Verify Deployment
 
-- `WAN_MONITOR_USER` - Dashboard username (default: admin)
-- `WAN_MONITOR_PASSWORD` - Dashboard password (default: changeme)
-- `PORT` - Server port inside container (default: 80)
+```bash
+# Check health endpoint
+curl http://localhost/api/health
+
+# View logs
+docker logs -f wan-monitor
+```
+
+### Stop and Remove
+
+```bash
+docker stop wan-monitor
+docker rm wan-monitor
+
+# Remove data volume (warning: deletes all data)
+docker volume rm wan-monitor-data
+```
+
+### Ports
+
+| Port | Service | Description |
+|------|---------|-------------|
+| 80 | nginx | Frontend + API proxy |
+
+### Volumes
+
+| Path | Description |
+|------|-------------|
+| `/var/lib/questdb` | QuestDB data directory |
 
 ## Project Structure
 
