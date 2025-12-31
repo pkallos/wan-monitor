@@ -7,7 +7,7 @@ export interface UsePingMetricsOptions {
   endTime?: Date;
   host?: string;
   limit?: number;
-  refetchInterval?: number;
+  refetchInterval?: number | false;
   enabled?: boolean;
 }
 

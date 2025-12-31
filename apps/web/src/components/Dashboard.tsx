@@ -3,12 +3,16 @@ import {
   Container,
   Heading,
   HStack,
+  IconButton,
   SimpleGrid,
+  Spinner,
   Text,
+  Tooltip,
   useColorModeValue,
   VStack,
 } from '@chakra-ui/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { FiPause, FiPlay, FiRefreshCw } from 'react-icons/fi';
 import { usePingMetrics } from '@/api/hooks/usePingMetrics';
 import { useSpeedMetrics } from '@/api/hooks/useSpeedMetrics';
 import { JitterChart } from '@/components/charts/JitterChart';
@@ -16,6 +20,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { PacketLossChart } from '@/components/charts/PacketLossChart';
 import { DateRangeSelector } from '@/components/DateRangeSelector';
 import { MetricCard } from '@/components/MetricCard';
+import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 import type { TimeRange } from '@/utils/timeRange';
 import { getTimeRangeDates } from '@/utils/timeRange';
 
@@ -31,16 +36,46 @@ export function Dashboard() {
     [timeRange]
   );
 
+  const {
+    isPaused,
+    togglePause,
+    refetchInterval,
+    updateLastUpdated,
+    secondsSinceUpdate,
+  } = useAutoRefresh();
+
   const { data: speedData } = useSpeedMetrics({
     startTime,
     endTime,
     limit: 1,
+    refetchInterval,
   });
 
-  const { data: pingData, isLoading: pingLoading } = usePingMetrics({
+  const {
+    data: pingData,
+    isLoading: pingLoading,
+    isRefetching,
+    dataUpdatedAt,
+    refetch,
+  } = usePingMetrics({
     startTime,
     endTime,
+    refetchInterval,
   });
+
+  // Update last updated timestamp when data changes
+  useEffect(() => {
+    if (dataUpdatedAt) {
+      updateLastUpdated();
+    }
+  }, [dataUpdatedAt, updateLastUpdated]);
+
+  const lastUpdatedText =
+    secondsSinceUpdate !== null
+      ? secondsSinceUpdate < 60
+        ? `${secondsSinceUpdate}s ago`
+        : `${Math.floor(secondsSinceUpdate / 60)}m ago`
+      : 'Loading...';
 
   const pingMetrics = pingData?.data ?? [];
   const latestSpeed = speedData?.data?.[0];
@@ -66,7 +101,38 @@ export function Dashboard() {
               {ispName}
             </Text>
           </VStack>
-          <DateRangeSelector value={timeRange} onChange={setTimeRange} />
+          <HStack spacing={4}>
+            <HStack spacing={2}>
+              {isRefetching && <Spinner size="sm" color="blue.500" />}
+              <Text fontSize="xs" color="gray.500">
+                Updated {lastUpdatedText}
+              </Text>
+              <Tooltip label="Refresh now">
+                <IconButton
+                  aria-label="Refresh now"
+                  icon={<FiRefreshCw />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => refetch()}
+                  isDisabled={isRefetching}
+                />
+              </Tooltip>
+              <Tooltip
+                label={isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+              >
+                <IconButton
+                  aria-label={
+                    isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'
+                  }
+                  icon={isPaused ? <FiPlay /> : <FiPause />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={togglePause}
+                />
+              </Tooltip>
+            </HStack>
+            <DateRangeSelector value={timeRange} onChange={setTimeRange} />
+          </HStack>
         </HStack>
 
         {/* Top Row: 3 Metric Cards */}

@@ -6,7 +6,7 @@ export interface UseSpeedMetricsOptions {
   startTime?: Date;
   endTime?: Date;
   limit?: number;
-  refetchInterval?: number;
+  refetchInterval?: number | false;
   enabled?: boolean;
 }
 
