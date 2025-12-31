@@ -104,6 +104,7 @@ describe('QuestDB Integration', () => {
       const BadConfigLive = Layer.succeed(ConfigService, {
         server: { port: 3001, host: '0.0.0.0' },
         database: { host: 'nonexistent-host', port: 9000 },
+        ping: { timeout: 5, retries: 1 },
       });
 
       const MainLive = Layer.provide(QuestDBLive, BadConfigLive);
