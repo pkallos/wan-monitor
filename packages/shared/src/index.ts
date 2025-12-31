@@ -1,1 +1,7 @@
-export type { ApiError, PingMetric, PingMetricsResponse } from './api';
+export type {
+  ApiError,
+  PingMetric,
+  PingMetricsResponse,
+  SpeedMetric,
+  SpeedMetricsResponse,
+} from './api';

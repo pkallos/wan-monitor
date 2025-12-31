@@ -20,3 +20,22 @@ export interface ApiError {
   error: string;
   message: string;
 }
+
+export interface SpeedMetric {
+  timestamp: string;
+  download_speed: number; // Mbps
+  upload_speed: number; // Mbps
+  latency: number; // ms
+  jitter?: number; // ms
+  server_location?: string;
+  isp?: string;
+}
+
+export interface SpeedMetricsResponse {
+  data: SpeedMetric[];
+  meta: {
+    startTime: string;
+    endTime: string;
+    count: number;
+  };
+}

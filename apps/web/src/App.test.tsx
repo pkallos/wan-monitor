@@ -46,6 +46,7 @@ describe('App', () => {
   it('renders metric cards', () => {
     render(<App />, { wrapper: createWrapper() });
     expect(screen.getByText('Connectivity')).toBeInTheDocument();
-    expect(screen.getByText('Latency')).toBeInTheDocument();
+    expect(screen.getByText('Download Speed')).toBeInTheDocument();
+    expect(screen.getByText('Upload Speed')).toBeInTheDocument();
   });
 });

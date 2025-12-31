@@ -18,6 +18,10 @@ export interface PacketLossChartProps {
   startTime?: Date;
   endTime?: Date;
   host?: string;
+  syncId?: string;
+  compact?: boolean;
+  data?: PingMetric[];
+  isLoading?: boolean;
 }
 
 interface ChartDataPoint {
@@ -99,15 +103,27 @@ export function PacketLossChart({
   startTime,
   endTime,
   host,
+  syncId,
+  compact = false,
+  data: externalData,
+  isLoading: externalLoading,
 }: PacketLossChartProps) {
-  const { data, isLoading, error } = usePingMetrics({
+  const {
+    data: fetchedData,
+    isLoading: fetchedLoading,
+    error,
+  } = usePingMetrics({
     startTime,
     endTime,
     host,
+    enabled: externalData === undefined,
   });
   const theme = useChartTheme();
 
-  if (error) {
+  const data = externalData ?? fetchedData?.data ?? [];
+  const isLoading = externalLoading ?? fetchedLoading;
+
+  if (error && externalData === undefined) {
     return <ErrorState message="Failed to load packet loss data" />;
   }
 
@@ -119,41 +135,43 @@ export function PacketLossChart({
   const intervalMinutes = rangeHours <= 1 ? 1 : rangeHours <= 24 ? 30 : 60;
 
   const timeRange = generateTimeRange(start, end, intervalMinutes);
-  const chartData = mergeDataIntoTimeRange(timeRange, data?.data ?? []);
+  const chartData = mergeDataIntoTimeRange(timeRange, data);
 
-  const stats = calculateStats(data?.data ?? []);
+  const stats = calculateStats(data);
 
   return (
     <Box>
-      <StatGroup mb={4}>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Current
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.current}%</StatNumber>
-        </Stat>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Avg
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.avg}%</StatNumber>
-        </Stat>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Max
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.max}%</StatNumber>
-        </Stat>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Spikes
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.spikes}</StatNumber>
-        </Stat>
-      </StatGroup>
+      {!compact && (
+        <StatGroup mb={4}>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Current
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.current}%</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Avg
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.avg}%</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Max
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.max}%</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Spikes
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.spikes}</StatNumber>
+          </Stat>
+        </StatGroup>
+      )}
 
-      <ChartContainer height={250} isLoading={isLoading}>
-        <LineChart data={chartData}>
+      <ChartContainer height={compact ? 180 : 250} isLoading={isLoading}>
+        <LineChart data={chartData} syncId={syncId}>
           <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
 
           {/* Green zone: 0-1% (excellent) */}
@@ -196,6 +214,10 @@ export function PacketLossChart({
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: '6px',
             }}
+            formatter={(value: number) => [
+              `${value?.toFixed(1)}%`,
+              'Packet Loss',
+            ]}
           />
           <Line
             type="monotone"

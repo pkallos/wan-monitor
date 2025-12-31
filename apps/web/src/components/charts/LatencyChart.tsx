@@ -18,6 +18,10 @@ export interface LatencyChartProps {
   startTime?: Date;
   endTime?: Date;
   host?: string;
+  syncId?: string;
+  compact?: boolean;
+  data?: PingMetric[];
+  isLoading?: boolean;
 }
 
 interface ChartDataPoint {
@@ -93,15 +97,31 @@ function mergeDataIntoTimeRange(
   });
 }
 
-export function LatencyChart({ startTime, endTime, host }: LatencyChartProps) {
-  const { data, isLoading, error } = usePingMetrics({
+export function LatencyChart({
+  startTime,
+  endTime,
+  host,
+  syncId,
+  compact = false,
+  data: externalData,
+  isLoading: externalLoading,
+}: LatencyChartProps) {
+  const {
+    data: fetchedData,
+    isLoading: fetchedLoading,
+    error,
+  } = usePingMetrics({
     startTime,
     endTime,
     host,
+    enabled: externalData === undefined,
   });
   const theme = useChartTheme();
 
-  if (error) {
+  const data = externalData ?? fetchedData?.data ?? [];
+  const isLoading = externalLoading ?? fetchedLoading;
+
+  if (error && externalData === undefined) {
     return <ErrorState message="Failed to load latency data" />;
   }
 
@@ -118,9 +138,9 @@ export function LatencyChart({ startTime, endTime, host }: LatencyChartProps) {
   const timeRange = generateTimeRange(start, end, intervalMinutes);
 
   // Merge actual data into time range
-  const chartData = mergeDataIntoTimeRange(timeRange, data?.data ?? []);
+  const chartData = mergeDataIntoTimeRange(timeRange, data);
 
-  const stats = calculateStats(data?.data ?? []);
+  const stats = calculateStats(data);
 
   // Calculate Y-axis domain with padding
   const maxLatency = stats.max !== '-' ? Number.parseFloat(stats.max) : 100;
@@ -130,31 +150,33 @@ export function LatencyChart({ startTime, endTime, host }: LatencyChartProps) {
 
   return (
     <Box>
-      <StatGroup mb={4}>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Current
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.current} ms</StatNumber>
-        </Stat>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Avg
-          </StatLabel>
-          <StatNumber fontSize="lg">{stats.avg} ms</StatNumber>
-        </Stat>
-        <Stat>
-          <StatLabel fontSize="xs" color="gray.500">
-            Min/Max
-          </StatLabel>
-          <StatNumber fontSize="lg">
-            {stats.min}/{stats.max} ms
-          </StatNumber>
-        </Stat>
-      </StatGroup>
+      {!compact && (
+        <StatGroup mb={4}>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Current
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.current} ms</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Avg
+            </StatLabel>
+            <StatNumber fontSize="lg">{stats.avg} ms</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel fontSize="xs" color="gray.500">
+              Min/Max
+            </StatLabel>
+            <StatNumber fontSize="lg">
+              {stats.min}/{stats.max} ms
+            </StatNumber>
+          </Stat>
+        </StatGroup>
+      )}
 
-      <ChartContainer height={250} isLoading={isLoading}>
-        <LineChart data={chartData}>
+      <ChartContainer height={compact ? 180 : 250} isLoading={isLoading}>
+        <LineChart data={chartData} syncId={syncId}>
           <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
           <XAxis
             dataKey="time"
@@ -172,6 +194,10 @@ export function LatencyChart({ startTime, endTime, host }: LatencyChartProps) {
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: '6px',
             }}
+            formatter={(value: number) => [
+              `${value?.toFixed(1)} ms`,
+              'Latency',
+            ]}
           />
           {stats.avg !== '-' && (
             <ReferenceLine
