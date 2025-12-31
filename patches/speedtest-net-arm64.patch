@@ -1,0 +1,142 @@
+From 6ad4c542fa0847fad4da8e20c381535fa2ac5d5e Mon Sep 17 00:00:00 2001
+From: Suhail Akhtar <sambhal@outlook.com>
+Date: Thu, 24 Oct 2024 23:00:02 +0530
+Subject: [PATCH 1/2] feature: add support for Apple Mac M series
+
+---
+ index.js | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/index.js b/index.js
+index f2ceb1d..b7fa474 100644
+--- a/index.js
++++ b/index.js
+@@ -54,9 +54,16 @@ function chMod(file, mode) {
+   }));
+ }
+ 
+-const defaultBinaryVersion = '1.0.0';
++const defaultBinaryVersion = '1.2.0';
+ 
+ const platforms = [
++  {
++    platform: 'darwin',
++    arch: 'arm64',
++    pkg: 'macosx-universal.tgz',
++    bin: 'macosx',
++    sha: 'c9f8192149ebc88f8699998cecab1ce144144045907ece6f53cf50877f4de66f'
++  },
+   {
+     platform: 'darwin',
+     arch: 'x64',
+
+From eb4914f524765177735bb0559303a41a89711c23 Mon Sep 17 00:00:00 2001
+From: Suhail Akhtar <sambhal@outlook.com>
+Date: Fri, 18 Apr 2025 21:43:01 +0530
+Subject: [PATCH 2/2] fix: update default binary versions for various platforms
+
+---
+ index.js | 18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/index.js b/index.js
+index b7fa474..2604911 100644
+--- a/index.js
++++ b/index.js
+@@ -54,17 +54,17 @@ function chMod(file, mode) {
+   }));
+ }
+ 
+-const defaultBinaryVersion = '1.2.0';
+-
+ const platforms = [
+   {
++    defaultVersion: '1.2.0',
+     platform: 'darwin',
+     arch: 'arm64',
+     pkg: 'macosx-universal.tgz',
+-    bin: 'macosx',
++    bin: 'macosx-universal.bin',
+     sha: 'c9f8192149ebc88f8699998cecab1ce144144045907ece6f53cf50877f4de66f'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'darwin',
+     arch: 'x64',
+     pkg: 'macosx.tgz',
+@@ -72,6 +72,7 @@ const platforms = [
+     sha: '8d0af8a81e668fbf04b7676f173016976131877e9fbdcd0a396d4e6b70a5e8f4'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'win32',
+     arch: 'x64',
+     pkg: 'win64.zip',
+@@ -79,6 +80,7 @@ const platforms = [
+     sha: '64054a021dd7d49e618799a35ddbc618dcfc7b3990e28e513a420741717ac1ad'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'linux',
+     arch: 'ia32',
+     pkg: 'i386-linux.tgz',
+@@ -86,6 +88,7 @@ const platforms = [
+     sha: '828362e559e53d80b3579df032fe756a0993cf33934416fa72e9d69c8025321b'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'linux',
+     arch: 'x64',
+     pkg: 'x86_64-linux.tgz',
+@@ -93,6 +96,7 @@ const platforms = [
+     sha: '5fe2028f0d4427e4f4231d9f9cf70e6691bb890a70636d75232fe4d970633168'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'linux',
+     arch: 'arm',
+     pkg: 'arm-linux.tgz',
+@@ -100,6 +104,7 @@ const platforms = [
+     sha: '0fa7b3237d0fe4fa15bc1e7cb27ccac63b02a2679b71c2879d59dd75d3c9235d'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'linux',
+     arch: 'armhf', // Not sure how to detect this.
+     pkg: 'armhf-linux.tgz',
+@@ -107,6 +112,7 @@ const platforms = [
+     sha: '04b54991cfb9492ea8b2a3500340e7eeb78065a00ad25a032be7763f1415decb'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'linux',
+     arch: 'arm64',
+     pkg: 'aarch64-linux.tgz',
+@@ -114,6 +120,7 @@ const platforms = [
+     sha: '073684dc3490508ca01b04c5855e04cfd797fed33f6ea6a6edc26dfbc6f6aa9e'
+   },
+   {
++    defaultVersion: '1.0.0',
+     platform: 'freebsd',
+     arch: 'x64',
+     pkg: 'freebsd.pkg',
+@@ -138,10 +145,12 @@ function appendFileName(fileName, trailer) {
+   return `${name}${trailer}${ext}`;
+ }
+ 
+-async function ensureBinary({ platform = process.platform, arch = process.arch, binaryVersion = defaultBinaryVersion } = {}) {
++async function ensureBinary({ platform = process.platform, arch = process.arch, binaryVersion } = {}) {
+   const binaryLocation = 'https://install.speedtest.net/app/cli/ookla-speedtest-$v-$p';
+   const found = platforms.find(p => p.platform === platform && p.arch === arch);
+   if (!found) throw new Error(`${platform} on ${arch} not supported`);
++  const defaultBinaryVersion = found.defaultVersion;
++  binaryVersion = binaryVersion || defaultBinaryVersion;
+   const binDir = path.join(__dirname, 'binaries');
+   await mkdirp(binDir);
+   const binFileName = appendFileName(found.bin, `-${binaryVersion}`);
+@@ -380,5 +389,4 @@ function makeCancel() {
+ }
+ 
+ module.exports = exec;
+-exec.defaultBinaryVersion = defaultBinaryVersion;
+ exec.makeCancel = makeCancel;

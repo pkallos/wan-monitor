@@ -31,10 +31,29 @@ export interface PingMetricRow {
   readonly jitter?: number;
 }
 
+export interface SpeedMetricRow {
+  readonly timestamp: string; // ISO8601
+  readonly download_speed: number; // Mbps
+  readonly upload_speed: number; // Mbps
+  readonly latency: number; // ms
+  readonly jitter?: number; // ms
+  readonly server_id?: string;
+  readonly server_name?: string;
+  readonly server_location?: string;
+  readonly server_country?: string;
+  readonly isp?: string;
+}
+
 export interface QueryPingMetricsParams {
   readonly startTime?: Date;
   readonly endTime?: Date;
   readonly host?: string;
+  readonly limit?: number;
+}
+
+export interface QuerySpeedMetricsParams {
+  readonly startTime?: Date;
+  readonly endTime?: Date;
   readonly limit?: number;
 }
 
@@ -46,6 +65,9 @@ export interface QuestDBService {
   readonly queryPingMetrics: (
     params: QueryPingMetricsParams
   ) => Effect.Effect<readonly PingMetricRow[], DatabaseQueryError>;
+  readonly querySpeedMetrics: (
+    params: QuerySpeedMetricsParams
+  ) => Effect.Effect<readonly SpeedMetricRow[], DatabaseQueryError>;
   readonly health: () => Effect.Effect<DatabaseHealth, DatabaseConnectionError>;
   readonly close: () => Effect.Effect<void>;
 }
@@ -101,34 +123,35 @@ const make = Effect.gen(function* () {
       try: async () => {
         // Write to network_metrics table
         // NOTE: In QuestDB ILP, symbols MUST come before columns
-        let row = sender
-          .table('network_metrics')
-          .symbol('source', metric.source);
+        // IMPORTANT: Don't chain sender methods, create a fresh builder for each row
+        sender.table('network_metrics');
+        sender.symbol('source', metric.source);
 
         // Add optional symbols first (must be before columns)
-        if (metric.host) row = row.symbol('host', metric.host);
+        if (metric.host) sender.symbol('host', metric.host);
         if (metric.connectivityStatus)
-          row = row.symbol('connectivity_status', metric.connectivityStatus);
+          sender.symbol('connectivity_status', metric.connectivityStatus);
         if (metric.serverLocation)
-          row = row.symbol('server_location', metric.serverLocation);
-        if (metric.isp) row = row.symbol('isp', metric.isp);
+          sender.symbol('server_location', metric.serverLocation);
+        if (metric.isp) sender.symbol('isp', metric.isp);
 
         // Add numeric columns after symbols
         if (metric.latency !== undefined)
-          row = row.floatColumn('latency', metric.latency);
+          sender.floatColumn('latency', metric.latency);
         if (metric.jitter !== undefined)
-          row = row.floatColumn('jitter', metric.jitter);
+          sender.floatColumn('jitter', metric.jitter);
         if (metric.packetLoss !== undefined)
-          row = row.floatColumn('packet_loss', metric.packetLoss);
+          sender.floatColumn('packet_loss', metric.packetLoss);
         if (metric.downloadBandwidth !== undefined)
-          row = row.intColumn('download_bandwidth', metric.downloadBandwidth);
+          sender.floatColumn('download_bandwidth', metric.downloadBandwidth);
         if (metric.uploadBandwidth !== undefined)
-          row = row.intColumn('upload_bandwidth', metric.uploadBandwidth);
+          sender.floatColumn('upload_bandwidth', metric.uploadBandwidth);
 
-        row.at(BigInt(metric.timestamp.getTime()) * 1_000_000n, 'ns');
+        // Add timestamp (automatically converts to nanoseconds)
+        sender.at(BigInt(metric.timestamp.getTime()) * 1_000_000n, 'ns');
 
-        // Don't flush after every write - let auto-flush handle it
-        // This allows batching for better performance
+        // Flush to send the data
+        await sender.flush();
       },
       catch: (error) =>
         new DatabaseWriteError(`Failed to write metric: ${error}`),
@@ -192,6 +215,63 @@ const make = Effect.gen(function* () {
       return rows;
     });
 
+  const querySpeedMetrics = (params: QuerySpeedMetricsParams) =>
+    Effect.gen(function* () {
+      // Build SQL query
+      const query = `
+        SELECT timestamp, download_speed, upload_speed, latency, jitter,
+               server_id, server_name, server_location, server_country, isp
+        FROM speed_metrics
+        WHERE timestamp >= '${params.startTime?.toISOString() ?? new Date(Date.now() - 86400000).toISOString()}'
+          AND timestamp <= '${params.endTime?.toISOString() ?? new Date().toISOString()}'
+        ORDER BY timestamp DESC
+        ${params.limit ? `LIMIT ${params.limit}` : ''}
+      `;
+
+      // Query QuestDB HTTP API
+      const response = yield* httpClient
+        .get(`http://${config.database.host}:${config.database.port}/exec`, {
+          urlParams: { query },
+        })
+        .pipe(
+          Effect.flatMap((res) => res.json),
+          Effect.catchAll((error) =>
+            Effect.fail(
+              new DatabaseQueryError(`Failed to query speed metrics: ${error}`)
+            )
+          )
+        );
+
+      // Parse response
+      const data = response as {
+        query: string;
+        columns: Array<{ name: string; type: string }>;
+        dataset?: Array<Array<string | number>>;
+        count: number;
+      };
+
+      // Handle empty or missing dataset
+      if (!data.dataset || data.dataset.length === 0) {
+        return [];
+      }
+
+      // Map rows to SpeedMetricRow
+      const rows = data.dataset.map((row) => ({
+        timestamp: row[0] as string,
+        download_speed: row[1] as number,
+        upload_speed: row[2] as number,
+        latency: row[3] as number,
+        jitter: row[4] as number | undefined,
+        server_id: row[5] as string | undefined,
+        server_name: row[6] as string | undefined,
+        server_location: row[7] as string | undefined,
+        server_country: row[8] as string | undefined,
+        isp: row[9] as string | undefined,
+      }));
+
+      return rows;
+    });
+
   const health = () =>
     Effect.gen(function* () {
       // Test database connection by writing and flushing a test row
@@ -237,7 +317,13 @@ const make = Effect.gen(function* () {
       })
     );
 
-  return { writeMetric, queryPingMetrics, health, close };
+  return {
+    writeMetric,
+    queryPingMetrics,
+    querySpeedMetrics,
+    health,
+    close,
+  };
 });
 
 // Create layer with cleanup - provide HttpClient dependency

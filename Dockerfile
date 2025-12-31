@@ -18,6 +18,8 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml* ./
+COPY scripts/ ./scripts/
+COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
@@ -33,6 +35,8 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml* ./
+COPY scripts/ ./scripts/
+COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile --prod=false
 
 COPY . .

@@ -1,5 +1,6 @@
 import { Effect, Layer } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
+import { QuestDB } from '@/database/questdb';
 import { ConfigService } from '@/services/config';
 import {
   type MonitorStats,
@@ -10,6 +11,7 @@ import {
   type PingExecutionResult,
   PingExecutor,
 } from '@/services/ping-executor';
+import { SpeedTestService } from '@/services/speedtest';
 
 describe('NetworkMonitor', () => {
   const mockPingResults: readonly PingExecutionResult[] = [
@@ -37,10 +39,29 @@ describe('NetworkMonitor', () => {
     },
   ];
 
+  const mockExecuteAll = () => Effect.succeed(mockPingResults);
+
   const MockPingExecutor = Layer.succeed(PingExecutor, {
     executePing: vi.fn(),
-    executeAll: () => Effect.succeed(mockPingResults),
+    executeAll: mockExecuteAll,
     executeHosts: vi.fn(),
+  });
+
+  const MockSpeedTestService = Layer.succeed(SpeedTestService, {
+    runTest: vi.fn(() =>
+      Effect.fail({
+        _tag: 'SpeedTestExecutionError' as const,
+        message: 'Not running in tests',
+      })
+    ),
+  });
+
+  const MockQuestDB = Layer.succeed(QuestDB, {
+    writeMetric: vi.fn(() => Effect.void),
+    queryPingMetrics: vi.fn(() => Effect.succeed([])),
+    querySpeedMetrics: vi.fn(() => Effect.succeed([])),
+    health: vi.fn(),
+    close: vi.fn(() => Effect.void),
   });
 
   const MockConfig = Layer.succeed(ConfigService, {
@@ -64,9 +85,14 @@ describe('NetworkMonitor', () => {
     },
   });
 
-  const TestLayer = NetworkMonitorLive.pipe(
-    Layer.provide(MockPingExecutor),
-    Layer.provide(MockConfig)
+  const TestNetworkMonitorLive = Layer.provide(
+    NetworkMonitorLive,
+    Layer.mergeAll(
+      MockPingExecutor,
+      MockSpeedTestService,
+      MockQuestDB,
+      MockConfig
+    )
   );
 
   it('should get initial stats', async () => {
@@ -80,7 +106,9 @@ describe('NetworkMonitor', () => {
       expect(stats.failedPings).toBe(0);
     });
 
-    await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
+    await Effect.runPromise(
+      program.pipe(Effect.provide(TestNetworkMonitorLive))
+    );
   });
 
   it('should start monitoring and update stats after initial ping', async () => {
@@ -102,7 +130,9 @@ describe('NetworkMonitor', () => {
       expect(stats.failedPings).toBe(0);
     });
 
-    await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
+    await Effect.runPromise(
+      program.pipe(Effect.provide(TestNetworkMonitorLive))
+    );
   });
 
   it('should respect custom ping interval from config', async () => {
@@ -119,7 +149,9 @@ describe('NetworkMonitor', () => {
       expect(stats.successfulPings).toBeGreaterThan(0);
     });
 
-    await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
+    await Effect.runPromise(
+      program.pipe(Effect.provide(TestNetworkMonitorLive))
+    );
 
     delete process.env.PING_INTERVAL_SECONDS;
   });
