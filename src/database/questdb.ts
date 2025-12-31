@@ -155,8 +155,7 @@ const make = Effect.gen(function* () {
           host,
           latency,
           packet_loss,
-          connectivity_status,
-          jitter
+          connectivity_status
         FROM network_metrics
         WHERE source = 'ping'
           AND timestamp BETWEEN '${startTime.toISOString()}' AND '${endTime.toISOString()}'
@@ -186,9 +185,14 @@ const make = Effect.gen(function* () {
       const data = response as {
         query: string;
         columns: Array<{ name: string; type: string }>;
-        dataset: Array<Array<string | number>>;
+        dataset?: Array<Array<string | number>>;
         count: number;
       };
+
+      // Handle empty or missing dataset
+      if (!data.dataset || data.dataset.length === 0) {
+        return [];
+      }
 
       // Map rows to PingMetricRow
       const rows: PingMetricRow[] = data.dataset.map((row) => ({
@@ -197,7 +201,7 @@ const make = Effect.gen(function* () {
         latency: row[2] as number,
         packet_loss: row[3] as number,
         connectivity_status: row[4] as string,
-        jitter: row[5] as number | undefined,
+        jitter: undefined, // Not stored in table yet
       }));
 
       return rows;

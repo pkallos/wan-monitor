@@ -43,32 +43,41 @@ const program = Effect.gen(function* () {
   };
 
   // Register modular routes with prefixes
-  yield* Effect.promise(() =>
-    app.register(
-      async (instance) => {
-        await healthRoutes(instance, context);
-      },
-      { prefix: '/api' }
-    )
-  );
+  yield* Effect.tryPromise({
+    try: async () => {
+      await app.register(
+        async (instance) => {
+          await healthRoutes(instance, context);
+        },
+        { prefix: '/api' }
+      );
+    },
+    catch: (error) => new Error(`Failed to register health routes: ${error}`),
+  });
 
-  yield* Effect.promise(() =>
-    app.register(
-      async (instance) => {
-        await pingRoutes(instance, context);
-      },
-      { prefix: '/api/ping' }
-    )
-  );
+  yield* Effect.tryPromise({
+    try: async () => {
+      await app.register(
+        async (instance) => {
+          await pingRoutes(instance, context);
+        },
+        { prefix: '/api/ping' }
+      );
+    },
+    catch: (error) => new Error(`Failed to register ping routes: ${error}`),
+  });
 
-  yield* Effect.promise(() =>
-    app.register(
-      async (instance) => {
-        await metricsRoutes(instance, context);
-      },
-      { prefix: '/api/metrics' }
-    )
-  );
+  yield* Effect.tryPromise({
+    try: async () => {
+      await app.register(
+        async (instance) => {
+          await metricsRoutes(instance, context);
+        },
+        { prefix: '/api/metrics' }
+      );
+    },
+    catch: (error) => new Error(`Failed to register metrics routes: ${error}`),
+  });
 
   // Start server
   const port = config.server.port;
