@@ -28,7 +28,15 @@ const mockProbe = ping.promise.probe as ReturnType<typeof vi.fn>;
 // Test config layer
 const TestConfigLive = Layer.succeed(ConfigService, {
   server: { port: 3001, host: '0.0.0.0' },
-  database: { host: 'localhost', port: 9000 },
+  database: {
+    host: 'localhost',
+    port: 9000,
+    protocol: 'http',
+    autoFlushRows: 100,
+    autoFlushInterval: 1000,
+    requestTimeout: 10000,
+    retryTimeout: 1000,
+  },
   ping: { timeout: 5, retries: 1, hosts: ['8.8.8.8', '1.1.1.1'] },
 });
 
