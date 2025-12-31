@@ -22,12 +22,28 @@ A self-hosted network monitoring dashboard that tracks WAN connectivity, latency
 - **Linting & Formatting**: Biome.js
 - **Container**: Docker with Nginx
 
+## Quick Start
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start everything (database + frontend + backend)
+pnpm start:dev
+```
+
+This will:
+1. Start QuestDB in Docker
+2. Start the frontend on http://localhost:5173
+3. Start the backend on http://localhost:3001
+
 ## Development
 
 ### Prerequisites
 
 - Node.js 24+ (LTS)
 - pnpm 8+
+- Docker (for QuestDB)
 - nvm (recommended for Node version management)
 
 ### Setup
@@ -39,14 +55,26 @@ nvm use
 # Install dependencies
 pnpm install
 
-# Start QuestDB (required for backend)
-docker-compose up -d
+# Copy environment variables (optional)
+cp .env.example .env
+```
 
-# Start backend server (http://localhost:3001)
-pnpm dev:server
+### Development Commands
 
-# Start frontend dev server (http://localhost:3000)
-pnpm dev
+```bash
+# Start everything (recommended)
+pnpm start:dev
+
+# Or start components individually:
+pnpm db:up          # Start QuestDB
+pnpm dev            # Start frontend only (http://localhost:5173)
+pnpm dev:server     # Start backend only (http://localhost:3001)
+pnpm dev:all        # Start frontend + backend (no database)
+
+# Database management
+pnpm db:up          # Start QuestDB container
+pnpm db:down        # Stop QuestDB container
+pnpm db:logs        # View QuestDB logs
 
 # Run tests
 pnpm test
