@@ -1,8 +1,10 @@
 import { Effect, Layer } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PingMetricRow } from '@/database/questdb';
 import { QuestDB } from '@/database/questdb';
 import { ConfigService } from '@/services/config';
-import { type PingResult, PingService } from '@/services/ping';
+import type { PingResult } from '@/services/ping';
+import { PingService } from '@/services/ping';
 import { PingExecutor, PingExecutorLive } from '@/services/ping-executor';
 
 // Mock config
@@ -33,7 +35,8 @@ const MockPingServiceLive = Layer.succeed(PingService, {
 const mockWriteMetric = vi.fn();
 const MockQuestDBLive = Layer.succeed(QuestDB, {
   writeMetric: mockWriteMetric,
-  queryPingMetrics: vi.fn(),
+  queryPingMetrics: vi.fn(() => Effect.succeed([] as readonly PingMetricRow[])),
+  querySpeedMetrics: vi.fn(() => Effect.succeed([])),
   health: vi.fn(),
   close: vi.fn(),
 });
