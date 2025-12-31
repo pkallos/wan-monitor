@@ -78,7 +78,7 @@ export const NetworkMonitorLive = Layer.effect(
     const executePingCycle = Effect.gen(function* () {
       const timestamp = new Date();
 
-      Effect.logInfo('Starting ping cycle').pipe(Effect.runSync);
+      yield* Effect.logInfo('Starting ping cycle');
 
       const results = yield* pingExecutor.executeAll();
 

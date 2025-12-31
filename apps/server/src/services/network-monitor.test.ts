@@ -1,4 +1,4 @@
-import { Effect, Fiber, Layer } from 'effect';
+import { Effect, Fiber, Layer, Logger, LogLevel } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
 import { QuestDB } from '@/database/questdb';
 import { ConfigService } from '@/services/config';
@@ -89,7 +89,8 @@ describe('NetworkMonitor', () => {
     Layer.provide(MockPingExecutor),
     Layer.provide(MockQuestDB),
     Layer.provide(MockSpeedTestService),
-    Layer.provide(MockConfig)
+    Layer.provide(MockConfig),
+    Layer.provide(Logger.minimumLogLevel(LogLevel.None))
   );
 
   it('should get initial stats', async () => {
