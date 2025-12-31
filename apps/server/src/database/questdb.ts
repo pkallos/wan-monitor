@@ -34,10 +34,29 @@ export interface PingMetricRow {
   readonly jitter?: number;
 }
 
+export interface SpeedMetricRow {
+  readonly timestamp: string; // ISO8601
+  readonly download_speed: number; // Mbps
+  readonly upload_speed: number; // Mbps
+  readonly latency: number; // ms
+  readonly jitter?: number; // ms
+  readonly server_id?: string;
+  readonly server_name?: string;
+  readonly server_location?: string;
+  readonly server_country?: string;
+  readonly isp?: string;
+}
+
 export interface QueryPingMetricsParams {
   readonly startTime?: Date;
   readonly endTime?: Date;
   readonly host?: string;
+  readonly limit?: number;
+}
+
+export interface QuerySpeedMetricsParams {
+  readonly startTime?: Date;
+  readonly endTime?: Date;
   readonly limit?: number;
 }
 
@@ -49,6 +68,9 @@ export interface QuestDBService {
   readonly queryPingMetrics: (
     params: QueryPingMetricsParams
   ) => Effect.Effect<readonly PingMetricRow[], DatabaseQueryError>;
+  readonly querySpeedMetrics: (
+    params: QuerySpeedMetricsParams
+  ) => Effect.Effect<readonly SpeedMetricRow[], DatabaseQueryError>;
   readonly health: () => Effect.Effect<DatabaseHealth, DatabaseConnectionError>;
   readonly close: () => Effect.Effect<void>;
 }
@@ -195,6 +217,55 @@ const make = Effect.gen(function* () {
       return rows;
     });
 
+  const querySpeedMetrics = (params: QuerySpeedMetricsParams) =>
+    Effect.gen(function* () {
+      const query = `
+        SELECT timestamp, download_bandwidth, upload_bandwidth, latency, jitter, server_location, isp
+        FROM network_metrics
+        WHERE source = 'speedtest'
+          AND timestamp >= '${params.startTime?.toISOString() ?? new Date(Date.now() - 86400000).toISOString()}'
+          AND timestamp <= '${params.endTime?.toISOString() ?? new Date().toISOString()}'
+        ORDER BY timestamp DESC
+        ${params.limit ? `LIMIT ${params.limit}` : ''}
+      `;
+
+      const response = yield* httpClient
+        .get(`http://${config.database.host}:${config.database.port}/exec`, {
+          urlParams: { query },
+        })
+        .pipe(
+          Effect.flatMap((res) => res.json),
+          Effect.catchAll((error) =>
+            Effect.fail(
+              new DatabaseQueryError(`Failed to query speed metrics: ${error}`)
+            )
+          )
+        );
+
+      const data = response as {
+        query: string;
+        columns: Array<{ name: string; type: string }>;
+        dataset?: Array<Array<string | number>>;
+        count: number;
+      };
+
+      if (!data.dataset || data.dataset.length === 0) {
+        return [];
+      }
+
+      const rows = data.dataset.map((row) => ({
+        timestamp: row[0] as string,
+        download_speed: (row[1] as number) / 1_000_000,
+        upload_speed: (row[2] as number) / 1_000_000,
+        latency: row[3] as number,
+        jitter: row[4] as number | undefined,
+        server_location: row[5] as string | undefined,
+        isp: row[6] as string | undefined,
+      }));
+
+      return rows;
+    });
+
   const health = () =>
     Effect.gen(function* () {
       // Test database connection by writing and flushing a test row
@@ -240,7 +311,7 @@ const make = Effect.gen(function* () {
       })
     );
 
-  return { writeMetric, queryPingMetrics, health, close };
+  return { writeMetric, queryPingMetrics, querySpeedMetrics, health, close };
 });
 
 // Create layer with cleanup - provide HttpClient dependency
