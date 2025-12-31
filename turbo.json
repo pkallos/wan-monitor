@@ -64,7 +64,7 @@
         "tsconfig*.json",
         "package.json"
       ],
-      "outputs": ["coverage/**"],
+      "outputs": [],
       "env": [
         "QUESTDB_AVAILABLE",
         "DB_HOST",

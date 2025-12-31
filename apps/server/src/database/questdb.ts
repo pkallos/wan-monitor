@@ -1,5 +1,3 @@
-import { HttpClient } from '@effect/platform';
-import { NodeHttpClient } from '@effect/platform-node';
 import { Sender } from '@questdb/nodejs-client';
 import type { Granularity } from '@wan-monitor/shared';
 import type {
@@ -7,6 +5,7 @@ import type {
   NetworkMetric,
 } from '@wan-monitor/shared/metrics';
 import { Context, Effect, Layer, Schedule } from 'effect';
+import { Client as PgClient } from 'pg';
 import { ConfigService } from '@/services/config';
 
 // Database errors
@@ -66,13 +65,15 @@ export class QuestDB extends Context.Tag('QuestDB')<
   QuestDBService
 >() {}
 
+// Default PostgreSQL port for QuestDB
+const QUESTDB_PG_PORT = 8812;
+
 // Implementation
 const make = Effect.gen(function* () {
   const config = yield* ConfigService;
-  const httpClient = yield* HttpClient.HttpClient;
 
-  // Build connection string based on protocol
-  const buildConnectionString = () => {
+  // Build ILP connection string for writes
+  const buildSenderConnectionString = () => {
     const {
       host,
       port,
@@ -89,10 +90,10 @@ const make = Effect.gen(function* () {
     return `tcp::addr=${host}:9009;auto_flush_rows=${autoFlushRows};auto_flush_interval=${autoFlushInterval};`;
   };
 
-  // Initialize sender with connection
+  // Initialize Sender for writes (ILP protocol)
   const sender = yield* Effect.tryPromise({
     try: async () => {
-      const connectionString = buildConnectionString();
+      const connectionString = buildSenderConnectionString();
       const s = await Sender.fromConfig(connectionString);
 
       // Only call connect() for TCP protocol
@@ -103,7 +104,28 @@ const make = Effect.gen(function* () {
       return s;
     },
     catch: (error) =>
-      new DatabaseConnectionError(`Failed to connect to QuestDB: ${error}`),
+      new DatabaseConnectionError(
+        `Failed to connect to QuestDB Sender: ${error}`
+      ),
+  });
+
+  // Initialize PgClient for queries (PostgreSQL wire protocol)
+  const pgClient = yield* Effect.tryPromise({
+    try: async () => {
+      const client = new PgClient({
+        host: config.database.host,
+        port: QUESTDB_PG_PORT,
+        database: 'qdb',
+        user: 'admin',
+        password: 'quest',
+      });
+      await client.connect();
+      return client;
+    },
+    catch: (error) =>
+      new DatabaseConnectionError(
+        `Failed to connect to QuestDB PgWire: ${error}`
+      ),
   });
 
   const writeMetric = (metric: NetworkMetric) =>
@@ -149,100 +171,115 @@ const make = Effect.gen(function* () {
       })
     );
 
+  /**
+   * Query metrics using PostgreSQL wire protocol with parameterized queries.
+   * This prevents SQL injection by using $1, $2, etc. placeholders.
+   */
   const queryMetrics = (params: QueryMetricsParams) =>
-    Effect.gen(function* () {
-      const startTime =
-        params.startTime?.toISOString() ??
-        new Date(Date.now() - 3600000).toISOString();
-      const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
-      const hostFilter = params.host ? `AND host = '${params.host}'` : '';
+    Effect.tryPromise({
+      try: async () => {
+        const startTime =
+          params.startTime?.toISOString() ??
+          new Date(Date.now() - 3600000).toISOString();
+        const endTime =
+          params.endTime?.toISOString() ?? new Date().toISOString();
 
-      // If granularity is specified, use SAMPLE BY for aggregation
-      // NOTE: Filter out negative latency values (written on ping failures)
-      // to avoid skewing averages.
-      const query = params.granularity
-        ? `
-        SELECT
-          timestamp,
-          source,
-          first(host) as host,
-          avg(latency) as latency,
-          avg(jitter) as jitter,
-          max(packet_loss) as packet_loss,
-          last(connectivity_status) as connectivity_status,
-          avg(download_bandwidth) as download_bandwidth,
-          avg(upload_bandwidth) as upload_bandwidth,
-          last(server_location) as server_location,
-          last(isp) as isp
-        FROM network_metrics
-        WHERE timestamp >= '${startTime}'
-          AND timestamp <= '${endTime}'
-          AND (latency IS NULL OR latency >= 0)
-          ${hostFilter}
-        SAMPLE BY ${params.granularity}
-        ORDER BY timestamp DESC
-        ${params.limit ? `LIMIT ${params.limit}` : ''}
-      `
-        : `
-        SELECT
-          timestamp,
-          source,
-          host,
-          latency,
-          jitter,
-          packet_loss,
-          connectivity_status,
-          download_bandwidth,
-          upload_bandwidth,
-          server_location,
-          isp
-        FROM network_metrics
-        WHERE timestamp >= '${startTime}'
-          AND timestamp <= '${endTime}'
-          ${hostFilter}
-        ORDER BY timestamp DESC
-        ${params.limit ? `LIMIT ${params.limit}` : ''}
-      `;
+        // Build query with parameterized placeholders
+        // Note: QuestDB's SAMPLE BY doesn't support parameterized granularity,
+        // but granularity values are from a fixed enum so they're safe.
+        const queryParams: (string | number)[] = [startTime, endTime];
+        let paramIndex = 3;
 
-      const response = yield* httpClient
-        .get(`http://${config.database.host}:${config.database.port}/exec`, {
-          urlParams: { query },
-        })
-        .pipe(
-          Effect.flatMap((res) => res.json),
-          Effect.catchAll((error) =>
-            Effect.fail(
-              new DatabaseQueryError(`Failed to query metrics: ${error}`)
-            )
-          )
+        let hostFilter = '';
+        if (params.host) {
+          hostFilter = `AND host = $${paramIndex}`;
+          queryParams.push(params.host);
+          paramIndex++;
+        }
+
+        let limitClause = '';
+        if (params.limit) {
+          limitClause = `LIMIT $${paramIndex}`;
+          queryParams.push(params.limit);
+        }
+
+        // If granularity is specified, use SAMPLE BY for aggregation
+        // NOTE: Filter out negative latency values (written on ping failures)
+        // to avoid skewing averages.
+        const query = params.granularity
+          ? `
+          SELECT
+            timestamp,
+            source,
+            first(host) as host,
+            avg(latency) as latency,
+            avg(jitter) as jitter,
+            max(packet_loss) as packet_loss,
+            last(connectivity_status) as connectivity_status,
+            avg(download_bandwidth) as download_bandwidth,
+            avg(upload_bandwidth) as upload_bandwidth,
+            last(server_location) as server_location,
+            last(isp) as isp
+          FROM network_metrics
+          WHERE timestamp >= $1
+            AND timestamp <= $2
+            AND (latency IS NULL OR latency >= 0)
+            ${hostFilter}
+          SAMPLE BY ${params.granularity}
+          ORDER BY timestamp DESC
+          ${limitClause}
+        `
+          : `
+          SELECT
+            timestamp,
+            source,
+            host,
+            latency,
+            jitter,
+            packet_loss,
+            connectivity_status,
+            download_bandwidth,
+            upload_bandwidth,
+            server_location,
+            isp
+          FROM network_metrics
+          WHERE timestamp >= $1
+            AND timestamp <= $2
+            ${hostFilter}
+          ORDER BY timestamp DESC
+          ${limitClause}
+        `;
+
+        const result = await pgClient.query(query, queryParams);
+
+        if (!result.rows || result.rows.length === 0) {
+          return [];
+        }
+
+        const rows: MetricRow[] = result.rows.map(
+          (row: Record<string, unknown>) => ({
+            timestamp: row.timestamp as string,
+            source: row.source as 'ping' | 'speedtest',
+            host: row.host as string | undefined,
+            latency: row.latency as number | undefined,
+            jitter: row.jitter as number | undefined,
+            packet_loss: row.packet_loss as number | undefined,
+            connectivity_status: row.connectivity_status as string | undefined,
+            download_speed: row.download_bandwidth
+              ? (row.download_bandwidth as number) / 1_000_000
+              : undefined,
+            upload_speed: row.upload_bandwidth
+              ? (row.upload_bandwidth as number) / 1_000_000
+              : undefined,
+            server_location: row.server_location as string | undefined,
+            isp: row.isp as string | undefined,
+          })
         );
 
-      const data = response as {
-        query: string;
-        columns: Array<{ name: string; type: string }>;
-        dataset?: Array<Array<string | number | null>>;
-        count: number;
-      };
-
-      if (!data.dataset || data.dataset.length === 0) {
-        return [];
-      }
-
-      const rows: MetricRow[] = data.dataset.map((row) => ({
-        timestamp: row[0] as string,
-        source: row[1] as 'ping' | 'speedtest',
-        host: row[2] as string | undefined,
-        latency: row[3] as number | undefined,
-        jitter: row[4] as number | undefined,
-        packet_loss: row[5] as number | undefined,
-        connectivity_status: row[6] as string | undefined,
-        download_speed: row[7] ? (row[7] as number) / 1_000_000 : undefined,
-        upload_speed: row[8] ? (row[8] as number) / 1_000_000 : undefined,
-        server_location: row[9] as string | undefined,
-        isp: row[10] as string | undefined,
-      }));
-
-      return rows;
+        return rows;
+      },
+      catch: (error) =>
+        new DatabaseQueryError(`Failed to query metrics: ${error}`),
     });
 
   const health = () =>
@@ -278,9 +315,14 @@ const make = Effect.gen(function* () {
           new DatabaseWriteError(`Failed to flush buffer on close: ${error}`),
       });
 
-      // Close the connection
+      // Close the Sender connection
       yield* Effect.promise(async () => {
         await sender.close();
+      });
+
+      // Close the PgClient connection
+      yield* Effect.promise(async () => {
+        await pgClient.end();
       });
     }).pipe(
       Effect.catchAll((error) => {
@@ -298,7 +340,7 @@ const make = Effect.gen(function* () {
   };
 });
 
-// Create layer with cleanup - provide HttpClient dependency
+// Create layer with cleanup
 export const QuestDBLive = Layer.scoped(
   QuestDB,
   Effect.gen(function* () {
@@ -306,4 +348,4 @@ export const QuestDBLive = Layer.scoped(
     yield* Effect.addFinalizer(() => service.close());
     return service;
   })
-).pipe(Layer.provide(NodeHttpClient.layerUndici));
+);
