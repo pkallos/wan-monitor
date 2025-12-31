@@ -9,9 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { usePingMetrics } from '@/api/hooks/usePingMetrics';
 import { ChartContainer } from '@/components/charts/ChartContainer';
-import { ErrorState } from '@/components/charts/ChartStates';
 import { useChartTheme } from '@/components/charts/useChartTheme';
 
 export interface PacketLossChartProps {
@@ -59,85 +57,41 @@ function calculateStats(data: PingMetric[]): Stats {
   };
 }
 
-function generateTimeRange(
-  start: Date,
-  end: Date,
-  intervalMinutes: number
-): ChartDataPoint[] {
-  const points: ChartDataPoint[] = [];
-  const current = new Date(start);
-
-  while (current <= end) {
-    points.push({
-      time: current.toLocaleTimeString('en-US', {
+function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
+  return [...data]
+    .sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
+    .map((d) => ({
+      time: new Date(d.timestamp).toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
       }),
-      timestamp: current.getTime(),
-      packetLoss: null,
-    });
-    current.setMinutes(current.getMinutes() + intervalMinutes);
-  }
-
-  return points;
-}
-
-function mergeDataIntoTimeRange(
-  timeRange: ChartDataPoint[],
-  actualData: PingMetric[]
-): ChartDataPoint[] {
-  return timeRange.map((point) => {
-    const closestData = actualData.find((d) => {
-      const diff = Math.abs(new Date(d.timestamp).getTime() - point.timestamp);
-      return diff < 5 * 60 * 1000;
-    });
-
-    return {
-      ...point,
-      packetLoss: closestData?.packet_loss ?? null,
-    };
-  });
+      timestamp: new Date(d.timestamp).getTime(),
+      packetLoss: d.packet_loss ?? null,
+    }));
 }
 
 export function PacketLossChart({
   startTime,
   endTime,
-  host,
   syncId,
   compact = false,
-  data: externalData,
-  isLoading: externalLoading,
+  data: externalData = [],
+  isLoading = false,
 }: PacketLossChartProps) {
-  const {
-    data: fetchedData,
-    isLoading: fetchedLoading,
-    error,
-  } = usePingMetrics({
-    startTime,
-    endTime,
-    host,
-    enabled: externalData === undefined,
-  });
   const theme = useChartTheme();
+  const data = externalData;
 
-  const data = externalData ?? fetchedData?.data ?? [];
-  const isLoading = externalLoading ?? fetchedLoading;
-
-  if (error && externalData === undefined) {
-    return <ErrorState message="Failed to load packet loss data" />;
-  }
-
-  const now = new Date();
-  const start = startTime ?? new Date(now.getTime() - 60 * 60 * 1000);
-  const end = endTime ?? now;
-
-  const rangeHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-  const intervalMinutes = rangeHours <= 1 ? 1 : rangeHours <= 24 ? 30 : 60;
-
-  const timeRange = generateTimeRange(start, end, intervalMinutes);
-  const chartData = mergeDataIntoTimeRange(timeRange, data);
-
+  const chartData = formatDataForChart(data);
   const stats = calculateStats(data);
+
+  // Calculate X-axis domain from time range props or data bounds
+  const xDomain: [number, number] | ['dataMin', 'dataMax'] =
+    startTime && endTime
+      ? [startTime.getTime(), endTime.getTime()]
+      : ['dataMin', 'dataMax'];
 
   return (
     <Box>
@@ -199,7 +153,16 @@ export function PacketLossChart({
           />
 
           <XAxis
-            dataKey="time"
+            dataKey="timestamp"
+            type="number"
+            scale="time"
+            domain={xDomain}
+            tickFormatter={(ts: number) =>
+              new Date(ts).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }
             tick={{ fill: theme.textColor, fontSize: 11 }}
           />
           <YAxis
@@ -214,6 +177,14 @@ export function PacketLossChart({
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: '6px',
             }}
+            labelFormatter={(ts: number) =>
+              new Date(ts).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }
             formatter={(value: number) => [
               `${value?.toFixed(1)}%`,
               'Packet Loss',

@@ -1,11 +1,10 @@
 import { Box, Stat, StatGroup, StatLabel, StatNumber } from '@chakra-ui/react';
-import type { PingMetric } from '@wan-monitor/shared';
+import type { SpeedMetric } from '@wan-monitor/shared';
 import {
-  Area,
   CartesianGrid,
-  ComposedChart,
+  Legend,
   Line,
-  ReferenceLine,
+  LineChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -13,61 +12,75 @@ import {
 import { ChartContainer } from '@/components/charts/ChartContainer';
 import { useChartTheme } from '@/components/charts/useChartTheme';
 
-export interface JitterChartProps {
+export interface SpeedChartProps {
   startTime?: Date;
   endTime?: Date;
-  host?: string;
   syncId?: string;
   compact?: boolean;
-  data?: PingMetric[];
+  data?: SpeedMetric[];
   isLoading?: boolean;
 }
 
 interface ChartDataPoint {
   time: string;
   timestamp: number;
-  jitter: number | null;
+  download: number | null;
+  upload: number | null;
 }
 
 interface Stats {
-  current: string;
-  avg: string;
-  stability: string;
+  avgDownload: string;
+  avgUpload: string;
+  maxDownload: string;
+  maxUpload: string;
 }
 
-const ACCEPTABLE_JITTER_THRESHOLD = 10; // ms
-
-function calculateStats(data: PingMetric[]): Stats {
+function calculateStats(data: SpeedMetric[]): Stats {
   if (data.length === 0) {
-    return { current: '-', avg: '-', stability: '-' };
+    return {
+      avgDownload: '-',
+      avgUpload: '-',
+      maxDownload: '-',
+      maxUpload: '-',
+    };
   }
 
-  const jitters = data
-    .map((d) => d.jitter)
-    .filter((j): j is number => j !== null && j !== undefined && j >= 0);
+  const downloads = data
+    .map((d) => d.download_speed)
+    .filter((d) => d !== undefined && d >= 0) as number[];
+  const uploads = data
+    .map((d) => d.upload_speed)
+    .filter((u) => u !== undefined && u >= 0) as number[];
 
-  if (jitters.length === 0) {
-    return { current: '-', avg: '-', stability: '-' };
+  if (downloads.length === 0 && uploads.length === 0) {
+    return {
+      avgDownload: '-',
+      avgUpload: '-',
+      maxDownload: '-',
+      maxUpload: '-',
+    };
   }
 
-  const avg = jitters.reduce((a, b) => a + b, 0) / jitters.length;
-
-  // Calculate stability score: lower variance = higher stability
-  // Stability is inverse of coefficient of variation (CV)
-  const variance =
-    jitters.reduce((sum, val) => sum + (val - avg) ** 2, 0) / jitters.length;
-  const stdDev = Math.sqrt(variance);
-  const cv = avg > 0 ? stdDev / avg : 0;
-  const stability = Math.max(0, Math.min(100, 100 * (1 - cv))); // 0-100 scale
+  const avgDownload =
+    downloads.length > 0
+      ? downloads.reduce((a, b) => a + b, 0) / downloads.length
+      : 0;
+  const avgUpload =
+    uploads.length > 0
+      ? uploads.reduce((a, b) => a + b, 0) / uploads.length
+      : 0;
+  const maxDownload = downloads.length > 0 ? Math.max(...downloads) : 0;
+  const maxUpload = uploads.length > 0 ? Math.max(...uploads) : 0;
 
   return {
-    current: jitters[jitters.length - 1]?.toFixed(1) ?? '-',
-    avg: avg.toFixed(1),
-    stability: stability.toFixed(0),
+    avgDownload: avgDownload.toFixed(1),
+    avgUpload: avgUpload.toFixed(1),
+    maxDownload: maxDownload.toFixed(1),
+    maxUpload: maxUpload.toFixed(1),
   };
 }
 
-function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
+function formatDataForChart(data: SpeedMetric[]): ChartDataPoint[] {
   return [...data]
     .sort(
       (a, b) =>
@@ -79,18 +92,19 @@ function formatDataForChart(data: PingMetric[]): ChartDataPoint[] {
         minute: '2-digit',
       }),
       timestamp: new Date(d.timestamp).getTime(),
-      jitter: d.jitter ?? null,
+      download: d.download_speed ?? null,
+      upload: d.upload_speed ?? null,
     }));
 }
 
-export function JitterChart({
+export function SpeedChart({
   startTime,
   endTime,
   syncId,
   compact = false,
   data: externalData = [],
   isLoading = false,
-}: JitterChartProps) {
+}: SpeedChartProps) {
   const theme = useChartTheme();
   const data = externalData;
 
@@ -108,30 +122,27 @@ export function JitterChart({
       {!compact && (
         <StatGroup mb={4}>
           <Stat>
-            <StatLabel fontSize="xs" color="gray.500">
-              Current
-            </StatLabel>
-            <StatNumber fontSize="lg">{stats.current} ms</StatNumber>
+            <StatLabel>Avg Download</StatLabel>
+            <StatNumber fontSize="lg">{stats.avgDownload} Mbps</StatNumber>
           </Stat>
           <Stat>
-            <StatLabel fontSize="xs" color="gray.500">
-              Avg
-            </StatLabel>
-            <StatNumber fontSize="lg">{stats.avg} ms</StatNumber>
+            <StatLabel>Avg Upload</StatLabel>
+            <StatNumber fontSize="lg">{stats.avgUpload} Mbps</StatNumber>
           </Stat>
           <Stat>
-            <StatLabel fontSize="xs" color="gray.500">
-              Stability
-            </StatLabel>
-            <StatNumber fontSize="lg">{stats.stability}%</StatNumber>
+            <StatLabel>Max Download</StatLabel>
+            <StatNumber fontSize="lg">{stats.maxDownload} Mbps</StatNumber>
+          </Stat>
+          <Stat>
+            <StatLabel>Max Upload</StatLabel>
+            <StatNumber fontSize="lg">{stats.maxUpload} Mbps</StatNumber>
           </Stat>
         </StatGroup>
       )}
 
       <ChartContainer height={compact ? 180 : 250} isLoading={isLoading}>
-        <ComposedChart data={chartData} syncId={syncId}>
+        <LineChart data={chartData} syncId={syncId}>
           <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
-
           <XAxis
             dataKey="timestamp"
             type="number"
@@ -146,9 +157,9 @@ export function JitterChart({
             tick={{ fill: theme.textColor, fontSize: 11 }}
           />
           <YAxis
-            unit=" ms"
+            unit=" Mbps"
             tick={{ fill: theme.textColor, fontSize: 11 }}
-            width={50}
+            width={65}
             domain={[0, 'auto']}
           />
           <Tooltip
@@ -165,44 +176,33 @@ export function JitterChart({
                 minute: '2-digit',
               })
             }
-            formatter={(value: number) => [`${value?.toFixed(2)} ms`, 'Jitter']}
+            formatter={(value: number, name: string) => [
+              `${value?.toFixed(1)} Mbps`,
+              name === 'download' ? 'Download' : 'Upload',
+            ]}
           />
-
-          {/* Acceptable jitter threshold line */}
-          <ReferenceLine
-            y={ACCEPTABLE_JITTER_THRESHOLD}
-            stroke={theme.colors.warning}
-            strokeDasharray="5 5"
-            strokeWidth={1.5}
-            label={{
-              value: 'Acceptable',
-              position: 'insideTopRight',
-              fill: theme.colors.warning,
-              fontSize: 10,
-            }}
-          />
-
-          {/* Area fill for visual emphasis */}
-          <Area
-            type="monotone"
-            dataKey="jitter"
-            fill={theme.colors.info}
-            fillOpacity={0.2}
-            stroke="none"
-            connectNulls={false}
-          />
-
-          {/* Line chart */}
+          {!compact && <Legend />}
           <Line
             type="monotone"
-            dataKey="jitter"
-            stroke={theme.colors.info}
-            dot={false}
+            dataKey="download"
+            name="Download"
+            stroke={theme.colors.primary}
+            dot={{ r: 4 }}
             strokeWidth={2}
-            activeDot={{ r: 4 }}
+            activeDot={{ r: 6 }}
             connectNulls={false}
           />
-        </ComposedChart>
+          <Line
+            type="monotone"
+            dataKey="upload"
+            name="Upload"
+            stroke={theme.colors.success}
+            dot={{ r: 4 }}
+            strokeWidth={2}
+            activeDot={{ r: 6 }}
+            connectNulls={false}
+          />
+        </LineChart>
       </ChartContainer>
     </Box>
   );

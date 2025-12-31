@@ -87,7 +87,16 @@ describe('Dashboard', () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: async () => ({
-        data: [{ connectivity_status: 'up', latency: 10, packet_loss: 0 }],
+        data: [
+          {
+            source: 'ping',
+            connectivity_status: 'up',
+            latency: 10,
+            packet_loss: 0,
+            host: '8.8.8.8',
+            timestamp: new Date().toISOString(),
+          },
+        ],
         meta: {
           startTime: new Date().toISOString(),
           endTime: new Date().toISOString(),

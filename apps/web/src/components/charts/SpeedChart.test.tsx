@@ -1,26 +1,26 @@
 import { ChakraProvider } from '@chakra-ui/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
-import type { PingMetric } from '@wan-monitor/shared';
+import type { SpeedMetric } from '@wan-monitor/shared';
 import { describe, expect, it } from 'vitest';
-import { PacketLossChart } from '@/components/charts/PacketLossChart';
+import { SpeedChart } from '@/components/charts/SpeedChart';
 
-const mockData: PingMetric[] = [
+const mockData: SpeedMetric[] = [
   {
     timestamp: '2024-01-01T12:00:00.000Z',
-    host: '8.8.8.8',
-    latency: 15.5,
-    packet_loss: 0,
-    connectivity_status: 'connected',
-    jitter: 2.3,
+    download_speed: 100.5,
+    upload_speed: 50.2,
+    latency: 10,
+    jitter: 2,
+    isp: 'Test ISP',
   },
   {
-    timestamp: '2024-01-01T12:01:00.000Z',
-    host: '8.8.8.8',
-    latency: 16.2,
-    packet_loss: 5,
-    connectivity_status: 'connected',
-    jitter: 1.8,
+    timestamp: '2024-01-01T12:30:00.000Z',
+    download_speed: 95.3,
+    upload_speed: 48.7,
+    latency: 12,
+    jitter: 3,
+    isp: 'Test ISP',
   },
 ];
 
@@ -35,9 +35,9 @@ const createWrapper = () => {
   );
 };
 
-describe('PacketLossChart', () => {
+describe('SpeedChart', () => {
   it('should render without errors', () => {
-    const { container } = render(<PacketLossChart data={mockData} />, {
+    const { container } = render(<SpeedChart data={mockData} />, {
       wrapper: createWrapper(),
     });
     expect(container).toBeTruthy();
@@ -45,23 +45,23 @@ describe('PacketLossChart', () => {
 
   it('should display stats in non-compact mode', () => {
     const { getByText } = render(
-      <PacketLossChart data={mockData} compact={false} />,
+      <SpeedChart data={mockData} compact={false} />,
       { wrapper: createWrapper() }
     );
-    expect(getByText('Max')).toBeTruthy();
-    expect(getByText('Spikes')).toBeTruthy();
+    expect(getByText('Avg Download')).toBeTruthy();
+    expect(getByText('Avg Upload')).toBeTruthy();
   });
 
   it('should hide stats in compact mode', () => {
     const { queryByText } = render(
-      <PacketLossChart data={mockData} compact={true} />,
+      <SpeedChart data={mockData} compact={true} />,
       { wrapper: createWrapper() }
     );
-    expect(queryByText('Max')).toBeNull();
+    expect(queryByText('Avg Download')).toBeNull();
   });
 
   it('should handle empty data', () => {
-    const { container } = render(<PacketLossChart data={[]} />, {
+    const { container } = render(<SpeedChart data={[]} />, {
       wrapper: createWrapper(),
     });
     expect(container).toBeTruthy();
@@ -69,7 +69,7 @@ describe('PacketLossChart', () => {
 
   it('should accept syncId prop', () => {
     const { container } = render(
-      <PacketLossChart data={mockData} syncId="test-sync" />,
+      <SpeedChart data={mockData} syncId="test-sync" />,
       { wrapper: createWrapper() }
     );
     expect(container).toBeTruthy();

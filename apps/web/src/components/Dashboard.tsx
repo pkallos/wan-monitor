@@ -13,11 +13,11 @@ import {
 } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
 import { FiPause, FiPlay, FiRefreshCw } from 'react-icons/fi';
-import { usePingMetrics } from '@/api/hooks/usePingMetrics';
-import { useSpeedMetrics } from '@/api/hooks/useSpeedMetrics';
+import { useMetrics } from '@/api/hooks/useMetrics';
 import { JitterChart } from '@/components/charts/JitterChart';
 import { LatencyChart } from '@/components/charts/LatencyChart';
 import { PacketLossChart } from '@/components/charts/PacketLossChart';
+import { SpeedChart } from '@/components/charts/SpeedChart';
 import { DateRangeSelector } from '@/components/DateRangeSelector';
 import { MetricCard } from '@/components/MetricCard';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
@@ -44,20 +44,14 @@ export function Dashboard() {
     secondsSinceUpdate,
   } = useAutoRefresh();
 
-  const { data: speedData } = useSpeedMetrics({
-    startTime,
-    endTime,
-    limit: 1,
-    refetchInterval,
-  });
-
   const {
-    data: pingData,
-    isLoading: pingLoading,
+    pingMetrics,
+    speedMetrics,
+    isLoading,
     isRefetching,
     dataUpdatedAt,
     refetch,
-  } = usePingMetrics({
+  } = useMetrics({
     startTime,
     endTime,
     refetchInterval,
@@ -77,8 +71,7 @@ export function Dashboard() {
         : `${Math.floor(secondsSinceUpdate / 60)}m ago`
       : 'Loading...';
 
-  const pingMetrics = pingData?.data ?? [];
-  const latestSpeed = speedData?.data?.[0];
+  const latestSpeed = speedMetrics[0];
   const latestPing = pingMetrics[0];
 
   const isConnected = latestPing?.connectivity_status === 'up';
@@ -88,6 +81,20 @@ export function Dashboard() {
   const downloadSpeed = latestSpeed?.download_speed?.toFixed(1) ?? '-';
   const uploadSpeed = latestSpeed?.upload_speed?.toFixed(1) ?? '-';
   const ispName = latestSpeed?.isp ?? 'Unknown ISP';
+
+  const formatTimeAgo = (timestamp: string | undefined): string => {
+    if (!timestamp) return '';
+    const seconds = Math.floor(
+      (Date.now() - new Date(timestamp).getTime()) / 1000
+    );
+    if (seconds < 60) return `as of ${seconds}s ago`;
+    if (seconds < 3600) return `as of ${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `as of ${Math.floor(seconds / 3600)}h ago`;
+    return `as of ${Math.floor(seconds / 86400)}d ago`;
+  };
+
+  const pingTimeAgo = formatTimeAgo(latestPing?.timestamp);
+  const speedTimeAgo = formatTimeAgo(latestSpeed?.timestamp);
 
   return (
     <Box minH="100vh" bg={bg}>
@@ -140,18 +147,21 @@ export function Dashboard() {
           <MetricCard
             title="Connectivity"
             value={connectivityText}
+            subtitle={pingTimeAgo}
             status={connectivityStatus}
           />
           <MetricCard
             title="Download Speed"
             value={downloadSpeed}
             unit="Mbps"
+            subtitle={speedTimeAgo}
             status="good"
           />
           <MetricCard
             title="Upload Speed"
             value={uploadSpeed}
             unit="Mbps"
+            subtitle={speedTimeAgo}
             status="good"
           />
         </SimpleGrid>
@@ -181,7 +191,7 @@ export function Dashboard() {
                 syncId={CHART_SYNC_ID}
                 compact
                 data={pingMetrics}
-                isLoading={pingLoading}
+                isLoading={isLoading}
               />
             </Box>
 
@@ -196,7 +206,7 @@ export function Dashboard() {
                 syncId={CHART_SYNC_ID}
                 compact
                 data={pingMetrics}
-                isLoading={pingLoading}
+                isLoading={isLoading}
               />
             </Box>
 
@@ -211,10 +221,26 @@ export function Dashboard() {
                 syncId={CHART_SYNC_ID}
                 compact
                 data={pingMetrics}
-                isLoading={pingLoading}
+                isLoading={isLoading}
               />
             </Box>
           </VStack>
+        </Box>
+
+        {/* Speed Test Results */}
+        <Box
+          bg={cardBg}
+          borderWidth="1px"
+          borderColor={borderColor}
+          borderRadius="lg"
+          p={6}
+          mt={6}
+          shadow="sm"
+        >
+          <Heading size="md" mb={4}>
+            Speed Test History
+          </Heading>
+          <SpeedChart data={speedMetrics} isLoading={isLoading} />
         </Box>
       </Container>
     </Box>
