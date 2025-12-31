@@ -7,3 +7,9 @@ expect.extend(matchers);
 afterEach(() => {
   cleanup();
 });
+
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
