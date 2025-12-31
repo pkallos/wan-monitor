@@ -11,39 +11,41 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Build Frontend
 # -----------------------------------------------------------------------------
-FROM node:24-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml* ./
-COPY scripts/ ./scripts/
-COPY patches/ ./patches/
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY apps/web/package.json apps/web/package.json
+COPY apps/server/package.json apps/server/package.json
+COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN pnpm run build
+RUN pnpm exec turbo run build --filter=@wan-monitor/web
 
 # -----------------------------------------------------------------------------
 # Stage 2: Build Backend
 # -----------------------------------------------------------------------------
-FROM node:24-alpine AS backend-builder
+FROM node:22-alpine AS backend-builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml* ./
-COPY scripts/ ./scripts/
-COPY patches/ ./patches/
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY apps/web/package.json apps/web/package.json
+COPY apps/server/package.json apps/server/package.json
+COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile --prod=false
 
 COPY . .
-RUN pnpm run build:server
+RUN pnpm exec turbo run build --filter=@wan-monitor/server
 
-# Install production dependencies only (skip prepare script)
-RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+# Deploy server with production dependencies using pnpm deploy
+RUN pnpm --filter=@wan-monitor/server deploy --prod /tmp/server-deploy
 
 # -----------------------------------------------------------------------------
 # Stage 3: Production Runtime (All-in-One)
@@ -61,15 +63,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     openjdk-17-jre-headless \
+    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 24
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+# Install Node.js 22
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install QuestDB
-ARG QUESTDB_VERSION=8.2.3
+ARG QUESTDB_VERSION=9.2.3
 RUN mkdir -p /opt/questdb /var/lib/questdb \
     && wget -q "https://github.com/questdb/questdb/releases/download/${QUESTDB_VERSION}/questdb-${QUESTDB_VERSION}-no-jre-bin.tar.gz" -O /tmp/questdb.tar.gz \
     && tar -xzf /tmp/questdb.tar.gz -C /opt/questdb --strip-components=1 \
@@ -82,10 +85,9 @@ RUN mkdir -p /var/log/supervisor /var/log/nginx
 # Copy frontend build
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
-# Copy backend build and production dependencies
+# Copy backend build and production dependencies from pnpm deploy
 COPY --from=backend-builder /app/dist/server /app/backend
-COPY --from=backend-builder /app/node_modules /app/node_modules
-COPY --from=backend-builder /app/package.json /app/package.json
+COPY --from=backend-builder /tmp/server-deploy/node_modules /app/node_modules
 
 # Copy configuration files
 COPY docker/nginx.prod.conf /etc/nginx/sites-available/default
