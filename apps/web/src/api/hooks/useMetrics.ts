@@ -7,6 +7,7 @@ import type {
 } from "@wan-monitor/shared";
 import { useMemo } from "react";
 import { apiClient } from "@/api/client";
+import { getGranularityForRange } from "@/utils/granularity";
 
 export interface UseMetricsOptions {
   startTime?: Date;
@@ -16,26 +17,6 @@ export interface UseMetricsOptions {
   granularity?: Granularity;
   refetchInterval?: number | false;
   enabled?: boolean;
-}
-
-/**
- * Calculate appropriate granularity based on time range
- * - 1hr: 1-minute buckets (~60 points)
- * - All other ranges: 5-minute buckets
- */
-function getGranularityForRange(
-  startTime?: Date,
-  endTime?: Date
-): Granularity | undefined {
-  if (!startTime || !endTime) return undefined;
-
-  const rangeMs = endTime.getTime() - startTime.getTime();
-  const rangeHours = rangeMs / (1000 * 60 * 60);
-
-  // 1h or less: 1-minute buckets (~60 points)
-  if (rangeHours <= 1) return "1m";
-  // All other ranges: 5-minute buckets
-  return "5m";
 }
 
 export function useMetrics(options: UseMetricsOptions = {}) {

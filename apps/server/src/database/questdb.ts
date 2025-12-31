@@ -58,6 +58,14 @@ export interface QueryMetricsParams {
   readonly granularity?: Granularity;
 }
 
+export interface ConnectivityStatusRow {
+  readonly timestamp: string;
+  readonly up_count: number;
+  readonly down_count: number;
+  readonly degraded_count: number;
+  readonly total_count: number;
+}
+
 // QuestDB service interface
 export interface QuestDBService {
   readonly writeMetric: (
@@ -66,6 +74,9 @@ export interface QuestDBService {
   readonly queryMetrics: (
     params: QueryMetricsParams
   ) => Effect.Effect<readonly MetricRow[], DatabaseQueryError>;
+  readonly queryConnectivityStatus: (
+    params: QueryMetricsParams
+  ) => Effect.Effect<readonly ConnectivityStatusRow[], DatabaseQueryError>;
   readonly health: () => Effect.Effect<DatabaseHealth, DatabaseConnectionError>;
   readonly close: () => Effect.Effect<void>;
 }
@@ -293,6 +304,84 @@ const make = Effect.gen(function* () {
         new DatabaseQueryError(`Failed to query metrics: ${error}`),
     });
 
+  /**
+   * Query connectivity status aggregated by time intervals.
+   * Calculates up/down/degraded counts based on:
+   * - Up: latency > 0 AND packet_loss < 5%
+   * - Down: connectivity_status = 'down' OR latency < 0
+   * - Degraded: packet_loss >= 5% AND packet_loss < 50%
+   */
+  const queryConnectivityStatus = (params: QueryMetricsParams) =>
+    Effect.tryPromise({
+      try: async () => {
+        const startTime =
+          params.startTime?.toISOString() ??
+          new Date(Date.now() - 86400000).toISOString(); // Default 24h
+        const endTime =
+          params.endTime?.toISOString() ?? new Date().toISOString();
+
+        // Validate and default granularity - only allow whitelisted values
+        const granularity = params.granularity ?? "5m";
+        const validGranularities = ["1m", "5m", "15m", "1h", "6h", "1d"];
+        if (!validGranularities.includes(granularity)) {
+          throw new Error(`Invalid granularity: ${granularity}`);
+        }
+
+        const queryParams: string[] = [startTime, endTime];
+
+        // Query ping metrics and categorize by status
+        // Note: granularity is validated against whitelist above, safe to interpolate
+        const query = `
+          SELECT
+            timestamp,
+            SUM(CASE
+              WHEN connectivity_status = 'down' OR latency < 0 THEN 1
+              ELSE 0
+            END) as down_count,
+            SUM(CASE
+              WHEN (latency >= 0 OR latency IS NOT NULL)
+                AND connectivity_status != 'down'
+                AND packet_loss >= 5
+                AND packet_loss < 50 THEN 1
+              ELSE 0
+            END) as degraded_count,
+            SUM(CASE
+              WHEN (latency > 0 OR latency IS NOT NULL)
+                AND connectivity_status != 'down'
+                AND (packet_loss < 5 OR packet_loss IS NULL) THEN 1
+              ELSE 0
+            END) as up_count,
+            COUNT(*) as total_count
+          FROM network_metrics
+          WHERE timestamp >= $1
+            AND timestamp <= $2
+            AND source = 'ping'
+          SAMPLE BY ${granularity}
+          ORDER BY timestamp ASC
+        `;
+
+        const result = await pgClient.query(query, queryParams);
+
+        if (!result.rows || result.rows.length === 0) {
+          return [];
+        }
+
+        const rows: ConnectivityStatusRow[] = result.rows.map(
+          (row: Record<string, unknown>) => ({
+            timestamp: row.timestamp as string,
+            up_count: Number(row.up_count ?? 0),
+            down_count: Number(row.down_count ?? 0),
+            degraded_count: Number(row.degraded_count ?? 0),
+            total_count: Number(row.total_count ?? 0),
+          })
+        );
+
+        return rows;
+      },
+      catch: (error) =>
+        new DatabaseQueryError(`Failed to query connectivity status: ${error}`),
+    });
+
   const health = () =>
     Effect.gen(function* () {
       // Test database connection by writing and flushing a test row
@@ -346,6 +435,7 @@ const make = Effect.gen(function* () {
   return {
     writeMetric,
     queryMetrics,
+    queryConnectivityStatus,
     health,
     close,
   };

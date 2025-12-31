@@ -73,3 +73,23 @@ export const VALID_GRANULARITIES: Granularity[] = [
   "6h",
   "1d",
 ];
+
+export type ConnectivityStatus = "up" | "down" | "degraded";
+
+export interface ConnectivityStatusPoint {
+  timestamp: string;
+  status: ConnectivityStatus;
+  upPercentage: number;
+  downPercentage: number;
+  degradedPercentage: number;
+}
+
+export interface ConnectivityStatusResponse {
+  data: ConnectivityStatusPoint[];
+  meta: {
+    startTime: string;
+    endTime: string;
+    count: number;
+    uptimePercentage: number;
+  };
+}

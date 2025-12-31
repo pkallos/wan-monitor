@@ -13,7 +13,9 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useMemo } from "react";
 import { FiLogOut, FiPause, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { useConnectivityStatus } from "@/api/hooks/useConnectivityStatus";
 import { useMetrics } from "@/api/hooks/useMetrics";
+import { ConnectivityStatusChart } from "@/components/charts/ConnectivityStatusChart";
 import { JitterChart } from "@/components/charts/JitterChart";
 import { LatencyChart } from "@/components/charts/LatencyChart";
 import { PacketLossChart } from "@/components/charts/PacketLossChart";
@@ -58,6 +60,21 @@ export function Dashboard() {
     endTime,
     refetchInterval,
   });
+
+  const { data: connectivityStatusData, isLoading: isConnectivityLoading } =
+    useConnectivityStatus({
+      startTime,
+      endTime,
+      refetchInterval: refetchInterval || undefined,
+    });
+
+  // Calculate granularity for connectivity status chart
+  const connectivityGranularity = useMemo(() => {
+    if (!startTime || !endTime) return "5m";
+    const rangeMs = endTime.getTime() - startTime.getTime();
+    const rangeHours = rangeMs / (1000 * 60 * 60);
+    return rangeHours <= 1 ? "1m" : "5m";
+  }, [startTime, endTime]);
 
   // Update last updated timestamp when data changes
   useEffect(() => {
@@ -190,7 +207,32 @@ export function Dashboard() {
           />
         </SimpleGrid>
 
-        {/* Bottom Section: Stacked Charts with Linked Cursors */}
+        {/* Connectivity Status Section */}
+        <Box
+          bg={cardBg}
+          borderWidth="1px"
+          borderColor={borderColor}
+          borderRadius="lg"
+          p={6}
+          mb={6}
+          shadow="sm"
+        >
+          <Heading size="md" mb={4}>
+            Connectivity Status
+          </Heading>
+          <ConnectivityStatusChart
+            data={connectivityStatusData?.data ?? []}
+            uptimePercentage={
+              connectivityStatusData?.meta?.uptimePercentage ?? 0
+            }
+            isLoading={isConnectivityLoading}
+            startTime={startTime}
+            endTime={endTime}
+            granularity={connectivityGranularity}
+          />
+        </Box>
+
+        {/* Network Quality Section: Stacked Charts with Linked Cursors */}
         <Box
           bg={cardBg}
           borderWidth="1px"

@@ -40,6 +40,7 @@ const mockWriteMetric = vi.fn();
 const MockQuestDBLive = Layer.succeed(QuestDB, {
   writeMetric: mockWriteMetric,
   queryMetrics: vi.fn(),
+  queryConnectivityStatus: vi.fn(),
   health: vi.fn(),
   close: vi.fn(),
 });
