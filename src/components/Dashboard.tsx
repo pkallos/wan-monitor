@@ -8,11 +8,17 @@ import {
   SimpleGrid,
   useColorModeValue,
 } from '@chakra-ui/react';
+import { useState } from 'react';
 import { LatencyChart } from '@/components/charts/LatencyChart';
+import { DateRangeSelector } from '@/components/DateRangeSelector';
 import { MetricCard } from '@/components/MetricCard';
+import type { TimeRange } from '@/utils/timeRange';
+import { getTimeRangeDates } from '@/utils/timeRange';
 
 export function Dashboard() {
   const bg = useColorModeValue('gray.50', 'gray.900');
+  const [timeRange, setTimeRange] = useState<TimeRange>('24h');
+  const { startTime, endTime } = getTimeRangeDates(timeRange);
 
   return (
     <Box minH="100vh" bg={bg}>
@@ -22,6 +28,7 @@ export function Dashboard() {
             WAN Monitor
           </Heading>
           <HStack spacing={4}>
+            <DateRangeSelector value={timeRange} onChange={setTimeRange} />
             <IconButton
               aria-label="Refresh data"
               icon={<RepeatIcon />}
@@ -34,7 +41,7 @@ export function Dashboard() {
         <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
           <MetricCard title="Connectivity" value="Online" status="good" />
           <MetricCard title="Latency">
-            <LatencyChart />
+            <LatencyChart startTime={startTime} endTime={endTime} />
           </MetricCard>
           <MetricCard title="Packet Loss" value="0.0" unit="%" status="good" />
           <MetricCard title="Jitter" value="2.1" unit="ms" status="good" />
