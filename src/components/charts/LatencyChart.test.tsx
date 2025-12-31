@@ -90,11 +90,11 @@ describe('LatencyChart', () => {
     });
 
     await waitFor(() => {
-      expect(getByText('Failed to load latency data')).toBeTruthy();
+      expect(getByText('Failed to load latency data')).toBeInTheDocument();
     });
   });
 
-  it('should show empty state when no data', async () => {
+  it('should show chart with full time range even when no data available', async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -107,12 +107,16 @@ describe('LatencyChart', () => {
       }),
     });
 
-    const { getByText } = render(<LatencyChart />, {
+    const { container } = render(<LatencyChart />, {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => {
-      expect(getByText('No latency data available')).toBeTruthy();
+      // Should render chart container
+      const chartContainer = container.querySelector(
+        '.recharts-responsive-container'
+      );
+      expect(chartContainer).toBeInTheDocument();
     });
   });
 

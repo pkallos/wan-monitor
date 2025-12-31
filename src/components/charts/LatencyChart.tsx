@@ -11,7 +11,7 @@ import {
 import { usePingMetrics } from '@/api/hooks/usePingMetrics';
 import type { PingMetric } from '@/api/types';
 import { ChartContainer } from '@/components/charts/ChartContainer';
-import { EmptyState, ErrorState } from '@/components/charts/ChartStates';
+import { ErrorState } from '@/components/charts/ChartStates';
 import { useChartTheme } from '@/components/charts/useChartTheme';
 
 export interface LatencyChartProps {
@@ -22,7 +22,8 @@ export interface LatencyChartProps {
 
 interface ChartDataPoint {
   time: string;
-  latency: number;
+  timestamp: number;
+  latency: number | null;
 }
 
 interface Stats {
@@ -51,6 +52,47 @@ function calculateStats(data: PingMetric[]): Stats {
   };
 }
 
+function generateTimeRange(
+  start: Date,
+  end: Date,
+  intervalMinutes: number
+): ChartDataPoint[] {
+  const points: ChartDataPoint[] = [];
+  const current = new Date(start);
+
+  while (current <= end) {
+    points.push({
+      time: current.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      timestamp: current.getTime(),
+      latency: null,
+    });
+    current.setMinutes(current.getMinutes() + intervalMinutes);
+  }
+
+  return points;
+}
+
+function mergeDataIntoTimeRange(
+  timeRange: ChartDataPoint[],
+  actualData: PingMetric[]
+): ChartDataPoint[] {
+  return timeRange.map((point) => {
+    // Find closest data point within 5 minutes
+    const closestData = actualData.find((d) => {
+      const diff = Math.abs(new Date(d.timestamp).getTime() - point.timestamp);
+      return diff < 5 * 60 * 1000; // 5 minutes tolerance
+    });
+
+    return {
+      ...point,
+      latency: closestData?.latency ?? null,
+    };
+  });
+}
+
 export function LatencyChart({ startTime, endTime, host }: LatencyChartProps) {
   const { data, isLoading, error } = usePingMetrics({
     startTime,
@@ -63,18 +105,20 @@ export function LatencyChart({ startTime, endTime, host }: LatencyChartProps) {
     return <ErrorState message="Failed to load latency data" />;
   }
 
-  if (!isLoading && (!data || data.data.length === 0)) {
-    return <EmptyState message="No latency data available" />;
-  }
+  // Default to last hour if not specified
+  const now = new Date();
+  const start = startTime ?? new Date(now.getTime() - 60 * 60 * 1000);
+  const end = endTime ?? now;
 
-  const chartData: ChartDataPoint[] =
-    data?.data.map((d) => ({
-      time: new Date(d.timestamp).toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      latency: d.latency,
-    })) ?? [];
+  // Calculate appropriate interval based on time range
+  const rangeHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+  const intervalMinutes = rangeHours <= 1 ? 1 : rangeHours <= 24 ? 30 : 60;
+
+  // Generate full time range
+  const timeRange = generateTimeRange(start, end, intervalMinutes);
+
+  // Merge actual data into time range
+  const chartData = mergeDataIntoTimeRange(timeRange, data?.data ?? []);
 
   const stats = calculateStats(data?.data ?? []);
 
@@ -144,6 +188,7 @@ export function LatencyChart({ startTime, endTime, host }: LatencyChartProps) {
             dot={false}
             strokeWidth={2}
             activeDot={{ r: 4 }}
+            connectNulls={false}
           />
         </LineChart>
       </ChartContainer>
