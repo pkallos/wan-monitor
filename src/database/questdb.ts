@@ -141,36 +141,21 @@ const make = Effect.gen(function* () {
 
   const queryPingMetrics = (params: QueryPingMetricsParams) =>
     Effect.gen(function* () {
-      // Default to last hour if no time range specified
-      const now = new Date();
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      const startTime = params.startTime ?? oneHourAgo;
-      const endTime = params.endTime ?? now;
-      const limit = params.limit ?? 1000;
-
       // Build SQL query
-      let sql = `
-        SELECT
-          timestamp,
-          host,
-          latency,
-          packet_loss,
-          connectivity_status
+      const query = `
+        SELECT timestamp, host, latency, packet_loss, connectivity_status, jitter
         FROM network_metrics
-        WHERE source = 'ping'
-          AND timestamp BETWEEN '${startTime.toISOString()}' AND '${endTime.toISOString()}'
+        WHERE timestamp >= '${params.startTime?.toISOString() ?? new Date(Date.now() - 3600000).toISOString()}'
+          AND timestamp <= '${params.endTime?.toISOString() ?? new Date().toISOString()}'
+          ${params.host ? `AND host = '${params.host}'` : ''}
+        ORDER BY timestamp DESC
+        ${params.limit ? `LIMIT ${params.limit}` : ''}
       `;
-
-      if (params.host) {
-        sql += ` AND host = '${params.host}'`;
-      }
-
-      sql += ` ORDER BY timestamp DESC LIMIT ${limit}`;
 
       // Query QuestDB HTTP API
       const response = yield* httpClient
         .get(`http://${config.database.host}:${config.database.port}/exec`, {
-          urlParams: { query: sql },
+          urlParams: { query },
         })
         .pipe(
           Effect.flatMap((res) => res.json),
@@ -195,13 +180,13 @@ const make = Effect.gen(function* () {
       }
 
       // Map rows to PingMetricRow
-      const rows: PingMetricRow[] = data.dataset.map((row) => ({
+      const rows = data.dataset.map((row) => ({
         timestamp: row[0] as string,
         host: row[1] as string,
         latency: row[2] as number,
         packet_loss: row[3] as number,
         connectivity_status: row[4] as string,
-        jitter: undefined, // Not stored in table yet
+        jitter: row[5] as number | undefined,
       }));
 
       return rows;
