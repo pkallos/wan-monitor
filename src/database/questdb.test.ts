@@ -25,6 +25,11 @@ describe('ConfigService', () => {
     expect(result.server.host).toBe('0.0.0.0');
     expect(result.database.host).toBe('localhost');
     expect(result.database.port).toBe(9000);
+    expect(result.database.protocol).toBe('http');
+    expect(result.database.autoFlushRows).toBe(100);
+    expect(result.database.autoFlushInterval).toBe(1000);
+    expect(result.database.requestTimeout).toBe(10000);
+    expect(result.database.retryTimeout).toBe(1000);
   });
 });
 
@@ -103,7 +108,15 @@ describe('QuestDB Integration', () => {
       // Create a config that points to wrong host
       const BadConfigLive = Layer.succeed(ConfigService, {
         server: { port: 3001, host: '0.0.0.0' },
-        database: { host: 'nonexistent-host', port: 9000 },
+        database: {
+          host: 'nonexistent-host',
+          port: 9000,
+          protocol: 'http',
+          autoFlushRows: 100,
+          autoFlushInterval: 1000,
+          requestTimeout: 10000,
+          retryTimeout: 1000,
+        },
         ping: { timeout: 5, retries: 1, hosts: ['8.8.8.8', '1.1.1.1'] },
       });
 

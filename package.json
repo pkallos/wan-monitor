@@ -72,7 +72,7 @@
     "vitest": "^1.2.0"
   },
   "engines": {
-    "node": ">=24.0.0",
+    "node": ">=22.0.0",
     "pnpm": ">=8.0.0"
   },
   "lint-staged": {
@@ -80,7 +80,7 @@
       "biome check --write",
       "biome format --write"
     ],
-    "*.{json,yml,yaml}": [
+    "*.{json,jsonc}": [
       "biome format --write"
     ]
   }

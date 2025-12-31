@@ -1,7 +1,7 @@
 import { HttpClient } from '@effect/platform';
 import { NodeHttpClient } from '@effect/platform-node';
 import { Sender } from '@questdb/nodejs-client';
-import { Context, Effect, Layer } from 'effect';
+import { Context, Effect, Layer, Schedule } from 'effect';
 import { ConfigService } from '@/services/config';
 import type { DatabaseHealth, NetworkMetric } from '@/types/metrics';
 
@@ -61,13 +61,35 @@ const make = Effect.gen(function* () {
   const config = yield* ConfigService;
   const httpClient = yield* HttpClient.HttpClient;
 
-  // Initialize sender with connection (use TCP/ILP protocol on port 9009)
+  // Build connection string based on protocol
+  const buildConnectionString = () => {
+    const {
+      host,
+      port,
+      protocol,
+      autoFlushRows,
+      autoFlushInterval,
+      requestTimeout,
+      retryTimeout,
+    } = config.database;
+
+    if (protocol === 'http') {
+      return `http::addr=${host}:${port};auto_flush_rows=${autoFlushRows};auto_flush_interval=${autoFlushInterval};request_timeout=${requestTimeout};retry_timeout=${retryTimeout};`;
+    }
+    return `tcp::addr=${host}:9009;auto_flush_rows=${autoFlushRows};auto_flush_interval=${autoFlushInterval};`;
+  };
+
+  // Initialize sender with connection
   const sender = yield* Effect.tryPromise({
     try: async () => {
-      const s = await Sender.fromConfig(
-        `tcp::addr=${config.database.host}:9009;`
-      );
-      await s.connect();
+      const connectionString = buildConnectionString();
+      const s = await Sender.fromConfig(connectionString);
+
+      // Only call connect() for TCP protocol
+      if (config.database.protocol === 'tcp') {
+        await s.connect();
+      }
+
       return s;
     },
     catch: (error) =>
@@ -104,11 +126,18 @@ const make = Effect.gen(function* () {
           row = row.intColumn('upload_bandwidth', metric.uploadBandwidth);
 
         row.at(BigInt(metric.timestamp.getTime()) * 1_000_000n, 'ns');
-        await sender.flush();
+
+        // Don't flush after every write - let auto-flush handle it
+        // This allows batching for better performance
       },
       catch: (error) =>
         new DatabaseWriteError(`Failed to write metric: ${error}`),
-    });
+    }).pipe(
+      Effect.retry({
+        times: 3,
+        schedule: Schedule.exponential('100 millis'),
+      })
+    );
 
   const queryPingMetrics = (params: QueryPingMetricsParams) =>
     Effect.gen(function* () {
@@ -175,29 +204,49 @@ const make = Effect.gen(function* () {
     });
 
   const health = () =>
-    Effect.tryPromise({
-      try: async () => {
-        // Actually test database connection by writing and flushing a test row
-        sender
-          .table('health_check')
-          .symbol('status', 'ping')
-          .at(BigInt(Date.now()) * 1_000_000n, 'ns');
-        await sender.flush();
+    Effect.gen(function* () {
+      // Test database connection by writing and flushing a test row
+      yield* Effect.tryPromise({
+        try: async () => {
+          sender
+            .table('health_check')
+            .symbol('status', 'ping')
+            .at(BigInt(Date.now()) * 1_000_000n, 'ns');
+          await sender.flush();
+        },
+        catch: (error) =>
+          new DatabaseConnectionError(`Health check failed: ${error}`),
+      });
 
-        return {
-          connected: true,
-          version: 'QuestDB 8.x',
-          uptime: process.uptime(),
-        };
-      },
-      catch: (error) =>
-        new DatabaseConnectionError(`Health check failed: ${error}`),
+      return {
+        connected: true,
+        version: 'QuestDB 8.x',
+        uptime: process.uptime(),
+      };
     });
 
   const close = () =>
-    Effect.promise(async () => {
-      await sender.close();
-    });
+    Effect.gen(function* () {
+      // Flush any remaining buffered data before closing
+      yield* Effect.tryPromise({
+        try: async () => {
+          await sender.flush();
+        },
+        catch: (error) =>
+          new DatabaseWriteError(`Failed to flush buffer on close: ${error}`),
+      });
+
+      // Close the connection
+      yield* Effect.promise(async () => {
+        await sender.close();
+      });
+    }).pipe(
+      Effect.catchAll((error) => {
+        // Log error but don't fail - we still want to close
+        console.error('Error during QuestDB close:', error);
+        return Effect.void;
+      })
+    );
 
   return { writeMetric, queryPingMetrics, health, close };
 });

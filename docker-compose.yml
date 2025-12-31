@@ -1,6 +1,6 @@
 services:
   questdb:
-    image: questdb/questdb:8.2.2
+    image: questdb/questdb:9.2.3
     container_name: wan-monitor-questdb
     ports:
       - '9000:9000'  # REST API and Web Console
@@ -12,7 +12,7 @@ services:
     volumes:
       - questdb-data:/var/lib/questdb
     healthcheck:
-      test: ['CMD-SHELL', 'curl -f http://localhost:9000/status || exit 1']
+      test: ['CMD-SHELL', 'curl -sf "http://localhost:9000/exec?query=SELECT%201" > /dev/null || exit 1']
       interval: 30s
       timeout: 10s
       retries: 3
