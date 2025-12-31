@@ -99,13 +99,14 @@ export const PingExecutorLive = Layer.effect(
             )
           );
         }),
-        // Failure path - write "down" metric
+        // Failure path - write "down" metric with no latency (NULL in DB)
+        // Omitting latency ensures avg() aggregations aren't skewed by failures
         Effect.catchAll((pingError) => {
           const errorMetric: NetworkMetric = {
             timestamp: new Date(),
             source: 'ping',
             host,
-            latency: -1,
+            // latency omitted - no measurement available on failure
             packetLoss: 100,
             connectivityStatus: 'down',
           };

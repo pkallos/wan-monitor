@@ -79,7 +79,7 @@ describe('PingExecutor', () => {
       expect(mockWriteMetric).toHaveBeenCalled();
     });
 
-    it('should handle ping failure and still write metric', async () => {
+    it('should handle ping failure and write metric with NULL latency', async () => {
       mockPing.mockReturnValue(
         Effect.fail({ _tag: 'PingHostUnreachableError' as const })
       );
@@ -95,8 +95,12 @@ describe('PingExecutor', () => {
       expect(result.success).toBe(false);
       expect(result.host).toBe('unreachable.host');
       expect(result.error).toBe('PingHostUnreachableError');
-      // Should still try to write a "down" metric
+      // Should write a "down" metric with no latency (NULL in DB)
       expect(mockWriteMetric).toHaveBeenCalled();
+      const writtenMetric = mockWriteMetric.mock.calls[0][0];
+      expect(writtenMetric.latency).toBeUndefined();
+      expect(writtenMetric.packetLoss).toBe(100);
+      expect(writtenMetric.connectivityStatus).toBe('down');
     });
   });
 
