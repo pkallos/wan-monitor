@@ -1,3 +1,5 @@
+import { HttpClient } from '@effect/platform';
+import { NodeHttpClient } from '@effect/platform-node';
 import { Sender } from '@questdb/nodejs-client';
 import { Context, Effect, Layer } from 'effect';
 import { ConfigService } from '@/services/config';
@@ -14,11 +16,36 @@ export class DatabaseWriteError {
   constructor(readonly message: string) {}
 }
 
+export class DatabaseQueryError {
+  readonly _tag = 'DatabaseQueryError';
+  constructor(readonly message: string) {}
+}
+
+// Query result types
+export interface PingMetricRow {
+  readonly timestamp: string; // ISO8601
+  readonly host: string;
+  readonly latency: number;
+  readonly packet_loss: number;
+  readonly connectivity_status: string;
+  readonly jitter?: number;
+}
+
+export interface QueryPingMetricsParams {
+  readonly startTime?: Date;
+  readonly endTime?: Date;
+  readonly host?: string;
+  readonly limit?: number;
+}
+
 // QuestDB service interface
 export interface QuestDBService {
   readonly writeMetric: (
     metric: NetworkMetric
   ) => Effect.Effect<void, DatabaseWriteError>;
+  readonly queryPingMetrics: (
+    params: QueryPingMetricsParams
+  ) => Effect.Effect<readonly PingMetricRow[], DatabaseQueryError>;
   readonly health: () => Effect.Effect<DatabaseHealth, DatabaseConnectionError>;
   readonly close: () => Effect.Effect<void>;
 }
@@ -32,6 +59,7 @@ export class QuestDB extends Context.Tag('QuestDB')<
 // Implementation
 const make = Effect.gen(function* () {
   const config = yield* ConfigService;
+  const httpClient = yield* HttpClient.HttpClient;
 
   // Initialize sender with connection (use TCP/ILP protocol on port 9009)
   const sender = yield* Effect.tryPromise({
@@ -82,6 +110,70 @@ const make = Effect.gen(function* () {
         new DatabaseWriteError(`Failed to write metric: ${error}`),
     });
 
+  const queryPingMetrics = (params: QueryPingMetricsParams) =>
+    Effect.gen(function* () {
+      // Default to last hour if no time range specified
+      const now = new Date();
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const startTime = params.startTime ?? oneHourAgo;
+      const endTime = params.endTime ?? now;
+      const limit = params.limit ?? 1000;
+
+      // Build SQL query
+      let sql = `
+        SELECT
+          timestamp,
+          host,
+          latency,
+          packet_loss,
+          connectivity_status,
+          jitter
+        FROM network_metrics
+        WHERE source = 'ping'
+          AND timestamp BETWEEN '${startTime.toISOString()}' AND '${endTime.toISOString()}'
+      `;
+
+      if (params.host) {
+        sql += ` AND host = '${params.host}'`;
+      }
+
+      sql += ` ORDER BY timestamp DESC LIMIT ${limit}`;
+
+      // Query QuestDB HTTP API
+      const response = yield* httpClient
+        .get(`http://${config.database.host}:${config.database.port}/exec`, {
+          urlParams: { query: sql },
+        })
+        .pipe(
+          Effect.flatMap((res) => res.json),
+          Effect.catchAll((error) =>
+            Effect.fail(
+              new DatabaseQueryError(`Failed to query metrics: ${error}`)
+            )
+          )
+        );
+
+      // Parse response
+      const data = response as {
+        query: string;
+        columns: Array<{ name: string; type: string }>;
+        dataset: Array<Array<string | number>>;
+        count: number;
+      };
+
+      // Map rows to PingMetricRow
+      const rows: PingMetricRow[] = data.dataset.map((row) => ({
+        timestamp: row[0] as string,
+        host: row[1] as string,
+        latency: row[2] as number,
+        packet_loss: row[3] as number,
+        connectivity_status: row[4] as string,
+        jitter: row[5] as number | undefined,
+      }));
+
+      return rows;
+    });
+
   const health = () =>
     Effect.tryPromise({
       try: async () => {
@@ -107,10 +199,10 @@ const make = Effect.gen(function* () {
       await sender.close();
     });
 
-  return { writeMetric, health, close };
+  return { writeMetric, queryPingMetrics, health, close };
 });
 
-// Create layer with cleanup
+// Create layer with cleanup - provide HttpClient dependency
 export const QuestDBLive = Layer.scoped(
   QuestDB,
   Effect.gen(function* () {
@@ -118,4 +210,4 @@ export const QuestDBLive = Layer.scoped(
     yield* Effect.addFinalizer(() => service.close());
     return service;
   })
-);
+).pipe(Layer.provide(NodeHttpClient.layerUndici));
