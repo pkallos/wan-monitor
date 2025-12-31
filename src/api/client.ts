@@ -16,7 +16,11 @@ export const apiClient = {
     path: string,
     params?: Record<string, string | undefined>
   ): Promise<T> => {
-    const url = new URL(path, window.location.origin + API_BASE);
+    // Construct full path by combining API_BASE with the relative path
+    const fullPath = path.startsWith('/')
+      ? `${API_BASE}${path}`
+      : `${API_BASE}/${path}`;
+    const url = new URL(fullPath, window.location.origin);
 
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -37,7 +41,11 @@ export const apiClient = {
   },
 
   post: async <T>(path: string, body: unknown): Promise<T> => {
-    const url = new URL(path, window.location.origin + API_BASE);
+    // Construct full path by combining API_BASE with the relative path
+    const fullPath = path.startsWith('/')
+      ? `${API_BASE}${path}`
+      : `${API_BASE}/${path}`;
+    const url = new URL(fullPath, window.location.origin);
 
     const res = await fetch(url.toString(), {
       method: 'POST',

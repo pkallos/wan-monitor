@@ -8,6 +8,7 @@ import {
   SimpleGrid,
   useColorModeValue,
 } from '@chakra-ui/react';
+import { LatencyChart } from '@/components/charts/LatencyChart';
 import { MetricCard } from '@/components/MetricCard';
 
 export function Dashboard() {
@@ -32,7 +33,9 @@ export function Dashboard() {
 
         <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
           <MetricCard title="Connectivity" value="Online" status="good" />
-          <MetricCard title="Latency" value="15.3" unit="ms" status="good" />
+          <MetricCard title="Latency">
+            <LatencyChart />
+          </MetricCard>
           <MetricCard title="Packet Loss" value="0.0" unit="%" status="good" />
           <MetricCard title="Jitter" value="2.1" unit="ms" status="good" />
           <MetricCard

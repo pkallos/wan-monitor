@@ -97,7 +97,7 @@ describe('usePingMetrics', () => {
     const callUrl = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const url = new URL(callUrl);
 
-    expect(url.pathname).toBe('/metrics/ping');
+    expect(url.pathname).toBe('/api/metrics/ping');
     expect(url.searchParams.get('startTime')).toBe(startTime.toISOString());
     expect(url.searchParams.get('endTime')).toBe(endTime.toISOString());
     expect(url.searchParams.get('host')).toBe(host);
@@ -156,7 +156,7 @@ describe('usePingMetrics', () => {
     const callUrl = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const url = new URL(callUrl);
 
-    expect(url.pathname).toBe('/metrics/ping');
+    expect(url.pathname).toBe('/api/metrics/ping');
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
