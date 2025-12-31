@@ -139,6 +139,70 @@ When the feature is complete:
 
 **Important:** When the user tells you a PR has been merged, immediately update the corresponding Linear task status to "Done".
 
+### 7. Linear Issue Tagging Guidelines
+
+**All Linear issues should be tagged consistently to enable filtering, prioritization, and organization.**
+
+#### Tagging Convention
+
+Use a **two-tier tagging system**:
+
+1. **Type tag** (required, exactly one): `Feature`, `Bug`, or `Improvement`
+2. **Area tags** (1-3 recommended): Component/domain-specific tags
+3. **Priority/Effort tags** (optional): Special characteristics
+
+#### Available Labels
+
+**Type Labels (choose exactly one):**
+
+- `Feature` - New functionality or capability
+- `Bug` - Defect, error, or incorrect behavior
+- `Improvement` - Enhancement to existing functionality
+
+**Area Labels (choose 1-3 that apply):**
+
+- `backend` - Server-side, API, database, Effect services
+- `frontend` - UI, React components, charts, styling
+- `devops` - Docker, CI/CD, deployment, infrastructure
+- `testing` - Test infrastructure, unit tests, E2E tests
+- `monitoring` - Ping, speedtest, metrics collection
+- `reliability` - Error handling, retries, resilience, health checks
+- `documentation` - README, guides, API docs, code comments
+- `performance` - Optimization, caching, efficiency improvements
+
+**Priority/Effort Labels (optional):**
+
+- `quick-win` - Small, high-impact tasks (< 2 hours)
+- `tech-debt` - Refactoring, cleanup, code quality
+- `breaking-change` - Requires migration or version bump
+
+#### Tagging Guidelines
+
+**When creating a new Linear issue:**
+
+1. Always add exactly one Type label (Feature, Bug, or Improvement)
+2. Add 1-3 Area labels that best describe the work scope
+3. Add Priority/Effort labels if applicable
+4. Be specific but not excessive - avoid over-tagging
+
+**Examples:**
+
+- Backend API endpoint: `["Feature", "backend"]`
+- UI bug fix: `["Bug", "frontend"]`
+- Docker documentation: `["Improvement", "devops", "documentation", "quick-win"]`
+- Database reliability feature: `["Feature", "backend", "reliability"]`
+- CI/CD breaking change: `["Improvement", "devops", "breaking-change"]`
+- Frontend performance optimization: `["Improvement", "frontend", "performance"]`
+
+#### Agent Responsibilities
+
+When working on Linear tasks, agents should:
+
+- **Verify tags before starting work** - Ensure all issues have appropriate tags
+- **Add missing tags** - If an issue is untagged or under-tagged, add appropriate labels
+- **Update tags if scope changes** - Adjust labels if the work evolves during implementation
+- **Use tags for prioritization** - Consider tags when selecting which tasks to work on
+
 ## Code Quality Standards
 
 ### Testing Requirements
