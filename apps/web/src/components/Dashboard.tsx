@@ -99,7 +99,14 @@ export function Dashboard() {
   return (
     <Box minH="100vh" bg={bg}>
       <Container maxW="container.xl" py={8}>
-        <HStack justify="space-between" mb={6}>
+        <Box
+          display="flex"
+          flexDirection={{ base: 'column', md: 'row' }}
+          justifyContent="space-between"
+          alignItems={{ base: 'stretch', md: 'center' }}
+          gap={4}
+          mb={6}
+        >
           <VStack align="start" spacing={0}>
             <Heading size="xl" fontWeight="bold">
               WAN Monitor
@@ -108,7 +115,11 @@ export function Dashboard() {
               {ispName}
             </Text>
           </VStack>
-          <HStack spacing={4}>
+          <HStack
+            spacing={4}
+            flexWrap="wrap"
+            justify={{ base: 'space-between', md: 'flex-end' }}
+          >
             <HStack spacing={2}>
               {isRefetching && <Spinner size="sm" color="blue.500" />}
               <Text fontSize="xs" color="gray.500">
@@ -140,7 +151,7 @@ export function Dashboard() {
             </HStack>
             <DateRangeSelector value={timeRange} onChange={setTimeRange} />
           </HStack>
-        </HStack>
+        </Box>
 
         {/* Top Row: 3 Metric Cards */}
         <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} mb={6}>
