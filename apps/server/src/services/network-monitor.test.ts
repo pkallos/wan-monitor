@@ -1,5 +1,6 @@
-import { Effect, Layer } from 'effect';
+import { Effect, Fiber, Layer } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
+import { QuestDB } from '@/database/questdb';
 import { ConfigService } from '@/services/config';
 import {
   type MonitorStats,
@@ -10,6 +11,7 @@ import {
   type PingExecutionResult,
   PingExecutor,
 } from '@/services/ping-executor';
+import { SpeedTestService } from '@/services/speedtest';
 
 describe('NetworkMonitor', () => {
   const mockPingResults: readonly PingExecutionResult[] = [
@@ -43,6 +45,25 @@ describe('NetworkMonitor', () => {
     executeHosts: vi.fn(),
   });
 
+  const MockQuestDB = Layer.succeed(QuestDB, {
+    writeMetric: vi.fn(() => Effect.void),
+    queryPingMetrics: vi.fn(),
+    querySpeedMetrics: vi.fn(),
+    health: vi.fn(),
+    close: vi.fn(),
+  });
+
+  const MockSpeedTestService = Layer.succeed(SpeedTestService, {
+    runTest: vi.fn(() =>
+      Effect.fail(
+        new (class SpeedTestExecutionError {
+          readonly _tag = 'SpeedTestExecutionError' as const;
+          constructor(readonly message: string) {}
+        })('Mock error')
+      )
+    ),
+  });
+
   const MockConfig = Layer.succeed(ConfigService, {
     server: {
       port: 3001,
@@ -66,6 +87,8 @@ describe('NetworkMonitor', () => {
 
   const TestLayer = NetworkMonitorLive.pipe(
     Layer.provide(MockPingExecutor),
+    Layer.provide(MockQuestDB),
+    Layer.provide(MockSpeedTestService),
     Layer.provide(MockConfig)
   );
 
@@ -78,6 +101,9 @@ describe('NetworkMonitor', () => {
       expect(stats.lastPingTime).toBeNull();
       expect(stats.successfulPings).toBe(0);
       expect(stats.failedPings).toBe(0);
+      expect(stats.lastSpeedTestTime).toBeNull();
+      expect(stats.successfulSpeedTests).toBe(0);
+      expect(stats.failedSpeedTests).toBe(0);
     });
 
     await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
@@ -87,8 +113,8 @@ describe('NetworkMonitor', () => {
     const program = Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
-      // Start monitoring (includes initial ping)
-      yield* monitor.start();
+      // Fork the start and interrupt after assertions
+      const fiber = yield* Effect.fork(monitor.start());
 
       // Wait briefly for async effects
       yield* Effect.sleep('100 millis');
@@ -100,6 +126,9 @@ describe('NetworkMonitor', () => {
       // The scheduled task runs immediately after start, so we get 2 cycles x 2 hosts = 4
       expect(stats.successfulPings).toBeGreaterThanOrEqual(2);
       expect(stats.failedPings).toBe(0);
+
+      // Interrupt the background monitor
+      yield* Fiber.interrupt(fiber);
     });
 
     await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
@@ -111,12 +140,15 @@ describe('NetworkMonitor', () => {
 
     const program = Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
-      yield* monitor.start();
+      const fiber = yield* Effect.fork(monitor.start());
       yield* Effect.sleep('100 millis');
       const stats: MonitorStats = yield* monitor.getStats();
 
       // Should have run initial ping
       expect(stats.successfulPings).toBeGreaterThan(0);
+
+      // Interrupt the background monitor
+      yield* Fiber.interrupt(fiber);
     });
 
     await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));

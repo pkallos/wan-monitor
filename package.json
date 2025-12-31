@@ -30,7 +30,8 @@
     "format": "turbo run format",
     "format:check": "turbo run format:check",
     "check": "biome check --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "sh scripts/patch-speedtest-net.sh"
   },
   "dependencies": {},
   "devDependencies": {

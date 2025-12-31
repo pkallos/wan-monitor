@@ -1,5 +1,7 @@
 import { Config, Context, Effect, Layer, Schedule } from 'effect';
+import { QuestDB } from '@/database/questdb';
 import { PingExecutor } from '@/services/ping-executor';
+import { SpeedTestService } from '@/services/speedtest';
 
 // ============================================================================
 // Types
@@ -10,6 +12,9 @@ export interface MonitorStats {
   readonly lastPingTime: Date | null;
   readonly successfulPings: number;
   readonly failedPings: number;
+  readonly lastSpeedTestTime: Date | null;
+  readonly successfulSpeedTests: number;
+  readonly failedSpeedTests: number;
 }
 
 // ============================================================================
@@ -45,17 +50,27 @@ export const NetworkMonitorLive = Layer.effect(
   NetworkMonitor,
   Effect.gen(function* () {
     const pingExecutor = yield* PingExecutor;
+    const speedTestService = yield* SpeedTestService;
+    const db = yield* QuestDB;
 
     // Read ping interval from config (default: 60 seconds)
     const pingIntervalSeconds = yield* Config.number(
       'PING_INTERVAL_SECONDS'
     ).pipe(Config.withDefault(60));
 
+    // Read speedtest interval from config (default: 1 hour = 3600 seconds)
+    const speedTestIntervalSeconds = yield* Config.number(
+      'SPEEDTEST_INTERVAL_SECONDS'
+    ).pipe(Config.withDefault(3600));
+
     // Stats tracking
     let startTime: Date | null = null;
     let lastPingTime: Date | null = null;
     let successfulPings = 0;
     let failedPings = 0;
+    let lastSpeedTestTime: Date | null = null;
+    let successfulSpeedTests = 0;
+    let failedSpeedTests = 0;
 
     /**
      * Execute a single ping cycle and update stats
@@ -77,6 +92,59 @@ export const NetworkMonitorLive = Layer.effect(
       yield* Effect.logInfo(
         `Ping cycle completed: ${successCount} successful, ${failCount} failed`
       );
+    });
+
+    /**
+     * Execute a single speedtest cycle and update stats
+     */
+    const executeSpeedTestCycle = Effect.gen(function* () {
+      const timestamp = new Date();
+
+      const result = yield* speedTestService.runTest().pipe(
+        Effect.catchAll((error) => {
+          failedSpeedTests++;
+          const errorMessage =
+            error._tag === 'SpeedTestExecutionError'
+              ? error.message
+              : error._tag === 'SpeedTestTimeoutError'
+                ? `Timeout after ${error.timeoutMs}ms`
+                : String(error);
+          return Effect.flatMap(
+            Effect.logError(
+              `Speed test failed: ${error._tag} - ${errorMessage}`
+            ),
+            () => Effect.fail(error)
+          );
+        })
+      );
+
+      // Write speed test result to database
+      const writeSucceeded = yield* db
+        .writeMetric({
+          timestamp: result.timestamp,
+          source: 'speedtest' as const,
+          latency: result.latency,
+          jitter: result.jitter,
+          downloadBandwidth: Math.round(result.downloadSpeed * 1_000_000),
+          uploadBandwidth: Math.round(result.uploadSpeed * 1_000_000),
+          serverLocation: result.serverLocation,
+          isp: result.isp,
+        })
+        .pipe(
+          Effect.as(true as const),
+          Effect.catchAll((error) =>
+            Effect.logError(
+              `Speed test DB write failed: ${error._tag} - ${error.message}`
+            ).pipe(Effect.as(false as const))
+          )
+        );
+
+      lastSpeedTestTime = timestamp;
+      if (writeSucceeded) {
+        successfulSpeedTests++;
+      } else {
+        failedSpeedTests++;
+      }
     });
 
     /**
@@ -106,6 +174,24 @@ export const NetworkMonitorLive = Layer.effect(
           Effect.fork
         );
 
+        // Schedule periodic speed tests
+        yield* Effect.logInfo(
+          `Starting speed test monitor (interval: ${speedTestIntervalSeconds}s)`
+        );
+        const speedTestSchedule = Schedule.spaced(
+          `${speedTestIntervalSeconds} seconds`
+        );
+
+        yield* executeSpeedTestCycle.pipe(
+          Effect.repeat(speedTestSchedule),
+          Effect.catchAll((error) =>
+            Effect.logError(`Speed test cycle error: ${error}`).pipe(
+              Effect.flatMap(() => Effect.void)
+            )
+          ),
+          Effect.fork
+        );
+
         yield* Effect.logInfo('Network monitor started successfully');
       });
 
@@ -118,6 +204,9 @@ export const NetworkMonitorLive = Layer.effect(
         lastPingTime,
         successfulPings,
         failedPings,
+        lastSpeedTestTime,
+        successfulSpeedTests,
+        failedSpeedTests,
       } satisfies MonitorStats);
 
     return {
