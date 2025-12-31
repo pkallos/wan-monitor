@@ -10,6 +10,7 @@ import {
 } from '@chakra-ui/react';
 import { useState } from 'react';
 import { LatencyChart } from '@/components/charts/LatencyChart';
+import { PacketLossChart } from '@/components/charts/PacketLossChart';
 import { DateRangeSelector } from '@/components/DateRangeSelector';
 import { MetricCard } from '@/components/MetricCard';
 import type { TimeRange } from '@/utils/timeRange';
@@ -43,7 +44,9 @@ export function Dashboard() {
           <MetricCard title="Latency">
             <LatencyChart startTime={startTime} endTime={endTime} />
           </MetricCard>
-          <MetricCard title="Packet Loss" value="0.0" unit="%" status="good" />
+          <MetricCard title="Packet Loss">
+            <PacketLossChart startTime={startTime} endTime={endTime} />
+          </MetricCard>
           <MetricCard title="Jitter" value="2.1" unit="ms" status="good" />
           <MetricCard
             title="Download Speed"

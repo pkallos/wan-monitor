@@ -72,6 +72,6 @@ describe('Dashboard', () => {
     });
 
     expect(getByText('Online')).toBeTruthy();
-    expect(getByText('0.0')).toBeTruthy();
+    // Packet Loss now shows real data from PacketLossChart, not static "0.0"
   });
 });
