@@ -90,11 +90,10 @@ export function LatencyChart({
       ? [startTime.getTime(), endTime.getTime()]
       : ['dataMin', 'dataMax'];
 
-  // Calculate Y-axis domain with padding
+  // Calculate Y-axis domain: always start at 0, add padding to max
   const maxLatency = stats.max !== '-' ? Number.parseFloat(stats.max) : 100;
-  const minLatency = stats.min !== '-' ? Number.parseFloat(stats.min) : 0;
-  const padding = (maxLatency - minLatency) * 0.2 || maxLatency * 0.2 || 10;
-  const yAxisDomain = [Math.max(0, minLatency - padding), maxLatency + padding];
+  const padding = maxLatency * 0.2 || 10;
+  const yAxisDomain: [number, number] = [0, Math.ceil(maxLatency + padding)];
 
   return (
     <Box>
@@ -140,10 +139,11 @@ export function LatencyChart({
             tick={{ fill: theme.textColor, fontSize: 11 }}
           />
           <YAxis
-            unit=" ms"
             tick={{ fill: theme.textColor, fontSize: 11 }}
-            width={45}
+            width={55}
             domain={yAxisDomain}
+            tickFormatter={(value: number) => `${Math.round(value)} ms`}
+            allowDecimals={false}
           />
           <Tooltip
             contentStyle={{
