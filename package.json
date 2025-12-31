@@ -25,7 +25,8 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "check": "biome check --write ."
+    "check": "biome check --write .",
+    "prepare": "husky"
   },
   "dependencies": {
     "@chakra-ui/react": "^2.8.2",
@@ -55,7 +56,9 @@
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
     "@vitest/ui": "^1.2.0",
+    "husky": "^9.1.7",
     "jsdom": "^23.2.0",
+    "lint-staged": "^16.2.7",
     "tsx": "^4.21.0",
     "typescript": "^5.3.3",
     "vite": "^5.0.11",
@@ -64,5 +67,14 @@
   "engines": {
     "node": ">=24.0.0",
     "pnpm": ">=8.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "biome check --write",
+      "biome format --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "biome format --write"
+    ]
   }
 }
