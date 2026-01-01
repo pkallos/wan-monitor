@@ -57,15 +57,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Handle both v*.*.* and wan-monitor-v*.*.* tag formats
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#wan-monitor-}"  # Strip wan-monitor- prefix if present
+          VERSION="${VERSION#v}"          # Strip v prefix
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION from tag: $TAG"
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: phibit/wan-monitor
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest
 
       - name: Build and push
