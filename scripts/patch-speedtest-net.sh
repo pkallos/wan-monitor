@@ -1,6 +1,10 @@
 #!/bin/sh
 # Conditionally patch speedtest-net for macOS ARM64 only
 # This adds support for darwin/arm64 platform
+#
+# IMPORTANT: speedtest-net is pinned to exact version 2.2.0 in apps/server/package.json
+# to ensure this patch applies correctly. Do not upgrade without updating this script
+# and the patch file to match the new version.
 
 set -e
 
