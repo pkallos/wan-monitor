@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "wan-monitor-v*.*.*"
 
 permissions:
   contents: read
