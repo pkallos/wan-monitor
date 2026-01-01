@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.2.0...wan-monitor-v0.3.0) (2026-01-01)
+
+
+### Features
+
+* display ISP and IP address information in dashboard (PHI-59) ([44d5f17](https://github.com/pkallos/wan-monitor/commit/44d5f1773674f5d76ee9fe698e2d5da3c6f8447c))
+* display ISP and IP address information in dashboard (PHI-59) ([cd52758](https://github.com/pkallos/wan-monitor/commit/cd527587c0e5c7dacbefff73ffa20f9088234ce6))
+
 ## [0.2.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.1.0...wan-monitor-v0.2.0) (2026-01-01)
 
 
