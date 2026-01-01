@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.3.0...wan-monitor-v0.4.0) (2026-01-01)
+
+
+### Features
+
+* add Biome Grit lint rule to enforce @/ path alias over relative imports ([b923fba](https://github.com/pkallos/wan-monitor/commit/b923fbaf71487d09fbc5d8db7c82830a1dedeee8))
+* add Biome Grit lint rule to enforce @/ path alias over relative imports ([816d56d](https://github.com/pkallos/wan-monitor/commit/816d56da0be66204e1bbfb0f8d0236c559a2a776))
+* add dark mode support to dashboard ([7ead1e7](https://github.com/pkallos/wan-monitor/commit/7ead1e769a9a1f243575df6fe88dedb2fbc4a1d5))
+* add manual speed test trigger button to dashboard ([f742dfe](https://github.com/pkallos/wan-monitor/commit/f742dfe024703049e1ad78d35ca80d012e81cded))
+* add manual speed test trigger button to dashboard ([ff31450](https://github.com/pkallos/wan-monitor/commit/ff31450f19e804d64d0dcd56aa76c27cd1522b7d))
+* enforce hard timeout for speedtest execution ([16aab52](https://github.com/pkallos/wan-monitor/commit/16aab526bcafc3a455cffaffe5594756cd3d6d9c))
+* enforce hard timeout for speedtest execution ([b1fc418](https://github.com/pkallos/wan-monitor/commit/b1fc41867eea52d302bd08149852fbf4062ecae6))
+* split liveness and readiness health endpoints + add QuestDB startup retry ([e2b10db](https://github.com/pkallos/wan-monitor/commit/e2b10db88110273b1b52e6349639e70a33db3f6b))
+* split liveness and readiness health endpoints + add QuestDB startup retry ([410bb5e](https://github.com/pkallos/wan-monitor/commit/410bb5ecea4010e2050f16721d3db42623d1880c))
+
 ## [0.3.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.2.0...wan-monitor-v0.3.0) (2026-01-01)
 
 
