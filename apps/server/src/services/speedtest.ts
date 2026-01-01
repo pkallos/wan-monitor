@@ -1,42 +1,28 @@
-import { Config, Context, Duration, Effect, Layer, Schema } from "effect";
+import { Config, Duration, Effect, Layer } from "effect";
 import speedTest from "speedtest-net";
 import {
-  type SpeedTestError,
   SpeedTestExecutionError,
   SpeedTestTimeoutError,
 } from "@/services/speedtest-errors";
 
+// Re-export from separate modules (avoids native module load in tests)
 export type { SpeedTestError } from "@/services/speedtest-errors";
-// Re-export error types (avoids native module load in tests when importing directly)
 export {
   SpeedTestExecutionError,
   SpeedTestTimeoutError,
 } from "@/services/speedtest-errors";
-
-export const SpeedTestResult = Schema.Struct({
-  timestamp: Schema.Date,
-  downloadSpeed: Schema.Number,
-  uploadSpeed: Schema.Number,
-  latency: Schema.Number,
-  jitter: Schema.optional(Schema.Number),
-  serverId: Schema.optional(Schema.String),
-  serverName: Schema.optional(Schema.String),
-  serverLocation: Schema.optional(Schema.String),
-  serverCountry: Schema.optional(Schema.String),
-  isp: Schema.optional(Schema.String),
-  externalIp: Schema.optional(Schema.String),
-  internalIp: Schema.optional(Schema.String),
-});
-export type SpeedTestResult = typeof SpeedTestResult.Type;
-
-export interface SpeedTestServiceInterface {
-  readonly runTest: () => Effect.Effect<SpeedTestResult, SpeedTestError, never>;
-}
-
-export class SpeedTestService extends Context.Tag("SpeedTestService")<
+export {
+  type SpeedTestResult,
   SpeedTestService,
-  SpeedTestServiceInterface
->() {}
+  type SpeedTestServiceInterface,
+} from "@/services/speedtest-service";
+
+// Import for internal use
+import {
+  type SpeedTestResult,
+  SpeedTestService,
+  type SpeedTestServiceInterface,
+} from "@/services/speedtest-service";
 
 export const DEFAULT_SPEEDTEST_TIMEOUT_SECONDS = 120;
 

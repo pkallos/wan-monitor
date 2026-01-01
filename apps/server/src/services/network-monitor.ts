@@ -2,7 +2,8 @@ import { mbpsToBps } from "@wan-monitor/shared";
 import { Config, Context, Effect, Layer, Schedule } from "effect";
 import { QuestDB } from "@/database/questdb";
 import { PingExecutor } from "@/services/ping-executor";
-import { SpeedTestService } from "@/services/speedtest";
+// Import from speedtest-service to avoid native module loading in tests
+import { SpeedTestService } from "@/services/speedtest-service";
 
 // ============================================================================
 // Types

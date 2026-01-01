@@ -92,6 +92,20 @@
     "format:check": {
       "inputs": ["src/**/*.{ts,tsx,js,jsx,json}", "biome.json", ".biome.json"],
       "outputs": []
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "**/*.test.{ts,tsx}",
+        "**/*.spec.{ts,tsx}",
+        "**/test/**",
+        "*.config.{ts,js,cjs,mjs}",
+        "tsconfig*.json",
+        "package.json"
+      ],
+      "outputs": ["coverage/**"],
+      "env": ["QUESTDB_AVAILABLE", "DB_HOST", "DB_PORT"]
     }
   }
 }
