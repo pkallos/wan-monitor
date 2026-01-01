@@ -22,6 +22,7 @@ import { PacketLossChart } from "@/components/charts/PacketLossChart";
 import { SpeedChart } from "@/components/charts/SpeedChart";
 import { DateRangeSelector } from "@/components/DateRangeSelector";
 import { MetricCard } from "@/components/MetricCard";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { usePersistedTimeRange } from "@/hooks/usePersistedTimeRange";
@@ -171,6 +172,7 @@ export function Dashboard() {
               </Tooltip>
             </HStack>
             <DateRangeSelector value={timeRange} onChange={setTimeRange} />
+            <ThemeToggle />
             {authRequired && (
               <Tooltip label={`Logout${username ? ` (${username})` : ""}`}>
                 <IconButton

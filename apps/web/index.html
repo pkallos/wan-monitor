@@ -7,6 +7,14 @@
     <title>WAN Monitor</title>
   </head>
   <body>
+    <script>
+      (() => {
+        let mode = localStorage.getItem('chakra-ui-color-mode');
+        if (!mode) mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.style.colorScheme = mode;
+        document.documentElement.setAttribute('data-theme', mode);
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
