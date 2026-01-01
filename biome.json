@@ -30,22 +30,27 @@
       },
       "suspicious": {
         "noExplicitAny": "warn"
-      },
-      "style": {
-        "noRestrictedImports": {
-          "level": "error",
-          "options": {
-            "patterns": [
-              {
-                "group": ["../*"],
-                "message": "Parent directory imports are not allowed. Use '@/' path alias instead (e.g., '../types' → '@/server/types')"
-              }
-            ]
-          }
-        }
       }
     }
   },
+  "overrides": [
+    {
+      "includes": [
+        "apps/web/**/*.ts",
+        "apps/web/**/*.tsx",
+        "apps/server/**/*.ts",
+        "apps/server/**/*.tsx",
+        "packages/**/*.ts",
+        "packages/**/*.tsx",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!**/*.spec.ts",
+        "!**/*.spec.tsx",
+        "!**/e2e/**"
+      ],
+      "plugins": ["./.grit/no-relative-imports.grit"]
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
