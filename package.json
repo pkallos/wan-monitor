@@ -5,7 +5,7 @@
   "type": "module",
   "description": "WAN monitoring dashboard with network performance tracking",
   "author": "pkallos",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "packageManager": "pnpm@9.6.0",
   "repository": {
     "type": "git",

@@ -1,0 +1,23 @@
+name: Create GitHub Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run Release Please (manifest-release)
+        uses: googleapis/release-please-action@v4
+        with:
+          command: manifest-release
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          include-v-in-tag: true
+          target-branch: main
+          token: ${{ secrets.GITHUB_TOKEN }}
