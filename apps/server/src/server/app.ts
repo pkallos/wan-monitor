@@ -31,6 +31,8 @@ export const createApp = (options: AppOptions) => {
         "/api/auth/login",
         "/api/auth/status",
         "/api/health",
+        "/api/live",
+        "/api/ready",
       ];
       if (publicPaths.some((path) => request.url.startsWith(path))) {
         return;

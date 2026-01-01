@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import type { AppContext, AppInstance } from "@/server/types";
 
 /**
@@ -8,8 +9,18 @@ export async function healthRoutes(
   app: AppInstance,
   context: AppContext
 ): Promise<void> {
-  // Enhanced health check with database
-  app.get("/health", async (_request, reply) => {
+  app.get("/live", async (_request: FastifyRequest, reply: FastifyReply) =>
+    reply.code(200).send({
+      status: "alive",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    })
+  );
+
+  const readinessHandler = async (
+    _request: FastifyRequest,
+    reply: FastifyReply
+  ) => {
     try {
       const dbHealth = await Effect.runPromise(context.db.health());
       return reply.code(200).send({
@@ -26,5 +37,8 @@ export async function healthRoutes(
         error: String(error),
       });
     }
-  });
+  };
+
+  app.get("/ready", readinessHandler);
+  app.get("/health", readinessHandler);
 }

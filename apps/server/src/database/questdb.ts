@@ -131,7 +131,17 @@ const make = Effect.gen(function* () {
       new DatabaseConnectionError(
         `Failed to connect to QuestDB Sender: ${error}`
       ),
-  });
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning(
+        `QuestDB Sender connection failed, retrying: ${error.message}`
+      )
+    ),
+    Effect.retry({
+      times: 120,
+      schedule: Schedule.spaced("500 millis"),
+    })
+  );
 
   // Initialize PgClient for queries (PostgreSQL wire protocol)
   const pgClient = yield* Effect.tryPromise({
@@ -150,7 +160,17 @@ const make = Effect.gen(function* () {
       new DatabaseConnectionError(
         `Failed to connect to QuestDB PgWire: ${error}`
       ),
-  });
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning(
+        `QuestDB PgWire connection failed, retrying: ${error.message}`
+      )
+    ),
+    Effect.retry({
+      times: 120,
+      schedule: Schedule.spaced("500 millis"),
+    })
+  );
 
   const writeMetric = (metric: NetworkMetric) =>
     Effect.tryPromise({
