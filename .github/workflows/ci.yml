@@ -194,6 +194,51 @@ jobs:
           QUESTDB_AVAILABLE: 'true'
           DB_HOST: localhost
 
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+
+      - name: Upload web coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-web
+          path: apps/web/coverage/
+          retention-days: 7
+
+      - name: Upload server coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-server
+          path: apps/server/coverage/
+          retention-days: 7
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest

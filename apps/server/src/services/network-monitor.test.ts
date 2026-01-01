@@ -11,7 +11,9 @@ import {
   type PingExecutionResult,
   PingExecutor,
 } from "@/services/ping-executor";
-import { SpeedTestService } from "@/services/speedtest";
+import { SpeedTestExecutionError } from "@/services/speedtest-errors";
+// Import from speedtest-service to avoid native module loading
+import { SpeedTestService } from "@/services/speedtest-service";
 
 describe("NetworkMonitor", () => {
   const mockPingResults: readonly PingExecutionResult[] = [
@@ -55,12 +57,7 @@ describe("NetworkMonitor", () => {
 
   const MockSpeedTestService = Layer.succeed(SpeedTestService, {
     runTest: vi.fn(() =>
-      Effect.fail(
-        new (class SpeedTestExecutionError {
-          readonly _tag = "SpeedTestExecutionError" as const;
-          constructor(readonly message: string) {}
-        })("Mock error")
-      )
+      Effect.fail(new SpeedTestExecutionError("Mock error"))
     ),
   });
 
