@@ -29,6 +29,8 @@ export interface SpeedMetric {
   jitter?: number; // ms
   server_location?: string;
   isp?: string;
+  external_ip?: string;
+  internal_ip?: string;
 }
 
 export interface SpeedMetricsResponse {
@@ -52,6 +54,8 @@ export interface Metric {
   upload_speed?: number;
   server_location?: string;
   isp?: string;
+  external_ip?: string;
+  internal_ip?: string;
 }
 
 export interface MetricsResponse {

@@ -48,6 +48,8 @@ export interface MetricRow {
   readonly upload_speed?: number;
   readonly server_location?: string;
   readonly isp?: string;
+  readonly external_ip?: string;
+  readonly internal_ip?: string;
 }
 
 export interface QueryMetricsParams {
@@ -166,6 +168,10 @@ const make = Effect.gen(function* () {
         if (metric.serverLocation)
           row = row.symbol("server_location", metric.serverLocation);
         if (metric.isp) row = row.symbol("isp", metric.isp);
+        if (metric.externalIp)
+          row = row.symbol("external_ip", metric.externalIp);
+        if (metric.internalIp)
+          row = row.symbol("internal_ip", metric.internalIp);
 
         // Add numeric columns after symbols
         if (metric.latency !== undefined)
@@ -241,7 +247,9 @@ const make = Effect.gen(function* () {
             avg(download_bandwidth) as download_bandwidth,
             avg(upload_bandwidth) as upload_bandwidth,
             last(server_location) as server_location,
-            last(isp) as isp
+            last(isp) as isp,
+            last(external_ip) as external_ip,
+            last(internal_ip) as internal_ip
           FROM network_metrics
           WHERE timestamp >= $1
             AND timestamp <= $2
@@ -263,7 +271,9 @@ const make = Effect.gen(function* () {
             download_bandwidth,
             upload_bandwidth,
             server_location,
-            isp
+            isp,
+            external_ip,
+            internal_ip
           FROM network_metrics
           WHERE timestamp >= $1
             AND timestamp <= $2
@@ -295,6 +305,8 @@ const make = Effect.gen(function* () {
               : undefined,
             server_location: row.server_location as string | undefined,
             isp: row.isp as string | undefined,
+            external_ip: row.external_ip as string | undefined,
+            internal_ip: row.internal_ip as string | undefined,
           })
         );
 

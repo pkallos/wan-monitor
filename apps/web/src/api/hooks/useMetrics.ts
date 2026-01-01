@@ -77,6 +77,8 @@ export function useMetrics(options: UseMetricsOptions = {}) {
         jitter: m.jitter,
         server_location: m.server_location,
         isp: m.isp,
+        external_ip: m.external_ip,
+        internal_ip: m.internal_ip,
       }));
   }, [query.data]);
 
