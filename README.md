@@ -4,8 +4,6 @@ A self-hosted network monitoring dashboard that tracks your internet connection 
 
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
-<!-- TODO: Add screenshot of the dashboard -->
-![Dashboard Screenshot](docs/screenshot.png)
 
 ## What It Does
 
@@ -22,6 +20,9 @@ WAN Monitor runs on your local network and performs two types of tests:
 - Captures ISP name, server location, and your external IP
 
 All data is stored in QuestDB (a time-series database) and displayed in a responsive web dashboard with interactive charts.
+
+<img width="720" height="584" alt="image" src="https://github.com/user-attachments/assets/f8e52da7-31ee-4cbe-92e5-e694ed3deb29" />
+
 
 ## Quick Start with Docker
 
