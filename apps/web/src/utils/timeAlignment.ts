@@ -1,5 +1,5 @@
 import type { Granularity } from "@wan-monitor/shared";
-import { granularityToMs } from "./granularity";
+import { granularityToMs } from "@/utils/granularity";
 
 /**
  * Align a timestamp to the nearest granularity interval boundary
