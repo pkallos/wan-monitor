@@ -25,6 +25,7 @@ import { connectivityStatusRoutes } from "@/server/routes/connectivity-status";
 import { healthRoutes } from "@/server/routes/health";
 import { metricsRoutes } from "@/server/routes/metrics";
 import { pingRoutes } from "@/server/routes/ping";
+import { speedtestRoutes } from "@/server/routes/speedtest";
 import type { AppContext } from "@/server/types";
 import { ConfigService, ConfigServiceLive } from "@/services/config";
 import { NetworkMonitor, NetworkMonitorLive } from "@/services/network-monitor";
@@ -137,6 +138,19 @@ const program = Effect.gen(function* () {
     },
     catch: (error) =>
       new Error(`Failed to register connectivity status routes: ${error}`),
+  });
+
+  yield* Effect.tryPromise({
+    try: async () => {
+      await app.register(
+        async (instance) => {
+          await speedtestRoutes(instance, context);
+        },
+        { prefix: "/api/speedtest" }
+      );
+    },
+    catch: (error) =>
+      new Error(`Failed to register speedtest routes: ${error}`),
   });
 
   // Start server

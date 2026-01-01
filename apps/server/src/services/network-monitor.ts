@@ -1,3 +1,4 @@
+import { mbpsToBps } from "@wan-monitor/shared";
 import { Config, Context, Effect, Layer, Schedule } from "effect";
 import { QuestDB } from "@/database/questdb";
 import { PingExecutor } from "@/services/ping-executor";
@@ -125,8 +126,8 @@ export const NetworkMonitorLive = Layer.effect(
           source: "speedtest" as const,
           latency: result.latency,
           jitter: result.jitter,
-          downloadBandwidth: Math.round(result.downloadSpeed * 1_000_000),
-          uploadBandwidth: Math.round(result.uploadSpeed * 1_000_000),
+          downloadBandwidth: mbpsToBps(result.downloadSpeed),
+          uploadBandwidth: mbpsToBps(result.uploadSpeed),
           serverLocation: result.serverLocation,
           isp: result.isp,
           externalIp: result.externalIp,

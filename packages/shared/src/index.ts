@@ -13,3 +13,5 @@ export type {
 } from "./api";
 
 export { VALID_GRANULARITIES } from "./api";
+
+export { bpsToMbps, mbpsToBps } from "./metrics";
