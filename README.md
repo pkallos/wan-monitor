@@ -81,6 +81,108 @@ Then run:
 docker-compose up -d
 ```
 
+## Production Deployment
+
+For hands-off, always-running deployments, use the following recommended configuration.
+
+### Recommended Docker Compose (Production)
+
+```yaml
+services:
+  wan-monitor:
+    image: phibit/wan-monitor:latest
+    container_name: wan-monitor
+    ports:
+      - "8080:80"
+    environment:
+      - WAN_MONITOR_PASSWORD=your-secure-password
+      - JWT_SECRET=your-random-secret-key-here
+      - PING_HOSTS=8.8.8.8,1.1.1.1,cloudflare.com
+    volumes:
+      - wan-monitor-data:/var/lib/questdb
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+volumes:
+  wan-monitor-data:
+```
+
+### Configuration Explained
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `restart: unless-stopped` | Recommended | Container restarts automatically after crashes or host reboots, but stays stopped if you manually stop it |
+| `stop_grace_period: 30s` | Recommended | Gives QuestDB time to flush writes and shut down cleanly, preventing data corruption |
+| `memory: 1G` limit | Suggested | Prevents runaway memory usage; QuestDB + Node.js typically use 300-600MB |
+| `memory: 256M` reservation | Suggested | Ensures minimum memory is available for the container |
+
+### Restart Policy Options
+
+| Policy | Behavior | Use Case |
+|--------|----------|----------|
+| `unless-stopped` | **Recommended.** Restarts on failure/reboot, stays stopped if manually stopped | Production deployments |
+| `always` | Always restarts, even after manual stop | High-availability requirements |
+| `on-failure` | Only restarts on non-zero exit codes | Development/testing |
+| `no` | Never restarts automatically | Manual control needed |
+
+### All-in-One vs Multi-Container
+
+**All-in-One (Recommended for most users)**
+
+The default `phibit/wan-monitor` image bundles everything (frontend, backend, database) in a single container. This is ideal for:
+- Home/small office deployments
+- Simple setup with minimal configuration
+- Single-host installations
+- Users who want a "set and forget" experience
+
+**Multi-Container (Advanced)**
+
+For larger deployments or when you need more control, you can run components separately:
+- Run QuestDB as a separate container for independent scaling/backup
+- Use an external reverse proxy (Traefik, Caddy) for SSL termination
+- Deploy across multiple hosts
+
+Example multi-container setup:
+
+```yaml
+services:
+  questdb:
+    image: questdb/questdb:9.2.3
+    volumes:
+      - questdb-data:/var/lib/questdb
+    restart: unless-stopped
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  wan-monitor:
+    image: phibit/wan-monitor:latest
+    environment:
+      - DB_HOST=questdb
+      - DB_PORT=9000
+      - WAN_MONITOR_PASSWORD=your-secure-password
+      - JWT_SECRET=your-random-secret-key-here
+    depends_on:
+      - questdb
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  questdb-data:
+```
+
+> **Note:** Multi-container mode requires configuring `DB_HOST` and `DB_PORT` to point to your external QuestDB instance.
+
 ## Configuration
 
 All configuration is done via environment variables.
