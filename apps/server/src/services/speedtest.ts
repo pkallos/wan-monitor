@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Config, Context, Duration, Effect, Layer, Schema } from "effect";
 import speedTest from "speedtest-net";
 
 export class SpeedTestExecutionError {
@@ -38,30 +38,43 @@ export class SpeedTestService extends Context.Tag("SpeedTestService")<
   SpeedTestServiceInterface
 >() {}
 
-export const SpeedTestServiceLive = Layer.succeed(
-  SpeedTestService,
-  SpeedTestService.of({
+export const DEFAULT_SPEEDTEST_TIMEOUT_SECONDS = 120;
+
+export type SpeedTestExecutor = () => ReturnType<typeof speedTest>;
+
+export const makeSpeedTestService = (
+  executor: SpeedTestExecutor,
+  timeoutSeconds: number
+): SpeedTestServiceInterface => {
+  const timeoutMs = timeoutSeconds * 1000;
+
+  return {
     runTest: () =>
       Effect.gen(function* () {
-        yield* Effect.logInfo("Starting speed test...");
+        yield* Effect.logInfo(
+          `Starting speed test (timeout: ${timeoutSeconds}s)...`
+        );
 
-        const result = yield* Effect.tryPromise({
-          try: async () => {
-            const testResult = await speedTest({
-              acceptLicense: true,
-              acceptGdpr: true,
-            });
-            return testResult;
-          },
+        const executeSpeedTest = Effect.tryPromise({
+          try: () => executor(),
           catch: (error) => {
-            if (error instanceof Error && error.message.includes("timeout")) {
-              return new SpeedTestTimeoutError(30000);
-            }
             return new SpeedTestExecutionError(
               error instanceof Error ? error.message : String(error)
             );
           },
         });
+
+        const result = yield* executeSpeedTest.pipe(
+          Effect.timeout(Duration.millis(timeoutMs)),
+          Effect.catchTag("TimeoutException", () =>
+            Effect.gen(function* () {
+              yield* Effect.logWarning(
+                `Speed test timed out after ${timeoutSeconds}s`
+              );
+              return yield* Effect.fail(new SpeedTestTimeoutError(timeoutMs));
+            })
+          )
+        );
 
         const downloadSpeedMbps = result.download.bandwidth
           ? (result.download.bandwidth * 8) / 1_000_000
@@ -98,5 +111,22 @@ export const SpeedTestServiceLive = Layer.succeed(
 
         return speedTestResult;
       }),
+  };
+};
+
+export const SpeedTestServiceLive = Layer.effect(
+  SpeedTestService,
+  Effect.gen(function* () {
+    const timeoutSeconds = yield* Config.number(
+      "SPEEDTEST_TIMEOUT_SECONDS"
+    ).pipe(Config.withDefault(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS));
+
+    const executor: SpeedTestExecutor = () =>
+      speedTest({
+        acceptLicense: true,
+        acceptGdpr: true,
+      });
+
+    return makeSpeedTestService(executor, timeoutSeconds);
   })
 );

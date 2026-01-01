@@ -149,6 +149,9 @@ ENV PING_TIMEOUT=5
 ENV PING_TRAIN_COUNT=10
 ENV PING_HOSTS=8.8.8.8,1.1.1.1,cloudflare.com
 
+# Speedtest configuration (with defaults)
+ENV SPEEDTEST_TIMEOUT_SECONDS=120
+
 # Authentication configuration (no defaults - set at runtime for security)
 # ENV WAN_MONITOR_USERNAME=admin  # Default is 'admin' if not set
 # ENV WAN_MONITOR_PASSWORD=       # Required to enable auth
