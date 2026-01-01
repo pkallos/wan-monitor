@@ -1,17 +1,17 @@
 import { Config, Context, Duration, Effect, Layer, Schema } from "effect";
 import speedTest from "speedtest-net";
+import {
+  type SpeedTestError,
+  SpeedTestExecutionError,
+  SpeedTestTimeoutError,
+} from "@/services/speedtest-errors";
 
-export class SpeedTestExecutionError {
-  readonly _tag = "SpeedTestExecutionError";
-  constructor(readonly message: string) {}
-}
-
-export class SpeedTestTimeoutError {
-  readonly _tag = "SpeedTestTimeoutError";
-  constructor(readonly timeoutMs: number) {}
-}
-
-export type SpeedTestError = SpeedTestExecutionError | SpeedTestTimeoutError;
+export type { SpeedTestError } from "@/services/speedtest-errors";
+// Re-export error types (avoids native module load in tests when importing directly)
+export {
+  SpeedTestExecutionError,
+  SpeedTestTimeoutError,
+} from "@/services/speedtest-errors";
 
 export const SpeedTestResult = Schema.Struct({
   timestamp: Schema.Date,

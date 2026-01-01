@@ -1,5 +1,6 @@
 import {
   Box,
+  Button,
   Container,
   Heading,
   HStack,
@@ -9,10 +10,18 @@ import {
   Text,
   Tooltip,
   useColorModeValue,
+  useToast,
   VStack,
 } from "@chakra-ui/react";
-import { useEffect, useMemo } from "react";
-import { FiLogOut, FiPause, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FiActivity,
+  FiLogOut,
+  FiPause,
+  FiPlay,
+  FiRefreshCw,
+} from "react-icons/fi";
+import { apiClient } from "@/api/client";
 import { useConnectivityStatus } from "@/api/hooks/useConnectivityStatus";
 import { useMetrics } from "@/api/hooks/useMetrics";
 import { ConnectivityStatusChart } from "@/components/charts/ConnectivityStatusChart";
@@ -36,6 +45,8 @@ export function Dashboard() {
   const cardBg = useColorModeValue("white", "gray.800");
   const borderColor = useColorModeValue("gray.200", "gray.700");
   const { timeRange, setTimeRange } = usePersistedTimeRange();
+  const toast = useToast();
+  const [isSpeedTestRunning, setIsSpeedTestRunning] = useState(false);
   const { startTime, endTime } = useMemo(
     () => getTimeRangeDates(timeRange),
     [timeRange]
@@ -116,6 +127,48 @@ export function Dashboard() {
 
   const pingTimeAgo = formatTimeAgo(latestPing?.timestamp);
   const speedTimeAgo = formatTimeAgo(latestSpeed?.timestamp);
+
+  const handleTriggerSpeedTest = useCallback(async () => {
+    setIsSpeedTestRunning(true);
+    try {
+      const response = await apiClient.triggerSpeedTest();
+      if (response.success) {
+        toast({
+          title: "Speed test complete",
+          description: `Download: ${response.result.downloadMbps.toFixed(1)} Mbps, Upload: ${response.result.uploadMbps.toFixed(1)} Mbps`,
+          status: "success",
+          duration: 5000,
+          isClosable: true,
+        });
+        // Refresh the data to show the new results
+        refetch();
+      } else {
+        // Handle structured error response from backend
+        const isAlreadyRunning =
+          response.error.code === "SPEED_TEST_ALREADY_RUNNING";
+        toast({
+          title: isAlreadyRunning
+            ? "Speed test in progress"
+            : "Speed test failed",
+          description: response.error.message,
+          status: isAlreadyRunning ? "warning" : "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      // Handle unexpected errors (network issues, etc.)
+      toast({
+        title: "Speed test failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsSpeedTestRunning(false);
+    }
+  }, [toast, refetch]);
 
   return (
     <Box minH="100vh" bg={bg}>
@@ -310,9 +363,19 @@ export function Dashboard() {
           mt={6}
           shadow="sm"
         >
-          <Heading size="md" mb={4}>
-            Speed Test History
-          </Heading>
+          <HStack justify="space-between" mb={4}>
+            <Heading size="md">Speed Test History</Heading>
+            <Button
+              leftIcon={<FiActivity />}
+              size="sm"
+              colorScheme="blue"
+              onClick={handleTriggerSpeedTest}
+              isLoading={isSpeedTestRunning}
+              loadingText="Running..."
+            >
+              Run Speed Test
+            </Button>
+          </HStack>
           <SpeedChart data={speedMetrics} isLoading={isLoading} />
         </Box>
       </Container>

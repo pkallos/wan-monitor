@@ -1,5 +1,30 @@
 import { Schema } from "effect";
 
+// ============================================================================
+// Bandwidth Unit Conversion Helpers
+// ============================================================================
+
+/**
+ * Convert Megabits per second (Mbps) to bits per second (bps).
+ * SpeedTest services typically report in Mbps, but we store in bps for precision.
+ *
+ * @param mbps - Speed in Megabits per second
+ * @returns Speed in bits per second (rounded to nearest integer)
+ */
+export const mbpsToBps = (mbps: number): number => Math.round(mbps * 1_000_000);
+
+/**
+ * Convert bits per second (bps) to Megabits per second (Mbps).
+ *
+ * @param bps - Speed in bits per second
+ * @returns Speed in Megabits per second
+ */
+export const bpsToMbps = (bps: number): number => bps / 1_000_000;
+
+// ============================================================================
+// Schemas
+// ============================================================================
+
 // Connectivity status enum
 export const ConnectivityStatus = Schema.Literal("up", "down", "degraded");
 export type ConnectivityStatus = typeof ConnectivityStatus.Type;

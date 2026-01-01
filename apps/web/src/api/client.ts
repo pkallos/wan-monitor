@@ -21,6 +21,43 @@ export class ApiError extends Error {
   }
 }
 
+// Speed test error codes from backend
+export const SpeedTestErrorCode = {
+  ALREADY_RUNNING: "SPEED_TEST_ALREADY_RUNNING",
+  EXECUTION_FAILED: "SPEED_TEST_EXECUTION_FAILED",
+  TIMEOUT: "SPEED_TEST_TIMEOUT",
+} as const;
+
+export type SpeedTestErrorCode =
+  (typeof SpeedTestErrorCode)[keyof typeof SpeedTestErrorCode];
+
+export interface SpeedTestTriggerSuccess {
+  success: true;
+  timestamp: string;
+  result: {
+    downloadMbps: number;
+    uploadMbps: number;
+    pingMs: number;
+    jitter?: number;
+    server?: string;
+    isp?: string;
+    externalIp?: string;
+  };
+}
+
+export interface SpeedTestTriggerError {
+  success: false;
+  timestamp: string;
+  error: {
+    code: SpeedTestErrorCode;
+    message: string;
+  };
+}
+
+export type SpeedTestTriggerResult =
+  | SpeedTestTriggerSuccess
+  | SpeedTestTriggerError;
+
 export const apiClient = {
   get: async <T>(
     path: string,
@@ -76,5 +113,30 @@ export const apiClient = {
     }
 
     return res.json();
+  },
+
+  triggerSpeedTest: async (): Promise<SpeedTestTriggerResult> => {
+    const fullPath = `${API_BASE}/speedtest/trigger`;
+    const url = new URL(fullPath, window.location.origin);
+
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({}),
+    });
+
+    // For speed test, we return the JSON body even on error responses
+    // because the backend returns structured error info (409 for already running, 500 for failures)
+    const data: SpeedTestTriggerResult = await res.json();
+
+    // If we got a non-2xx status that isn't in our expected error responses, throw
+    if (!res.ok && data.success !== false) {
+      throw new ApiError(`API error: ${res.status}`, res.status, data);
+    }
+
+    return data;
   },
 };
