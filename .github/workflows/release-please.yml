@@ -2,6 +2,8 @@ name: Release Please
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -15,9 +17,7 @@ jobs:
       - name: Run Release Please
         uses: googleapis/release-please-action@v4
         with:
-          command: manifest-pr
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          include-v-in-tag: true
           target-branch: main
           token: ${{ secrets.GITHUB_TOKEN }}
