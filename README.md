@@ -94,6 +94,7 @@ All configuration is done via environment variables.
 | `PING_TIMEOUT` | `5` | Ping timeout in seconds |
 | `PING_TRAIN_COUNT` | `10` | Number of packets per ping (for packet loss calculation) |
 | `SPEEDTEST_INTERVAL_SECONDS` | `3600` | How often to run speed tests (default: 1 hour) |
+| `SPEEDTEST_TIMEOUT_SECONDS` | `120` | Maximum time for a speed test before timeout |
 
 ### Authentication
 
