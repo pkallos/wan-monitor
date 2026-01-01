@@ -129,6 +129,8 @@ export const NetworkMonitorLive = Layer.effect(
           uploadBandwidth: Math.round(result.uploadSpeed * 1_000_000),
           serverLocation: result.serverLocation,
           isp: result.isp,
+          externalIp: result.externalIp,
+          internalIp: result.internalIp,
         })
         .pipe(
           Effect.as(true as const),

@@ -24,6 +24,8 @@ export const SpeedTestResult = Schema.Struct({
   serverLocation: Schema.optional(Schema.String),
   serverCountry: Schema.optional(Schema.String),
   isp: Schema.optional(Schema.String),
+  externalIp: Schema.optional(Schema.String),
+  internalIp: Schema.optional(Schema.String),
 });
 export type SpeedTestResult = typeof SpeedTestResult.Type;
 
@@ -79,6 +81,8 @@ export const SpeedTestServiceLive = Layer.succeed(
           serverLocation: result.server?.location,
           serverCountry: result.server?.country,
           isp: result.isp,
+          externalIp: result.interface?.externalIp,
+          internalIp: result.interface?.internalIp,
         };
 
         yield* Effect.logInfo(
@@ -88,7 +92,8 @@ export const SpeedTestServiceLive = Layer.succeed(
             `  Latency: ${result.ping?.latency?.toFixed(2) ?? "N/A"} ms\n` +
             `  Jitter: ${result.ping?.jitter?.toFixed(2) ?? "N/A"} ms\n` +
             `  Server: ${result.server?.name ?? "Unknown"} (${result.server?.location ?? "Unknown"})\n` +
-            `  ISP: ${result.isp ?? "Unknown"}`
+            `  ISP: ${result.isp ?? "Unknown"}\n` +
+            `  External IP: ${result.interface?.externalIp ?? "Unknown"}`
         );
 
         return speedTestResult;

@@ -100,6 +100,7 @@ export function Dashboard() {
   const downloadSpeed = latestSpeed?.download_speed?.toFixed(1) ?? "-";
   const uploadSpeed = latestSpeed?.upload_speed?.toFixed(1) ?? "-";
   const ispName = latestSpeed?.isp ?? "Unknown ISP";
+  const externalIp = latestSpeed?.external_ip;
 
   const formatTimeAgo = (timestamp: string | undefined): string => {
     if (!timestamp) return "";
@@ -132,6 +133,7 @@ export function Dashboard() {
             </Heading>
             <Text fontSize="sm" color="gray.500">
               {ispName}
+              {externalIp && ` • ${externalIp}`}
             </Text>
           </VStack>
           <HStack

@@ -17,6 +17,8 @@ export const NetworkMetric = Schema.Struct({
   connectivityStatus: Schema.optional(ConnectivityStatus),
   serverLocation: Schema.optional(Schema.String),
   isp: Schema.optional(Schema.String),
+  externalIp: Schema.optional(Schema.String),
+  internalIp: Schema.optional(Schema.String),
 });
 export type NetworkMetric = typeof NetworkMetric.Type;
 
