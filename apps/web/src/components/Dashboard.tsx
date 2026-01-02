@@ -26,6 +26,7 @@ import {
 import { apiClient } from "@/api/client";
 import { useConnectivityStatus } from "@/api/hooks/useConnectivityStatus";
 import { useMetrics } from "@/api/hooks/useMetrics";
+import { useSpeedtestHistory } from "@/api/hooks/useSpeedtestHistory";
 import { ConnectivityStatusChart } from "@/components/charts/ConnectivityStatusChart";
 import { JitterChart } from "@/components/charts/JitterChart";
 import { LatencyChart } from "@/components/charts/LatencyChart";
@@ -37,7 +38,6 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { usePersistedTimeRange } from "@/hooks/usePersistedTimeRange";
-import { getGranularityForRange } from "@/utils/granularity";
 import { getTimeRangeDates } from "@/utils/timeRange";
 
 const CHART_SYNC_ID = "network-metrics";
@@ -65,13 +65,22 @@ export function Dashboard() {
 
   const {
     pingMetrics,
-    speedMetrics,
     isLoading,
     isRefetching,
     dataUpdatedAt,
     refetch,
     isDbUnavailable,
   } = useMetrics({
+    startTime,
+    endTime,
+    refetchInterval,
+  });
+
+  const {
+    speedMetrics,
+    isLoading: isSpeedtestLoading,
+    refetch: refetchSpeedtests,
+  } = useSpeedtestHistory({
     startTime,
     endTime,
     refetchInterval,
@@ -84,7 +93,13 @@ export function Dashboard() {
       refetchInterval: refetchInterval || undefined,
     });
 
-  const granularity = getGranularityForRange(startTime, endTime) ?? "5m";
+  // Calculate granularity for connectivity status chart
+  const connectivityGranularity = useMemo(() => {
+    if (!startTime || !endTime) return "5m";
+    const rangeMs = endTime.getTime() - startTime.getTime();
+    const rangeHours = rangeMs / (1000 * 60 * 60);
+    return rangeHours <= 1 ? "1m" : "5m";
+  }, [startTime, endTime]);
 
   // Update last updated timestamp when data changes
   useEffect(() => {
@@ -140,6 +155,7 @@ export function Dashboard() {
         });
         // Refresh the data to show the new results
         refetch();
+        refetchSpeedtests();
       } else {
         // Handle structured error response from backend
         const isAlreadyRunning =
@@ -166,7 +182,7 @@ export function Dashboard() {
     } finally {
       setIsSpeedTestRunning(false);
     }
-  }, [toast, refetch]);
+  }, [toast, refetch, refetchSpeedtests]);
 
   return (
     <Box minH="100vh" bg={bg}>
@@ -290,7 +306,7 @@ export function Dashboard() {
             isLoading={isConnectivityLoading}
             startTime={startTime}
             endTime={endTime}
-            granularity={granularity}
+            granularity={connectivityGranularity}
           />
         </Box>
 
@@ -320,7 +336,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={granularity}
+                granularity={connectivityGranularity}
               />
             </Box>
 
@@ -336,7 +352,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={granularity}
+                granularity={connectivityGranularity}
               />
             </Box>
 
@@ -352,7 +368,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={granularity}
+                granularity={connectivityGranularity}
               />
             </Box>
           </VStack>
@@ -381,7 +397,12 @@ export function Dashboard() {
               Run Speed Test
             </Button>
           </HStack>
-          <SpeedChart data={speedMetrics} isLoading={isLoading} />
+          <SpeedChart
+            data={speedMetrics}
+            isLoading={isSpeedtestLoading}
+            startTime={startTime}
+            endTime={endTime}
+          />
         </Box>
       </Container>
     </Box>

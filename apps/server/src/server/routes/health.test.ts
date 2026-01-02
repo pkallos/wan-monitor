@@ -30,6 +30,7 @@ describe("Health Routes", () => {
         } as const),
       writeMetric: () => Effect.void,
       queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
       queryConnectivityStatus: () => Effect.succeed([]),
       close: () => Effect.void,
     };
@@ -63,6 +64,7 @@ describe("Health Routes", () => {
         } as const),
       writeMetric: () => Effect.void,
       queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
       queryConnectivityStatus: () => Effect.succeed([]),
       close: () => Effect.void,
     };
@@ -92,6 +94,7 @@ describe("Health Routes", () => {
       health: () => Effect.fail(new DbUnavailable("db unavailable")),
       writeMetric: () => Effect.void,
       queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
       queryConnectivityStatus: () => Effect.succeed([]),
       close: () => Effect.void,
     };
@@ -126,6 +129,7 @@ describe("Health Routes", () => {
         } as const),
       writeMetric: () => Effect.void,
       queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
       queryConnectivityStatus: () => Effect.succeed([]),
       close: () => Effect.void,
     };

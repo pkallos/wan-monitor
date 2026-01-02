@@ -1,5 +1,6 @@
-import { mbpsToBps } from "@wan-monitor/shared";
-import { Cause, Effect, Exit, Option } from "effect";
+import { mbpsToBps, type SpeedMetric } from "@wan-monitor/shared";
+import { Cause, Effect, Either, Exit, Option } from "effect";
+import { DbUnavailable } from "@/database/questdb";
 import type { AppContext, AppInstance } from "@/server/types";
 import {
   SpeedTestExecutionError,
@@ -159,5 +160,72 @@ export async function speedtestRoutes(
     return reply.code(200).send({
       isRunning: isSpeedTestRunning,
     });
+  });
+
+  // History endpoint - returns all speedtest results without aggregation
+  app.get("/history", async (request, reply) => {
+    try {
+      const query = request.query as {
+        startTime?: string;
+        endTime?: string;
+        limit?: string;
+      };
+
+      const params = {
+        startTime: query.startTime ? new Date(query.startTime) : undefined,
+        endTime: query.endTime ? new Date(query.endTime) : undefined,
+        limit: query.limit ? Number.parseInt(query.limit, 10) : undefined,
+      };
+
+      const result = await Effect.runPromise(
+        context.db.querySpeedtests(params).pipe(Effect.either)
+      );
+
+      return Either.match(result, {
+        onLeft: (error) => {
+          if (error instanceof DbUnavailable) {
+            return reply.code(503).send({
+              error: "DB_UNAVAILABLE",
+              message: "Database temporarily unavailable",
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return reply.code(500).send({
+            error: "Failed to query speedtest history",
+            message: String(error),
+          });
+        },
+        onRight: (data) => {
+          const speedMetrics: SpeedMetric[] = data.map((m) => ({
+            timestamp: m.timestamp,
+            download_speed: m.download_speed ?? 0,
+            upload_speed: m.upload_speed ?? 0,
+            latency: m.latency ?? 0,
+            jitter: m.jitter,
+            server_location: m.server_location,
+            isp: m.isp,
+            external_ip: m.external_ip,
+            internal_ip: m.internal_ip,
+          }));
+
+          return reply.code(200).send({
+            data: speedMetrics,
+            meta: {
+              startTime:
+                params.startTime?.toISOString() ??
+                new Date(Date.now() - 3600000).toISOString(),
+              endTime:
+                params.endTime?.toISOString() ?? new Date().toISOString(),
+              count: data.length,
+            },
+          });
+        },
+      });
+    } catch (error) {
+      return reply.code(500).send({
+        error: "Failed to query speedtest history",
+        message: String(error),
+      });
+    }
   });
 }

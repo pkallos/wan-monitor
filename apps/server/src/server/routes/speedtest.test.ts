@@ -89,6 +89,7 @@ const createMockDb = (
     return Effect.void;
   },
   queryMetrics: () => Effect.succeed([]),
+  querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),
   close: () => Effect.void,
 });
