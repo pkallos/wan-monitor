@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.4.0...wan-monitor-v0.5.0) (2026-01-02)
+
+
+### Features
+
+* integrate code coverage reporting (Vitest) into CI ([aba09f8](https://github.com/pkallos/wan-monitor/commit/aba09f822a20870bf7d7864af814a0567419b42b))
+* integrate code coverage reporting (Vitest) into CI ([78f6ca7](https://github.com/pkallos/wan-monitor/commit/78f6ca792ffff081dbd0f8e10af580a492f0645a))
+* redesign QuestDB connection manager for runtime reliability ([6edd248](https://github.com/pkallos/wan-monitor/commit/6edd248d5699332d5b9e74256a4354c0d1cadf65))
+* redesign QuestDB connection manager for runtime reliability ([3234031](https://github.com/pkallos/wan-monitor/commit/32340318700ed28567c65fe3cdfaf5886f3b7999))
+
+
+### Bug Fixes
+
+* correct packet loss aggregation and add separate speedtest history endpoint ([f37dd0a](https://github.com/pkallos/wan-monitor/commit/f37dd0a7090fcd600d82a752ddeb35035cac1ec8))
+* correct packet loss aggregation and add separate speedtest history endpoint ([e57bf0a](https://github.com/pkallos/wan-monitor/commit/e57bf0a6d362055a18383e70cd00040ff2b02bec))
+* pin speedtest-net to exact version for patch compatibility ([0749509](https://github.com/pkallos/wan-monitor/commit/07495091dc1d2c3b6de1626fae996e0bec1a6b94))
+* pin speedtest-net to exact version for patch compatibility ([b9479ab](https://github.com/pkallos/wan-monitor/commit/b9479ab0e168eb994297eaa97e2cac2412358838))
+
 ## [0.4.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.3.0...wan-monitor-v0.4.0) (2026-01-01)
 
 
