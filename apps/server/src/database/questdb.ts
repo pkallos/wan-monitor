@@ -76,6 +76,12 @@ export interface QueryMetricsParams {
   readonly granularity?: Granularity;
 }
 
+export interface QuerySpeedtestsParams {
+  readonly startTime?: Date;
+  readonly endTime?: Date;
+  readonly limit?: number;
+}
+
 // ============================================================================
 // Service Interface
 // ============================================================================
@@ -86,6 +92,9 @@ export interface QuestDBService {
   ) => Effect.Effect<void, DatabaseWriteError | DbUnavailable>;
   readonly queryMetrics: (
     params: QueryMetricsParams
+  ) => Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable>;
+  readonly querySpeedtests: (
+    params: QuerySpeedtestsParams
   ) => Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable>;
   readonly queryConnectivityStatus: (
     params: QueryMetricsParams
@@ -525,7 +534,7 @@ const make = Effect.gen(function* () {
             first(host) as host,
             avg(latency) as latency,
             avg(jitter) as jitter,
-            max(packet_loss) as packet_loss,
+            avg(packet_loss) as packet_loss,
             last(connectivity_status) as connectivity_status,
             avg(download_bandwidth) as download_bandwidth,
             avg(upload_bandwidth) as upload_bandwidth,
@@ -573,6 +582,100 @@ const make = Effect.gen(function* () {
             return new DbUnavailable(msg);
           }
           return new DatabaseQueryError(`Failed to query metrics: ${msg}`);
+        },
+      });
+
+      if (!result.rows || result.rows.length === 0) {
+        return [];
+      }
+
+      return result.rows.map(
+        (row: Record<string, unknown>) =>
+          ({
+            timestamp: row.timestamp as string,
+            source: row.source as "ping" | "speedtest",
+            host: row.host as string | undefined,
+            latency:
+              row.latency !== null && row.latency !== undefined
+                ? (row.latency as number)
+                : undefined,
+            jitter:
+              row.jitter !== null && row.jitter !== undefined
+                ? (row.jitter as number)
+                : undefined,
+            packet_loss:
+              row.packet_loss !== null && row.packet_loss !== undefined
+                ? (row.packet_loss as number)
+                : undefined,
+            connectivity_status: row.connectivity_status as string | undefined,
+            download_speed: row.download_bandwidth
+              ? (row.download_bandwidth as number) / 1_000_000
+              : undefined,
+            upload_speed: row.upload_bandwidth
+              ? (row.upload_bandwidth as number) / 1_000_000
+              : undefined,
+            server_location: row.server_location as string | undefined,
+            isp: row.isp as string | undefined,
+            external_ip: row.external_ip as string | undefined,
+            internal_ip: row.internal_ip as string | undefined,
+          }) satisfies MetricRow
+      );
+    }).pipe(
+      Effect.catchTag("DbUnavailable", (e) =>
+        markDisconnected(e.message).pipe(Effect.zipRight(Effect.fail(e)))
+      )
+    );
+
+  const querySpeedtests = (
+    params: QuerySpeedtestsParams
+  ): Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable> =>
+    Effect.gen(function* () {
+      const conn = yield* getConnection;
+
+      const startTime =
+        params.startTime?.toISOString() ??
+        new Date(Date.now() - 3600000).toISOString();
+      const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
+
+      const queryParams: (string | number)[] = [startTime, endTime];
+
+      let limitClause = "";
+      if (params.limit) {
+        limitClause = "LIMIT $3";
+        queryParams.push(params.limit);
+      }
+
+      const query = `
+        SELECT
+          timestamp,
+          source,
+          host,
+          latency,
+          jitter,
+          packet_loss,
+          connectivity_status,
+          download_bandwidth,
+          upload_bandwidth,
+          server_location,
+          isp,
+          external_ip,
+          internal_ip
+        FROM network_metrics
+        WHERE timestamp >= $1
+          AND timestamp <= $2
+          AND source = 'speedtest'
+        ORDER BY timestamp DESC
+        ${limitClause}
+      `;
+
+      const result = yield* Effect.tryPromise({
+        try: () => conn.pgClient.query(query, queryParams),
+        catch: (error) => {
+          const msg = errorMessage(error);
+          if (isLikelyConnectionError(msg)) {
+            return new DbUnavailable(msg);
+          }
+          return new DatabaseQueryError(`Failed to query speedtests: ${msg}`);
         },
       });
 
@@ -744,6 +847,7 @@ const make = Effect.gen(function* () {
   return {
     writeMetric,
     queryMetrics,
+    querySpeedtests,
     queryConnectivityStatus,
     health,
     close,
