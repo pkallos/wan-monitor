@@ -1,5 +1,6 @@
 import { type Granularity, VALID_GRANULARITIES } from "@wan-monitor/shared";
-import { Effect } from "effect";
+import { Effect, Either } from "effect";
+import { DbUnavailable } from "@/database/questdb";
 import type { AppContext, AppInstance } from "@/server/types";
 
 /**
@@ -29,42 +30,66 @@ export async function connectivityStatusRoutes(
         granularity,
       };
 
-      const rows = await Effect.runPromise(
-        context.db.queryConnectivityStatus(params)
+      const result = await Effect.runPromise(
+        context.db.queryConnectivityStatus(params).pipe(Effect.either)
       );
 
-      // Transform database rows into API response format
-      const data = rows.map((row) => {
-        const total = row.total_count || 1; // Avoid division by zero
-        return {
-          timestamp: row.timestamp,
-          status:
-            row.down_count > 0
-              ? ("down" as const)
-              : row.degraded_count > 0
-                ? ("degraded" as const)
-                : ("up" as const),
-          upPercentage: (row.up_count / total) * 100,
-          downPercentage: (row.down_count / total) * 100,
-          degradedPercentage: (row.degraded_count / total) * 100,
-        };
-      });
+      return Either.match(result, {
+        onLeft: (error) => {
+          if (error instanceof DbUnavailable) {
+            return reply.code(503).send({
+              error: "DB_UNAVAILABLE",
+              message: "Database temporarily unavailable",
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return reply.code(500).send({
+            error: "Failed to query connectivity status",
+            message: String(error),
+          });
+        },
+        onRight: (rows) => {
+          // Transform database rows into API response format
+          const data = rows.map((row) => {
+            const total = row.total_count || 1; // Avoid division by zero
+            return {
+              timestamp: row.timestamp,
+              status:
+                row.down_count > 0
+                  ? ("down" as const)
+                  : row.degraded_count > 0
+                    ? ("degraded" as const)
+                    : ("up" as const),
+              upPercentage: (row.up_count / total) * 100,
+              downPercentage: (row.down_count / total) * 100,
+              degradedPercentage: (row.degraded_count / total) * 100,
+            };
+          });
 
-      // Calculate overall uptime percentage
-      const totalPoints = rows.reduce((sum, row) => sum + row.total_count, 0);
-      const totalUpPoints = rows.reduce((sum, row) => sum + row.up_count, 0);
-      const uptimePercentage =
-        totalPoints > 0 ? (totalUpPoints / totalPoints) * 100 : 0;
+          // Calculate overall uptime percentage
+          const totalPoints = rows.reduce(
+            (sum, row) => sum + row.total_count,
+            0
+          );
+          const totalUpPoints = rows.reduce(
+            (sum, row) => sum + row.up_count,
+            0
+          );
+          const uptimePercentage =
+            totalPoints > 0 ? (totalUpPoints / totalPoints) * 100 : 0;
 
-      return reply.code(200).send({
-        data,
-        meta: {
-          startTime:
-            params.startTime?.toISOString() ??
-            new Date(Date.now() - 86400000).toISOString(),
-          endTime: params.endTime?.toISOString() ?? new Date().toISOString(),
-          count: data.length,
-          uptimePercentage,
+          return reply.code(200).send({
+            data,
+            meta: {
+              startTime:
+                params.startTime?.toISOString() ??
+                new Date(Date.now() - 86400000).toISOString(),
+              endTime:
+                params.endTime?.toISOString() ?? new Date().toISOString(),
+              count: data.length,
+              uptimePercentage,
+            },
+          });
         },
       });
     } catch (error) {

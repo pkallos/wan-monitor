@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { apiClient } from "@/api/client";
@@ -45,14 +46,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
     isLoading: true,
     username: null,
-    authRequired: true,
+    authRequired: false,
   });
+
+  const retryRef = useRef<{ timeoutId: number | null; attempt: number }>({
+    timeoutId: null,
+    attempt: 0,
+  });
+
+  const clearRetry = useCallback(() => {
+    const { timeoutId } = retryRef.current;
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+    retryRef.current.timeoutId = null;
+    retryRef.current.attempt = 0;
+  }, []);
 
   const checkAuth = useCallback(async () => {
     try {
       // First check if auth is required
       const statusResponse =
         await apiClient.get<AuthStatusResponse>("/auth/status");
+
+      clearRetry();
 
       if (!statusResponse.authRequired) {
         setState({
@@ -85,16 +102,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authRequired: true,
       });
     } catch {
-      // Token is invalid or expired
       localStorage.removeItem(TOKEN_KEY);
-      setState({
-        isAuthenticated: false,
+      setState((prev) => ({
+        isAuthenticated: !prev.authRequired,
         isLoading: false,
         username: null,
-        authRequired: true,
-      });
+        authRequired: prev.authRequired,
+      }));
+
+      if (retryRef.current.timeoutId === null) {
+        const attempt = retryRef.current.attempt;
+        const delay = Math.min(30_000, 1000 * 2 ** attempt);
+        retryRef.current.attempt = attempt + 1;
+
+        retryRef.current.timeoutId = window.setTimeout(() => {
+          retryRef.current.timeoutId = null;
+          checkAuth();
+        }, delay);
+      }
     }
-  }, []);
+  }, [clearRetry]);
 
   const login = useCallback(async (username: string, password: string) => {
     const response = await apiClient.post<LoginResponse>("/auth/login", {
@@ -128,6 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  useEffect(() => clearRetry, [clearRetry]);
 
   const value = useMemo(
     () => ({
