@@ -1,4 +1,6 @@
 import {
+  Alert,
+  AlertIcon,
   Box,
   Button,
   Container,
@@ -35,6 +37,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { usePersistedTimeRange } from "@/hooks/usePersistedTimeRange";
+import { getGranularityForRange } from "@/utils/granularity";
 import { getTimeRangeDates } from "@/utils/timeRange";
 
 const CHART_SYNC_ID = "network-metrics";
@@ -67,6 +70,7 @@ export function Dashboard() {
     isRefetching,
     dataUpdatedAt,
     refetch,
+    isDbUnavailable,
   } = useMetrics({
     startTime,
     endTime,
@@ -80,13 +84,7 @@ export function Dashboard() {
       refetchInterval: refetchInterval || undefined,
     });
 
-  // Calculate granularity for connectivity status chart
-  const connectivityGranularity = useMemo(() => {
-    if (!startTime || !endTime) return "5m";
-    const rangeMs = endTime.getTime() - startTime.getTime();
-    const rangeHours = rangeMs / (1000 * 60 * 60);
-    return rangeHours <= 1 ? "1m" : "5m";
-  }, [startTime, endTime]);
+  const granularity = getGranularityForRange(startTime, endTime) ?? "5m";
 
   // Update last updated timestamp when data changes
   useEffect(() => {
@@ -240,6 +238,13 @@ export function Dashboard() {
           </HStack>
         </Box>
 
+        {isDbUnavailable && (
+          <Alert status="warning" borderRadius="lg" mb={6}>
+            <AlertIcon />
+            Database temporarily unavailable. Retrying automatically.
+          </Alert>
+        )}
+
         {/* Top Row: 3 Metric Cards */}
         <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} mb={6}>
           <MetricCard
@@ -285,7 +290,7 @@ export function Dashboard() {
             isLoading={isConnectivityLoading}
             startTime={startTime}
             endTime={endTime}
-            granularity={connectivityGranularity}
+            granularity={granularity}
           />
         </Box>
 
@@ -315,7 +320,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={connectivityGranularity}
+                granularity={granularity}
               />
             </Box>
 
@@ -331,7 +336,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={connectivityGranularity}
+                granularity={granularity}
               />
             </Box>
 
@@ -347,7 +352,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={connectivityGranularity}
+                granularity={granularity}
               />
             </Box>
           </VStack>

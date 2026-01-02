@@ -6,7 +6,7 @@ import type {
   SpeedMetric,
 } from "@wan-monitor/shared";
 import { useMemo } from "react";
-import { apiClient } from "@/api/client";
+import { apiClient, isDbUnavailableError } from "@/api/client";
 import { getGranularityForRange } from "@/utils/granularity";
 
 export interface UseMetricsOptions {
@@ -49,7 +49,14 @@ export function useMetrics(options: UseMetricsOptions = {}) {
     },
     refetchInterval,
     enabled,
+    retry: (failureCount, error) =>
+      isDbUnavailableError(error) && failureCount < 6,
+    retryDelay: (attemptIndex) => Math.min(30_000, 1000 * 2 ** attemptIndex),
   });
+
+  const isDbUnavailable =
+    isDbUnavailableError(query.error) ||
+    isDbUnavailableError(query.failureReason);
 
   const pingMetrics = useMemo((): PingMetric[] => {
     if (!query.data?.data) return [];
@@ -84,6 +91,7 @@ export function useMetrics(options: UseMetricsOptions = {}) {
 
   return {
     ...query,
+    isDbUnavailable,
     pingMetrics,
     speedMetrics,
   };

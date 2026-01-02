@@ -1,6 +1,6 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { apiClient } from "@/api/client";
+import { ApiError, apiClient } from "@/api/client";
 import { Dashboard } from "@/components/Dashboard";
 import { createTestWrapper } from "@/test/utils";
 
@@ -297,5 +297,25 @@ describe("Dashboard", () => {
         })
       );
     });
+  });
+
+  it("should display DB unavailable banner when API returns DB_UNAVAILABLE", async () => {
+    mockApiClientGet.mockRejectedValue(
+      new ApiError("API error: 503", 503, {
+        error: "DB_UNAVAILABLE",
+        message: "Database temporarily unavailable",
+        timestamp: new Date().toISOString(),
+      })
+    );
+
+    const { findByText } = render(<Dashboard />, {
+      wrapper: createTestWrapper(),
+    });
+
+    expect(
+      await findByText(
+        "Database temporarily unavailable. Retrying automatically."
+      )
+    ).toBeTruthy();
   });
 });

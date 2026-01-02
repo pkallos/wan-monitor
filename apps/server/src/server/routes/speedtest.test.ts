@@ -352,8 +352,10 @@ describe("Speedtest Routes - Concurrency Guard", () => {
     expect(body.error.message).toContain("already in progress");
 
     // Clean up - resolve the first request
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    resolveSpeedTest!(mockSpeedTestResult);
+    // Type assertion needed because TS narrows incorrectly after closure assignment
+    (resolveSpeedTest as ((value: SpeedTestResult) => void) | null)?.(
+      mockSpeedTestResult
+    );
     await firstRequest;
   });
 

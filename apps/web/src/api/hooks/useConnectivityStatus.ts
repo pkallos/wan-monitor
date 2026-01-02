@@ -23,7 +23,7 @@ export function useConnectivityStatus({
   const granularity =
     explicitGranularity ?? getGranularityForRange(startTime, endTime);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: [
       "connectivity-status",
       startTime?.toISOString(),
@@ -43,4 +43,6 @@ export function useConnectivityStatus({
     },
     refetchInterval,
   });
+
+  return query;
 }
