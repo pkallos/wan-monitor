@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: write  # Required for BuildKit GHA cache
 
 jobs:
   verify-and-publish:
