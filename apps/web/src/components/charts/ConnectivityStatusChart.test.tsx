@@ -39,11 +39,12 @@ describe("ConnectivityStatusChart", () => {
   });
 
   it("renders status bar segments", () => {
-    const { container } = render(
+    const { getByTestId } = render(
       <ConnectivityStatusChart data={mockData} uptimePercentage={99.5} />
     );
-    // Should have colored segments in the HStack
-    const segments = container.querySelectorAll(".chakra-stack > div");
+    // Should have colored segments in the flex container
+    const statusBar = getByTestId("connectivity-status-bar");
+    const segments = statusBar.children;
     expect(segments.length).toBeGreaterThan(0);
   });
 
@@ -53,11 +54,11 @@ describe("ConnectivityStatusChart", () => {
   });
 
   it("renders colored status bar", () => {
-    const { container } = render(
+    const { getByTestId } = render(
       <ConnectivityStatusChart data={mockData} uptimePercentage={99.5} />
     );
     // Should render a horizontal status bar with colored segments
-    const statusBar = container.querySelector(".chakra-stack");
+    const statusBar = getByTestId("connectivity-status-bar");
     expect(statusBar).toBeInTheDocument();
   });
 
@@ -96,11 +97,12 @@ describe("ConnectivityStatusChart", () => {
       },
     ];
 
-    const { container } = render(
+    const { getByTestId } = render(
       <ConnectivityStatusChart data={mixedData} uptimePercentage={85} />
     );
     // Should render multiple colored segments
-    const segments = container.querySelectorAll(".chakra-stack > div");
+    const statusBar = getByTestId("connectivity-status-bar");
+    const segments = statusBar.children;
     expect(segments.length).toBeGreaterThan(0);
   });
 
@@ -126,7 +128,7 @@ describe("ConnectivityStatusChart", () => {
     const startTime = new Date("2024-01-01T10:00:00Z");
     const endTime = new Date("2024-01-01T11:00:00Z");
 
-    const { container } = render(
+    const { getByTestId } = render(
       <ConnectivityStatusChart
         data={sparseData}
         uptimePercentage={100}
@@ -138,7 +140,8 @@ describe("ConnectivityStatusChart", () => {
 
     // Should have segments for the full hour (12 segments for 5m intervals)
     // 6 "no data" segments before first data point + 2 data segments + more after
-    const segments = container.querySelectorAll(".chakra-stack > div");
+    const statusBar = getByTestId("connectivity-status-bar");
+    const segments = statusBar.children;
     expect(segments.length).toBeGreaterThan(2); // More than just the 2 data points
   });
 
@@ -171,7 +174,7 @@ describe("ConnectivityStatusChart", () => {
     const startTime = new Date("2024-01-01T10:00:00Z");
     const endTime = new Date("2024-01-01T11:00:00Z");
 
-    const { container } = render(
+    const { getByTestId } = render(
       <ConnectivityStatusChart
         data={earlyEndingData}
         uptimePercentage={100}
@@ -181,9 +184,10 @@ describe("ConnectivityStatusChart", () => {
       />
     );
 
-    // Should have 12 segments total for full hour (5m intervals)
-    const segments = container.querySelectorAll(".chakra-stack > div");
-    expect(segments.length).toBe(12);
+    // Should have 2 merged segments: 1 for "up" data (3 consecutive), 1 for "noInfo" (9 consecutive)
+    const statusBar = getByTestId("connectivity-status-bar");
+    const segments = statusBar.children;
+    expect(segments.length).toBe(2);
   });
 
   it("fills complete timeline for 7-day range with sparse data", () => {
@@ -208,7 +212,7 @@ describe("ConnectivityStatusChart", () => {
     const startTime = new Date("2024-01-01T00:00:00Z");
     const endTime = new Date("2024-01-08T00:00:00Z");
 
-    const { container } = render(
+    const { getByTestId } = render(
       <ConnectivityStatusChart
         data={verysSparseData}
         uptimePercentage={100}
@@ -218,9 +222,9 @@ describe("ConnectivityStatusChart", () => {
       />
     );
 
-    // Should have many segments covering the full 7 days
-    const segments = container.querySelectorAll(".chakra-stack > div");
-    // 7 days * 24 hours * 12 (5-min intervals per hour) = 2016 segments
-    expect(segments.length).toBeGreaterThan(100); // At least show significant coverage
+    // With merging, should have 5 segments: noInfo before first data, first up, noInfo between, second up, noInfo after
+    const statusBar = getByTestId("connectivity-status-bar");
+    const segments = statusBar.children;
+    expect(segments.length).toBe(5);
   });
 });

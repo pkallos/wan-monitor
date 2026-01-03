@@ -93,12 +93,24 @@ export function Dashboard() {
       refetchInterval: refetchInterval || undefined,
     });
 
-  // Calculate granularity for connectivity status chart
+  // Calculate granularity for connectivity status chart (5m at 24hrs+)
   const connectivityGranularity = useMemo(() => {
-    if (!startTime || !endTime) return "5m";
+    if (!startTime || !endTime) return "1m";
     const rangeMs = endTime.getTime() - startTime.getTime();
     const rangeHours = rangeMs / (1000 * 60 * 60);
-    return rangeHours <= 1 ? "1m" : "5m";
+    return rangeHours >= 24 ? "5m" : "1m";
+  }, [startTime, endTime]);
+
+  // Calculate granularity for network quality charts
+  const networkQualityGranularity = useMemo(() => {
+    if (!startTime || !endTime) return "1m";
+    const rangeMs = endTime.getTime() - startTime.getTime();
+    const rangeHours = rangeMs / (1000 * 60 * 60);
+
+    if (rangeHours <= 1) return "1m";
+    if (rangeHours <= 24) return "5m";
+    if (rangeHours <= 7 * 24) return "15m";
+    return "1h"; // 30+ days
   }, [startTime, endTime]);
 
   // Update last updated timestamp when data changes
@@ -336,7 +348,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={connectivityGranularity}
+                granularity={networkQualityGranularity}
               />
             </Box>
 
@@ -352,7 +364,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={connectivityGranularity}
+                granularity={networkQualityGranularity}
               />
             </Box>
 
@@ -368,7 +380,7 @@ export function Dashboard() {
                 compact
                 data={pingMetrics}
                 isLoading={isLoading}
-                granularity={connectivityGranularity}
+                granularity={networkQualityGranularity}
               />
             </Box>
           </VStack>
