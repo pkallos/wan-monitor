@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.4](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.3...wan-monitor-v0.5.4) (2026-01-03)
+
+
+### Bug Fixes
+
+* use environment variables for QuestDB logging with proper inheritance ([#103](https://github.com/pkallos/wan-monitor/issues/103)) ([5300ae8](https://github.com/pkallos/wan-monitor/commit/5300ae8bde38b6ebbfe255236f2d545a5ee6ff82))
+
+
+### Performance Improvements
+
+* reduce DOM overhead in ConnectivityStatusChart and add dynamic granularity ([#106](https://github.com/pkallos/wan-monitor/issues/106)) ([f4b072c](https://github.com/pkallos/wan-monitor/commit/f4b072c3790fdad39457638e07c44c15719fe87c))
+* remove per-point toLocaleTimeString in ping chart data shaping ([#105](https://github.com/pkallos/wan-monitor/issues/105)) ([e2bd2dc](https://github.com/pkallos/wan-monitor/commit/e2bd2dcbd36bb3db1277e7b9d458c37b270dc84a))
+
 ## [0.5.3](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.2...wan-monitor-v0.5.3) (2026-01-03)
 
 
