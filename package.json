@@ -1,6 +1,6 @@
 {
   "name": "wan-monitor",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "type": "module",
   "description": "WAN monitoring dashboard with network performance tracking",

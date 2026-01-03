@@ -34,18 +34,24 @@ Before working on any feature:
 
 ### 2. Branch Management
 
+**This project uses a two-branch workflow:**
+- `development` - Default branch for all feature work. PRs target this branch.
+- `main` - Release branch. Only @pkallos merges from development to main.
+
 For each task:
-- **Always create feature branches from the tip of `origin/main`** (not a potentially stale local `main`):
+- **Always create feature branches from the tip of `origin/development`** (not a potentially stale local branch):
   ```bash
   git fetch origin
-  git checkout -b feat/feature-name origin/main
+  git checkout -b feat/feature-name origin/development
   ```
-  Or if already on main, pull first:
+  Or if already on development, pull first:
   ```bash
-  git checkout main
-  git pull origin main
+  git checkout development
+  git pull origin development
   git checkout -b feat/feature-name
   ```
+
+**Important:** PRs should target `development`, NOT `main`. The `main` branch is reserved for releases.
 - Use conventional branch naming:
   - `feat/feature-name` - for new features
   - `fix/bug-name` - for bug fixes
