@@ -5,131 +5,139 @@ import { QuestDB, QuestDBLive } from "@/database/questdb";
 import { ConfigServiceLive } from "@/services/config";
 
 describe("QuestDB IP Fields Schema Mapping", () => {
-  // These tests require QuestDB to be running
-  // Skip in CI - QuestDB integration tests should run locally or in dedicated integration test suite
   const isQuestDBAvailable = process.env.QUESTDB_AVAILABLE === "true";
 
-  it.skip("should persist and query externalIp and internalIp fields", async () => {
-    if (!isQuestDBAvailable) return;
-    const MainLive = Layer.merge(
-      ConfigServiceLive,
-      Layer.provide(QuestDBLive, ConfigServiceLive)
-    );
+  it.skipIf(!isQuestDBAvailable)(
+    "should persist and query externalIp and internalIp fields",
+    async () => {
+      const MainLive = Layer.merge(
+        ConfigServiceLive,
+        Layer.provide(QuestDBLive, ConfigServiceLive)
+      );
 
-    const testMetric: NetworkMetric = {
-      timestamp: new Date(),
-      source: "speedtest",
-      host: "speedtest.example.com",
-      latency: 15.5,
-      jitter: 2.3,
-      packetLoss: 0,
-      downloadBandwidth: 100_000_000,
-      uploadBandwidth: 50_000_000,
-      connectivityStatus: "up",
-      serverLocation: "San Francisco, CA",
-      isp: "Test ISP",
-      externalIp: "203.0.113.42",
-      internalIp: "192.168.1.100",
-    };
+      const testMetric: NetworkMetric = {
+        timestamp: new Date(),
+        source: "speedtest",
+        host: "speedtest.example.com",
+        latency: 15.5,
+        jitter: 2.3,
+        packetLoss: 0,
+        downloadBandwidth: 100_000_000,
+        uploadBandwidth: 50_000_000,
+        connectivityStatus: "up",
+        serverLocation: "San Francisco, CA",
+        isp: "Test ISP",
+        externalIp: "203.0.113.42",
+        internalIp: "192.168.1.100",
+      };
 
-    const program = Effect.gen(function* () {
-      const db = yield* QuestDB;
+      const program = Effect.gen(function* () {
+        const db = yield* QuestDB;
 
-      // Write metric with IP fields
-      yield* db.writeMetric(testMetric);
+        // Wait for connection to be established
+        yield* Effect.sleep("2000 millis");
 
-      // Wait a moment for write to complete
-      yield* Effect.sleep("100 millis");
+        // Write metric with IP fields
+        yield* db.writeMetric(testMetric);
 
-      // Query metrics to verify IP fields are persisted and returned
-      const startTime = new Date(testMetric.timestamp.getTime() - 60_000);
-      const endTime = new Date(testMetric.timestamp.getTime() + 60_000);
+        // Wait for ILP auto-flush and WAL apply
+        yield* Effect.sleep("2000 millis");
 
-      const metrics = yield* db.queryMetrics({
-        startTime,
-        endTime,
+        // Query metrics to verify IP fields are persisted and returned
+        const startTime = new Date(testMetric.timestamp.getTime() - 60_000);
+        const endTime = new Date(testMetric.timestamp.getTime() + 60_000);
+
+        const metrics = yield* db.queryMetrics({
+          startTime,
+          endTime,
+        });
+
+        return metrics;
       });
 
-      return metrics;
-    });
+      const result = await Effect.runPromise(Effect.provide(program, MainLive));
 
-    const result = await Effect.runPromise(Effect.provide(program, MainLive));
+      // Verify we got results
+      expect(result.length).toBeGreaterThan(0);
 
-    // Verify we got results
-    expect(result.length).toBeGreaterThan(0);
+      // Find our test metric (most recent speedtest entry)
+      const speedtestMetrics = result.filter((m) => m.source === "speedtest");
+      expect(speedtestMetrics.length).toBeGreaterThan(0);
 
-    // Find our test metric (most recent speedtest entry)
-    const speedtestMetrics = result.filter((m) => m.source === "speedtest");
-    expect(speedtestMetrics.length).toBeGreaterThan(0);
+      const latestMetric = speedtestMetrics[speedtestMetrics.length - 1];
 
-    const latestMetric = speedtestMetrics[speedtestMetrics.length - 1];
+      // Verify IP fields are present and correct
+      expect(latestMetric.external_ip).toBe("203.0.113.42");
+      expect(latestMetric.internal_ip).toBe("192.168.1.100");
 
-    // Verify IP fields are present and correct
-    expect(latestMetric.external_ip).toBe("203.0.113.42");
-    expect(latestMetric.internal_ip).toBe("192.168.1.100");
+      // Verify other fields are also present
+      expect(latestMetric.isp).toBe("Test ISP");
+      expect(latestMetric.server_location).toBe("San Francisco, CA");
+    }
+  );
 
-    // Verify other fields are also present
-    expect(latestMetric.isp).toBe("Test ISP");
-    expect(latestMetric.server_location).toBe("San Francisco, CA");
-  });
+  it.skipIf(!isQuestDBAvailable)(
+    "should handle metrics with missing IP fields gracefully",
+    async () => {
+      const MainLive = Layer.merge(
+        ConfigServiceLive,
+        Layer.provide(QuestDBLive, ConfigServiceLive)
+      );
 
-  it.skip("should handle metrics with missing IP fields gracefully", async () => {
-    if (!isQuestDBAvailable) return;
-    const MainLive = Layer.merge(
-      ConfigServiceLive,
-      Layer.provide(QuestDBLive, ConfigServiceLive)
-    );
+      const testMetric: NetworkMetric = {
+        timestamp: new Date(),
+        source: "ping",
+        host: "8.8.8.8",
+        latency: 10.2,
+        packetLoss: 0,
+        connectivityStatus: "up",
+        // No IP fields provided
+      };
 
-    const testMetric: NetworkMetric = {
-      timestamp: new Date(),
-      source: "ping",
-      host: "8.8.8.8",
-      latency: 10.2,
-      packetLoss: 0,
-      connectivityStatus: "up",
-      // No IP fields provided
-    };
+      const program = Effect.gen(function* () {
+        const db = yield* QuestDB;
 
-    const program = Effect.gen(function* () {
-      const db = yield* QuestDB;
+        // Wait for connection to be established
+        yield* Effect.sleep("2000 millis");
 
-      // Write metric without IP fields
-      yield* db.writeMetric(testMetric);
+        // Write metric without IP fields
+        yield* db.writeMetric(testMetric);
 
-      // Wait a moment for write to complete
-      yield* Effect.sleep("100 millis");
+        // Wait for ILP auto-flush and WAL apply
+        yield* Effect.sleep("2000 millis");
 
-      // Query metrics
-      const startTime = new Date(testMetric.timestamp.getTime() - 60_000);
-      const endTime = new Date(testMetric.timestamp.getTime() + 60_000);
+        // Query metrics
+        const startTime = new Date(testMetric.timestamp.getTime() - 60_000);
+        const endTime = new Date(testMetric.timestamp.getTime() + 60_000);
 
-      const metrics = yield* db.queryMetrics({
-        startTime,
-        endTime,
+        const metrics = yield* db.queryMetrics({
+          startTime,
+          endTime,
+        });
+
+        return metrics;
       });
 
-      return metrics;
-    });
+      const result = await Effect.runPromise(Effect.provide(program, MainLive));
 
-    const result = await Effect.runPromise(Effect.provide(program, MainLive));
+      // Verify we got results
+      expect(result.length).toBeGreaterThan(0);
 
-    // Verify we got results
-    expect(result.length).toBeGreaterThan(0);
+      // Find our test metric (most recent ping entry)
+      const pingMetrics = result.filter((m) => m.source === "ping");
+      expect(pingMetrics.length).toBeGreaterThan(0);
 
-    // Find our test metric (most recent ping entry)
-    const pingMetrics = result.filter((m) => m.source === "ping");
-    expect(pingMetrics.length).toBeGreaterThan(0);
+      const latestMetric = pingMetrics[pingMetrics.length - 1];
 
-    const latestMetric = pingMetrics[pingMetrics.length - 1];
+      // Verify IP fields are null/undefined when not provided (QuestDB returns null)
+      expect(latestMetric.external_ip).toBeFalsy();
+      expect(latestMetric.internal_ip).toBeFalsy();
 
-    // Verify IP fields are undefined when not provided
-    expect(latestMetric.external_ip).toBeUndefined();
-    expect(latestMetric.internal_ip).toBeUndefined();
-
-    // Verify other fields are still present
-    expect(latestMetric.host).toBe("8.8.8.8");
-    expect(latestMetric.latency).toBeTypeOf("number");
-  });
+      // Verify other fields are still present
+      expect(latestMetric.host).toBe("8.8.8.8");
+      expect(latestMetric.latency).toBeTypeOf("number");
+    }
+  );
 
   it("should include IP fields in MetricRow type definition", () => {
     // Type-level test - this will fail at compile time if types are wrong
