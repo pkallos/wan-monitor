@@ -160,4 +160,109 @@ describe("NetworkMonitor", () => {
 
     delete process.env.PING_INTERVAL_SECONDS;
   });
+
+  it("should handle ping executor returning empty results", async () => {
+    const EmptyResultsPingExecutor = Layer.succeed(PingExecutor, {
+      executePing: vi.fn(),
+      executeAll: () => Effect.succeed([]),
+      executeHosts: vi.fn(),
+    });
+
+    const EmptyResultsTestLayer = NetworkMonitorLive.pipe(
+      Layer.provide(EmptyResultsPingExecutor),
+      Layer.provide(MockQuestDB),
+      Layer.provide(MockSpeedTestService),
+      Layer.provide(MockConfig),
+      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+    );
+
+    const program = Effect.gen(function* () {
+      const monitor = yield* NetworkMonitor;
+      const fiber = yield* Effect.fork(monitor.start());
+
+      yield* Effect.sleep("100 millis");
+
+      const stats: MonitorStats = yield* monitor.getStats();
+      expect(stats.successfulPings).toBe(0);
+      expect(stats.failedPings).toBe(0);
+      expect(stats.lastPingTime).not.toBeNull();
+
+      yield* Fiber.interrupt(fiber);
+    });
+
+    await Effect.runPromise(
+      program.pipe(Effect.provide(EmptyResultsTestLayer))
+    );
+  });
+
+  it("should track speed test configuration from environment", async () => {
+    process.env.SPEEDTEST_INTERVAL_SECONDS = "10";
+
+    const program = Effect.gen(function* () {
+      const monitor = yield* NetworkMonitor;
+      const fiber = yield* Effect.fork(monitor.start());
+
+      yield* Effect.sleep("50 millis");
+
+      const stats: MonitorStats = yield* monitor.getStats();
+      expect(stats.lastSpeedTestTime).toBeNull();
+
+      yield* Fiber.interrupt(fiber);
+    });
+
+    await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
+
+    delete process.env.SPEEDTEST_INTERVAL_SECONDS;
+  });
+
+  it("should handle partial ping failures in results", async () => {
+    const MixedResultsPingExecutor = Layer.succeed(PingExecutor, {
+      executePing: vi.fn(),
+      executeAll: () =>
+        Effect.succeed([
+          {
+            host: "8.8.8.8",
+            success: true,
+            result: {
+              host: "8.8.8.8",
+              alive: true,
+              latency: 15.5,
+              packetLoss: 0,
+              stddev: 2.1,
+            },
+          },
+          {
+            host: "1.1.1.1",
+            success: false,
+            error: "PingHostUnreachableError",
+          },
+        ]),
+      executeHosts: vi.fn(),
+    });
+
+    const MixedResultsTestLayer = NetworkMonitorLive.pipe(
+      Layer.provide(MixedResultsPingExecutor),
+      Layer.provide(MockQuestDB),
+      Layer.provide(MockSpeedTestService),
+      Layer.provide(MockConfig),
+      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+    );
+
+    const program = Effect.gen(function* () {
+      const monitor = yield* NetworkMonitor;
+      const fiber = yield* Effect.fork(monitor.start());
+
+      yield* Effect.sleep("100 millis");
+
+      const stats: MonitorStats = yield* monitor.getStats();
+      expect(stats.successfulPings).toBe(1);
+      expect(stats.failedPings).toBe(1);
+
+      yield* Fiber.interrupt(fiber);
+    });
+
+    await Effect.runPromise(
+      program.pipe(Effect.provide(MixedResultsTestLayer))
+    );
+  });
 });

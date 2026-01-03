@@ -110,6 +110,58 @@ describe("PingExecutor", () => {
       expect(writtenMetric.packetLoss).toBe(100);
       expect(writtenMetric.connectivityStatus).toBe("down");
     });
+
+    it("should handle database write failure gracefully and return success=false with result", async () => {
+      const pingResult: PingResult = {
+        host: "8.8.8.8",
+        alive: true,
+        latency: 15.5,
+        packetLoss: 0,
+      };
+
+      mockPing.mockReturnValue(Effect.succeed(pingResult));
+      mockWriteMetric.mockReturnValue(
+        Effect.fail({
+          _tag: "DatabaseWriteError" as const,
+          message: "DB unavailable",
+        })
+      );
+
+      const program = Effect.gen(function* () {
+        const executor = yield* PingExecutor;
+        return yield* executor.executePing("8.8.8.8");
+      });
+
+      const result = await Effect.runPromise(Effect.provide(program, TestLive));
+
+      expect(result.success).toBe(false);
+      expect(result.host).toBe("8.8.8.8");
+      expect(result.result).toEqual(pingResult);
+      expect(result.error).toContain("Database write failed");
+    });
+
+    it("should ignore database write errors when ping itself fails", async () => {
+      mockPing.mockReturnValue(
+        Effect.fail({ _tag: "PingHostUnreachableError" as const })
+      );
+      mockWriteMetric.mockReturnValue(
+        Effect.fail({
+          _tag: "DatabaseWriteError" as const,
+          message: "DB write failed",
+        })
+      );
+
+      const program = Effect.gen(function* () {
+        const executor = yield* PingExecutor;
+        return yield* executor.executePing("unreachable.host");
+      });
+
+      const result = await Effect.runPromise(Effect.provide(program, TestLive));
+
+      expect(result.success).toBe(false);
+      expect(result.host).toBe("unreachable.host");
+      expect(result.error).toBe("PingHostUnreachableError");
+    });
   });
 
   describe("executeAll", () => {

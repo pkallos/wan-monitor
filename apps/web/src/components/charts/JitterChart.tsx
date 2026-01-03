@@ -27,7 +27,6 @@ export interface JitterChartProps {
 }
 
 interface ChartDataPoint {
-  time: string;
   timestamp: number;
   jitter: number | null;
 }
@@ -84,10 +83,6 @@ function formatDataForChart(
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       )
       .map((d) => ({
-        time: new Date(d.timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
         timestamp: new Date(d.timestamp).getTime(),
         jitter: d.jitter ?? null,
       }));
@@ -118,10 +113,6 @@ function formatDataForChart(
     const dataPoint = dataMap.get(currentMs);
 
     result.push({
-      time: new Date(currentMs).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
       timestamp: currentMs,
       jitter: dataPoint?.jitter ?? null,
     });
