@@ -1,6 +1,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ConfigProvider, Effect, Exit, Layer, Logger, LogLevel } from "effect";
+import {
+  Cause,
+  ConfigProvider,
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  LogLevel,
+  Option,
+} from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_SPEEDTEST_TIMEOUT_SECONDS,
@@ -80,11 +89,12 @@ describe("SpeedTest - timeout functionality", () => {
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      expect(error._tag).toBe("Fail");
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SpeedTestTimeoutError);
-        expect((error.error as SpeedTestTimeoutError).timeoutMs).toBe(100);
+      const failureOption = Cause.failureOption(exit.cause);
+      expect(Option.isSome(failureOption)).toBe(true);
+      if (Option.isSome(failureOption)) {
+        const error = failureOption.value;
+        expect(error).toBeInstanceOf(SpeedTestTimeoutError);
+        expect((error as SpeedTestTimeoutError).timeoutMs).toBe(100);
       }
     }
   });
@@ -102,11 +112,12 @@ describe("SpeedTest - timeout functionality", () => {
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      expect(error._tag).toBe("Fail");
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SpeedTestExecutionError);
-        expect((error.error as SpeedTestExecutionError).message).toBe(
+      const failureOption = Cause.failureOption(exit.cause);
+      expect(Option.isSome(failureOption)).toBe(true);
+      if (Option.isSome(failureOption)) {
+        const error = failureOption.value;
+        expect(error).toBeInstanceOf(SpeedTestExecutionError);
+        expect((error as SpeedTestExecutionError).message).toBe(
           "Network connection failed"
         );
       }
@@ -125,12 +136,11 @@ describe("SpeedTest - timeout functionality", () => {
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SpeedTestExecutionError);
-        expect((error.error as SpeedTestExecutionError).message).toBe(
-          "string error"
-        );
+      const failureOption = Cause.failureOption(exit.cause);
+      if (Option.isSome(failureOption)) {
+        const error = failureOption.value;
+        expect(error).toBeInstanceOf(SpeedTestExecutionError);
+        expect((error as SpeedTestExecutionError).message).toBe("string error");
       }
     }
   });
@@ -204,9 +214,9 @@ describe("SpeedTest - timeout functionality", () => {
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      if (error._tag === "Fail") {
-        const timeoutError = error.error as SpeedTestTimeoutError;
+      const failureOption = Cause.failureOption(exit.cause);
+      if (Option.isSome(failureOption)) {
+        const timeoutError = failureOption.value as SpeedTestTimeoutError;
         expect(timeoutError.timeoutMs).toBe(50);
         expect(timeoutError._tag).toBe("SpeedTestTimeoutError");
       }

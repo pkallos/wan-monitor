@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Cause, Effect, Exit, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { DatabaseQueryError } from "@/database/questdb/errors";
 import type {
@@ -120,13 +120,16 @@ describe("buildQueryMetrics", () => {
 
     const result = await Effect.runPromiseExit(buildQueryMetrics(params));
 
-    expect(result._tag).toBe("Failure");
-    if (result._tag === "Failure") {
-      const error = result.cause;
-      expect(error._tag).toBe("Fail");
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(DatabaseQueryError);
-        expect(error.error.message).toContain("Invalid granularity: invalid");
+    expect(Exit.isFailure(result)).toBe(true);
+    if (Exit.isFailure(result)) {
+      const failureOption = Cause.failureOption(result.cause);
+      expect(Option.isSome(failureOption)).toBe(true);
+      if (Option.isSome(failureOption)) {
+        const error = failureOption.value;
+        expect(error).toBeInstanceOf(DatabaseQueryError);
+        expect((error as DatabaseQueryError).message).toContain(
+          "Invalid granularity: invalid"
+        );
       }
     }
   });
@@ -278,13 +281,16 @@ describe("buildQueryConnectivityStatus", () => {
       buildQueryConnectivityStatus(params)
     );
 
-    expect(result._tag).toBe("Failure");
-    if (result._tag === "Failure") {
-      const error = result.cause;
-      expect(error._tag).toBe("Fail");
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(DatabaseQueryError);
-        expect(error.error.message).toContain("Invalid granularity: invalid");
+    expect(Exit.isFailure(result)).toBe(true);
+    if (Exit.isFailure(result)) {
+      const failureOption = Cause.failureOption(result.cause);
+      expect(Option.isSome(failureOption)).toBe(true);
+      if (Option.isSome(failureOption)) {
+        const error = failureOption.value;
+        expect(error).toBeInstanceOf(DatabaseQueryError);
+        expect((error as DatabaseQueryError).message).toContain(
+          "Invalid granularity: invalid"
+        );
       }
     }
   });

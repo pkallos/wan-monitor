@@ -139,9 +139,9 @@ describe("Ping Routes", () => {
   });
 
   it("POST /trigger should return 500 on error", async () => {
-    const executeAll = vi.fn().mockImplementation(() => {
-      throw new Error("Ping execution failed");
-    });
+    const executeAll = vi
+      .fn()
+      .mockReturnValue(Effect.fail(new Error("Ping execution failed")));
 
     const context: AppContext = {
       db: {
