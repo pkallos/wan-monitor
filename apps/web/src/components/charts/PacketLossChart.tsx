@@ -26,7 +26,6 @@ export interface PacketLossChartProps {
 }
 
 interface ChartDataPoint {
-  time: string;
   timestamp: number;
   packetLoss: number | null;
 }
@@ -74,10 +73,6 @@ function formatDataForChart(
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       )
       .map((d) => ({
-        time: new Date(d.timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
         timestamp: new Date(d.timestamp).getTime(),
         packetLoss: d.packet_loss ?? null,
       }));
@@ -108,10 +103,6 @@ function formatDataForChart(
     const dataPoint = dataMap.get(currentMs);
 
     result.push({
-      time: new Date(currentMs).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
       timestamp: currentMs,
       packetLoss: dataPoint?.packet_loss ?? null,
     });
