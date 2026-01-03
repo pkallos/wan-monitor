@@ -64,6 +64,13 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 # Build all packages (frontend + backend + shared)
 RUN pnpm build
 
+# Deploy web and server with production dependencies using pnpm deploy
+# This creates standalone directories with proper node_modules structure
+# Mount the pnpm store so deploy can reuse already-compiled native modules
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm --filter=@wan-monitor/web deploy --prod /tmp/web-deploy && \
+    pnpm --filter=@wan-monitor/server deploy --prod /tmp/server-deploy
+
 # -----------------------------------------------------------------------------
 # Stage 4: Production Runtime (All-in-One)
 # -----------------------------------------------------------------------------
@@ -104,7 +111,7 @@ COPY --from=builder /app/dist/web /usr/share/nginx/html
 
 # Copy backend build and production dependencies from pnpm deploy
 COPY --from=builder /app/dist/server /app/backend
-COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=builder /tmp/server-deploy/node_modules /app/node_modules
 
 # Copy configuration files
 COPY docker/nginx.prod.conf /etc/nginx/sites-available/default
