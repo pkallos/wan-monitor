@@ -2,11 +2,6 @@ name: Publish Docker Image
 
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Git tag to build and publish'
-        required: true
-        type: string
   push:
     tags:
       - "v*.*.*"
@@ -23,8 +18,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -69,12 +62,7 @@ jobs:
         id: version
         run: |
           # Handle both v*.*.* and wan-monitor-v*.*.* tag formats
-          # Use workflow input if triggered via workflow_dispatch, otherwise use git ref
-          if [ -n "${{ inputs.tag }}" ]; then
-            TAG="${{ inputs.tag }}"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
+          TAG="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG#wan-monitor-}"  # Strip wan-monitor- prefix if present
           VERSION="${VERSION#v}"          # Strip v prefix
           echo "version=$VERSION" >> $GITHUB_OUTPUT
