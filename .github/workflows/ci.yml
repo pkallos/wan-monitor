@@ -247,14 +247,14 @@ jobs:
         run: pnpm test:coverage
 
       - name: Upload web coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-web
           path: apps/web/coverage/
           retention-days: 7
 
       - name: Upload server coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-server
           path: apps/server/coverage/
