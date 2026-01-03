@@ -1,6 +1,13 @@
-import { Box, HStack, Skeleton, Text, Tooltip } from "@chakra-ui/react";
+import {
+  Box,
+  HStack,
+  Skeleton,
+  Text,
+  Tooltip,
+  useColorModeValue,
+} from "@chakra-ui/react";
 import type { ConnectivityStatusPoint, Granularity } from "@wan-monitor/shared";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   CONNECTIVITY_COLORS,
   CONNECTIVITY_LABELS,
@@ -24,6 +31,7 @@ interface TimelineSegment {
   status: ConnectivityStatus;
   color: string;
   label: string;
+  count: number;
 }
 
 export function ConnectivityStatusChart({
@@ -66,6 +74,7 @@ export function ConnectivityStatusChart({
           status,
           color,
           label,
+          count: 1,
         };
       });
     }
@@ -120,6 +129,7 @@ export function ConnectivityStatusChart({
           status,
           color,
           label,
+          count: 1,
         });
       } else {
         // No data for this time slot - fill with "no-info"
@@ -128,12 +138,81 @@ export function ConnectivityStatusChart({
           status: "noInfo",
           color: CONNECTIVITY_COLORS.noInfo,
           label: CONNECTIVITY_LABELS.noInfo,
+          count: 1,
         });
       }
     }
 
     return result;
   }, [data, granularity, startTime, endTime]);
+
+  // Merge consecutive segments with the same status to reduce DOM overhead
+  const mergedSegments = useMemo((): TimelineSegment[] => {
+    if (segments.length === 0) return [];
+
+    const merged: TimelineSegment[] = [];
+    let current = { ...segments[0] };
+
+    for (let i = 1; i < segments.length; i++) {
+      if (segments[i].status === current.status) {
+        // Same status - increment count
+        current.count += segments[i].count;
+      } else {
+        // Different status - push current and start new
+        merged.push(current);
+        current = { ...segments[i] };
+      }
+    }
+
+    // Push the last segment
+    merged.push(current);
+
+    return merged;
+  }, [segments]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoveredSegment, setHoveredSegment] = useState<TimelineSegment | null>(
+    null
+  );
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const emptyBg = useColorModeValue("gray.200", "gray.700");
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current || mergedSegments.length === 0) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const totalWeight = mergedSegments.reduce((sum, seg) => sum + seg.count, 0);
+    const relativePos = x / rect.width;
+
+    // Find which segment we're hovering over
+    let cumulative = 0;
+    for (const segment of mergedSegments) {
+      cumulative += segment.count / totalWeight;
+      if (relativePos <= cumulative) {
+        setHoveredSegment(segment);
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+        break;
+      }
+    }
+  };
+
+  const formatTooltipLabel = (segment: TimelineSegment): string => {
+    const startTime = new Date(segment.timestamp);
+    if (segment.count === 1) {
+      return `${startTime.toLocaleString()}: ${segment.label}`;
+    }
+
+    // Calculate end time based on count and granularity
+    const intervalMs = granularityToMs(granularity);
+    const endTime = new Date(startTime.getTime() + segment.count * intervalMs);
+
+    return `${startTime.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} - ${endTime.toLocaleString([], { hour: "2-digit", minute: "2-digit" })}: ${segment.label}`;
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredSegment(null);
+  };
 
   if (isLoading) {
     return <Skeleton height="24px" borderRadius="md" />;
@@ -145,30 +224,54 @@ export function ConnectivityStatusChart({
         <Text fontWeight="medium">Uptime: {uptimePercentage.toFixed(2)}%</Text>
       </HStack>
       {segments.length === 0 ? (
-        <Box
-          height="24px"
-          borderRadius="md"
-          bg="gray.200"
-          _dark={{ bg: "gray.700" }}
-        />
+        <Box height="24px" borderRadius="md" bg={emptyBg} />
       ) : (
-        <HStack spacing={0} height="24px" borderRadius="md" overflow="hidden">
-          {segments.map((segment, index) => (
+        <>
+          <div
+            ref={containerRef}
+            role="img"
+            aria-label="Connectivity status timeline"
+            style={{
+              position: "relative",
+              display: "flex",
+              height: "24px",
+              borderRadius: "6px",
+              overflow: "hidden",
+              cursor: "pointer",
+            }}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            data-testid="connectivity-status-bar"
+          >
+            {mergedSegments.map((segment, index) => (
+              <div
+                key={`${segment.timestamp}-${index}`}
+                style={{
+                  height: "100%",
+                  flex: segment.count,
+                  backgroundColor: segment.color,
+                  transition: "opacity 0.2s ease",
+                  opacity: hoveredSegment === segment ? 0.8 : 1,
+                }}
+              />
+            ))}
+          </div>
+          {hoveredSegment && (
             <Tooltip
-              key={`${segment.timestamp}-${index}`}
-              label={`${new Date(segment.timestamp).toLocaleString()}: ${segment.label}`}
+              label={formatTooltipLabel(hoveredSegment)}
+              isOpen={true}
               placement="top"
             >
               <Box
-                height="100%"
-                flex={1}
-                bg={segment.color}
-                transition="all 0.3s ease"
-                _hover={{ opacity: 0.8 }}
+                position="fixed"
+                left={`${tooltipPos.x}px`}
+                top={`${tooltipPos.y}px`}
+                pointerEvents="none"
+                opacity={0}
               />
             </Tooltip>
-          ))}
-        </HStack>
+          )}
+        </>
       )}
     </Box>
   );
