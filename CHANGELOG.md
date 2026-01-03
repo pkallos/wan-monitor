@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.0...wan-monitor-v0.5.1) (2026-01-03)
+
+
+### Bug Fixes
+
+* use QDB_LOG_W_STDOUT_LEVEL env var for QuestDB log suppression ([#80](https://github.com/pkallos/wan-monitor/issues/80)) ([e61cd25](https://github.com/pkallos/wan-monitor/commit/e61cd25d885a867443da2a253f178781a764ef96))
+
+
+### Performance Improvements
+
+* improve Docker build caching to avoid repeated native recompiles ([#79](https://github.com/pkallos/wan-monitor/issues/79)) ([6e489c0](https://github.com/pkallos/wan-monitor/commit/6e489c0d03978c06e544110a631451481a3e2575))
+
 ## [0.5.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.4.0...wan-monitor-v0.5.0) (2026-01-02)
 
 
