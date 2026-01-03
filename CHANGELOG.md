@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.5](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.4...wan-monitor-v0.5.5) (2026-01-03)
+
+
+### Bug Fixes
+
+* chain release-please and docker-publish workflows explicitly ([c31e48e](https://github.com/pkallos/wan-monitor/commit/c31e48ebfd5798ac049d31a77df68444bbf45830))
+* chain release-please and docker-publish workflows explicitly ([efe1e4d](https://github.com/pkallos/wan-monitor/commit/efe1e4d060cb07a8948de3327769ba3535471dcf))
+
 ## [0.5.4](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.3...wan-monitor-v0.5.4) (2026-01-03)
 
 
