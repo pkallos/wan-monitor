@@ -108,7 +108,8 @@ COPY --from=backend-builder /tmp/server-deploy/node_modules /app/node_modules
 # Copy configuration files
 COPY docker/nginx.prod.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/questdb-log.conf /var/lib/questdb/conf/log.conf
+# Note: QuestDB log level is set via QDB_LOG_W_STDOUT_LEVEL env var in supervisord.conf
+# The log.conf file approach doesn't work reliably with Docker volumes
 
 # Remove default nginx config
 RUN rm -f /etc/nginx/sites-enabled/default \
