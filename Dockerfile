@@ -42,23 +42,27 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
 # -----------------------------------------------------------------------------
-# Stage 2: Build Frontend
+# Stage 2: Build All (Frontend + Backend)
 # -----------------------------------------------------------------------------
-FROM deps AS frontend-builder
-# Copy source code for frontend build
+FROM deps AS builder
+# Copy source code for builds
 COPY . .
-RUN pnpm exec turbo run build --filter=@wan-monitor/web
 
-# -----------------------------------------------------------------------------
-# Stage 3: Build Backend
-# -----------------------------------------------------------------------------
-FROM deps AS backend-builder
-# Copy source code for backend build
-COPY . .
-RUN pnpm exec turbo run build --filter=@wan-monitor/server
+# Explicitly ensure tsconfig files are present (shouldn't be needed but fixes Docker cache issues)
+COPY tsconfig.json ./tsconfig.json
+COPY apps/web/tsconfig.json ./apps/web/tsconfig.json
+COPY apps/server/tsconfig.json ./apps/server/tsconfig.json
+COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
 
-# Deploy server with production dependencies using pnpm deploy
-RUN pnpm --filter=@wan-monitor/server deploy --prod /tmp/server-deploy
+# Ensure hoisted deps are resolved during builds inside Docker
+ENV NODE_PATH=/app/node_modules
+
+# Reinstall after sources are copied to ensure workspace links remain valid in this layer
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# Build all packages (frontend + backend + shared)
+RUN pnpm build
 
 # -----------------------------------------------------------------------------
 # Stage 4: Production Runtime (All-in-One)
@@ -96,18 +100,15 @@ RUN mkdir -p /opt/questdb /var/lib/questdb \
 RUN mkdir -p /var/log/supervisor /var/log/nginx
 
 # Copy frontend build
-COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist/web /usr/share/nginx/html
 
 # Copy backend build and production dependencies from pnpm deploy
-COPY --from=backend-builder /app/dist/server /app/backend
-COPY --from=backend-builder /tmp/server-deploy/node_modules /app/node_modules
+COPY --from=builder /app/dist/server /app/backend
+COPY --from=deps /app/node_modules /app/node_modules
 
 # Copy configuration files
 COPY docker/nginx.prod.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/questdb-log.conf /opt/questdb-log.conf
-COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 # Remove default nginx config
 RUN rm -f /etc/nginx/sites-enabled/default \
@@ -161,5 +162,5 @@ ENV SPEEDTEST_TIMEOUT_SECONDS=120
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost/api/live || exit 1
 
-# Start via entrypoint (sets up QuestDB log.conf then starts supervisord)
-CMD ["/entrypoint.sh"]
+# Start supervisord directly
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
