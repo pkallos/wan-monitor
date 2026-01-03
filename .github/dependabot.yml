@@ -1,0 +1,133 @@
+version: 2
+updates:
+  # npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      # Effect ecosystem - ignore major versions
+      effect:
+        patterns:
+          - "effect"
+          - "@effect/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # React ecosystem - ignore major versions
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Chakra UI and emotion - group together
+      chakra-ui:
+        patterns:
+          - "@chakra-ui/*"
+          - "@emotion/*"
+          - "framer-motion"
+
+      # Testing libraries
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@testing-library/*"
+          - "jsdom"
+
+      # Build tools - ignore Vite major versions
+      build-tools:
+        patterns:
+          - "vite"
+          - "tsup"
+          - "tsx"
+          - "@vitejs/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Backend framework - ignore Fastify major versions
+      backend:
+        patterns:
+          - "fastify"
+          - "@fastify/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Database clients
+      database:
+        patterns:
+          - "pg"
+          - "@types/pg"
+          - "@questdb/*"
+
+      # Development tools
+      dev-tools:
+        patterns:
+          - "@biomejs/*"
+          - "husky"
+          - "lint-staged"
+          - "turbo"
+          - "pino"
+          - "pino-pretty"
+
+      # TypeScript and type definitions
+      typescript:
+        patterns:
+          - "typescript"
+          - "@types/*"
+
+      # Other utilities
+      utilities:
+        patterns:
+          - "dotenv"
+          - "react-icons"
+          - "recharts"
+          - "@tanstack/react-query"
+          - "ping"
+          - "@types/ping"
+
+    # Ignore major version updates for packages that require significant refactoring
+    ignore:
+      # Effect ecosystem major versions
+      - dependency-name: "effect"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@effect/platform"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@effect/platform-node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@effect/schema"
+        update-types: ["version-update:semver-major"]
+
+      # React major versions
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+      # Build tools major versions
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+
+      # Backend major versions
+      - dependency-name: "fastify"
+        update-types: ["version-update:semver-major"]
+
+      # Pinned version due to patch
+      - dependency-name: "speedtest-net"
+        versions: [">2.2.0"]
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
