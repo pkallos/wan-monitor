@@ -36,22 +36,25 @@ COPY patches patches
 
 # Install dependencies with BuildKit cache mount for pnpm store
 # This persists the pnpm store across builds, avoiding re-downloads
+# The key optimization: by copying source AFTER install (see below), this layer
+# only invalidates when package files change, not when source code changes
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
-
-# Copy source code (after deps install for better caching)
-COPY . .
 
 # -----------------------------------------------------------------------------
 # Stage 2: Build Frontend
 # -----------------------------------------------------------------------------
 FROM deps AS frontend-builder
+# Copy source code for frontend build
+COPY . .
 RUN pnpm exec turbo run build --filter=@wan-monitor/web
 
 # -----------------------------------------------------------------------------
 # Stage 3: Build Backend
 # -----------------------------------------------------------------------------
 FROM deps AS backend-builder
+# Copy source code for backend build
+COPY . .
 RUN pnpm exec turbo run build --filter=@wan-monitor/server
 
 # Deploy server with production dependencies using pnpm deploy
