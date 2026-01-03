@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.5...wan-monitor-v0.5.6) (2026-01-03)
+
+
+### Bug Fixes
+
+* optimize Docker build with pnpm deploy cache mount to avoid rebuilding native modules ([#114](https://github.com/pkallos/wan-monitor/issues/114)) ([fafcf92](https://github.com/pkallos/wan-monitor/commit/fafcf9239f50de69115fa68bad89c626ce77b8c9)), closes [#103](https://github.com/pkallos/wan-monitor/issues/103)
+
 ## [0.5.5](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.4...wan-monitor-v0.5.5) (2026-01-03)
 
 
