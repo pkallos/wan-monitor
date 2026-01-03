@@ -9,7 +9,7 @@ services:
       - '9003:9003'  # Min health server
     environment:
       - QDB_TELEMETRY_ENABLED=false
-      # Suppress INFO logs to reduce container log noise (keep ERROR/CRITICAL)
+      # Suppress INFO/ADVISORY logs, keep ERROR and above
       - QDB_LOG_W_STDOUT_LEVEL=ERROR
     volumes:
       - questdb-data:/var/lib/questdb
