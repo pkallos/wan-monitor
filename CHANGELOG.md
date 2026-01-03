@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.1...wan-monitor-v0.5.2) (2026-01-03)
+
+
+### Bug Fixes
+
+* suppress QuestDB INFO logs via log.conf file ([dce2510](https://github.com/pkallos/wan-monitor/commit/dce2510d5ac2aea11ffac5aee9dc146173775981))
+* suppress QuestDB INFO logs via log.conf file ([2cc4c7d](https://github.com/pkallos/wan-monitor/commit/2cc4c7df5a756c210518f9d43452bccbface5341))
+
 ## [0.5.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.0...wan-monitor-v0.5.1) (2026-01-03)
 
 
