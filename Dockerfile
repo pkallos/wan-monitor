@@ -102,8 +102,9 @@ COPY --from=backend-builder /tmp/server-deploy/node_modules /app/node_modules
 # Copy configuration files
 COPY docker/nginx.prod.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-# Note: QuestDB log level is set via QDB_LOG_W_STDOUT_LEVEL env var in supervisord.conf
-# The log.conf file approach doesn't work reliably with Docker volumes
+COPY docker/questdb-log.conf /opt/questdb-log.conf
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Remove default nginx config
 RUN rm -f /etc/nginx/sites-enabled/default \
@@ -157,5 +158,5 @@ ENV SPEEDTEST_TIMEOUT_SECONDS=120
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost/api/live || exit 1
 
-# Start supervisord
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Start via entrypoint (sets up QuestDB log.conf then starts supervisord)
+CMD ["/entrypoint.sh"]
