@@ -17,11 +17,11 @@
   },
   "dependencies": {
     "@chakra-ui/icons": "^2.2.4",
-    "@chakra-ui/react": "^2.8.2",
+    "@chakra-ui/react": "^3.30.0",
     "@emotion/react": "^11.11.3",
     "@emotion/styled": "^11.11.0",
     "@tanstack/react-query": "^5.90.16",
-    "framer-motion": "^10.18.0",
+    "framer-motion": "^12.23.26",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.5.0",
