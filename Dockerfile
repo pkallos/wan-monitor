@@ -9,62 +9,56 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Stage 1: Build Frontend
+# Stage 1: Shared Dependencies
 # -----------------------------------------------------------------------------
 # Using bookworm (Debian) instead of Alpine to ensure native modules are
-# compiled with glibc, matching the Ubuntu production image
-FROM node:22-bookworm AS frontend-builder
+# compiled with glibc, matching the Ubuntu production image.
+# This stage installs deps ONCE and is shared by frontend/backend builders.
+FROM node:22-bookworm AS deps
 
 # Install build dependencies for native modules (lzma-native requires liblzma-dev)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ liblzma-dev \
     && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Pin pnpm version to match package.json (prevents cache invalidation from version drift)
+RUN corepack enable && corepack prepare pnpm@9.6.0 --activate
 
 WORKDIR /app
 
+# Copy package manifests first for better layer caching
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY scripts scripts
 COPY patches patches
-RUN pnpm install --frozen-lockfile
 
+# Install dependencies with BuildKit cache mount for pnpm store
+# This persists the pnpm store across builds, avoiding re-downloads
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# Copy source code (after deps install for better caching)
 COPY . .
+
+# -----------------------------------------------------------------------------
+# Stage 2: Build Frontend
+# -----------------------------------------------------------------------------
+FROM deps AS frontend-builder
 RUN pnpm exec turbo run build --filter=@wan-monitor/web
 
 # -----------------------------------------------------------------------------
-# Stage 2: Build Backend
+# Stage 3: Build Backend
 # -----------------------------------------------------------------------------
-# Using bookworm (Debian) instead of Alpine to ensure native modules are
-# compiled with glibc, matching the Ubuntu production image
-FROM node:22-bookworm AS backend-builder
-
-# Install build dependencies for native modules (lzma-native requires liblzma-dev)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ liblzma-dev \
-    && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-WORKDIR /app
-
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
-COPY apps/web/package.json apps/web/package.json
-COPY apps/server/package.json apps/server/package.json
-COPY packages/shared/package.json packages/shared/package.json
-COPY scripts scripts
-COPY patches patches
-RUN pnpm install --frozen-lockfile --prod=false
-
-COPY . .
+FROM deps AS backend-builder
 RUN pnpm exec turbo run build --filter=@wan-monitor/server
 
 # Deploy server with production dependencies using pnpm deploy
 RUN pnpm --filter=@wan-monitor/server deploy --prod /tmp/server-deploy
 
 # -----------------------------------------------------------------------------
-# Stage 3: Production Runtime (All-in-One)
+# Stage 4: Production Runtime (All-in-One)
 # -----------------------------------------------------------------------------
 FROM ubuntu:24.04 AS production
 

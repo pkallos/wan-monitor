@@ -244,6 +244,9 @@ jobs:
     runs-on: ubuntu-latest
     # Skip Docker build on draft PRs to save CI time
     if: github.event.pull_request.draft == false || github.event_name == 'push'
+    permissions:
+      contents: read
+      actions: write  # Required for BuildKit GHA cache
 
     steps:
       - name: Checkout code
