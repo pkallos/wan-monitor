@@ -73,8 +73,6 @@ docs
 .prettierrc*
 .eslintrc*
 biome.json
-tsconfig*.json
-!tsconfig.json
 vite.config.ts
 vitest.config.ts
 playwright.config.ts
