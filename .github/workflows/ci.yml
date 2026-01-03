@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
   pull_request:
-    branches: [main]
+    branches: [main, development]
 
 jobs:
   # Dependency installation shared across jobs
@@ -149,6 +149,7 @@ jobs:
         ports:
           - 9000:9000
           - 9009:9009
+          - 8812:8812
 
     steps:
       - name: Checkout code
@@ -187,6 +188,26 @@ jobs:
           done
           echo "QuestDB failed to start"
           exit 1
+
+      - name: Bootstrap test database
+        run: |
+          echo "Creating network_metrics table..."
+          curl -G http://localhost:9000/exec --data-urlencode "query=CREATE TABLE IF NOT EXISTS network_metrics (
+            timestamp TIMESTAMP,
+            source SYMBOL,
+            host SYMBOL,
+            latency DOUBLE,
+            jitter DOUBLE,
+            packet_loss DOUBLE,
+            connectivity_status STRING,
+            download_bandwidth LONG,
+            upload_bandwidth LONG,
+            server_location STRING,
+            isp STRING,
+            external_ip STRING,
+            internal_ip STRING
+          ) TIMESTAMP(timestamp) PARTITION BY DAY WAL;"
+          echo "Table created successfully"
 
       - name: Run integration tests
         run: pnpm test
