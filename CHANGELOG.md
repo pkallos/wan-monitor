@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.3](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.2...wan-monitor-v0.5.3) (2026-01-03)
+
+
+### Performance Improvements
+
+* optimize Docker build caching by restructuring layer order ([28d9cf4](https://github.com/pkallos/wan-monitor/commit/28d9cf4bf0e4ac94befb125e49cdde77cecc36bc))
+* optimize Docker build caching by restructuring layer order ([6fd0985](https://github.com/pkallos/wan-monitor/commit/6fd0985a4e75739b9aac1fd3118c227b41549e5c))
+
 ## [0.5.2](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.1...wan-monitor-v0.5.2) (2026-01-03)
 
 
