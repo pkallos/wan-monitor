@@ -4,14 +4,6 @@ trigger: always_on
 
 # PR Preparation & Workflow Rules
 
-## Branch Workflow
-
-**This project uses a two-branch workflow:**
-- `development` - Default branch for all feature work. PRs target this branch.
-- `main` - Release branch. Only @pkallos merges from development to main.
-
-**Always branch from and PR to `development`, NOT `main`.**
-
 ## SECTION 1: Before Committing & Pushing - Run ALL CI Checks Locally (MANDATORY)
 
 Execute these commands IN ORDER and ensure ALL pass:
@@ -230,7 +222,7 @@ If CI fails after pushing:
 Follow this EXACT sequence:
 
 ### Phase 1: Development
-1. Create feature branch from development: `git checkout -b feature/name origin/development`
+1. Create feature branch from main: `git checkout -b feature/name origin/main`
 2. Implement the feature
 3. Write unit tests
 4. Write E2E tests (if UI changes)

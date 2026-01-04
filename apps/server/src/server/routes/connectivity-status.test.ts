@@ -66,8 +66,8 @@ describe("Connectivity Status Routes", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.data).toHaveLength(2);
-    expect(body.data[0].status).toBe("down");
-    expect(body.data[1].status).toBe("degraded");
+    expect(body.data[0].status).toBe("up");
+    expect(body.data[1].status).toBe("up");
     expect(body.meta.uptimePercentage).toBeCloseTo(93, 0);
   });
 
@@ -242,5 +242,170 @@ describe("Connectivity Status Routes", () => {
     expect(response.statusCode).toBe(500);
     const body = response.json();
     expect(body.error).toBe("Failed to query connectivity status");
+  });
+
+  it("should handle exactly 50% down as up status", async () => {
+    const mockRows = [
+      {
+        timestamp: "2024-01-01T12:00:00.000Z",
+        up_count: 25,
+        down_count: 25,
+        degraded_count: 0,
+        total_count: 50,
+      },
+    ];
+
+    const db: QuestDBService = {
+      health: () => Effect.succeed({ connected: true }),
+      writeMetric: () => Effect.void,
+      queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
+      queryConnectivityStatus: () => Effect.succeed(mockRows),
+      close: () => Effect.void,
+    };
+
+    const context: AppContext = {
+      db,
+      pingExecutor: {} as AppContext["pingExecutor"],
+      speedTestService: {} as AppContext["speedTestService"],
+      networkMonitor: {} as AppContext["networkMonitor"],
+      config: {} as AppContext["config"],
+    };
+
+    const app = await createTestApp(context);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/connectivity-status/",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.data[0].status).toBe("up");
+    expect(body.data[0].downPercentage).toBe(50);
+  });
+
+  it("should handle 51% down as down status", async () => {
+    const mockRows = [
+      {
+        timestamp: "2024-01-01T12:00:00.000Z",
+        up_count: 24,
+        down_count: 26,
+        degraded_count: 0,
+        total_count: 50,
+      },
+    ];
+
+    const db: QuestDBService = {
+      health: () => Effect.succeed({ connected: true }),
+      writeMetric: () => Effect.void,
+      queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
+      queryConnectivityStatus: () => Effect.succeed(mockRows),
+      close: () => Effect.void,
+    };
+
+    const context: AppContext = {
+      db,
+      pingExecutor: {} as AppContext["pingExecutor"],
+      speedTestService: {} as AppContext["speedTestService"],
+      networkMonitor: {} as AppContext["networkMonitor"],
+      config: {} as AppContext["config"],
+    };
+
+    const app = await createTestApp(context);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/connectivity-status/",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.data[0].status).toBe("down");
+    expect(body.data[0].downPercentage).toBe(52);
+  });
+
+  it("should handle degraded status with >50% degraded", async () => {
+    const mockRows = [
+      {
+        timestamp: "2024-01-01T12:00:00.000Z",
+        up_count: 10,
+        down_count: 10,
+        degraded_count: 30,
+        total_count: 50,
+      },
+    ];
+
+    const db: QuestDBService = {
+      health: () => Effect.succeed({ connected: true }),
+      writeMetric: () => Effect.void,
+      queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
+      queryConnectivityStatus: () => Effect.succeed(mockRows),
+      close: () => Effect.void,
+    };
+
+    const context: AppContext = {
+      db,
+      pingExecutor: {} as AppContext["pingExecutor"],
+      speedTestService: {} as AppContext["speedTestService"],
+      networkMonitor: {} as AppContext["networkMonitor"],
+      config: {} as AppContext["config"],
+    };
+
+    const app = await createTestApp(context);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/connectivity-status/",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.data[0].status).toBe("degraded");
+    expect(body.data[0].degradedPercentage).toBe(60);
+  });
+
+  it("should prioritize down over degraded when both >50%", async () => {
+    const mockRows = [
+      {
+        timestamp: "2024-01-01T12:00:00.000Z",
+        up_count: 0,
+        down_count: 26,
+        degraded_count: 24,
+        total_count: 50,
+      },
+    ];
+
+    const db: QuestDBService = {
+      health: () => Effect.succeed({ connected: true }),
+      writeMetric: () => Effect.void,
+      queryMetrics: () => Effect.succeed([]),
+      querySpeedtests: () => Effect.succeed([]),
+      queryConnectivityStatus: () => Effect.succeed(mockRows),
+      close: () => Effect.void,
+    };
+
+    const context: AppContext = {
+      db,
+      pingExecutor: {} as AppContext["pingExecutor"],
+      speedTestService: {} as AppContext["speedTestService"],
+      networkMonitor: {} as AppContext["networkMonitor"],
+      config: {} as AppContext["config"],
+    };
+
+    const app = await createTestApp(context);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/connectivity-status/",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.data[0].status).toBe("down");
+    expect(body.data[0].downPercentage).toBe(52);
+    expect(body.data[0].degradedPercentage).toBe(48);
   });
 });

@@ -160,14 +160,16 @@ export const buildQueryConnectivityStatus = (
             ELSE 0
           END) as down_count,
           SUM(CASE
-            WHEN (latency >= 0 OR latency IS NOT NULL)
+            WHEN latency IS NOT NULL
+              AND latency >= 0
               AND connectivity_status != 'down'
               AND packet_loss >= 5
               AND packet_loss < 50 THEN 1
             ELSE 0
           END) as degraded_count,
           SUM(CASE
-            WHEN (latency > 0 OR latency IS NOT NULL)
+            WHEN latency IS NOT NULL
+              AND latency >= 0
               AND connectivity_status != 'down'
               AND (packet_loss < 5 OR packet_loss IS NULL) THEN 1
             ELSE 0
