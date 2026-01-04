@@ -156,22 +156,22 @@ export const buildQueryConnectivityStatus = (
         SELECT
           timestamp,
           SUM(CASE
-            WHEN connectivity_status = 'down' OR latency < 0 THEN 1
+            WHEN connectivity_status = 'down' OR latency < 0 OR packet_loss = 100 THEN 1
             ELSE 0
           END) as down_count,
           SUM(CASE
             WHEN latency IS NOT NULL
               AND latency >= 0
               AND connectivity_status != 'down'
-              AND packet_loss >= 5
-              AND packet_loss < 50 THEN 1
+              AND packet_loss > 10
+              AND packet_loss < 100 THEN 1
             ELSE 0
           END) as degraded_count,
           SUM(CASE
             WHEN latency IS NOT NULL
               AND latency >= 0
               AND connectivity_status != 'down'
-              AND (packet_loss < 5 OR packet_loss IS NULL) THEN 1
+              AND (packet_loss <= 10 OR packet_loss IS NULL) THEN 1
             ELSE 0
           END) as up_count,
           COUNT(*) as total_count

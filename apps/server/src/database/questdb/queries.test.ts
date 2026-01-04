@@ -264,8 +264,9 @@ describe("buildQueryConnectivityStatus", () => {
     expect(result.query).toContain("up_count");
     expect(result.query).toContain("total_count");
     expect(result.query).toContain("connectivity_status = 'down'");
-    expect(result.query).toContain("packet_loss >= 5");
-    expect(result.query).toContain("packet_loss < 50");
+    expect(result.query).toContain("packet_loss > 10");
+    expect(result.query).toContain("packet_loss < 100");
+    expect(result.query).toContain("packet_loss = 100");
   });
 
   it("should fail with invalid granularity", async () => {
