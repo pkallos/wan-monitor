@@ -82,7 +82,7 @@ export type ConnectivityStatus = "up" | "down" | "degraded";
 
 export interface ConnectivityStatusPoint {
   timestamp: string;
-  status: ConnectivityStatus;
+  status?: ConnectivityStatus;
   upPercentage: number;
   downPercentage: number;
   degradedPercentage: number;

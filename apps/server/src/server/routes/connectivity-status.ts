@@ -1,8 +1,4 @@
-import {
-  type ConnectivityStatus,
-  type Granularity,
-  VALID_GRANULARITIES,
-} from "@wan-monitor/shared";
+import { type Granularity, VALID_GRANULARITIES } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { DbUnavailable } from "@/database/questdb";
 import type { AppContext, AppInstance } from "@/server/types";
@@ -57,18 +53,8 @@ export async function connectivityStatusRoutes(
               const downPercentage = (row.down_count / total) * 100;
               const degradedPercentage = (row.degraded_count / total) * 100;
 
-              let status: ConnectivityStatus;
-              if (downPercentage > 50) {
-                status = "down";
-              } else if (degradedPercentage > 50) {
-                status = "degraded";
-              } else {
-                status = "up";
-              }
-
               return {
                 timestamp: row.timestamp,
-                status,
                 upPercentage,
                 downPercentage,
                 degradedPercentage,

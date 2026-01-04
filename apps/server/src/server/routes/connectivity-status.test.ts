@@ -66,8 +66,9 @@ describe("Connectivity Status Routes", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.data).toHaveLength(2);
-    expect(body.data[0].status).toBe("up");
-    expect(body.data[1].status).toBe("up");
+    expect(body.data[0].upPercentage).toBeCloseTo(90, 0);
+    expect(body.data[0].downPercentage).toBeCloseTo(6, 0);
+    expect(body.data[1].upPercentage).toBeCloseTo(96, 0);
     expect(body.meta.uptimePercentage).toBeCloseTo(93, 0);
   });
 
@@ -108,7 +109,6 @@ describe("Connectivity Status Routes", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.data[0].status).toBe("down");
     expect(body.data[0].downPercentage).toBe(100);
     expect(body.meta.uptimePercentage).toBe(0);
   });
@@ -150,7 +150,6 @@ describe("Connectivity Status Routes", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.data[0].status).toBe("up");
     expect(body.data[0].upPercentage).toBe(100);
     expect(body.meta.uptimePercentage).toBe(100);
   });
@@ -281,8 +280,8 @@ describe("Connectivity Status Routes", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.data[0].status).toBe("up");
     expect(body.data[0].downPercentage).toBe(50);
+    expect(body.data[0].upPercentage).toBe(50);
   });
 
   it("should handle 51% down as down status", async () => {
@@ -322,8 +321,8 @@ describe("Connectivity Status Routes", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.data[0].status).toBe("down");
     expect(body.data[0].downPercentage).toBe(52);
+    expect(body.data[0].upPercentage).toBe(48);
   });
 
   it("should handle degraded status with >50% degraded", async () => {
@@ -363,8 +362,9 @@ describe("Connectivity Status Routes", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.data[0].status).toBe("degraded");
     expect(body.data[0].degradedPercentage).toBe(60);
+    expect(body.data[0].upPercentage).toBe(20);
+    expect(body.data[0].downPercentage).toBe(20);
   });
 
   it("should prioritize down over degraded when both >50%", async () => {
@@ -404,8 +404,8 @@ describe("Connectivity Status Routes", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.data[0].status).toBe("down");
     expect(body.data[0].downPercentage).toBe(52);
     expect(body.data[0].degradedPercentage).toBe(48);
+    expect(body.data[0].upPercentage).toBe(0);
   });
 });
