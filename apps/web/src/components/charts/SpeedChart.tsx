@@ -1,5 +1,5 @@
 import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
-import type { SpeedMetric } from "@wan-monitor/shared";
+import type { SpeedMetric } from "@shared/api";
 import {
   CartesianGrid,
   Legend,

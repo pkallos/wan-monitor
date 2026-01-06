@@ -1,41 +1,39 @@
+import { HttpApiBuilder } from "@effect/platform";
+import { WanMonitorApi } from "@shared/api/main";
 import { Effect } from "effect";
-import type { AppContext, AppInstance } from "@/server/types";
+import { ConfigService } from "@/services/config";
+import { PingExecutor } from "@/services/ping-executor";
 
-/**
- * Ping-related routes
- */
-export async function pingRoutes(
-  app: AppInstance,
-  context: AppContext
-): Promise<void> {
-  // Ping trigger endpoint - execute pings and write to database
-  app.post("/trigger", async (request, reply) => {
-    try {
-      const body = request.body as { hosts?: string[] } | undefined;
-      const hosts = body?.hosts;
+export const PingGroupLive = HttpApiBuilder.group(
+  WanMonitorApi,
+  "ping",
+  (handlers) =>
+    handlers
+      .handle("triggerPing", ({ payload }) =>
+        Effect.gen(function* () {
+          const pingExecutor = yield* PingExecutor;
 
-      const results = hosts
-        ? await Effect.runPromise(context.pingExecutor.executeHosts(hosts))
-        : await Effect.runPromise(context.pingExecutor.executeAll());
+          const results = payload?.hosts
+            ? yield* pingExecutor.executeHosts(payload.hosts)
+            : yield* pingExecutor.executeAll();
 
-      return reply.code(200).send({
-        success: true,
-        timestamp: new Date().toISOString(),
-        results,
-      });
-    } catch (error) {
-      return reply.code(500).send({
-        success: false,
-        timestamp: new Date().toISOString(),
-        error: String(error),
-      });
-    }
-  });
-
-  // Get configured ping hosts
-  app.get("/hosts", async (_request, reply) => {
-    return reply.code(200).send({
-      hosts: context.config.ping.hosts,
-    });
-  });
-}
+          return {
+            success: true,
+            timestamp: new Date().toISOString(),
+            results,
+          };
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.fail(`Failed to execute ping: ${error}`)
+          )
+        )
+      )
+      .handle("getHosts", () =>
+        Effect.gen(function* () {
+          const config = yield* ConfigService;
+          return {
+            hosts: config.ping.hosts,
+          };
+        })
+      )
+);

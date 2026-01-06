@@ -121,8 +121,9 @@ All configuration is done via environment variables.
 |                        Docker Container                          |
 |                                                                  |
 |  +----------+      +----------+      +--------------------+      |
-|  |  Nginx   |----->|  Fastify |----->|      QuestDB       |      |
-|  | (port 80)|      | (port    |      |  (time-series DB)  |      |
+|  |  Nginx   |----->| Effect-TS|----->|      QuestDB       |      |
+|  | (port 80)|      | HTTP API |      |  (time-series DB)  |      |
+|  |          |      | (port    |      |                    |      |
 |  |          |      |  3001)   |      |                    |      |
 |  +----+-----+      +----+-----+      +---------^----------+      |
 |       |                 |                      |                 |
@@ -135,7 +136,7 @@ All configuration is done via environment variables.
 
 **Tech Stack:**
 - **Frontend**: React 18 + TypeScript + Vite + Chakra UI + Recharts
-- **Backend**: Fastify + Effect-TS (functional error handling)
+- **Backend**: Effect-TS HTTP platform (type-safe API with functional error handling)
 - **Database**: QuestDB (columnar time-series database)
 - **Process Manager**: Supervisord (manages all services in the container)
 - **Reverse Proxy**: Nginx (serves frontend, proxies API requests)
@@ -230,10 +231,10 @@ wan-monitor/
 │   │   │   ├── context/     # Auth context
 │   │   │   └── hooks/       # Custom hooks
 │   │   └── ...
-│   └── server/              # Fastify backend
+│   └── server/              # Effect-TS HTTP backend
 │       ├── src/
-│       │   ├── server/      # HTTP routes and middleware
-│       │   ├── services/    # Ping, speedtest, network monitor
+│       │   ├── server/      # HTTP API routes and entry point
+│       │   ├── services/    # Ping, speedtest, network monitor, auth
 │       │   └── database/    # QuestDB client
 │       └── ...
 ├── packages/
@@ -303,8 +304,7 @@ Overall from inception to publishing, this project took about 15 hours of time, 
 Generally when I start side projects it's partly to learn and test new tools and frameworks, so the stack choice was done with that in mind:
  - Vite (I normally use Next.js, but I wanted to try something different)
  - Chakra UI (I normally use Tailwind, but I wanted to try something different)
- - Fastify (I normally use Express, but I wanted to try something different)
- - Effect-TS (I wanted to try something different)
+ - Effect-TS (I wanted to try functional programming with a comprehensive type-safe HTTP platform)
  - QuestDB (I wanted to try a different time-series database)
  - Experimenting with a new AI-assisted dev workflow
 

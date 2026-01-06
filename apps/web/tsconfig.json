@@ -21,8 +21,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@wan-monitor/shared": ["../../packages/shared/src/index.ts"],
-      "@wan-monitor/shared/metrics": ["../../packages/shared/src/metrics.ts"]
+      "@shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": ["src", "src/test/vitest.d.ts"],

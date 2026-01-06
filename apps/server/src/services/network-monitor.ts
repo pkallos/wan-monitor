@@ -1,4 +1,4 @@
-import { mbpsToBps } from "@wan-monitor/shared";
+import { mbpsToBps } from "@shared/metrics";
 import { Config, Context, Effect, Layer, Schedule } from "effect";
 import { QuestDB } from "@/database/questdb";
 import { PingExecutor } from "@/services/ping-executor";

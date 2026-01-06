@@ -1,4 +1,4 @@
-import type { NetworkMetric } from "@wan-monitor/shared/metrics";
+import type { NetworkMetric } from "@shared/metrics";
 import { Context, Effect, Layer } from "effect";
 import { QuestDB } from "@/database/questdb";
 import { ConfigService } from "@/services/config";

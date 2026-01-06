@@ -3,17 +3,21 @@ language js
 // Match import statements with relative paths
 or {
   `import $_ from $source` where {
-    $source <: or { `"../$_"`, `'../$_'`, `"./$_"`, `'./$_'` },
-    register_diagnostic(
-      span = $source,
-      message = "Relative imports are not allowed. Replace with '@/' path alias (e.g., '../components/foo' → '@/components/foo', './utils' → '@/utils')"
-    )
+    $source <: or {
+      `"../$_"`,
+      `'../$_'`,
+      `"./$_"`,
+      `'./$_'`
+    },
+    register_diagnostic(span=$source, message="Relative imports are not allowed. Replace with '@/' path alias (e.g., '../components/foo' → '@/components/foo', './utils' → '@/utils')")
   },
   `import type $_ from $source` where {
-    $source <: or { `"../$_"`, `'../$_'`, `"./$_"`, `'./$_'` },
-    register_diagnostic(
-      span = $source,
-      message = "Relative imports are not allowed. Replace with '@/' path alias (e.g., '../components/foo' → '@/components/foo', './utils' → '@/utils')"
-    )
+    $source <: or {
+      `"../$_"`,
+      `'../$_'`,
+      `"./$_"`,
+      `'./$_'`
+    },
+    register_diagnostic(span=$source, message="Relative imports are not allowed. Replace with '@/' path alias (e.g., '../components/foo' → '@/components/foo', './utils' → '@/utils')")
   }
 }

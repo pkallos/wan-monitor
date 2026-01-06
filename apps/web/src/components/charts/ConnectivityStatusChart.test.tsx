@@ -1,5 +1,5 @@
+import type { ConnectivityStatusPoint } from "@shared/api";
 import { render, screen } from "@testing-library/react";
-import type { ConnectivityStatusPoint } from "@wan-monitor/shared";
 import { describe, expect, it } from "vitest";
 import { ConnectivityStatusChart } from "./ConnectivityStatusChart";
 

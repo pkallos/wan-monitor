@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QuestDB } from "@/database/questdb";
 import { ConfigService } from "@/services/config";
-import { type PingResult, PingService } from "@/services/ping";
+import { type PingError, type PingResult, PingService } from "@/services/ping";
 import { PingExecutor, PingExecutorLive } from "@/services/ping-executor";
 
 // Mock config
@@ -27,10 +27,11 @@ const TestConfigLive = Layer.succeed(ConfigService, {
 });
 
 // Mock PingService
-// biome-ignore lint/suspicious/noExplicitAny: Mock needs flexible typing
-const mockPing = vi.fn<[string], Effect.Effect<PingResult, any>>();
+const mockPing = vi.fn();
 const MockPingServiceLive = Layer.succeed(PingService, {
-  ping: mockPing,
+  ping: mockPing as unknown as (
+    host: string
+  ) => Effect.Effect<PingResult, PingError, never>,
   pingWithConfig: vi.fn(),
   isReachable: vi.fn(),
 });

@@ -1,92 +1,78 @@
-import type { AppContext, AppInstance } from "@/server/types";
+import { HttpApiBuilder } from "@effect/platform";
+import { WanMonitorApi } from "@shared/api/main";
+import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
+import { Effect } from "effect";
+import { ConfigService } from "@/services/config";
+import { JwtService } from "@/services/jwt";
 
-interface LoginBody {
-  username: string;
-  password: string;
-}
+export const AuthGroupLive = HttpApiBuilder.group(
+  WanMonitorApi,
+  "auth",
+  (handlers) =>
+    handlers
+      .handle("login", ({ payload }) =>
+        Effect.gen(function* () {
+          const config = yield* ConfigService;
+          const jwtService = yield* JwtService;
 
-interface JwtPayload {
-  username: string;
-  iat: number;
-  exp: number;
-}
+          if (!payload.username || !payload.password) {
+            return yield* Effect.fail("Username and password are required");
+          }
 
-/**
- * Authentication routes
- */
-export async function authRoutes(
-  app: AppInstance,
-  context: AppContext
-): Promise<void> {
-  // Login endpoint
-  app.post<{ Body: LoginBody }>("/login", async (request, reply) => {
-    const { username, password } = request.body;
+          if (!config.auth.password) {
+            return yield* Effect.fail(
+              "Authentication is not configured. Set WAN_MONITOR_PASSWORD."
+            );
+          }
 
-    // Validate credentials
-    if (!username || !password) {
-      return reply.code(400).send({
-        error: "Username and password are required",
-      });
-    }
+          if (
+            payload.username !== config.auth.username ||
+            payload.password !== config.auth.password
+          ) {
+            return yield* Effect.fail("Invalid username or password");
+          }
 
-    // Check if auth is disabled (no password configured)
-    if (!context.config.auth.password) {
-      return reply.code(401).send({
-        error: "Authentication is not configured. Set WAN_MONITOR_PASSWORD.",
-      });
-    }
+          const { token, expiresAt } = yield* jwtService.sign(payload.username);
 
-    // Verify credentials
-    if (
-      username !== context.config.auth.username ||
-      password !== context.config.auth.password
-    ) {
-      return reply.code(401).send({
-        error: "Invalid username or password",
-      });
-    }
+          return {
+            token,
+            expiresAt,
+            username: payload.username,
+          };
+        })
+      )
+      .handle("logout", () =>
+        Effect.succeed({
+          success: true,
+          message: "Logged out successfully",
+        })
+      )
+      .handle("me", () =>
+        Effect.gen(function* () {
+          const config = yield* ConfigService;
 
-    // Generate JWT token
-    const token = app.jwt.sign(
-      { username },
-      { expiresIn: context.config.auth.jwtExpiresIn }
-    );
+          const user = yield* AuthenticatedUser;
 
-    // Calculate expiration time
-    const decoded = app.jwt.decode<JwtPayload>(token);
-    const expiresAt = decoded?.exp
-      ? new Date(decoded.exp * 1000).toISOString()
-      : null;
+          // If auth is not configured, return anonymous user
+          if (!config.auth.password) {
+            return {
+              username: user.username,
+              authenticated: false,
+            };
+          }
 
-    return reply.code(200).send({
-      token,
-      expiresAt,
-      username,
-    });
-  });
-
-  // Logout endpoint (client-side token removal, but we can track it server-side if needed)
-  app.post("/logout", async (_request, reply) => {
-    return reply.code(200).send({
-      success: true,
-      message: "Logged out successfully",
-    });
-  });
-
-  // Get current user info (authentication handled by global hook in app.ts)
-  app.get("/me", async (request, reply) => {
-    const user = request.user as JwtPayload;
-    return reply.code(200).send({
-      username: user.username,
-      authenticated: true,
-    });
-  });
-
-  // Check if auth is required (public endpoint)
-  app.get("/status", async (_request, reply) => {
-    const authRequired = Boolean(context.config.auth.password);
-    return reply.code(200).send({
-      authRequired,
-    });
-  });
-}
+          return {
+            username: user.username,
+            authenticated: true,
+          };
+        })
+      )
+      .handle("status", () =>
+        Effect.gen(function* () {
+          const config = yield* ConfigService;
+          return {
+            authRequired: Boolean(config.auth.password),
+          };
+        })
+      )
+);

@@ -6,7 +6,7 @@ import {
   Tooltip,
   useColorModeValue,
 } from "@chakra-ui/react";
-import type { ConnectivityStatusPoint, Granularity } from "@wan-monitor/shared";
+import type { ConnectivityStatusPoint, Granularity } from "@shared/api";
 import { useMemo, useRef, useState } from "react";
 import {
   CONNECTIVITY_COLORS,
