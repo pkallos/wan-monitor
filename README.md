@@ -9,7 +9,7 @@ A self-hosted network monitoring dashboard that tracks your internet connection 
 
 WAN Monitor runs on your local network and performs two types of tests:
 
-**Ping Monitoring** (every 60 seconds by default)
+**Ping Monitoring** (every 30 seconds by default)
 - Sends ICMP pings to configurable hosts (default: 8.8.8.8, 1.1.1.1, cloudflare.com)
 - Measures latency, packet loss, and jitter
 - Determines connectivity status (up/down/degraded)
