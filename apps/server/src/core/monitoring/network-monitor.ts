@@ -25,7 +25,7 @@ export interface MonitorStats {
 
 export interface NetworkMonitorInterface {
   /**
-   * Start the periodic monitoring (ping every 60s by default)
+   * Start the periodic monitoring (ping every 30s by default)
    */
   readonly start: () => Effect.Effect<void, never>;
 
@@ -55,10 +55,10 @@ export const NetworkMonitorLive = Layer.effect(
     const speedTestService = yield* SpeedTestService;
     const db = yield* QuestDB;
 
-    // Read ping interval from config (default: 60 seconds)
+    // Read ping interval from config (default: 30 seconds)
     const pingIntervalSeconds = yield* Config.number(
       "PING_INTERVAL_SECONDS"
-    ).pipe(Config.withDefault(60));
+    ).pipe(Config.withDefault(30));
 
     // Read speedtest interval from config (default: 1 hour = 3600 seconds)
     const speedTestIntervalSeconds = yield* Config.number(
