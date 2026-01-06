@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import type { Granularity, PingMetric, SpeedMetric } from "@wan-monitor/shared";
+import type {
+  Granularity,
+  PingMetric,
+  SpeedMetricType,
+} from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { useMemo } from "react";
 import { runEffectWithError } from "@/api/effect-bridge";
@@ -76,7 +80,7 @@ export function useMetrics(options: UseMetricsOptions = {}) {
       }));
   }, [query.data]);
 
-  const speedMetrics = useMemo((): SpeedMetric[] => {
+  const speedMetrics = useMemo((): SpeedMetricType[] => {
     if (!query.data?.data) return [];
     return query.data.data
       .filter((m) => m.source === "speedtest")

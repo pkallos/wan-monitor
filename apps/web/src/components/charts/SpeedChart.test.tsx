@@ -1,11 +1,11 @@
 import { ChakraProvider } from "@chakra-ui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
-import type { SpeedMetric } from "@wan-monitor/shared";
+import type { SpeedMetricType } from "@wan-monitor/shared";
 import { describe, expect, it } from "vitest";
 import { SpeedChart } from "@/components/charts/SpeedChart";
 
-const mockData: SpeedMetric[] = [
+const mockData: SpeedMetricType[] = [
   {
     timestamp: "2024-01-01T12:00:00.000Z",
     download_speed: 100.5,

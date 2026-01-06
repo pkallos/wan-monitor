@@ -13,6 +13,7 @@ export type {
   SpeedTestHistoryResponseType,
   SpeedTestResponseType,
 } from "./api/routes/speedtest";
+export { SpeedMetric } from "./api/routes/speedtest";
 export { bpsToMbps, mbpsToBps } from "./metrics";
 export type {
   ConnectivityStatus,
@@ -20,6 +21,6 @@ export type {
   Granularity,
   Metric,
   PingMetric,
-  SpeedMetric,
+  SpeedMetric as SpeedMetricType,
 } from "./types";
 export { VALID_GRANULARITIES } from "./types";
