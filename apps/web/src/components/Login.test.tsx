@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Login } from "@/components/Login";
 import { createTestWrapper } from "@/test/utils";
-import { Login } from "./Login";
 
 const mockLogin = vi.fn();
 const mockLogout = vi.fn();

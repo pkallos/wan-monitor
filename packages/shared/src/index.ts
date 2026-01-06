@@ -1,16 +1,25 @@
-export { VALID_GRANULARITIES } from "@shared/api";
+export { WanMonitorApi } from "./api/index";
+// Export schema-derived types for type-safe API responses
 export type {
-  ApiError,
+  ConnectivityStatusPointFromSchema,
+  ConnectivityStatusResponseType,
+} from "./api/routes/connectivity-status";
+export type {
+  GetMetricsResponseType,
+  MetricFromSchema,
+} from "./api/routes/metrics";
+export type {
+  SpeedMetricFromSchema,
+  SpeedTestHistoryResponseType,
+  SpeedTestResponseType,
+} from "./api/routes/speedtest";
+export { bpsToMbps, mbpsToBps } from "./metrics";
+export type {
   ConnectivityStatus,
   ConnectivityStatusPoint,
-  ConnectivityStatusResponse,
   Granularity,
   Metric,
-  MetricsResponse,
   PingMetric,
-  PingMetricsResponse,
   SpeedMetric,
-  SpeedMetricsResponse,
-} from "./api";
-
-export { bpsToMbps, mbpsToBps } from "./metrics";
+} from "./types";
+export { VALID_GRANULARITIES } from "./types";

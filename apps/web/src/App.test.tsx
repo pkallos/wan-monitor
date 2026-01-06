@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 import { createTestWrapper } from "@/test/utils";
 
+// Mock the Effect bridge
+vi.mock("@/api/effect-bridge");
+
 describe("App", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -42,29 +45,24 @@ describe("App", () => {
   });
 
   it("renders login page when auth is required and not authenticated", async () => {
-    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
-      (url: string) => {
-        if (url.includes("/auth/status")) {
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({ authRequired: true }),
-          });
-        }
-        return Promise.resolve({
-          ok: false,
-          status: 401,
-          json: async () => ({ error: "Not authenticated" }),
-        });
-      }
-    );
+    const { runEffectWithError } = await import("@/api/effect-bridge");
+    const mockRunEffect = vi.mocked(runEffectWithError);
+
+    mockRunEffect.mockImplementation(() => {
+      // Mock the auth.status call to return authRequired: true
+      return Promise.resolve({ authRequired: true });
+    });
 
     render(<App />, { wrapper: createTestWrapper() });
 
-    await waitFor(() => {
-      expect(
-        screen.getByText("Sign in to access the dashboard")
-      ).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText("Sign in to access the dashboard")
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
   });
 
   it("renders metric cards when authenticated", async () => {

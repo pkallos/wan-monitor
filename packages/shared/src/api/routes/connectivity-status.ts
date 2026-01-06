@@ -32,6 +32,14 @@ export const GetConnectivityStatusQuery = Schema.Struct({
   granularity: Schema.optional(Granularity),
 });
 
+// Export TypeScript types derived from schemas
+export type ConnectivityStatusPointFromSchema = Schema.Schema.Type<
+  typeof ConnectivityStatusPoint
+>;
+export type ConnectivityStatusResponseType = Schema.Schema.Type<
+  typeof ConnectivityStatusResponse
+>;
+
 export const ConnectivityStatusApiGroup = HttpApiGroup.make(
   "connectivityStatus"
 )

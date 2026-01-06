@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "@effect/platform";
-import type { SpeedMetric } from "@shared/api";
-import { WanMonitorApi } from "@shared/api/main";
+import { WanMonitorApi } from "@shared/api";
 import { mbpsToBps } from "@shared/metrics";
+import type { SpeedMetric } from "@wan-monitor/shared";
 import { Cause, Effect, Option, Ref } from "effect";
 import { DbUnavailable, QuestDB } from "@/infrastructure/database/questdb";
 import {

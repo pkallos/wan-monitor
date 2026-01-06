@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "@effect/platform";
-import { WanMonitorApi } from "@shared/api/main";
+import { WanMonitorApi } from "@shared/api";
 import { Layer } from "effect";
 import { AuthGroupLive } from "@/core/api/handlers/auth";
 import { ConnectivityStatusGroupLive } from "@/core/api/handlers/connectivity-status";

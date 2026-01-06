@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "@effect/platform";
-import { WanMonitorApi } from "@shared/api/main";
+import { WanMonitorApi } from "@shared/api";
 import type { GetMetricsQueryParams } from "@shared/api/routes/metrics";
 import { Effect, type Schema } from "effect";
 import { QuestDB } from "@/infrastructure/database/questdb";

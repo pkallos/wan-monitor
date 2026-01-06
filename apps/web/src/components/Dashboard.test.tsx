@@ -1,8 +1,11 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiClient } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import { Dashboard } from "@/components/Dashboard";
 import { createTestWrapper } from "@/test/utils";
+
+// Mock Effect bridge for API calls first (hoisted)
+vi.mock("@/api/effect-bridge");
 
 vi.mock("@/context/AuthContext", () => ({
   useAuth: () => ({
@@ -16,19 +19,6 @@ vi.mock("@/context/AuthContext", () => ({
   }),
 }));
 
-// Mock apiClient for speed test trigger tests
-vi.mock("@/api/client", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/api/client")>();
-  return {
-    ...original,
-    apiClient: {
-      ...original.apiClient,
-      get: vi.fn(),
-      triggerSpeedTest: vi.fn(),
-    },
-  };
-});
-
 // Track toast calls
 const mockToast = vi.fn();
 vi.mock("@chakra-ui/react", async (importOriginal) => {
@@ -39,31 +29,21 @@ vi.mock("@chakra-ui/react", async (importOriginal) => {
   };
 });
 
-const mockApiClientGet = apiClient.get as ReturnType<typeof vi.fn>;
-const mockTriggerSpeedTest = apiClient.triggerSpeedTest as ReturnType<
-  typeof vi.fn
->;
+// Import and get mock after vi.mock calls
+import { runEffectWithError } from "@/api/effect-bridge";
+
+const mockRunEffectWithError = vi.mocked(runEffectWithError);
 
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    // Default mock for API get (metrics, connectivity)
-    mockApiClientGet.mockResolvedValue({
+    // Default mock for Effect API calls
+    mockRunEffectWithError.mockResolvedValue({
       data: [],
       meta: {
         startTime: new Date().toISOString(),
         endTime: new Date().toISOString(),
         count: 0,
-      },
-    });
-    // Default mock for speed test trigger (no-op unless overridden)
-    mockTriggerSpeedTest.mockResolvedValue({
-      success: true,
-      timestamp: new Date().toISOString(),
-      result: {
-        downloadMbps: 100,
-        uploadMbps: 50,
-        pingMs: 15,
       },
     });
   });
@@ -115,7 +95,7 @@ describe("Dashboard", () => {
   });
 
   it("should display online status when ping data shows up", async () => {
-    mockApiClientGet.mockResolvedValue({
+    mockRunEffectWithError.mockResolvedValue({
       data: [
         {
           source: "ping",
@@ -151,7 +131,7 @@ describe("Dashboard", () => {
 
   it("should show loading state when speed test is running", async () => {
     // Delay speed test response to capture loading state
-    mockTriggerSpeedTest.mockImplementation(
+    mockRunEffectWithError.mockImplementation(
       () =>
         new Promise((resolve) => {
           setTimeout(
@@ -183,7 +163,17 @@ describe("Dashboard", () => {
     });
   });
 
-  it("should call apiClient.triggerSpeedTest when button is clicked", async () => {
+  it("should call Effect triggerSpeedTest when button is clicked", async () => {
+    mockRunEffectWithError.mockResolvedValue({
+      success: true,
+      timestamp: new Date().toISOString(),
+      result: {
+        downloadMbps: 100,
+        uploadMbps: 50,
+        pingMs: 15,
+      },
+    });
+
     const { getByRole } = render(<Dashboard />, {
       wrapper: createTestWrapper(),
     });
@@ -192,12 +182,12 @@ describe("Dashboard", () => {
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(mockTriggerSpeedTest).toHaveBeenCalledTimes(1);
+      expect(mockRunEffectWithError).toHaveBeenCalled();
     });
   });
 
   it("should show success toast when speed test completes", async () => {
-    mockTriggerSpeedTest.mockResolvedValue({
+    mockRunEffectWithError.mockResolvedValue({
       success: true,
       timestamp: new Date().toISOString(),
       result: {
@@ -225,7 +215,7 @@ describe("Dashboard", () => {
   });
 
   it("should show warning toast when speed test is already running", async () => {
-    mockTriggerSpeedTest.mockResolvedValue({
+    mockRunEffectWithError.mockResolvedValue({
       success: false,
       timestamp: new Date().toISOString(),
       error: {
@@ -252,7 +242,7 @@ describe("Dashboard", () => {
   });
 
   it("should show error toast when speed test fails", async () => {
-    mockTriggerSpeedTest.mockResolvedValue({
+    mockRunEffectWithError.mockResolvedValue({
       success: false,
       timestamp: new Date().toISOString(),
       error: {
@@ -279,7 +269,7 @@ describe("Dashboard", () => {
   });
 
   it("should show error toast on network error", async () => {
-    mockTriggerSpeedTest.mockRejectedValue(new Error("Network unavailable"));
+    mockRunEffectWithError.mockRejectedValue(new Error("Network unavailable"));
 
     const { getByRole } = render(<Dashboard />, {
       wrapper: createTestWrapper(),
@@ -300,7 +290,7 @@ describe("Dashboard", () => {
   });
 
   it("should display DB unavailable banner when API returns DB_UNAVAILABLE", async () => {
-    mockApiClientGet.mockRejectedValue(
+    mockRunEffectWithError.mockRejectedValue(
       new ApiError("API error: 503", 503, {
         error: "DB_UNAVAILABLE",
         message: "Database temporarily unavailable",

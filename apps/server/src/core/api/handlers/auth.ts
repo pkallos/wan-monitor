@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "@effect/platform";
-import { WanMonitorApi } from "@shared/api/main";
+import { WanMonitorApi } from "@shared/api";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
 import { Effect } from "effect";
 import { JwtService } from "@/infrastructure/auth/jwt";

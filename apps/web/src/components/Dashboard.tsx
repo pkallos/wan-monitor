@@ -15,6 +15,7 @@ import {
   useToast,
   VStack,
 } from "@chakra-ui/react";
+import { Effect } from "effect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FiActivity,
@@ -23,7 +24,8 @@ import {
   FiPlay,
   FiRefreshCw,
 } from "react-icons/fi";
-import { apiClient } from "@/api/client";
+import { runEffectWithError } from "@/api/effect-bridge";
+import { WanMonitorClient } from "@/api/effect-client";
 import { useConnectivityStatus } from "@/api/hooks/useConnectivityStatus";
 import { useMetrics } from "@/api/hooks/useMetrics";
 import { useSpeedtestHistory } from "@/api/hooks/useSpeedtestHistory";
@@ -156,7 +158,12 @@ export function Dashboard() {
   const handleTriggerSpeedTest = useCallback(async () => {
     setIsSpeedTestRunning(true);
     try {
-      const response = await apiClient.triggerSpeedTest();
+      const response = await runEffectWithError(
+        Effect.gen(function* () {
+          const client = yield* WanMonitorClient;
+          return yield* client.speedtest.triggerSpeedTest();
+        })
+      );
       if (response.success) {
         toast({
           title: "Speed test complete",
@@ -311,7 +318,11 @@ export function Dashboard() {
             Connectivity Status
           </Heading>
           <ConnectivityStatusChart
-            data={connectivityStatusData?.data ?? []}
+            data={
+              connectivityStatusData?.data
+                ? [...connectivityStatusData.data]
+                : []
+            }
             uptimePercentage={
               connectivityStatusData?.meta?.uptimePercentage ?? 0
             }
@@ -410,7 +421,7 @@ export function Dashboard() {
             </Button>
           </HStack>
           <SpeedChart
-            data={speedMetrics}
+            data={[...speedMetrics]}
             isLoading={isSpeedtestLoading}
             startTime={startTime}
             endTime={endTime}

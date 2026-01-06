@@ -1,12 +1,10 @@
-import type {
-  Granularity,
-  MetricsResponse,
-  PingMetric,
-  SpeedMetric,
-} from "@shared/api";
 import { useQuery } from "@tanstack/react-query";
+import type { Granularity, PingMetric, SpeedMetric } from "@wan-monitor/shared";
+import { Effect } from "effect";
 import { useMemo } from "react";
-import { apiClient, isDbUnavailableError } from "@/api/client";
+import { runEffectWithError } from "@/api/effect-bridge";
+import { WanMonitorClient } from "@/api/effect-client";
+import { isDbUnavailableError } from "@/api/errors";
 import { getGranularityForRange } from "@/utils/granularity";
 
 export interface UseMetricsOptions {
@@ -37,15 +35,21 @@ export function useMetrics(options: UseMetricsOptions = {}) {
   const query = useQuery({
     queryKey: ["metrics", { startTime, endTime, host, limit, granularity }],
     queryFn: () => {
-      const params: Record<string, string | undefined> = {};
-
-      if (startTime) params.startTime = startTime.toISOString();
-      if (endTime) params.endTime = endTime.toISOString();
-      if (host) params.host = host;
-      if (limit) params.limit = limit.toString();
-      if (granularity) params.granularity = granularity;
-
-      return apiClient.get<MetricsResponse>("/metrics", params);
+      return runEffectWithError(
+        Effect.gen(function* () {
+          const client = yield* WanMonitorClient;
+          const response = yield* client.metrics.getMetrics({
+            urlParams: {
+              startTime: startTime?.toISOString(),
+              endTime: endTime?.toISOString(),
+              host,
+              limit,
+              granularity,
+            },
+          });
+          return response;
+        })
+      );
     },
     refetchInterval,
     enabled,
@@ -68,7 +72,7 @@ export function useMetrics(options: UseMetricsOptions = {}) {
         latency: m.latency ?? 0,
         packet_loss: m.packet_loss ?? 0,
         connectivity_status: m.connectivity_status ?? "down",
-        jitter: m.jitter,
+        jitter: m.jitter ?? undefined,
       }));
   }, [query.data]);
 
@@ -81,11 +85,11 @@ export function useMetrics(options: UseMetricsOptions = {}) {
         download_speed: m.download_speed ?? 0,
         upload_speed: m.upload_speed ?? 0,
         latency: m.latency ?? 0,
-        jitter: m.jitter,
-        server_location: m.server_location,
-        isp: m.isp,
-        external_ip: m.external_ip,
-        internal_ip: m.internal_ip,
+        jitter: m.jitter ?? undefined,
+        server_location: m.server_location ?? undefined,
+        isp: m.isp ?? undefined,
+        external_ip: m.external_ip ?? undefined,
+        internal_ip: m.internal_ip ?? undefined,
       }));
   }, [query.data]);
 

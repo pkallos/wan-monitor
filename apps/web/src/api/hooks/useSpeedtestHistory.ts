@@ -1,15 +1,8 @@
-import type { SpeedMetric } from "@shared/api";
 import { useQuery } from "@tanstack/react-query";
-import { apiClient, isDbUnavailableError } from "@/api/client";
-
-export interface SpeedtestHistoryResponse {
-  data: SpeedMetric[];
-  meta: {
-    startTime: string;
-    endTime: string;
-    count: number;
-  };
-}
+import { Effect } from "effect";
+import { runEffectWithError } from "@/api/effect-bridge";
+import { WanMonitorClient } from "@/api/effect-client";
+import { isDbUnavailableError } from "@/api/errors";
 
 export interface UseSpeedtestHistoryOptions {
   startTime?: Date;
@@ -38,15 +31,18 @@ export function useSpeedtestHistory(options: UseSpeedtestHistoryOptions = {}) {
       },
     ],
     queryFn: () => {
-      const params: Record<string, string | undefined> = {};
-
-      if (startTime) params.startTime = startTime.toISOString();
-      if (endTime) params.endTime = endTime.toISOString();
-      if (limit) params.limit = limit.toString();
-
-      return apiClient.get<SpeedtestHistoryResponse>(
-        "/speedtest/history",
-        params
+      return runEffectWithError(
+        Effect.gen(function* () {
+          const client = yield* WanMonitorClient;
+          const response = yield* client.speedtest.getSpeedTestHistory({
+            urlParams: {
+              startTime: startTime?.toISOString(),
+              endTime: endTime?.toISOString(),
+              limit,
+            },
+          });
+          return response;
+        })
       );
     },
     refetchInterval,
@@ -63,6 +59,6 @@ export function useSpeedtestHistory(options: UseSpeedtestHistoryOptions = {}) {
   return {
     ...query,
     isDbUnavailable,
-    speedMetrics: query.data?.data ?? [],
+    speedMetrics: query.data?.data ? [...query.data.data] : [],
   };
 }

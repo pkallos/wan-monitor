@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "@effect/platform";
-import { WanMonitorApi } from "@shared/api/main";
+import { WanMonitorApi } from "@shared/api";
 import { Effect } from "effect";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
 import { ConfigService } from "@/infrastructure/config/config";

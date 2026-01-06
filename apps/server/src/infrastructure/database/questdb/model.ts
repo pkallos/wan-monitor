@@ -1,4 +1,4 @@
-import type { Granularity } from "@shared/api";
+import type { Granularity } from "@wan-monitor/shared";
 
 export interface MetricRow {
   readonly timestamp: string;
