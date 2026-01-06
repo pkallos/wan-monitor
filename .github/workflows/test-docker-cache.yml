@@ -5,6 +5,10 @@ name: Test Docker Cache Strategy
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/test-docker-cache.yml'
+      - 'Dockerfile'
 
 permissions:
   contents: read
