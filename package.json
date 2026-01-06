@@ -31,6 +31,7 @@
     "format": "turbo run format",
     "format:check": "turbo run format:check",
     "check": "biome check --write .",
+    "docker:build": "docker build -t wan-monitor:local .",
     "prepare": "husky",
     "postinstall": "sh scripts/patch-speedtest-net.sh"
   },
