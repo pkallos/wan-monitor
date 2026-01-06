@@ -1,4 +1,5 @@
-export type TimeRange = "1h" | "24h" | "7d" | "30d";
+export const VALID_TIME_RANGES = ["1h", "24h", "7d", "30d"] as const;
+export type TimeRange = (typeof VALID_TIME_RANGES)[number];
 
 export interface TimeRangeDates {
   startTime: Date;
