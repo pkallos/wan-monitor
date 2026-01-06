@@ -1,4 +1,4 @@
-import type { NetworkMetric } from "@wan-monitor/shared/metrics";
+import type { NetworkMetric } from "@shared/metrics";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { QuestDB, QuestDBLive } from "@/database/questdb";

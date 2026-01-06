@@ -1,5 +1,5 @@
 import type { Sender } from "@questdb/nodejs-client";
-import type { NetworkMetric } from "@wan-monitor/shared/metrics";
+import type { NetworkMetric } from "@shared/metrics";
 
 export const writeMetricToSender = (
   sender: Sender,

@@ -1,7 +1,4 @@
-import type {
-  DatabaseHealth,
-  NetworkMetric,
-} from "@wan-monitor/shared/metrics";
+import type { DatabaseHealth, NetworkMetric } from "@shared/metrics";
 import { Context, Effect, Layer, Option } from "effect";
 import {
   QuestDBConnection,

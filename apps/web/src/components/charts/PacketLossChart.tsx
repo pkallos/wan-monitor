@@ -1,5 +1,5 @@
 import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
-import type { Granularity, PingMetric } from "@wan-monitor/shared";
+import type { Granularity, PingMetric } from "@shared/api";
 import {
   CartesianGrid,
   Line,

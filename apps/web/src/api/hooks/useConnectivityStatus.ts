@@ -1,8 +1,5 @@
+import type { ConnectivityStatusResponse, Granularity } from "@shared/api";
 import { useQuery } from "@tanstack/react-query";
-import type {
-  ConnectivityStatusResponse,
-  Granularity,
-} from "@wan-monitor/shared";
 import { apiClient } from "@/api/client";
 import { getGranularityForRange } from "@/utils/granularity";
 

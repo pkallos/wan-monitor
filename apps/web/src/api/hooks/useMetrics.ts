@@ -1,10 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
 import type {
   Granularity,
   MetricsResponse,
   PingMetric,
   SpeedMetric,
-} from "@wan-monitor/shared";
+} from "@shared/api";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { apiClient, isDbUnavailableError } from "@/api/client";
 import { getGranularityForRange } from "@/utils/granularity";

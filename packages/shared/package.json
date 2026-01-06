@@ -20,6 +20,7 @@
     "format:check": "biome format ."
   },
   "dependencies": {
+    "@effect/platform": "^0.94.1",
     "@effect/schema": "^0.75.5",
     "effect": "^3.19.14"
   },

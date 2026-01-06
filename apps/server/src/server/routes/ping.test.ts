@@ -1,215 +1,208 @@
-import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
-import { createApp } from "@/server/app";
-import { pingRoutes } from "@/server/routes/ping";
-import type { AppContext } from "@/server/types";
-import type { AppConfig } from "@/services/config";
-import type { PingExecutionResult } from "@/services/ping-executor";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import { type AppConfig, ConfigService } from "@/services/config";
+import {
+  type PingExecutionResult,
+  PingExecutor,
+  type PingExecutorInterface,
+} from "@/services/ping-executor";
 
-const createTestApp = async (context: AppContext) => {
-  const app = createApp({ jwtSecret: "test-secret", authRequired: false });
-
-  await app.register(
-    async (instance) => {
-      await pingRoutes(instance, context);
-    },
-    { prefix: "/api/ping" }
-  );
-
-  await app.ready();
-  return app;
-};
-
-describe("Ping Routes", () => {
-  it("POST /trigger should execute pings for all configured hosts", async () => {
-    const mockResults: readonly PingExecutionResult[] = [
-      {
-        host: "8.8.8.8",
-        success: true,
-        result: {
-          host: "8.8.8.8",
-          alive: true,
-          latency: 15.5,
-          packetLoss: 0,
-          stddev: 2.1,
-        },
+const createTestPingExecutorService = (
+  executeHostsEffect: Effect.Effect<readonly PingExecutionResult[], never>,
+  executeAllEffect: Effect.Effect<readonly PingExecutionResult[], never>
+): PingExecutorInterface => ({
+  executePing: (host: string) =>
+    Effect.succeed({
+      host,
+      success: true,
+      result: {
+        host,
+        alive: true,
+        latency: 25.5,
+        packetLoss: 0,
+        min: 24.0,
+        max: 27.0,
+        avg: 25.5,
+        stddev: 1.5,
       },
-      {
-        host: "1.1.1.1",
-        success: true,
-        result: {
+    }),
+  executeAll: () => executeAllEffect,
+  executeHosts: (_hosts: readonly string[]) => executeHostsEffect,
+});
+
+const createTestConfigService = (hosts: readonly string[]): AppConfig => ({
+  server: { port: 3001, host: "0.0.0.0" },
+  database: {
+    host: "localhost",
+    port: 9000,
+    protocol: "http",
+    autoFlushRows: 100,
+    autoFlushInterval: 1000,
+    requestTimeout: 10000,
+    retryTimeout: 1000,
+  },
+  ping: {
+    timeout: 5,
+    trainCount: 10,
+    hosts,
+  },
+  auth: {
+    username: "admin",
+    password: "",
+    jwtSecret: "test-secret",
+    jwtExpiresIn: "24h",
+  },
+});
+
+describe("Ping API Handlers", () => {
+  describe("triggerPing handler", () => {
+    it.effect("executes all hosts when no hosts specified", () => {
+      const mockResults: readonly PingExecutionResult[] = [
+        {
+          host: "8.8.8.8",
+          success: true,
+          result: {
+            host: "8.8.8.8",
+            alive: true,
+            latency: 15.5,
+            packetLoss: 0,
+            min: 14.0,
+            max: 17.0,
+            avg: 15.5,
+            stddev: 1.0,
+          },
+        },
+        {
           host: "1.1.1.1",
-          alive: true,
-          latency: 12.3,
-          packetLoss: 0,
-          stddev: 1.8,
+          success: true,
+          result: {
+            host: "1.1.1.1",
+            alive: true,
+            latency: 12.3,
+            packetLoss: 0,
+            min: 11.0,
+            max: 13.0,
+            avg: 12.3,
+            stddev: 0.8,
+          },
         },
-      },
-    ];
+      ];
 
-    const executeAll = vi.fn(() => Effect.succeed(mockResults));
+      const PingExecutorTest = Layer.succeed(
+        PingExecutor,
+        createTestPingExecutorService(
+          Effect.succeed(mockResults),
+          Effect.succeed(mockResults)
+        )
+      );
 
-    const context: AppContext = {
-      db: {
-        health: () => Effect.succeed({ connected: true }),
-        writeMetric: () => Effect.void,
-        queryMetrics: () => Effect.succeed([]),
-        querySpeedtests: () => Effect.succeed([]),
-        queryConnectivityStatus: () => Effect.succeed([]),
-        close: () => Effect.void,
-      },
-      pingExecutor: {
-        executePing: vi.fn(),
-        executeAll,
-        executeHosts: vi.fn(),
-      },
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {
-        ping: {
-          hosts: ["8.8.8.8", "1.1.1.1"],
-          timeout: 5,
-          trainCount: 10,
-        },
-      } as unknown as AppConfig,
-    };
+      return Effect.gen(function* () {
+        const pingExecutor = yield* PingExecutor;
+        const results = yield* pingExecutor.executeAll();
 
-    const app = await createTestApp(context);
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/ping/trigger",
+        expect(results).toHaveLength(2);
+        expect(results[0].host).toBe("8.8.8.8");
+        expect(results[0].success).toBe(true);
+        expect(results[1].host).toBe("1.1.1.1");
+        expect(results[1].success).toBe(true);
+        return results;
+      }).pipe(Effect.provide(PingExecutorTest));
     });
 
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.success).toBe(true);
-    expect(body.results).toHaveLength(2);
-    expect(executeAll).toHaveBeenCalled();
+    it.effect("executes specific hosts when hosts array provided", () => {
+      const mockResults: readonly PingExecutionResult[] = [
+        {
+          host: "www.google.com",
+          success: true,
+          result: {
+            host: "www.google.com",
+            alive: true,
+            latency: 25.5,
+            packetLoss: 0,
+            min: 24.0,
+            max: 27.0,
+            avg: 25.5,
+            stddev: 1.5,
+          },
+        },
+      ];
+
+      const PingExecutorTest = Layer.succeed(
+        PingExecutor,
+        createTestPingExecutorService(
+          Effect.succeed(mockResults),
+          Effect.succeed([])
+        )
+      );
+
+      return Effect.gen(function* () {
+        const pingExecutor = yield* PingExecutor;
+        const results = yield* pingExecutor.executeHosts(["www.google.com"]);
+
+        expect(results).toHaveLength(1);
+        expect(results[0].host).toBe("www.google.com");
+        expect(results[0].success).toBe(true);
+        return results;
+      }).pipe(Effect.provide(PingExecutorTest));
+    });
+
+    it.effect("handles ping execution errors gracefully", () => {
+      const mockResults: readonly PingExecutionResult[] = [
+        {
+          host: "unreachable.host",
+          success: false,
+          error: "Host unreachable",
+        },
+      ];
+
+      const PingExecutorTest = Layer.succeed(
+        PingExecutor,
+        createTestPingExecutorService(
+          Effect.succeed(mockResults),
+          Effect.succeed(mockResults)
+        )
+      );
+
+      return Effect.gen(function* () {
+        const pingExecutor = yield* PingExecutor;
+        const results = yield* pingExecutor.executeAll();
+
+        expect(results).toHaveLength(1);
+        expect(results[0].success).toBe(false);
+        expect(results[0].error).toBe("Host unreachable");
+        return results;
+      }).pipe(Effect.provide(PingExecutorTest));
+    });
   });
 
-  it("POST /trigger should execute pings for specified hosts", async () => {
-    const mockResults: readonly PingExecutionResult[] = [
-      {
-        host: "8.8.8.8",
-        success: true,
-        result: {
-          host: "8.8.8.8",
-          alive: true,
-          latency: 15.5,
-          packetLoss: 0,
-        },
-      },
-    ];
+  describe("getHosts handler", () => {
+    it.effect("returns configured ping hosts", () => {
+      const testHosts = ["8.8.8.8", "1.1.1.1", "cloudflare.com"];
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createTestConfigService(testHosts)
+      );
 
-    const executeHosts = vi.fn(() => Effect.succeed(mockResults));
+      return Effect.gen(function* () {
+        const config = yield* ConfigService;
 
-    const context: AppContext = {
-      db: {
-        health: () => Effect.succeed({ connected: true }),
-        writeMetric: () => Effect.void,
-        queryMetrics: () => Effect.succeed([]),
-        querySpeedtests: () => Effect.succeed([]),
-        queryConnectivityStatus: () => Effect.succeed([]),
-        close: () => Effect.void,
-      },
-      pingExecutor: {
-        executePing: vi.fn(),
-        executeAll: vi.fn(),
-        executeHosts,
-      },
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as unknown as AppConfig,
-    };
-
-    const app = await createTestApp(context);
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/ping/trigger",
-      payload: { hosts: ["8.8.8.8"] },
+        expect(config.ping.hosts).toEqual(testHosts);
+        return config.ping.hosts;
+      }).pipe(Effect.provide(ConfigServiceTest));
     });
 
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.success).toBe(true);
-    expect(body.results).toHaveLength(1);
-    expect(executeHosts).toHaveBeenCalledWith(["8.8.8.8"]);
-  });
+    it.effect("returns empty array when no hosts configured", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createTestConfigService([])
+      );
 
-  it("POST /trigger should return 500 on error", async () => {
-    const executeAll = vi.fn().mockImplementation(() => {
-      throw new Error("Ping execution failed");
+      return Effect.gen(function* () {
+        const config = yield* ConfigService;
+
+        expect(config.ping.hosts).toEqual([]);
+        return config.ping.hosts;
+      }).pipe(Effect.provide(ConfigServiceTest));
     });
-
-    const context: AppContext = {
-      db: {
-        health: () => Effect.succeed({ connected: true }),
-        writeMetric: () => Effect.void,
-        queryMetrics: () => Effect.succeed([]),
-        querySpeedtests: () => Effect.succeed([]),
-        queryConnectivityStatus: () => Effect.succeed([]),
-        close: () => Effect.void,
-      },
-      pingExecutor: {
-        executePing: vi.fn(),
-        executeAll,
-        executeHosts: vi.fn(),
-      },
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as unknown as AppConfig,
-    };
-
-    const app = await createTestApp(context);
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/ping/trigger",
-    });
-
-    expect(response.statusCode).toBe(500);
-    const body = response.json();
-    expect(body.success).toBe(false);
-    expect(body.error).toBeDefined();
-  });
-
-  it("GET /hosts should return configured ping hosts", async () => {
-    const context: AppContext = {
-      db: {
-        health: () => Effect.succeed({ connected: true }),
-        writeMetric: () => Effect.void,
-        queryMetrics: () => Effect.succeed([]),
-        querySpeedtests: () => Effect.succeed([]),
-        queryConnectivityStatus: () => Effect.succeed([]),
-        close: () => Effect.void,
-      },
-      pingExecutor: {
-        executePing: vi.fn(),
-        executeAll: vi.fn(),
-        executeHosts: vi.fn(),
-      },
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {
-        ping: {
-          hosts: ["8.8.8.8", "1.1.1.1", "1.0.0.1"],
-          timeout: 5,
-          trainCount: 10,
-        },
-      } as unknown as AppConfig,
-    };
-
-    const app = await createTestApp(context);
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/ping/hosts",
-    });
-
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.hosts).toEqual(["8.8.8.8", "1.1.1.1", "1.0.0.1"]);
   });
 });

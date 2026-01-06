@@ -1,5 +1,5 @@
+import type { SpeedMetric } from "@shared/api";
 import { useQuery } from "@tanstack/react-query";
-import type { SpeedMetric } from "@wan-monitor/shared";
 import { apiClient, isDbUnavailableError } from "@/api/client";
 
 export interface SpeedtestHistoryResponse {

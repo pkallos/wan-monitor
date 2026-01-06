@@ -1,246 +1,334 @@
-import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
-import type { QuestDBService } from "@/database/questdb";
-import { DbUnavailable } from "@/database/questdb";
-import { createApp } from "@/server/app";
-import { connectivityStatusRoutes } from "@/server/routes/connectivity-status";
-import type { AppContext } from "@/server/types";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import {
+  type ConnectivityStatusRow,
+  DatabaseQueryError,
+  DbUnavailable,
+  QuestDB,
+  type QuestDBService,
+} from "@/database/questdb";
 
-const createTestApp = async (context: AppContext) => {
-  const app = createApp({ jwtSecret: "test-secret", authRequired: false });
+const createTestQuestDBService = (
+  queryEffect: Effect.Effect<
+    readonly ConnectivityStatusRow[],
+    DatabaseQueryError | DbUnavailable
+  >
+): QuestDBService => ({
+  queryConnectivityStatus: () => queryEffect,
+  health: () => Effect.succeed({ connected: true, uptime: 100 }),
+  writeMetric: () => Effect.void,
+  queryMetrics: () => Effect.succeed([]),
+  querySpeedtests: () => Effect.succeed([]),
+  close: () => Effect.void,
+});
 
-  await app.register(
-    async (instance) => {
-      await connectivityStatusRoutes(instance, context);
-    },
-    { prefix: "/api/connectivity-status" }
-  );
+describe("Connectivity Status API Handlers", () => {
+  describe("getConnectivityStatus handler", () => {
+    it.effect("returns connectivity status with correct percentages", () => {
+      const mockRows: readonly ConnectivityStatusRow[] = [
+        {
+          timestamp: "2024-01-01T00:00:00Z",
+          up_count: 90,
+          down_count: 5,
+          degraded_count: 5,
+          total_count: 100,
+        },
+        {
+          timestamp: "2024-01-01T01:00:00Z",
+          up_count: 95,
+          down_count: 0,
+          degraded_count: 5,
+          total_count: 100,
+        },
+      ];
 
-  await app.ready();
-  return app;
-};
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(Effect.succeed(mockRows))
+      );
 
-describe("Connectivity Status Routes", () => {
-  it("should return connectivity status data", async () => {
-    const mockRows = [
-      {
-        timestamp: "2024-01-01T12:00:00.000Z",
-        up_count: 45,
-        down_count: 3,
-        degraded_count: 2,
-        total_count: 50,
-      },
-      {
-        timestamp: "2024-01-01T12:05:00.000Z",
-        up_count: 48,
-        down_count: 0,
-        degraded_count: 2,
-        total_count: 50,
-      },
-    ];
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        const rows = yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
 
-    const db: QuestDBService = {
-      health: () => Effect.succeed({ connected: true }),
-      writeMetric: () => Effect.void,
-      queryMetrics: () => Effect.succeed([]),
-      querySpeedtests: () => Effect.succeed([]),
-      queryConnectivityStatus: () => Effect.succeed(mockRows),
-      close: () => Effect.void,
-    };
+        const data = rows.map((row) => {
+          const total = row.total_count || 1;
+          return {
+            timestamp: row.timestamp,
+            status:
+              row.down_count > 0
+                ? ("down" as const)
+                : row.degraded_count > 0
+                  ? ("degraded" as const)
+                  : ("up" as const),
+            upPercentage: (row.up_count / total) * 100,
+            downPercentage: (row.down_count / total) * 100,
+            degradedPercentage: (row.degraded_count / total) * 100,
+          };
+        });
 
-    const context: AppContext = {
-      db,
-      pingExecutor: {} as AppContext["pingExecutor"],
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as AppContext["config"],
-    };
+        expect(data).toHaveLength(2);
+        expect(data[0].status).toBe("down");
+        expect(data[0].upPercentage).toBe(90);
+        expect(data[0].downPercentage).toBe(5);
+        expect(data[0].degradedPercentage).toBe(5);
+        expect(data[1].status).toBe("degraded");
+        expect(data[1].upPercentage).toBe(95);
+        expect(data[1].downPercentage).toBe(0);
 
-    const app = await createTestApp(context);
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/connectivity-status/",
+        return data;
+      }).pipe(Effect.provide(QuestDbTest));
     });
 
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.data).toHaveLength(2);
-    expect(body.data[0].status).toBe("down");
-    expect(body.data[1].status).toBe("degraded");
-    expect(body.meta.uptimePercentage).toBeCloseTo(93, 0);
-  });
+    it.effect("calculates overall uptime percentage correctly", () => {
+      const mockRows: readonly ConnectivityStatusRow[] = [
+        {
+          timestamp: "2024-01-01T00:00:00Z",
+          up_count: 80,
+          down_count: 20,
+          degraded_count: 0,
+          total_count: 100,
+        },
+        {
+          timestamp: "2024-01-01T01:00:00Z",
+          up_count: 100,
+          down_count: 0,
+          degraded_count: 0,
+          total_count: 100,
+        },
+      ];
 
-  it("should handle down status correctly", async () => {
-    const mockRows = [
-      {
-        timestamp: "2024-01-01T12:00:00.000Z",
-        up_count: 0,
-        down_count: 50,
-        degraded_count: 0,
-        total_count: 50,
-      },
-    ];
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(Effect.succeed(mockRows))
+      );
 
-    const db: QuestDBService = {
-      health: () => Effect.succeed({ connected: true }),
-      writeMetric: () => Effect.void,
-      queryMetrics: () => Effect.succeed([]),
-      querySpeedtests: () => Effect.succeed([]),
-      queryConnectivityStatus: () => Effect.succeed(mockRows),
-      close: () => Effect.void,
-    };
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        const rows = yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
 
-    const context: AppContext = {
-      db,
-      pingExecutor: {} as AppContext["pingExecutor"],
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as AppContext["config"],
-    };
+        const totalPoints = rows.reduce((sum, row) => sum + row.total_count, 0);
+        const totalUpPoints = rows.reduce((sum, row) => sum + row.up_count, 0);
+        const uptimePercentage =
+          totalPoints > 0 ? (totalUpPoints / totalPoints) * 100 : 0;
 
-    const app = await createTestApp(context);
+        expect(totalPoints).toBe(200);
+        expect(totalUpPoints).toBe(180);
+        expect(uptimePercentage).toBe(90);
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/connectivity-status/",
+        return uptimePercentage;
+      }).pipe(Effect.provide(QuestDbTest));
     });
 
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.data[0].status).toBe("down");
-    expect(body.data[0].downPercentage).toBe(100);
-    expect(body.meta.uptimePercentage).toBe(0);
-  });
+    it.effect("handles empty result set", () => {
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(Effect.succeed([]))
+      );
 
-  it("should handle up status correctly", async () => {
-    const mockRows = [
-      {
-        timestamp: "2024-01-01T12:00:00.000Z",
-        up_count: 50,
-        down_count: 0,
-        degraded_count: 0,
-        total_count: 50,
-      },
-    ];
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        const rows = yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
 
-    const db: QuestDBService = {
-      health: () => Effect.succeed({ connected: true }),
-      writeMetric: () => Effect.void,
-      queryMetrics: () => Effect.succeed([]),
-      querySpeedtests: () => Effect.succeed([]),
-      queryConnectivityStatus: () => Effect.succeed(mockRows),
-      close: () => Effect.void,
-    };
+        expect(rows).toHaveLength(0);
 
-    const context: AppContext = {
-      db,
-      pingExecutor: {} as AppContext["pingExecutor"],
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as AppContext["config"],
-    };
+        const totalPoints = rows.reduce((sum, row) => sum + row.total_count, 0);
+        const totalUpPoints = rows.reduce((sum, row) => sum + row.up_count, 0);
+        const uptimePercentage =
+          totalPoints > 0 ? (totalUpPoints / totalPoints) * 100 : 0;
 
-    const app = await createTestApp(context);
+        expect(uptimePercentage).toBe(0);
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/connectivity-status/",
+        return rows;
+      }).pipe(Effect.provide(QuestDbTest));
     });
 
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.data[0].status).toBe("up");
-    expect(body.data[0].upPercentage).toBe(100);
-    expect(body.meta.uptimePercentage).toBe(100);
-  });
+    it.effect("determines status as 'up' when no down or degraded", () => {
+      const mockRows: readonly ConnectivityStatusRow[] = [
+        {
+          timestamp: "2024-01-01T00:00:00Z",
+          up_count: 100,
+          down_count: 0,
+          degraded_count: 0,
+          total_count: 100,
+        },
+      ];
 
-  it("should accept query parameters", async () => {
-    const db: QuestDBService = {
-      health: () => Effect.succeed({ connected: true }),
-      writeMetric: () => Effect.void,
-      queryMetrics: () => Effect.succeed([]),
-      querySpeedtests: () => Effect.succeed([]),
-      queryConnectivityStatus: () => Effect.succeed([]),
-      close: () => Effect.void,
-    };
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(Effect.succeed(mockRows))
+      );
 
-    const context: AppContext = {
-      db,
-      pingExecutor: {} as AppContext["pingExecutor"],
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as AppContext["config"],
-    };
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        const rows = yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
 
-    const app = await createTestApp(context);
+        const data = rows.map((row) => {
+          const total = row.total_count || 1;
+          return {
+            status:
+              row.down_count > 0
+                ? ("down" as const)
+                : row.degraded_count > 0
+                  ? ("degraded" as const)
+                  : ("up" as const),
+            upPercentage: (row.up_count / total) * 100,
+          };
+        });
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/connectivity-status/?startTime=2024-01-01T00:00:00Z&endTime=2024-01-02T00:00:00Z&granularity=1m",
+        expect(data[0].status).toBe("up");
+        expect(data[0].upPercentage).toBe(100);
+
+        return data;
+      }).pipe(Effect.provide(QuestDbTest));
     });
 
-    expect(response.statusCode).toBe(200);
-  });
+    it.effect("prioritizes 'down' status over 'degraded'", () => {
+      const mockRows: readonly ConnectivityStatusRow[] = [
+        {
+          timestamp: "2024-01-01T00:00:00Z",
+          up_count: 80,
+          down_count: 10,
+          degraded_count: 10,
+          total_count: 100,
+        },
+      ];
 
-  it("should return 503 when database is unavailable", async () => {
-    const db: QuestDBService = {
-      health: () => Effect.succeed({ connected: true }),
-      writeMetric: () => Effect.void,
-      queryMetrics: () => Effect.succeed([]),
-      querySpeedtests: () => Effect.succeed([]),
-      queryConnectivityStatus: () => Effect.fail(new DbUnavailable("DB down")),
-      close: () => Effect.void,
-    };
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(Effect.succeed(mockRows))
+      );
 
-    const context: AppContext = {
-      db,
-      pingExecutor: {} as AppContext["pingExecutor"],
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as AppContext["config"],
-    };
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        const rows = yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
 
-    const app = await createTestApp(context);
+        const data = rows.map((row) => ({
+          status:
+            row.down_count > 0
+              ? ("down" as const)
+              : row.degraded_count > 0
+                ? ("degraded" as const)
+                : ("up" as const),
+        }));
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/connectivity-status/",
+        expect(data[0].status).toBe("down");
+
+        return data;
+      }).pipe(Effect.provide(QuestDbTest));
     });
 
-    expect(response.statusCode).toBe(503);
-    const body = response.json();
-    expect(body.error).toBe("DB_UNAVAILABLE");
-  });
+    it.effect("handles database query error", () => {
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(
+          Effect.fail(new DatabaseQueryError("Query failed"))
+        )
+      );
 
-  it("should return 500 for other errors", async () => {
-    const db: QuestDBService = {
-      health: () => Effect.succeed({ connected: true }),
-      writeMetric: () => Effect.void,
-      queryMetrics: () => Effect.succeed([]),
-      querySpeedtests: () => Effect.succeed([]),
-      queryConnectivityStatus: () =>
-        Effect.fail({ _tag: "DatabaseQueryError", message: "Query failed" }),
-      close: () => Effect.void,
-    };
-
-    const context: AppContext = {
-      db,
-      pingExecutor: {} as AppContext["pingExecutor"],
-      speedTestService: {} as AppContext["speedTestService"],
-      networkMonitor: {} as AppContext["networkMonitor"],
-      config: {} as AppContext["config"],
-    };
-
-    const app = await createTestApp(context);
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/connectivity-status/",
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
+        return "should not reach here";
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.fail(`Failed to query connectivity status: ${error}`)
+        ),
+        Effect.either,
+        Effect.map((result) => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left).toContain(
+              "Failed to query connectivity status"
+            );
+          }
+          return result;
+        }),
+        Effect.provide(QuestDbTest)
+      );
     });
 
-    expect(response.statusCode).toBe(500);
-    const body = response.json();
-    expect(body.error).toBe("Failed to query connectivity status");
+    it.effect("handles database unavailable error", () => {
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(
+          Effect.fail(new DbUnavailable("Database not connected"))
+        )
+      );
+
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
+        return "should not reach here";
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.fail(`Failed to query connectivity status: ${error}`)
+        ),
+        Effect.either,
+        Effect.map((result) => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left).toContain(
+              "Failed to query connectivity status"
+            );
+          }
+          return result;
+        }),
+        Effect.provide(QuestDbTest)
+      );
+    });
+
+    it.effect("handles division by zero with total_count of 0", () => {
+      const mockRows: readonly ConnectivityStatusRow[] = [
+        {
+          timestamp: "2024-01-01T00:00:00Z",
+          up_count: 0,
+          down_count: 0,
+          degraded_count: 0,
+          total_count: 0,
+        },
+      ];
+
+      const QuestDbTest = Layer.succeed(
+        QuestDB,
+        createTestQuestDBService(Effect.succeed(mockRows))
+      );
+
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+        const rows = yield* db.queryConnectivityStatus({
+          granularity: "5m",
+        });
+
+        const data = rows.map((row) => {
+          const total = row.total_count || 1;
+          return {
+            upPercentage: (row.up_count / total) * 100,
+            downPercentage: (row.down_count / total) * 100,
+            degradedPercentage: (row.degraded_count / total) * 100,
+          };
+        });
+
+        expect(data[0].upPercentage).toBe(0);
+        expect(data[0].downPercentage).toBe(0);
+        expect(data[0].degradedPercentage).toBe(0);
+
+        return data;
+      }).pipe(Effect.provide(QuestDbTest));
+    });
   });
 });

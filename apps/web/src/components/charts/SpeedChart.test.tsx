@@ -1,7 +1,7 @@
 import { ChakraProvider } from "@chakra-ui/react";
+import type { SpeedMetric } from "@shared/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
-import type { SpeedMetric } from "@wan-monitor/shared";
 import { describe, expect, it } from "vitest";
 import { SpeedChart } from "@/components/charts/SpeedChart";
 

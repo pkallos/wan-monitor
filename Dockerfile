@@ -167,7 +167,7 @@ ENV SPEEDTEST_TIMEOUT_SECONDS=120
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost/api/live || exit 1
+    CMD curl -f http://localhost/api/health/live || exit 1
 
 # Start supervisord directly
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

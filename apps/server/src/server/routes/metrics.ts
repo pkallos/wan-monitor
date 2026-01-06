@@ -1,75 +1,40 @@
-import { type Granularity, VALID_GRANULARITIES } from "@wan-monitor/shared";
-import { Effect, Either } from "effect";
-import { DbUnavailable } from "@/database/questdb";
-import type { AppContext, AppInstance } from "@/server/types";
+import { HttpApiBuilder } from "@effect/platform";
+import { WanMonitorApi } from "@shared/api/main";
+import { Effect } from "effect";
+import { QuestDB } from "@/database/questdb";
 
-/**
- * Metrics query route - returns all network metrics (ping + speedtest)
- */
-export async function metricsRoutes(
-  app: AppInstance,
-  context: AppContext
-): Promise<void> {
-  app.get("/", async (request, reply) => {
-    try {
-      const query = request.query as {
-        startTime?: string;
-        endTime?: string;
-        host?: string;
-        limit?: string;
-        granularity?: string;
-      };
+export const MetricsGroupLive = HttpApiBuilder.group(
+  WanMonitorApi,
+  "metrics",
+  (handlers) =>
+    handlers.handle("getMetrics", ({ urlParams }) =>
+      Effect.gen(function* () {
+        const db = yield* QuestDB;
 
-      const granularity =
-        query.granularity &&
-        VALID_GRANULARITIES.includes(query.granularity as Granularity)
-          ? (query.granularity as Granularity)
-          : undefined;
+        const data = yield* db.queryMetrics({
+          startTime: urlParams.startTime
+            ? new Date(urlParams.startTime)
+            : undefined,
+          endTime: urlParams.endTime ? new Date(urlParams.endTime) : undefined,
+          host: urlParams.host,
+          limit: urlParams.limit,
+          granularity: urlParams.granularity,
+        });
 
-      const params = {
-        startTime: query.startTime ? new Date(query.startTime) : undefined,
-        endTime: query.endTime ? new Date(query.endTime) : undefined,
-        host: query.host,
-        limit: query.limit ? Number.parseInt(query.limit, 10) : undefined,
-        granularity,
-      };
-
-      const result = await Effect.runPromise(
-        context.db.queryMetrics(params).pipe(Effect.either)
-      );
-
-      return Either.match(result, {
-        onLeft: (error) => {
-          if (error instanceof DbUnavailable) {
-            return reply.code(503).send({
-              error: "DB_UNAVAILABLE",
-              message: "Database temporarily unavailable",
-              timestamp: new Date().toISOString(),
-            });
-          }
-          return reply.code(500).send({
-            error: "Failed to query metrics",
-            message: String(error),
-          });
-        },
-        onRight: (data) =>
-          reply.code(200).send({
-            data,
-            meta: {
-              startTime:
-                params.startTime?.toISOString() ??
-                new Date(Date.now() - 3600000).toISOString(),
-              endTime:
-                params.endTime?.toISOString() ?? new Date().toISOString(),
-              count: data.length,
-            },
-          }),
-      });
-    } catch (error) {
-      return reply.code(500).send({
-        error: "Failed to query metrics",
-        message: String(error),
-      });
-    }
-  });
-}
+        return {
+          data,
+          meta: {
+            startTime:
+              urlParams.startTime ||
+              new Date(Date.now() - 3600000).toISOString(),
+            endTime: urlParams.endTime || new Date().toISOString(),
+            count: data.length,
+          },
+        };
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.fail(`Failed to query metrics: ${error}`)
+        )
+      )
+    )
+);
