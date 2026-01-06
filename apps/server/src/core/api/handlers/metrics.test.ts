@@ -60,5 +60,64 @@ describe("Metrics Handlers", () => {
         expect(result.meta.endTime).toBe(endTime);
       }).pipe(Effect.provide(QuestDBTest));
     });
+
+    it.effect("converts null values to undefined for optional fields", () => {
+      const mockDataWithNulls = [
+        {
+          timestamp: "2024-01-01T12:00:00Z",
+          source: "ping" as const,
+          host: null,
+          latency: null,
+          jitter: null,
+          packet_loss: null,
+          connectivity_status: null,
+        },
+        {
+          timestamp: "2024-01-01T12:01:00Z",
+          source: "speedtest" as const,
+          download_speed: null,
+          upload_speed: null,
+          latency: null,
+          jitter: null,
+          server_location: null,
+          isp: null,
+          external_ip: null,
+          internal_ip: null,
+        },
+      ];
+
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createMockQuestDB([]),
+        queryMetrics: () =>
+          Effect.succeed(mockDataWithNulls as unknown as MetricRow[]),
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getMetricsHandler({ urlParams: {} });
+
+        expect(result.data).toHaveLength(2);
+
+        expect(result.data[0].host).toBeUndefined();
+        expect(result.data[0].latency).toBeUndefined();
+        expect(result.data[0].jitter).toBeUndefined();
+        expect(result.data[0].packet_loss).toBeUndefined();
+        expect(result.data[0].connectivity_status).toBeUndefined();
+
+        expect(result.data[1].download_speed).toBeUndefined();
+        expect(result.data[1].upload_speed).toBeUndefined();
+        expect(result.data[1].latency).toBeUndefined();
+        expect(result.data[1].jitter).toBeUndefined();
+        expect(result.data[1].server_location).toBeUndefined();
+        expect(result.data[1].isp).toBeUndefined();
+        expect(result.data[1].external_ip).toBeUndefined();
+        expect(result.data[1].internal_ip).toBeUndefined();
+
+        expect(result.data[0].timestamp).toBe("2024-01-01T12:00:00Z");
+        expect(result.data[0].source).toBe("ping");
+        expect(result.meta.count).toBe(2);
+
+        return result;
+      }).pipe(Effect.provide(QuestDBTest));
+    });
   });
 });

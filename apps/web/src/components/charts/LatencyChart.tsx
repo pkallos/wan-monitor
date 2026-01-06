@@ -1,5 +1,5 @@
 import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
-import type { Granularity, PingMetric } from "@wan-monitor/shared";
+import type { Granularity, Metric } from "@wan-monitor/shared";
 import {
   CartesianGrid,
   Line,
@@ -20,7 +20,7 @@ export interface LatencyChartProps {
   host?: string;
   syncId?: string;
   compact?: boolean;
-  data?: PingMetric[];
+  data?: Metric[];
   isLoading?: boolean;
   granularity?: Granularity;
 }
@@ -37,12 +37,14 @@ interface Stats {
   max: string;
 }
 
-function calculateStats(data: PingMetric[]): Stats {
+function calculateStats(data: Metric[]): Stats {
   if (data.length === 0) {
     return { current: "-", avg: "-", min: "-", max: "-" };
   }
 
-  const latencies = data.map((d) => d.latency).filter((l) => l >= 0);
+  const latencies = data
+    .map((d) => d.latency)
+    .filter((l): l is number => l !== undefined && l >= 0);
 
   if (latencies.length === 0) {
     return { current: "-", avg: "-", min: "-", max: "-" };
@@ -57,7 +59,7 @@ function calculateStats(data: PingMetric[]): Stats {
 }
 
 function formatDataForChart(
-  data: PingMetric[],
+  data: Metric[],
   startTime?: Date,
   endTime?: Date,
   granularity: Granularity = "5m"

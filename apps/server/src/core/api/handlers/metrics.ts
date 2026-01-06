@@ -12,7 +12,7 @@ export const getMetricsHandler = ({
   Effect.gen(function* () {
     const db = yield* QuestDB;
 
-    const data = yield* db.queryMetrics({
+    const rawData = yield* db.queryMetrics({
       startTime: urlParams.startTime
         ? new Date(urlParams.startTime)
         : undefined,
@@ -21,6 +21,22 @@ export const getMetricsHandler = ({
       limit: urlParams.limit,
       granularity: urlParams.granularity,
     });
+
+    const data = rawData.map((m) => ({
+      timestamp: m.timestamp,
+      source: m.source,
+      host: m.host ?? undefined,
+      latency: m.latency ?? undefined,
+      jitter: m.jitter ?? undefined,
+      packet_loss: m.packet_loss ?? undefined,
+      connectivity_status: m.connectivity_status ?? undefined,
+      download_speed: m.download_speed ?? undefined,
+      upload_speed: m.upload_speed ?? undefined,
+      server_location: m.server_location ?? undefined,
+      isp: m.isp ?? undefined,
+      external_ip: m.external_ip ?? undefined,
+      internal_ip: m.internal_ip ?? undefined,
+    }));
 
     return {
       data,

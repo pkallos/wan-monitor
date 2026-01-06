@@ -4,13 +4,27 @@ import App from "@/App";
 import { createTestWrapper } from "@/test/utils";
 
 // Mock the Effect bridge
-vi.mock("@/api/effect-bridge");
+vi.mock("@/api/effect-bridge", () => ({
+  runEffectWithError: vi.fn(),
+}));
 
 describe("App", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetAllMocks();
     localStorage.clear();
     global.fetch = vi.fn();
+
+    // Mock runEffectWithError to return valid responses
+    const { runEffectWithError } = await import("@/api/effect-bridge");
+    const mockRunEffect = vi.mocked(runEffectWithError);
+    mockRunEffect.mockResolvedValue({
+      data: [],
+      meta: {
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        count: 0,
+      },
+    });
   });
 
   it("renders the dashboard when auth is not required", async () => {

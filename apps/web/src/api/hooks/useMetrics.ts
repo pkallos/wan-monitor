@@ -1,9 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type {
-  Granularity,
-  PingMetric,
-  SpeedMetricType,
-} from "@wan-monitor/shared";
+import type { Granularity, Metric } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { useMemo } from "react";
 import { runEffectWithError } from "@/api/effect-bridge";
@@ -66,35 +62,14 @@ export function useMetrics(options: UseMetricsOptions = {}) {
     isDbUnavailableError(query.error) ||
     isDbUnavailableError(query.failureReason);
 
-  const pingMetrics = useMemo((): PingMetric[] => {
+  const pingMetrics = useMemo((): Metric[] => {
     if (!query.data?.data) return [];
-    return query.data.data
-      .filter((m) => m.source === "ping")
-      .map((m) => ({
-        timestamp: m.timestamp,
-        host: m.host ?? "",
-        latency: m.latency ?? 0,
-        packet_loss: m.packet_loss ?? 0,
-        connectivity_status: m.connectivity_status ?? "down",
-        jitter: m.jitter ?? undefined,
-      }));
+    return query.data.data.filter((m) => m.source === "ping");
   }, [query.data]);
 
-  const speedMetrics = useMemo((): SpeedMetricType[] => {
+  const speedMetrics = useMemo((): Metric[] => {
     if (!query.data?.data) return [];
-    return query.data.data
-      .filter((m) => m.source === "speedtest")
-      .map((m) => ({
-        timestamp: m.timestamp,
-        download_speed: m.download_speed ?? 0,
-        upload_speed: m.upload_speed ?? 0,
-        latency: m.latency ?? 0,
-        jitter: m.jitter ?? undefined,
-        server_location: m.server_location ?? undefined,
-        isp: m.isp ?? undefined,
-        external_ip: m.external_ip ?? undefined,
-        internal_ip: m.internal_ip ?? undefined,
-      }));
+    return query.data.data.filter((m) => m.source === "speedtest");
   }, [query.data]);
 
   return {

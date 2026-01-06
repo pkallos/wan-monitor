@@ -42,7 +42,7 @@ const SpeedTestStatusResponse = Schema.Struct({
   isRunning: Schema.Boolean,
 });
 
-export const SpeedMetric = Schema.Struct({
+export const SpeedMetricSchema = Schema.Struct({
   timestamp: Schema.String,
   download_speed: Schema.Number,
   upload_speed: Schema.Number,
@@ -61,7 +61,7 @@ export const SpeedTestHistoryQuery = Schema.Struct({
 });
 
 const SpeedTestHistoryResponse = Schema.Struct({
-  data: Schema.Array(SpeedMetric),
+  data: Schema.Array(SpeedMetricSchema),
   meta: Schema.Struct({
     startTime: Schema.String,
     endTime: Schema.String,
@@ -70,7 +70,7 @@ const SpeedTestHistoryResponse = Schema.Struct({
 });
 
 // Export TypeScript types derived from schemas
-export type SpeedMetricFromSchema = Schema.Schema.Type<typeof SpeedMetric>;
+export type SpeedMetric = Schema.Schema.Type<typeof SpeedMetricSchema>;
 export type SpeedTestResponseType = Schema.Schema.Type<
   typeof SpeedTestResponse
 >;
