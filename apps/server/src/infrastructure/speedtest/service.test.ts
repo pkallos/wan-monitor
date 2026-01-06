@@ -84,7 +84,9 @@ describe("SpeedTest - timeout functionality", () => {
       expect(error._tag).toBe("Fail");
       if (error._tag === "Fail") {
         expect(error.error).toBeInstanceOf(SpeedTestTimeoutError);
-        expect((error.error as SpeedTestTimeoutError).timeoutMs).toBe(100);
+        if (error.error instanceof SpeedTestTimeoutError) {
+          expect(error.error.timeoutMs).toBe(100);
+        }
       }
     }
   });
@@ -106,9 +108,9 @@ describe("SpeedTest - timeout functionality", () => {
       expect(error._tag).toBe("Fail");
       if (error._tag === "Fail") {
         expect(error.error).toBeInstanceOf(SpeedTestExecutionError);
-        expect((error.error as SpeedTestExecutionError).message).toBe(
-          "Network connection failed"
-        );
+        if (error.error instanceof SpeedTestExecutionError) {
+          expect(error.error.message).toBe("Network connection failed");
+        }
       }
     }
   });
@@ -128,9 +130,9 @@ describe("SpeedTest - timeout functionality", () => {
       const error = exit.cause;
       if (error._tag === "Fail") {
         expect(error.error).toBeInstanceOf(SpeedTestExecutionError);
-        expect((error.error as SpeedTestExecutionError).message).toBe(
-          "string error"
-        );
+        if (error.error instanceof SpeedTestExecutionError) {
+          expect(error.error.message).toBe("string error");
+        }
       }
     }
   });
@@ -206,9 +208,11 @@ describe("SpeedTest - timeout functionality", () => {
     if (Exit.isFailure(exit)) {
       const error = exit.cause;
       if (error._tag === "Fail") {
-        const timeoutError = error.error as SpeedTestTimeoutError;
-        expect(timeoutError.timeoutMs).toBe(50);
-        expect(timeoutError._tag).toBe("SpeedTestTimeoutError");
+        expect(error.error).toBeInstanceOf(SpeedTestTimeoutError);
+        if (error.error instanceof SpeedTestTimeoutError) {
+          expect(error.error.timeoutMs).toBe(50);
+          expect(error.error._tag).toBe("SpeedTestTimeoutError");
+        }
       }
     }
   });
