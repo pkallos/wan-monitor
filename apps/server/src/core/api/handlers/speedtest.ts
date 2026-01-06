@@ -161,11 +161,11 @@ export const SpeedTestGroupLive = HttpApiBuilder.group(
               download_speed: m.download_speed ?? 0,
               upload_speed: m.upload_speed ?? 0,
               latency: m.latency ?? 0,
-              jitter: m.jitter,
-              server_location: m.server_location,
-              isp: m.isp,
-              external_ip: m.external_ip,
-              internal_ip: m.internal_ip,
+              jitter: m.jitter ?? undefined,
+              server_location: m.server_location ?? undefined,
+              isp: m.isp ?? undefined,
+              external_ip: m.external_ip ?? undefined,
+              internal_ip: m.internal_ip ?? undefined,
             }));
 
             return {
