@@ -27,6 +27,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -61,6 +62,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -93,6 +95,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -132,6 +135,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -217,11 +221,12 @@ jobs:
 
       # Build with GitHub Actions cache
       # This caches Docker layers between runs for faster builds
+      # Using the same cache scope as production builds for consistency
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           tags: wan-monitor:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=wan-monitor-docker
+          cache-to: type=gha,scope=wan-monitor-docker,mode=max

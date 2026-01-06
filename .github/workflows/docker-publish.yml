@@ -27,6 +27,7 @@ jobs:
         with:
           node-version: "22"
           cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -85,5 +86,18 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Cache Strategy:
+          # 1. GitHub Actions cache with stable scope (shared across all release tags)
+          #    - Provides fast cache access within GitHub infrastructure
+          #    - Subject to 7-day eviction policy
+          # 2. Docker Hub registry cache (primary optimization)
+          #    - Persists indefinitely, survives GHA cache eviction
+          #    - Works reliably for multi-arch builds (linux/amd64,linux/arm64)
+          #    - The buildcache tag is NOT a release artifact, only used for caching
+          # Both backends provide redundancy and optimize different scenarios
+          cache-from: |
+            type=gha,scope=wan-monitor-docker
+            type=registry,ref=phibit/wan-monitor:buildcache
+          cache-to: |
+            type=gha,scope=wan-monitor-docker,mode=max
+            type=registry,ref=phibit/wan-monitor:buildcache,mode=max

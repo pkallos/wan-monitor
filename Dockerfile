@@ -58,6 +58,9 @@ COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
 ENV NODE_PATH=/app/node_modules
 
 # Reinstall after sources are copied to ensure workspace links remain valid in this layer
+# Cache optimization: This install is fast because:
+# 1. All packages are already in the pnpm store cache mount (from deps stage)
+# 2. Only workspace linking needs to be performed, no downloads
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 

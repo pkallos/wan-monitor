@@ -1,0 +1,101 @@
+name: Test Docker Cache Strategy
+
+# Manual workflow for testing Docker build cache optimizations
+# This workflow validates that cache configuration works before updating production builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write  # Required for BuildKit GHA cache
+
+jobs:
+  test-cache:
+    name: Test Multi-Arch Build with Cache
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push test image with cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: phibit/wan-monitor:cache-test
+          labels: |
+            org.opencontainers.image.title=WAN Monitor Cache Test
+            org.opencontainers.image.description=Test build for cache optimization validation
+          # Cache Strategy:
+          # 1. GitHub Actions cache with stable scope (shared across all tags/branches)
+          # 2. Docker Hub registry cache (primary, persists indefinitely)
+          cache-from: |
+            type=gha,scope=wan-monitor-docker
+            type=registry,ref=phibit/wan-monitor:buildcache
+          cache-to: |
+            type=gha,scope=wan-monitor-docker,mode=max
+            type=registry,ref=phibit/wan-monitor:buildcache,mode=max
+
+      - name: Output build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Multi-arch build completed for linux/amd64,linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cache Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **GHA Cache Scope**: \`wan-monitor-docker\` (shared across tags)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry Cache**: \`phibit/wan-monitor:buildcache\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Image" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag**: \`phibit/wan-monitor:cache-test\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms**: linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run this workflow again immediately to test cache hits" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check build logs for \`CACHED\` markers on BuildKit steps" >> $GITHUB_STEP_SUMMARY
+          echo "3. Compare build times (target: >50% reduction on second run)" >> $GITHUB_STEP_SUMMARY
+          echo "4. Test the image: \`docker run -d -p 8080:80 phibit/wan-monitor:cache-test\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Test image runtime
+        run: |
+          echo "Testing image startup and health check..."
+          docker pull phibit/wan-monitor:cache-test
+          docker run -d --name wan-cache-test -p 8080:80 phibit/wan-monitor:cache-test
+
+          # Wait for container to start
+          echo "Waiting for services to start (60s)..."
+          sleep 60
+
+          # Test health endpoint
+          echo "Testing health endpoint..."
+          if curl -f http://localhost:8080/api/health/live; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            docker logs wan-cache-test
+            exit 1
+          fi
+
+          # Cleanup
+          docker stop wan-cache-test
+          docker rm wan-cache-test
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Runtime Validation" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Image starts successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Health check passes" >> $GITHUB_STEP_SUMMARY
