@@ -1,6 +1,15 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": [".env", ".env.local", ".env.*.local"],
+  "globalDependencies": [
+    ".env",
+    ".env.local",
+    ".env.*.local",
+    "package.json",
+    "pnpm-lock.yaml",
+    "biome.json",
+    "tsconfig*.json",
+    ".grit/**"
+  ],
   "globalEnv": ["CI", "NODE_ENV"],
   "ui": "stream",
   "tasks": {
@@ -10,6 +19,8 @@
         "src/**",
         "index.html",
         "*.config.{ts,js,cjs,mjs}",
+        "vite.config.ts",
+        "tsup.config.ts",
         "tsconfig*.json",
         "package.json"
       ],
@@ -70,6 +81,8 @@
         "**/*.spec.{ts,tsx}",
         "**/test/**",
         "*.config.{ts,js,cjs,mjs}",
+        "vitest.config.ts",
+        "vite.config.ts",
         "tsconfig*.json",
         "package.json"
       ],
@@ -81,16 +94,28 @@
         "src/**/*.{ts,tsx,js,jsx}",
         "biome.json",
         ".biome.json",
+        "tsconfig*.json",
+        ".grit/**",
         "package.json"
       ],
       "outputs": []
     },
     "format": {
-      "inputs": ["src/**/*.{ts,tsx,js,jsx,json}", "biome.json", ".biome.json"],
+      "inputs": [
+        "src/**/*.{ts,tsx,js,jsx,json}",
+        "biome.json",
+        ".biome.json",
+        "package.json"
+      ],
       "outputs": []
     },
     "format:check": {
-      "inputs": ["src/**/*.{ts,tsx,js,jsx,json}", "biome.json", ".biome.json"],
+      "inputs": [
+        "src/**/*.{ts,tsx,js,jsx,json}",
+        "biome.json",
+        ".biome.json",
+        "package.json"
+      ],
       "outputs": []
     },
     "test:coverage": {
@@ -101,6 +126,8 @@
         "**/*.spec.{ts,tsx}",
         "**/test/**",
         "*.config.{ts,js,cjs,mjs}",
+        "vitest.config.ts",
+        "vite.config.ts",
         "tsconfig*.json",
         "package.json"
       ],
