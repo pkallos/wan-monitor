@@ -103,6 +103,7 @@ When the feature is complete:
    - Run `pnpm format` - must pass
    - Run `pnpm test` - all tests must pass
    - Run `pnpm build` - must build successfully
+   - Run `pnpm docker:build` - docker image must build successfully
 
 2. **Push the branch:**
    ```bash
