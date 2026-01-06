@@ -94,7 +94,6 @@ jobs:
           #    - Persists indefinitely, survives GHA cache eviction
           #    - Works reliably for multi-arch builds (linux/amd64,linux/arm64)
           #    - The buildcache tag is NOT a release artifact, only used for caching
-          # Both backends provide redundancy and optimize different scenarios
           cache-from: |
             type=gha,scope=wan-monitor-docker
             type=registry,ref=phibit/wan-monitor:buildcache
