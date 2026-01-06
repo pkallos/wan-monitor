@@ -1,4 +1,4 @@
-import { Config, Context, Effect, Layer } from "effect";
+import { Config, ConfigError, Context, Effect, Either, Layer } from "effect";
 
 // Application configuration
 export interface AppConfig {
@@ -47,7 +47,18 @@ const makeConfig = Effect.gen(function* () {
   );
   const dbPort = yield* Config.number("DB_PORT").pipe(Config.withDefault(9000));
   const dbProtocol = yield* Config.string("DB_PROTOCOL").pipe(
-    Config.withDefault("http")
+    Config.withDefault("http"),
+    Config.mapOrFail(
+      (value): Either.Either<"http" | "tcp", ConfigError.ConfigError> =>
+        value === "http" || value === "tcp"
+          ? Either.right(value)
+          : Either.left(
+              ConfigError.InvalidData(
+                [],
+                `DB_PROTOCOL must be 'http' or 'tcp', got '${value}'`
+              )
+            )
+    )
   );
   const dbAutoFlushRows = yield* Config.number("DB_AUTO_FLUSH_ROWS").pipe(
     Config.withDefault(100)
@@ -94,7 +105,7 @@ const makeConfig = Effect.gen(function* () {
     database: {
       host: dbHost,
       port: dbPort,
-      protocol: dbProtocol as "http" | "tcp",
+      protocol: dbProtocol,
       autoFlushRows: dbAutoFlushRows,
       autoFlushInterval: dbAutoFlushInterval,
       requestTimeout: dbRequestTimeout,
