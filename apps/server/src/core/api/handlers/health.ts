@@ -3,30 +3,30 @@ import { WanMonitorApi } from "@shared/api/main";
 import { DateTime, Effect } from "effect";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
+export const getReadyHandler = () =>
+  Effect.gen(function* () {
+    const db = yield* QuestDB;
+    yield* db.health();
+
+    return {
+      status: "ok",
+      timestamp: DateTime.unsafeNow(),
+    };
+  }).pipe(
+    Effect.catchAll((error) => Effect.fail(`Database unhealthy: ${error}`))
+  );
+
+export const getLiveHandler = () =>
+  Effect.succeed({
+    status: "ok",
+    timestamp: DateTime.unsafeNow(),
+  });
+
 export const HealthGroupLive = HttpApiBuilder.group(
   WanMonitorApi,
   "health",
   (handlers) =>
     handlers
-      .handle("getReady", () =>
-        Effect.gen(function* () {
-          const db = yield* QuestDB;
-          yield* db.health();
-
-          return {
-            status: "ok",
-            timestamp: DateTime.unsafeNow(),
-          };
-        }).pipe(
-          Effect.catchAll((error) =>
-            Effect.fail(`Database unhealthy: ${error}`)
-          )
-        )
-      )
-      .handle("getLive", () =>
-        Effect.succeed({
-          status: "ok",
-          timestamp: DateTime.unsafeNow(),
-        })
-      )
+      .handle("getReady", getReadyHandler)
+      .handle("getLive", getLiveHandler)
 );

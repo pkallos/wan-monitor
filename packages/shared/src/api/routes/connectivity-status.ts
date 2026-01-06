@@ -26,7 +26,7 @@ const ConnectivityStatusResponse = Schema.Struct({
 
 const Granularity = Schema.Literal("1m", "5m", "15m", "1h", "6h", "1d");
 
-const GetConnectivityStatusQuery = Schema.Struct({
+export const GetConnectivityStatusQuery = Schema.Struct({
   startTime: Schema.optional(Schema.String),
   endTime: Schema.optional(Schema.String),
   granularity: Schema.optional(Granularity),

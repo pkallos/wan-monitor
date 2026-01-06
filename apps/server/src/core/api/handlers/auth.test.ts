@@ -1,12 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
 import { Effect, Layer } from "effect";
+import {
+  loginHandler,
+  logoutHandler,
+  meHandler,
+  statusHandler,
+} from "@/core/api/handlers/auth";
+import { JwtService } from "@/infrastructure/auth/jwt";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
 
-const createTestConfigService = (
-  username: string,
-  password: string
-): AppConfig => ({
+const createMockConfig = (username: string, password: string): AppConfig => ({
   server: { port: 3001, host: "0.0.0.0" },
   database: {
     host: "localhost",
@@ -30,275 +34,195 @@ const createTestConfigService = (
   },
 });
 
-describe("Auth API Handlers", () => {
-  describe("login handler (PUBLIC - always accessible)", () => {
-    it.effect("returns token when credentials are valid", () => {
+const createMockJwtService = () => ({
+  sign: (_username: string) =>
+    Effect.succeed({
+      token: "mock.jwt.token",
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }),
+  verify: (_token: string) =>
+    Effect.succeed({
+      username: "admin",
+      iat: Date.now(),
+      exp: Date.now() + 86400000,
+    }),
+  decode: (_token: string) =>
+    Effect.succeed({
+      username: "admin",
+      iat: Date.now(),
+      exp: Date.now() + 86400000,
+    }),
+});
+
+describe("Auth Handlers", () => {
+  describe("login", () => {
+    it.effect("returns token and user info with valid credentials", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        createTestConfigService("admin", "test-password")
+        createMockConfig("admin", "test-password")
       );
+      const JwtServiceTest = Layer.succeed(JwtService, createMockJwtService());
+      const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
 
       return Effect.gen(function* () {
-        const config = yield* ConfigService;
+        const result = yield* loginHandler({
+          payload: { username: "admin", password: "test-password" },
+        });
 
-        // Simulate login handler logic
-        const payload = { username: "admin", password: "test-password" };
-
-        if (!payload.username || !payload.password) {
-          return yield* Effect.fail("Username and password are required");
-        }
-
-        if (!config.auth.password) {
-          return yield* Effect.fail(
-            "Authentication is not configured. Set WAN_MONITOR_PASSWORD."
-          );
-        }
-
-        if (
-          payload.username !== config.auth.username ||
-          payload.password !== config.auth.password
-        ) {
-          return yield* Effect.fail("Invalid username or password");
-        }
-
-        // If we reach here, credentials are valid - simulate JWT sign
-        const result = {
-          token: "mock.jwt.token",
-          expiresAt: new Date(Date.now() + 86400000),
-          username: payload.username,
-        };
-
-        expect(result.token).toBeDefined();
-        expect(result.expiresAt).toBeDefined();
+        expect(result.token).toBe("mock.jwt.token");
         expect(result.username).toBe("admin");
-        return result;
-      }).pipe(Effect.provide(ConfigServiceTest));
+        expect(result.expiresAt).toBeDefined();
+      }).pipe(Effect.provide(TestLayers));
     });
 
-    it.effect("fails when credentials are invalid", () => {
+    it.effect("fails when username or password is missing", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        createTestConfigService("admin", "correct-password")
+        createMockConfig("admin", "test-password")
       );
+      const JwtServiceTest = Layer.succeed(JwtService, createMockJwtService());
+      const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
 
       return Effect.gen(function* () {
-        const config = yield* ConfigService;
+        const result = yield* Effect.either(
+          loginHandler({ payload: { username: "", password: "" } })
+        );
 
-        const payload = { username: "admin", password: "wrong-password" };
-
-        if (
-          payload.username !== config.auth.username ||
-          payload.password !== config.auth.password
-        ) {
-          return yield* Effect.fail("Invalid username or password");
+        expect(result._tag).toBe("Left");
+        if (result._tag === "Left") {
+          expect(result.left).toBe("Username and password are required");
         }
-
-        return {
-          token: "should-not-reach",
-          expiresAt: new Date(),
-          username: "admin",
-        };
-      }).pipe(
-        Effect.either,
-        Effect.map((result) => {
-          expect(result._tag).toBe("Left");
-          if (result._tag === "Left") {
-            expect(result.left).toBe("Invalid username or password");
-          }
-          return result;
-        }),
-        Effect.provide(ConfigServiceTest)
-      );
+      }).pipe(Effect.provide(TestLayers));
     });
 
     it.effect("fails when auth is not configured", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        createTestConfigService("admin", "")
+        createMockConfig("admin", "")
       );
+      const JwtServiceTest = Layer.succeed(JwtService, createMockJwtService());
+      const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
 
       return Effect.gen(function* () {
-        const config = yield* ConfigService;
+        const result = yield* Effect.either(
+          loginHandler({ payload: { username: "admin", password: "wrong" } })
+        );
 
-        if (!config.auth.password) {
-          return yield* Effect.fail(
-            "Authentication is not configured. Set WAN_MONITOR_PASSWORD."
-          );
+        expect(result._tag).toBe("Left");
+        if (result._tag === "Left") {
+          expect(result.left).toContain("Authentication is not configured");
         }
-
-        return {
-          token: "should-not-reach",
-          expiresAt: new Date(),
-          username: "admin",
-        };
-      }).pipe(
-        Effect.either,
-        Effect.map((result) => {
-          expect(result._tag).toBe("Left");
-          if (result._tag === "Left") {
-            expect(result.left).toContain("Authentication is not configured");
-          }
-          return result;
-        }),
-        Effect.provide(ConfigServiceTest)
-      );
+      }).pipe(Effect.provide(TestLayers));
     });
 
-    it.effect("fails when username is missing", () => {
+    it.effect("fails with invalid credentials", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        createTestConfigService("admin", "test-password")
+        createMockConfig("admin", "test-password")
       );
+      const JwtServiceTest = Layer.succeed(JwtService, createMockJwtService());
+      const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
 
       return Effect.gen(function* () {
-        const payload = { username: "", password: "test" };
+        const result = yield* Effect.either(
+          loginHandler({ payload: { username: "admin", password: "wrong" } })
+        );
 
-        if (!payload.username || !payload.password) {
-          return yield* Effect.fail("Username and password are required");
+        expect(result._tag).toBe("Left");
+        if (result._tag === "Left") {
+          expect(result.left).toBe("Invalid username or password");
         }
-
-        return {
-          token: "should-not-reach",
-          expiresAt: new Date(),
-          username: "",
-        };
-      }).pipe(
-        Effect.either,
-        Effect.map((result) => {
-          expect(result._tag).toBe("Left");
-          if (result._tag === "Left") {
-            expect(result.left).toBe("Username and password are required");
-          }
-          return result;
-        }),
-        Effect.provide(ConfigServiceTest)
-      );
+      }).pipe(Effect.provide(TestLayers));
     });
   });
 
-  describe("logout handler (PUBLIC - always accessible)", () => {
+  describe("logout", () => {
     it.effect("returns success message", () => {
-      const result = {
-        success: true,
-        message: "Logged out successfully",
-      };
+      return Effect.gen(function* () {
+        const result = yield* logoutHandler();
 
-      expect(result.success).toBe(true);
-      expect(result.message).toBe("Logged out successfully");
-
-      return Effect.succeed(result);
+        expect(result.success).toBe(true);
+        expect(result.message).toBe("Logged out successfully");
+      });
     });
   });
 
-  describe("me handler (PROTECTED)", () => {
-    it.effect("returns anonymous user when auth is disabled", () => {
+  describe("me", () => {
+    it.effect("returns authenticated user when auth is configured", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        createTestConfigService("admin", "")
+        createMockConfig("admin", "test-password")
       );
-      const MockAuthenticatedUser = Layer.succeed(AuthenticatedUser, {
-        username: "anonymous",
-        iat: Date.now() / 1000,
-        exp: Date.now() / 1000 + 86400,
+      const AuthenticatedUserTest = Layer.succeed(AuthenticatedUser, {
+        username: "admin",
+        iat: Date.now(),
+        exp: Date.now() + 86400000,
       });
+      const TestLayers = Layer.mergeAll(
+        ConfigServiceTest,
+        AuthenticatedUserTest
+      );
 
       return Effect.gen(function* () {
-        const config = yield* ConfigService;
-        const user = yield* AuthenticatedUser;
+        const result = yield* meHandler();
 
-        // Simulate /me handler logic
-        if (!config.auth.password) {
-          const result = {
-            username: user.username,
-            authenticated: false,
-          };
-          expect(result.username).toBe("anonymous");
-          expect(result.authenticated).toBe(false);
-          return result;
-        }
-
-        return {
-          username: user.username,
-          authenticated: true,
-        };
-      }).pipe(
-        Effect.provide(Layer.mergeAll(ConfigServiceTest, MockAuthenticatedUser))
-      );
-    });
-
-    it.effect("returns authenticated user when auth is enabled", () => {
-      const ConfigServiceTest = Layer.succeed(
-        ConfigService,
-        createTestConfigService("admin", "test-password")
-      );
-      const MockAuthenticatedUser = Layer.succeed(AuthenticatedUser, {
-        username: "testuser",
-        iat: Date.now() / 1000,
-        exp: Date.now() / 1000 + 86400,
-      });
-
-      return Effect.gen(function* () {
-        const config = yield* ConfigService;
-        const user = yield* AuthenticatedUser;
-
-        // Simulate /me handler logic
-        if (!config.auth.password) {
-          return {
-            username: user.username,
-            authenticated: false,
-          };
-        }
-
-        const result = {
-          username: user.username,
-          authenticated: true,
-        };
-
-        expect(result.username).toBe("testuser");
+        expect(result.username).toBe("admin");
         expect(result.authenticated).toBe(true);
-        return result;
-      }).pipe(
-        Effect.provide(Layer.mergeAll(ConfigServiceTest, MockAuthenticatedUser))
-      );
-    });
-  });
-
-  describe("status handler (PUBLIC - always accessible)", () => {
-    it.effect("returns authRequired true when password is configured", () => {
-      const ConfigServiceTest = Layer.succeed(
-        ConfigService,
-        createTestConfigService("admin", "test-password")
-      );
-
-      return Effect.gen(function* () {
-        const config = yield* ConfigService;
-        const result = {
-          authRequired: Boolean(config.auth.password),
-        };
-
-        expect(result.authRequired).toBe(true);
-        return result;
-      }).pipe(Effect.provide(ConfigServiceTest));
+      }).pipe(Effect.provide(TestLayers));
     });
 
     it.effect(
-      "returns authRequired false when password is not configured",
+      "returns unauthenticated user when auth is not configured",
       () => {
         const ConfigServiceTest = Layer.succeed(
           ConfigService,
-          createTestConfigService("admin", "")
+          createMockConfig("admin", "")
+        );
+        const AuthenticatedUserTest = Layer.succeed(AuthenticatedUser, {
+          username: "anonymous",
+          iat: Date.now(),
+          exp: Date.now() + 86400000,
+        });
+        const TestLayers = Layer.mergeAll(
+          ConfigServiceTest,
+          AuthenticatedUserTest
         );
 
         return Effect.gen(function* () {
-          const config = yield* ConfigService;
-          const result = {
-            authRequired: Boolean(config.auth.password),
-          };
+          const result = yield* meHandler();
 
-          expect(result.authRequired).toBe(false);
-          return result;
-        }).pipe(Effect.provide(ConfigServiceTest));
+          expect(result.username).toBe("anonymous");
+          expect(result.authenticated).toBe(false);
+        }).pipe(Effect.provide(TestLayers));
       }
     );
+  });
+
+  describe("status", () => {
+    it.effect("returns authRequired true when password is configured", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createMockConfig("admin", "test-password")
+      );
+
+      return Effect.gen(function* () {
+        const result = yield* statusHandler();
+
+        expect(result.authRequired).toBe(true);
+      }).pipe(Effect.provide(ConfigServiceTest));
+    });
+
+    it.effect("returns authRequired false when no password configured", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createMockConfig("admin", "")
+      );
+
+      return Effect.gen(function* () {
+        const result = yield* statusHandler();
+
+        expect(result.authRequired).toBe(false);
+      }).pipe(Effect.provide(ConfigServiceTest));
+    });
   });
 });

@@ -26,7 +26,7 @@ const MetaSchema = Schema.Struct({
   count: Schema.Number,
 });
 
-const GetMetricsQueryParams = Schema.Struct({
+export const GetMetricsQueryParams = Schema.Struct({
   startTime: Schema.optional(Schema.String),
   endTime: Schema.optional(Schema.String),
   host: Schema.optional(Schema.String),

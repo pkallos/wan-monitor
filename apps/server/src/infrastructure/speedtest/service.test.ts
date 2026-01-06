@@ -9,7 +9,7 @@ import {
   SpeedTestService,
   SpeedTestServiceLive,
   SpeedTestTimeoutError,
-} from "./service";
+} from "@/infrastructure/speedtest/service";
 
 const isMacArm64 = process.platform === "darwin" && process.arch === "arm64";
 

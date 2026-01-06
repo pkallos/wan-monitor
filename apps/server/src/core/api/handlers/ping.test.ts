@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import { getHostsHandler, triggerPingHandler } from "@/core/api/handlers/ping";
 import {
   type PingExecutionResult,
   PingExecutor,
@@ -7,9 +8,9 @@ import {
 } from "@/core/monitoring/ping-executor";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
 
-const createTestPingExecutorService = (
-  executeHostsEffect: Effect.Effect<readonly PingExecutionResult[], never>,
-  executeAllEffect: Effect.Effect<readonly PingExecutionResult[], never>
+const createMockPingExecutor = (
+  executeHostsResult: readonly PingExecutionResult[],
+  executeAllResult: readonly PingExecutionResult[]
 ): PingExecutorInterface => ({
   executePing: (host: string) =>
     Effect.succeed({
@@ -26,11 +27,12 @@ const createTestPingExecutorService = (
         stddev: 1.5,
       },
     }),
-  executeAll: () => executeAllEffect,
-  executeHosts: (_hosts: readonly string[]) => executeHostsEffect,
+  executeAll: () => Effect.succeed(executeAllResult),
+  executeHosts: (_hosts: readonly string[]) =>
+    Effect.succeed(executeHostsResult),
 });
 
-const createTestConfigService = (hosts: readonly string[]): AppConfig => ({
+const createMockConfig = (hosts: readonly string[]): AppConfig => ({
   server: { port: 3001, host: "0.0.0.0" },
   database: {
     host: "localhost",
@@ -54,62 +56,61 @@ const createTestConfigService = (hosts: readonly string[]): AppConfig => ({
   },
 });
 
-describe("Ping API Handlers", () => {
-  describe("triggerPing handler", () => {
-    it.effect("executes all hosts when no hosts specified", () => {
-      const mockResults: readonly PingExecutionResult[] = [
-        {
-          host: "8.8.8.8",
-          success: true,
-          result: {
+describe("Ping Handlers", () => {
+  describe("triggerPing", () => {
+    it.effect(
+      "pings all configured hosts when no specific hosts provided",
+      () => {
+        const mockResults: readonly PingExecutionResult[] = [
+          {
             host: "8.8.8.8",
-            alive: true,
-            latency: 15.5,
-            packetLoss: 0,
-            min: 14.0,
-            max: 17.0,
-            avg: 15.5,
-            stddev: 1.0,
+            success: true,
+            result: {
+              host: "8.8.8.8",
+              alive: true,
+              latency: 15.5,
+              packetLoss: 0,
+              min: 14.0,
+              max: 17.0,
+              avg: 15.5,
+              stddev: 1.0,
+            },
           },
-        },
-        {
-          host: "1.1.1.1",
-          success: true,
-          result: {
+          {
             host: "1.1.1.1",
-            alive: true,
-            latency: 12.3,
-            packetLoss: 0,
-            min: 11.0,
-            max: 13.0,
-            avg: 12.3,
-            stddev: 0.8,
+            success: true,
+            result: {
+              host: "1.1.1.1",
+              alive: true,
+              latency: 12.3,
+              packetLoss: 0,
+              min: 11.0,
+              max: 13.0,
+              avg: 12.3,
+              stddev: 0.8,
+            },
           },
-        },
-      ];
+        ];
 
-      const PingExecutorTest = Layer.succeed(
-        PingExecutor,
-        createTestPingExecutorService(
-          Effect.succeed(mockResults),
-          Effect.succeed(mockResults)
-        )
-      );
+        const PingExecutorTest = Layer.succeed(
+          PingExecutor,
+          createMockPingExecutor(mockResults, mockResults)
+        );
 
-      return Effect.gen(function* () {
-        const pingExecutor = yield* PingExecutor;
-        const results = yield* pingExecutor.executeAll();
+        return Effect.gen(function* () {
+          const result = yield* triggerPingHandler({ payload: null });
 
-        expect(results).toHaveLength(2);
-        expect(results[0].host).toBe("8.8.8.8");
-        expect(results[0].success).toBe(true);
-        expect(results[1].host).toBe("1.1.1.1");
-        expect(results[1].success).toBe(true);
-        return results;
-      }).pipe(Effect.provide(PingExecutorTest));
-    });
+          expect(result.success).toBe(true);
+          expect(result.results).toHaveLength(2);
+          expect(result.results[0].host).toBe("8.8.8.8");
+          expect(result.results[0].success).toBe(true);
+          expect(result.results[1].host).toBe("1.1.1.1");
+          expect(result.results[1].success).toBe(true);
+        }).pipe(Effect.provide(PingExecutorTest));
+      }
+    );
 
-    it.effect("executes specific hosts when hosts array provided", () => {
+    it.effect("pings only specified hosts when provided", () => {
       const mockResults: readonly PingExecutionResult[] = [
         {
           host: "www.google.com",
@@ -129,24 +130,22 @@ describe("Ping API Handlers", () => {
 
       const PingExecutorTest = Layer.succeed(
         PingExecutor,
-        createTestPingExecutorService(
-          Effect.succeed(mockResults),
-          Effect.succeed([])
-        )
+        createMockPingExecutor(mockResults, [])
       );
 
       return Effect.gen(function* () {
-        const pingExecutor = yield* PingExecutor;
-        const results = yield* pingExecutor.executeHosts(["www.google.com"]);
+        const result = yield* triggerPingHandler({
+          payload: { hosts: ["www.google.com"] },
+        });
 
-        expect(results).toHaveLength(1);
-        expect(results[0].host).toBe("www.google.com");
-        expect(results[0].success).toBe(true);
-        return results;
+        expect(result.success).toBe(true);
+        expect(result.results).toHaveLength(1);
+        expect(result.results[0].host).toBe("www.google.com");
+        expect(result.results[0].success).toBe(true);
       }).pipe(Effect.provide(PingExecutorTest));
     });
 
-    it.effect("handles ping execution errors gracefully", () => {
+    it.effect("returns error details when hosts are unreachable", () => {
       const mockResults: readonly PingExecutionResult[] = [
         {
           host: "unreachable.host",
@@ -157,51 +156,43 @@ describe("Ping API Handlers", () => {
 
       const PingExecutorTest = Layer.succeed(
         PingExecutor,
-        createTestPingExecutorService(
-          Effect.succeed(mockResults),
-          Effect.succeed(mockResults)
-        )
+        createMockPingExecutor(mockResults, mockResults)
       );
 
       return Effect.gen(function* () {
-        const pingExecutor = yield* PingExecutor;
-        const results = yield* pingExecutor.executeAll();
+        const result = yield* triggerPingHandler({ payload: null });
 
-        expect(results).toHaveLength(1);
-        expect(results[0].success).toBe(false);
-        expect(results[0].error).toBe("Host unreachable");
-        return results;
+        expect(result.success).toBe(true);
+        expect(result.results).toHaveLength(1);
+        expect(result.results[0].success).toBe(false);
+        expect(result.results[0].error).toBe("Host unreachable");
       }).pipe(Effect.provide(PingExecutorTest));
     });
   });
 
-  describe("getHosts handler", () => {
-    it.effect("returns configured ping hosts", () => {
+  describe("getHosts", () => {
+    it.effect("returns list of configured hosts", () => {
       const testHosts = ["8.8.8.8", "1.1.1.1", "cloudflare.com"];
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        createTestConfigService(testHosts)
+        createMockConfig(testHosts)
       );
 
       return Effect.gen(function* () {
-        const config = yield* ConfigService;
-
-        expect(config.ping.hosts).toEqual(testHosts);
-        return config.ping.hosts;
+        const result = yield* getHostsHandler();
+        expect(result.hosts).toEqual(testHosts);
       }).pipe(Effect.provide(ConfigServiceTest));
     });
 
-    it.effect("returns empty array when no hosts configured", () => {
+    it.effect("returns empty list when no hosts configured", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        createTestConfigService([])
+        createMockConfig([])
       );
 
       return Effect.gen(function* () {
-        const config = yield* ConfigService;
-
-        expect(config.ping.hosts).toEqual([]);
-        return config.ping.hosts;
+        const result = yield* getHostsHandler();
+        expect(result.hosts).toEqual([]);
       }).pipe(Effect.provide(ConfigServiceTest));
     });
   });
