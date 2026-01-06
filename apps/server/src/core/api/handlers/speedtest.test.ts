@@ -271,15 +271,23 @@ describe("SpeedTest API Handlers", () => {
     });
 
     it.effect("converts null values to undefined for optional fields", () => {
-      // Simulate QuestDB returning null for optional fields
-      const mockDataWithNulls = [
+      // QuestDB returns null for missing values, while our TypeScript types use undefined.
+      // This test verifies the handler correctly converts null -> undefined.
+      type RawMetricRow = {
+        [K in keyof MetricRow]: MetricRow[K] | null;
+      };
+
+      const mockDataWithNulls: RawMetricRow[] = [
         {
           timestamp: "2024-01-01T12:00:00Z",
-          source: "speedtest" as const,
+          source: "speedtest",
+          host: null,
           download_speed: 100.5,
           upload_speed: 50.2,
           latency: 15.3,
           jitter: null,
+          packet_loss: null,
+          connectivity_status: null,
           server_location: null,
           isp: null,
           external_ip: null,
@@ -289,8 +297,9 @@ describe("SpeedTest API Handlers", () => {
 
       const QuestDBTest = Layer.succeed(QuestDB, {
         ...createTestQuestDB(),
-        querySpeedtests: () =>
-          Effect.succeed(mockDataWithNulls as unknown as MetricRow[]),
+        // Cast to MetricRow[] since that's what the service interface expects,
+        // but QuestDB actually returns nullable fields at runtime
+        querySpeedtests: () => Effect.succeed(mockDataWithNulls as MetricRow[]),
       });
 
       return Effect.gen(function* () {

@@ -8,6 +8,7 @@ import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import {
   type PingError,
+  PingHostUnreachableError,
   type PingResult,
   PingService,
 } from "@/infrastructure/ping/service";
@@ -34,11 +35,11 @@ const TestConfigLive = Layer.succeed(ConfigService, {
 });
 
 // Mock PingService
-const mockPing = vi.fn();
+// Type the mock function signature explicitly for the PingService interface
+type PingFn = (host: string) => Effect.Effect<PingResult, PingError, never>;
+const mockPing = vi.fn<PingFn>();
 const MockPingServiceLive = Layer.succeed(PingService, {
-  ping: mockPing as unknown as (
-    host: string
-  ) => Effect.Effect<PingResult, PingError, never>,
+  ping: mockPing,
   pingWithConfig: vi.fn(),
   isReachable: vi.fn(),
 });
@@ -97,7 +98,9 @@ describe("PingExecutor", () => {
 
     it("should handle ping failure and write metric with NULL latency", async () => {
       mockPing.mockReturnValue(
-        Effect.fail({ _tag: "PingHostUnreachableError" as const })
+        Effect.fail(
+          new PingHostUnreachableError("unreachable.host", "Host unreachable")
+        )
       );
       mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
 
@@ -150,7 +153,9 @@ describe("PingExecutor", () => {
 
     it("should ignore database write errors when ping itself fails", async () => {
       mockPing.mockReturnValue(
-        Effect.fail({ _tag: "PingHostUnreachableError" as const })
+        Effect.fail(
+          new PingHostUnreachableError("unreachable.host", "Host unreachable")
+        )
       );
       mockWriteMetric.mockReturnValue(
         Effect.fail({
