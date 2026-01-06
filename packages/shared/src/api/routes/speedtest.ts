@@ -42,7 +42,7 @@ const SpeedTestStatusResponse = Schema.Struct({
   isRunning: Schema.Boolean,
 });
 
-const SpeedMetric = Schema.Struct({
+export const SpeedMetric = Schema.Struct({
   timestamp: Schema.String,
   download_speed: Schema.Number,
   upload_speed: Schema.Number,
@@ -54,7 +54,7 @@ const SpeedMetric = Schema.Struct({
   internal_ip: Schema.optional(Schema.String),
 });
 
-const SpeedTestHistoryQuery = Schema.Struct({
+export const SpeedTestHistoryQuery = Schema.Struct({
   startTime: Schema.optional(Schema.String),
   endTime: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),

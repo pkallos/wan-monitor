@@ -1,9 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Ref } from "effect";
+import {
+  getSpeedTestHistoryHandler,
+  triggerSpeedTestHandler,
+} from "@/core/api/handlers/speedtest";
 import {
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
+import type { MetricRow } from "@/infrastructure/database/questdb/model";
 import {
   SpeedTestExecutionError,
   SpeedTestService,
@@ -64,16 +69,19 @@ describe("SpeedTest API Handlers", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createTestQuestDB());
 
       return Effect.gen(function* () {
-        const speedTestService = yield* SpeedTestService;
-        const result = yield* speedTestService.runTest();
+        const isRunningRef = yield* Ref.make(false);
+        const result = yield* triggerSpeedTestHandler(isRunningRef);
 
-        expect(result.downloadSpeed).toBe(100.5);
-        expect(result.uploadSpeed).toBe(50.2);
-        expect(result.latency).toBe(15.3);
-        expect(result.jitter).toBe(2.5);
-        expect(result.serverLocation).toBe("San Francisco, CA");
-        expect(result.isp).toBe("Test ISP");
-        expect(result.externalIp).toBe("1.2.3.4");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.result.downloadMbps).toBe(100.5);
+          expect(result.result.uploadMbps).toBe(50.2);
+          expect(result.result.pingMs).toBe(15.3);
+          expect(result.result.jitter).toBe(2.5);
+          expect(result.result.server).toBe("San Francisco, CA");
+          expect(result.result.isp).toBe("Test ISP");
+          expect(result.result.externalIp).toBe("1.2.3.4");
+        }
 
         return result;
       }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
@@ -90,15 +98,13 @@ describe("SpeedTest API Handlers", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createTestQuestDB());
 
       return Effect.gen(function* () {
-        const speedTestService = yield* SpeedTestService;
-        const result = yield* Effect.either(speedTestService.runTest());
+        const isRunningRef = yield* Ref.make(false);
+        const result = yield* triggerSpeedTestHandler(isRunningRef);
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
-          expect(result.left).toBeInstanceOf(SpeedTestTimeoutError);
-          if (result.left._tag === "SpeedTestTimeoutError") {
-            expect(result.left.timeoutMs).toBe(120000);
-          }
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe("SPEED_TEST_TIMEOUT");
+          expect(result.error.message).toContain("timed out");
         }
 
         return result;
@@ -116,15 +122,13 @@ describe("SpeedTest API Handlers", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createTestQuestDB());
 
       return Effect.gen(function* () {
-        const speedTestService = yield* SpeedTestService;
-        const result = yield* Effect.either(speedTestService.runTest());
+        const isRunningRef = yield* Ref.make(false);
+        const result = yield* triggerSpeedTestHandler(isRunningRef);
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
-          expect(result.left).toBeInstanceOf(SpeedTestExecutionError);
-          if (result.left._tag === "SpeedTestExecutionError") {
-            expect(result.left.message).toBe("Network connection failed");
-          }
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe("SPEED_TEST_EXECUTION_FAILED");
+          expect(result.error.message).toBe("Network connection failed");
         }
 
         return result;
@@ -147,16 +151,19 @@ describe("SpeedTest API Handlers", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createTestQuestDB());
 
       return Effect.gen(function* () {
-        const speedTestService = yield* SpeedTestService;
-        const result = yield* speedTestService.runTest();
+        const isRunningRef = yield* Ref.make(false);
+        const result = yield* triggerSpeedTestHandler(isRunningRef);
 
-        expect(result.downloadSpeed).toBe(100.5);
-        expect(result.uploadSpeed).toBe(50.2);
-        expect(result.latency).toBe(15.3);
-        expect(result.jitter).toBeUndefined();
-        expect(result.serverLocation).toBeUndefined();
-        expect(result.isp).toBeUndefined();
-        expect(result.externalIp).toBeUndefined();
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.result.downloadMbps).toBe(100.5);
+          expect(result.result.uploadMbps).toBe(50.2);
+          expect(result.result.pingMs).toBe(15.3);
+          expect(result.result.jitter).toBeUndefined();
+          expect(result.result.server).toBeUndefined();
+          expect(result.result.isp).toBeUndefined();
+          expect(result.result.externalIp).toBeUndefined();
+        }
 
         return result;
       }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
@@ -198,14 +205,14 @@ describe("SpeedTest API Handlers", () => {
       });
 
       return Effect.gen(function* () {
-        const db = yield* QuestDB;
-        const results = yield* db.querySpeedtests({});
+        const result = yield* getSpeedTestHistoryHandler({ urlParams: {} });
 
-        expect(results).toHaveLength(2);
-        expect(results[0].download_speed).toBe(100.5);
-        expect(results[1].download_speed).toBe(95.8);
+        expect(result.data).toHaveLength(2);
+        expect(result.data[0].download_speed).toBe(100.5);
+        expect(result.data[1].download_speed).toBe(95.8);
+        expect(result.meta.count).toBe(2);
 
-        return results;
+        return result;
       }).pipe(Effect.provide(QuestDBTest));
     });
 
@@ -216,12 +223,12 @@ describe("SpeedTest API Handlers", () => {
       });
 
       return Effect.gen(function* () {
-        const db = yield* QuestDB;
-        const results = yield* db.querySpeedtests({});
+        const result = yield* getSpeedTestHistoryHandler({ urlParams: {} });
 
-        expect(results).toEqual([]);
+        expect(result.data).toEqual([]);
+        expect(result.meta.count).toBe(0);
 
-        return results;
+        return result;
       }).pipe(Effect.provide(QuestDBTest));
     });
 
@@ -247,16 +254,64 @@ describe("SpeedTest API Handlers", () => {
       });
 
       return Effect.gen(function* () {
-        const db = yield* QuestDB;
-        const results = yield* db.querySpeedtests({
-          startTime: new Date("2024-01-01T00:00:00Z"),
-          endTime: new Date("2024-01-01T23:59:59Z"),
-          limit: 100,
+        const result = yield* getSpeedTestHistoryHandler({
+          urlParams: {
+            startTime: "2024-01-01T00:00:00Z",
+            endTime: "2024-01-01T23:59:59Z",
+            limit: 100,
+          },
         });
 
-        expect(results).toHaveLength(1);
+        expect(result.data).toHaveLength(1);
+        expect(result.meta.startTime).toBe("2024-01-01T00:00:00.000Z");
+        expect(result.meta.endTime).toBe("2024-01-01T23:59:59.000Z");
 
-        return results;
+        return result;
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect("converts null values to undefined for optional fields", () => {
+      // Simulate QuestDB returning null for optional fields
+      const mockDataWithNulls = [
+        {
+          timestamp: "2024-01-01T12:00:00Z",
+          source: "speedtest" as const,
+          download_speed: 100.5,
+          upload_speed: 50.2,
+          latency: 15.3,
+          jitter: null,
+          server_location: null,
+          isp: null,
+          external_ip: null,
+          internal_ip: null,
+        },
+      ];
+
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createTestQuestDB(),
+        querySpeedtests: () =>
+          Effect.succeed(mockDataWithNulls as unknown as MetricRow[]),
+      });
+
+      return Effect.gen(function* () {
+        // Call the actual handler logic
+        const result = yield* getSpeedTestHistoryHandler({ urlParams: {} });
+
+        // Verify the handler converted null to undefined
+        expect(result.data).toHaveLength(1);
+        expect(result.data[0].jitter).toBeUndefined();
+        expect(result.data[0].server_location).toBeUndefined();
+        expect(result.data[0].isp).toBeUndefined();
+        expect(result.data[0].external_ip).toBeUndefined();
+        expect(result.data[0].internal_ip).toBeUndefined();
+
+        // Verify non-null values are preserved
+        expect(result.data[0].timestamp).toBe("2024-01-01T12:00:00Z");
+        expect(result.data[0].download_speed).toBe(100.5);
+        expect(result.data[0].upload_speed).toBe(50.2);
+        expect(result.data[0].latency).toBe(15.3);
+
+        return result;
       }).pipe(Effect.provide(QuestDBTest));
     });
   });
