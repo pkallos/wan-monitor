@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.6.0...wan-monitor-v0.6.1) (2026-01-06)
+
+
+### Bug Fixes
+
+* convert null to undefined for optional speedtest fields ([#125](https://github.com/pkallos/wan-monitor/issues/125)) ([b06902a](https://github.com/pkallos/wan-monitor/commit/b06902a13eeaff806d7971710b989c7bd4b79026))
+
 ## [0.6.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.6...wan-monitor-v0.6.0) (2026-01-06)
 
 
