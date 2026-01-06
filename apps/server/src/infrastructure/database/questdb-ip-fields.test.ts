@@ -60,8 +60,14 @@ describe("QuestDB IP Fields Schema Mapping", () => {
       // Verify we got results
       expect(result.length).toBeGreaterThan(0);
 
-      // Find our test metric (most recent speedtest entry)
-      const speedtestMetrics = result.filter((m) => m.source === "speedtest");
+      // Find our test metric - filter by source, host, and timestamp proximity
+      const testTimestamp = testMetric.timestamp.getTime();
+      const speedtestMetrics = result.filter(
+        (m) =>
+          m.source === "speedtest" &&
+          m.host === "speedtest.example.com" &&
+          Math.abs(new Date(m.timestamp).getTime() - testTimestamp) < 10_000
+      );
       expect(speedtestMetrics.length).toBeGreaterThan(0);
 
       const latestMetric = speedtestMetrics[speedtestMetrics.length - 1];
@@ -123,8 +129,14 @@ describe("QuestDB IP Fields Schema Mapping", () => {
       // Verify we got results
       expect(result.length).toBeGreaterThan(0);
 
-      // Find our test metric (most recent ping entry)
-      const pingMetrics = result.filter((m) => m.source === "ping");
+      // Find our test metric - filter by source, host, and timestamp proximity
+      const testTimestamp = testMetric.timestamp.getTime();
+      const pingMetrics = result.filter(
+        (m) =>
+          m.source === "ping" &&
+          m.host === "8.8.8.8" &&
+          Math.abs(new Date(m.timestamp).getTime() - testTimestamp) < 10_000
+      );
       expect(pingMetrics.length).toBeGreaterThan(0);
 
       const latestMetric = pingMetrics[pingMetrics.length - 1];

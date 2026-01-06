@@ -76,37 +76,6 @@ jobs:
       - name: Run typecheck
         run: pnpm typecheck
 
-  test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup Turbo cache
-        uses: actions/cache@v5
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
-      - name: Run tests
-        run: pnpm test
-
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -139,8 +108,8 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
-  integration-tests:
-    name: Integration Tests
+  coverage:
+    name: Tests (with Coverage)
     runs-on: ubuntu-latest
 
     services:
@@ -179,8 +148,8 @@ jobs:
         run: |
           echo "Waiting for QuestDB to be ready..."
           for i in {1..60}; do
-            if curl -sf http://localhost:9000/exec?query=SELECT%201 > /dev/null 2>&1; then
-              echo "QuestDB is ready!"
+            if curl -sf "http://localhost:9000/exec?query=SELECT%201" > /dev/null 2>&1 && (echo > /dev/tcp/localhost/8812) > /dev/null 2>&1; then
+              echo "QuestDB is ready (HTTP + PgWire)!"
               exit 0
             fi
             echo "Waiting... ($i/60)"
@@ -209,42 +178,11 @@ jobs:
           ) TIMESTAMP(timestamp) PARTITION BY DAY WAL;"
           echo "Table created successfully"
 
-      - name: Run integration tests
-        run: pnpm test
-        env:
-          QUESTDB_AVAILABLE: 'true'
-          DB_HOST: localhost
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup Turbo cache
-        uses: actions/cache@v5
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
       - name: Run tests with coverage
         run: pnpm test:coverage
+        env:
+          DB_HOST: localhost
+          QUESTDB_AVAILABLE: 'true'
 
       - name: Upload web coverage report
         uses: actions/upload-artifact@v6

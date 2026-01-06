@@ -1,5 +1,5 @@
 import { Box, Stat, StatGroup, StatLabel, StatNumber } from "@chakra-ui/react";
-import type { SpeedMetricType } from "@wan-monitor/shared";
+import type { Metric } from "@wan-monitor/shared";
 import {
   CartesianGrid,
   Legend,
@@ -17,7 +17,7 @@ export interface SpeedChartProps {
   endTime?: Date;
   syncId?: string;
   compact?: boolean;
-  data?: SpeedMetricType[];
+  data?: Metric[];
   isLoading?: boolean;
 }
 
@@ -35,7 +35,7 @@ interface Stats {
   maxUpload: string;
 }
 
-function calculateStats(data: SpeedMetricType[]): Stats {
+function calculateStats(data: Metric[]): Stats {
   if (data.length === 0) {
     return {
       avgDownload: "-",
@@ -80,7 +80,7 @@ function calculateStats(data: SpeedMetricType[]): Stats {
   };
 }
 
-function formatDataForChart(data: SpeedMetricType[]): ChartDataPoint[] {
+function formatDataForChart(data: Metric[]): ChartDataPoint[] {
   return [...data]
     .sort(
       (a, b) =>

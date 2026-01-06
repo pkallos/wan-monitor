@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import type { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
 import { mbpsToBps } from "@shared/metrics";
-import type { SpeedMetricType } from "@wan-monitor/shared";
+import type { SpeedMetric } from "@wan-monitor/shared";
 import { Effect, Ref, type Schema } from "effect";
 import { DbUnavailable, QuestDB } from "@/infrastructure/database/questdb";
 import {
@@ -135,7 +135,7 @@ export const getSpeedTestHistoryHandler = ({
       })
     );
 
-    const speedMetrics: SpeedMetricType[] = data.map((m) => ({
+    const speedMetrics: SpeedMetric[] = data.map((m) => ({
       timestamp: m.timestamp,
       download_speed: m.download_speed ?? 0,
       upload_speed: m.upload_speed ?? 0,

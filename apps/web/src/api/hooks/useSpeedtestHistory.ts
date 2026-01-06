@@ -59,6 +59,8 @@ export function useSpeedtestHistory(options: UseSpeedtestHistoryOptions = {}) {
   return {
     ...query,
     isDbUnavailable,
-    speedMetrics: query.data?.data ? [...query.data.data] : [],
+    speedMetrics: query.data?.data
+      ? query.data.data.map((m) => ({ ...m, source: "speedtest" as const }))
+      : [],
   };
 }

@@ -1,13 +1,14 @@
 import { ChakraProvider } from "@chakra-ui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
-import type { PingMetric } from "@wan-monitor/shared";
+import type { Metric } from "@wan-monitor/shared";
 import { describe, expect, it } from "vitest";
 import { LatencyChart } from "@/components/charts/LatencyChart";
 
-const mockData: PingMetric[] = [
+const mockData: Metric[] = [
   {
     timestamp: "2024-01-01T12:00:00.000Z",
+    source: "ping",
     host: "8.8.8.8",
     latency: 15.5,
     packet_loss: 0,
@@ -16,6 +17,7 @@ const mockData: PingMetric[] = [
   },
   {
     timestamp: "2024-01-01T12:01:00.000Z",
+    source: "ping",
     host: "8.8.8.8",
     latency: 16.2,
     packet_loss: 0,
@@ -78,9 +80,10 @@ describe("LatencyChart", () => {
   it("should fill timeline with null values for missing data points", () => {
     const startTime = new Date("2024-01-01T12:00:00.000Z");
     const endTime = new Date("2024-01-01T12:15:00.000Z");
-    const dataWithGaps: PingMetric[] = [
+    const dataWithGaps: Metric[] = [
       {
         timestamp: "2024-01-01T12:00:00.000Z",
+        source: "ping",
         host: "8.8.8.8",
         latency: 15.5,
         packet_loss: 0,
@@ -89,6 +92,7 @@ describe("LatencyChart", () => {
       },
       {
         timestamp: "2024-01-01T12:10:00.000Z",
+        source: "ping",
         host: "8.8.8.8",
         latency: 18.2,
         packet_loss: 0,
