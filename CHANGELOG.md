@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.6...wan-monitor-v0.6.0) (2026-01-06)
+
+
+### Features
+
+* migrate web API client to Effect-TS HttpApiClient ([a126783](https://github.com/pkallos/wan-monitor/commit/a126783ed474bc6dc693b16bbd57d179a3bb879c))
+* migrate web API client to Effect-TS HttpApiClient ([bd8162c](https://github.com/pkallos/wan-monitor/commit/bd8162c4bb463f4d02e96f942030e9b17fdb38ff))
+
+
+### Bug Fixes
+
+* reduce ping interval from 60s to 30s for better granularity ([#124](https://github.com/pkallos/wan-monitor/issues/124)) ([da369eb](https://github.com/pkallos/wan-monitor/commit/da369ebd940370109c8ef6cbb48c9d755a4b5cca))
+
 ## [0.5.6](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.5.5...wan-monitor-v0.5.6) (2026-01-03)
 
 
