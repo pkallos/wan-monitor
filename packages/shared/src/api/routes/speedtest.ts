@@ -69,6 +69,15 @@ const SpeedTestHistoryResponse = Schema.Struct({
   }),
 });
 
+// Export TypeScript types derived from schemas
+export type SpeedMetricFromSchema = Schema.Schema.Type<typeof SpeedMetric>;
+export type SpeedTestResponseType = Schema.Schema.Type<
+  typeof SpeedTestResponse
+>;
+export type SpeedTestHistoryResponseType = Schema.Schema.Type<
+  typeof SpeedTestHistoryResponse
+>;
+
 export const SpeedTestApiGroup = HttpApiGroup.make("speedtest")
   .prefix("/speedtest")
   .add(

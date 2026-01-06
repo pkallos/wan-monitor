@@ -1,6 +1,8 @@
-import type { ConnectivityStatusResponse, Granularity } from "@shared/api";
 import { useQuery } from "@tanstack/react-query";
-import { apiClient } from "@/api/client";
+import type { Granularity } from "@wan-monitor/shared";
+import { Effect } from "effect";
+import { runEffectWithError } from "@/api/effect-bridge";
+import { WanMonitorClient } from "@/api/effect-client";
 import { getGranularityForRange } from "@/utils/granularity";
 
 interface UseConnectivityStatusOptions {
@@ -27,15 +29,20 @@ export function useConnectivityStatus({
       endTime?.toISOString(),
       granularity,
     ],
-    queryFn: async () => {
-      const params: Record<string, string | undefined> = {};
-      if (startTime) params.startTime = startTime.toISOString();
-      if (endTime) params.endTime = endTime.toISOString();
-      if (granularity) params.granularity = granularity;
-
-      return apiClient.get<ConnectivityStatusResponse>(
-        "/connectivity-status",
-        params
+    queryFn: () => {
+      return runEffectWithError(
+        Effect.gen(function* () {
+          const client = yield* WanMonitorClient;
+          const response =
+            yield* client.connectivityStatus.getConnectivityStatus({
+              urlParams: {
+                startTime: startTime?.toISOString(),
+                endTime: endTime?.toISOString(),
+                granularity,
+              },
+            });
+          return response;
+        })
       );
     },
     refetchInterval,

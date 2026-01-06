@@ -39,6 +39,12 @@ const GetMetricsResponse = Schema.Struct({
   meta: MetaSchema,
 });
 
+// Export TypeScript types derived from schemas
+export type MetricFromSchema = Schema.Schema.Type<typeof MetricSchema>;
+export type GetMetricsResponseType = Schema.Schema.Type<
+  typeof GetMetricsResponse
+>;
+
 export const MetricsApiGroup = HttpApiGroup.make("metrics")
   .prefix("/metrics")
   .add(

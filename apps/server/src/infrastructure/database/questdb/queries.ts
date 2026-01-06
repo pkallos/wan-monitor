@@ -1,4 +1,4 @@
-import { VALID_GRANULARITIES } from "@shared/api";
+import { VALID_GRANULARITIES } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
 import type {

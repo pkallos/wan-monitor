@@ -7,20 +7,6 @@ export interface PingMetric {
   jitter?: number;
 }
 
-export interface PingMetricsResponse {
-  data: PingMetric[];
-  meta: {
-    startTime: string;
-    endTime: string;
-    count: number;
-  };
-}
-
-export interface ApiError {
-  error: string;
-  message: string;
-}
-
 export interface SpeedMetric {
   timestamp: string;
   download_speed: number; // Mbps
@@ -31,15 +17,6 @@ export interface SpeedMetric {
   isp?: string;
   external_ip?: string;
   internal_ip?: string;
-}
-
-export interface SpeedMetricsResponse {
-  data: SpeedMetric[];
-  meta: {
-    startTime: string;
-    endTime: string;
-    count: number;
-  };
 }
 
 export interface Metric {
@@ -56,15 +33,6 @@ export interface Metric {
   isp?: string;
   external_ip?: string;
   internal_ip?: string;
-}
-
-export interface MetricsResponse {
-  data: Metric[];
-  meta: {
-    startTime: string;
-    endTime: string;
-    count: number;
-  };
 }
 
 export type Granularity = "1m" | "5m" | "15m" | "1h" | "6h" | "1d";
@@ -86,14 +54,4 @@ export interface ConnectivityStatusPoint {
   upPercentage: number;
   downPercentage: number;
   degradedPercentage: number;
-}
-
-export interface ConnectivityStatusResponse {
-  data: ConnectivityStatusPoint[];
-  meta: {
-    startTime: string;
-    endTime: string;
-    count: number;
-    uptimePercentage: number;
-  };
 }

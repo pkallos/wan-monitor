@@ -17,7 +17,7 @@ import {
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { FiEye, FiEyeOff } from "react-icons/fi";
-import { ApiError } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import { useAuth } from "@/context/AuthContext";
 
 export function Login() {

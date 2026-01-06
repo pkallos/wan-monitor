@@ -117,6 +117,12 @@ importers:
       '@chakra-ui/react':
         specifier: ^2.8.2
         version: 2.10.9(@emotion/react@11.14.0(@types/react@18.3.27)(react@18.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.27)(react@18.3.1))(@types/react@18.3.27)(react@18.3.1))(@types/react@18.3.27)(framer-motion@10.18.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@effect/platform':
+        specifier: ^0.94.1
+        version: 0.94.1(effect@3.19.14)
+      '@effect/schema':
+        specifier: ^0.75.5
+        version: 0.75.5(effect@3.19.14)
       '@emotion/react':
         specifier: ^11.11.3
         version: 11.14.0(@types/react@18.3.27)(react@18.3.1)
@@ -126,6 +132,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.16
         version: 5.90.16(react@18.3.1)
+      effect:
+        specifier: ^3.19.14
+        version: 3.19.14
       framer-motion:
         specifier: ^10.18.0
         version: 10.18.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

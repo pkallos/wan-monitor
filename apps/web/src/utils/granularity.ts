@@ -1,4 +1,4 @@
-import type { Granularity } from "@shared/api";
+import type { Granularity } from "@wan-monitor/shared";
 
 /**
  * Calculate appropriate granularity based on time range

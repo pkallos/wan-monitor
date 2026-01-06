@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { ReactNode } from "react";
 import {
   createContext,
@@ -8,7 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { apiClient } from "@/api/client";
+import { runEffectWithError } from "@/api/effect-bridge";
+import { WanMonitorClient } from "@/api/effect-client";
 import { TOKEN_KEY } from "@/constants/auth";
 
 interface AuthState {
@@ -22,21 +24,6 @@ interface AuthContextValue extends AuthState {
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
-}
-
-interface LoginResponse {
-  token: string;
-  expiresAt: string | null;
-  username: string;
-}
-
-interface AuthStatusResponse {
-  authRequired: boolean;
-}
-
-interface MeResponse {
-  username: string;
-  authenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -66,8 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = useCallback(async () => {
     try {
       // First check if auth is required
-      const statusResponse =
-        await apiClient.get<AuthStatusResponse>("/auth/status");
+      const statusResponse = await runEffectWithError(
+        Effect.gen(function* () {
+          const client = yield* WanMonitorClient;
+          return yield* client.auth.status();
+        })
+      );
 
       clearRetry();
 
@@ -94,7 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Verify token with server
-      const meResponse = await apiClient.get<MeResponse>("/auth/me");
+      const meResponse = await runEffectWithError(
+        Effect.gen(function* () {
+          const client = yield* WanMonitorClient;
+          return yield* client.auth.me();
+        })
+      );
       setState({
         isAuthenticated: meResponse.authenticated,
         isLoading: false,
@@ -124,10 +120,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearRetry]);
 
   const login = useCallback(async (username: string, password: string) => {
-    const response = await apiClient.post<LoginResponse>("/auth/login", {
-      username,
-      password,
-    });
+    const response = await runEffectWithError(
+      Effect.gen(function* () {
+        const client = yield* WanMonitorClient;
+        return yield* client.auth.login({
+          payload: {
+            username,
+            password,
+          },
+        });
+      })
+    );
 
     localStorage.setItem(TOKEN_KEY, response.token);
     setState({
@@ -140,7 +143,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await apiClient.post("/auth/logout", {});
+      await runEffectWithError(
+        Effect.gen(function* () {
+          const client = yield* WanMonitorClient;
+          return yield* client.auth.logout();
+        })
+      );
     } finally {
       localStorage.removeItem(TOKEN_KEY);
       setState({
