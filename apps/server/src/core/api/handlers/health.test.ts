@@ -1,19 +1,17 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DateTime, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
+import { getLiveHandler, getReadyHandler } from "@/core/api/handlers/health";
 import {
-  DatabaseConnectionError,
-  DbUnavailable,
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
+import { DatabaseConnectionError } from "@/infrastructure/database/questdb/errors";
 
-const createTestQuestDBService = (
-  healthEffect: Effect.Effect<
-    { connected: boolean; uptime: number },
-    DatabaseConnectionError | DbUnavailable
-  >
-): QuestDBService => ({
-  health: () => healthEffect,
+const createMockQuestDB = (healthy: boolean): QuestDBService => ({
+  health: () =>
+    healthy
+      ? Effect.succeed({ connected: true, version: "1.0.0", uptime: 100 })
+      : Effect.fail(new DatabaseConnectionError("Database connection failed")),
   writeMetric: () => Effect.void,
   queryMetrics: () => Effect.succeed([]),
   querySpeedtests: () => Effect.succeed([]),
@@ -21,103 +19,41 @@ const createTestQuestDBService = (
   close: () => Effect.void,
 });
 
-describe("Health API Handlers", () => {
-  describe("getReady handler", () => {
+describe("Health Handlers", () => {
+  describe("getReady", () => {
     it.effect("returns ok status when database is healthy", () => {
-      const QuestDbTest = Layer.succeed(
-        QuestDB,
-        createTestQuestDBService(
-          Effect.succeed({ connected: true, uptime: 100 })
-        )
-      );
+      const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(true));
 
       return Effect.gen(function* () {
-        const db = yield* QuestDB;
-        yield* db.health();
-        const result = {
-          status: "ok" as const,
-          timestamp: DateTime.unsafeNow(),
-        };
+        const result = yield* getReadyHandler();
 
         expect(result.status).toBe("ok");
         expect(result.timestamp).toBeDefined();
-        return result;
-      }).pipe(
-        Effect.catchAll((error) => Effect.fail(`Database unhealthy: ${error}`)),
-        Effect.provide(QuestDbTest)
-      );
+      }).pipe(Effect.provide(QuestDBTest));
     });
 
-    it.effect("fails when database health check fails", () => {
-      const QuestDbTest = Layer.succeed(
-        QuestDB,
-        createTestQuestDBService(
-          Effect.fail(new DatabaseConnectionError("Connection refused"))
-        )
-      );
+    it.effect("fails when database is unhealthy", () => {
+      const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(false));
 
       return Effect.gen(function* () {
-        const db = yield* QuestDB;
-        yield* db.health();
-        return {
-          status: "ok" as const,
-          timestamp: DateTime.unsafeNow(),
-        };
-      }).pipe(
-        Effect.catchAll((error) => Effect.fail(`Database unhealthy: ${error}`)),
-        Effect.either,
-        Effect.map((result) => {
-          expect(result._tag).toBe("Left");
-          if (result._tag === "Left") {
-            expect(result.left).toContain("Database unhealthy");
-          }
-          return result;
-        }),
-        Effect.provide(QuestDbTest)
-      );
-    });
+        const result = yield* Effect.either(getReadyHandler());
 
-    it.effect("fails when database is unavailable", () => {
-      const QuestDbTest = Layer.succeed(
-        QuestDB,
-        createTestQuestDBService(
-          Effect.fail(new DbUnavailable("Database not connected"))
-        )
-      );
-
-      return Effect.gen(function* () {
-        const db = yield* QuestDB;
-        yield* db.health();
-        return {
-          status: "ok" as const,
-          timestamp: DateTime.unsafeNow(),
-        };
-      }).pipe(
-        Effect.catchAll((error) => Effect.fail(`Database unhealthy: ${error}`)),
-        Effect.either,
-        Effect.map((result) => {
-          expect(result._tag).toBe("Left");
-          if (result._tag === "Left") {
-            expect(result.left).toContain("Database unhealthy");
-          }
-          return result;
-        }),
-        Effect.provide(QuestDbTest)
-      );
+        expect(result._tag).toBe("Left");
+        if (result._tag === "Left") {
+          expect(result.left).toContain("Database unhealthy");
+        }
+      }).pipe(Effect.provide(QuestDBTest));
     });
   });
 
-  describe("getLive handler", () => {
-    it.effect("always returns ok status regardless of database state", () => {
-      const value = {
-        status: "ok" as const,
-        timestamp: DateTime.unsafeNow(),
-      };
+  describe("getLive", () => {
+    it.effect("always returns ok status", () => {
+      return Effect.gen(function* () {
+        const result = yield* getLiveHandler();
 
-      expect(value.status).toBe("ok");
-      expect(value.timestamp).toBeDefined();
-
-      return Effect.succeed(value);
+        expect(result.status).toBe("ok");
+        expect(result.timestamp).toBeDefined();
+      });
     });
   });
 });

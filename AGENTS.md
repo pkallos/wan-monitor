@@ -99,11 +99,17 @@ chore: update dependencies to latest stable versions
 When the feature is complete:
 
 1. **Verify locally:**
-   - Run `pnpm lint` - must pass
-   - Run `pnpm format` - must pass
-   - Run `pnpm test` - all tests must pass
+   - Run `pnpm dev` - must start successfully without errors
+   - Run `pnpm lint` - must pass and fix any issues and warnings
+   - Run `pnpm format` - must pass and fix any issues and warnings
+   - Run `pnpm test` - all tests must pass 
+   - Run `pnpm typecheck` - must pass and fix any issues and warnings
    - Run `pnpm build` - must build successfully
    - Run `pnpm docker:build` - docker image must build successfully
+   - Test the docker image:
+     ```bash
+     docker run -d --name wan-monitor-test -p 8080:80 wan-monitor:local && sleep 15 && curl http://localhost:8080/api/health/live && docker stop wan-monitor-test && docker rm wan-monitor-test
+     ```
 
 2. **Push the branch:**
    ```bash

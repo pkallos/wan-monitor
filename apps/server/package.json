@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsup",
     "start": "node ../../dist/server/index.js",
     "test": "vitest run",
