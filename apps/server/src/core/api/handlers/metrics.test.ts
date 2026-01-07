@@ -11,6 +11,7 @@ const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
   health: () =>
     Effect.succeed({ connected: true, version: "1.0.0", uptime: 100 }),
   writeMetric: () => Effect.void,
+  flush: () => Effect.void,
   queryMetrics: () => Effect.succeed(mockData),
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),

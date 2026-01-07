@@ -27,10 +27,22 @@ export const mapMetricRow = (row: Record<string, unknown>): MetricRow =>
     upload_speed: row.upload_bandwidth
       ? (row.upload_bandwidth as number) / 1_000_000
       : undefined,
-    server_location: row.server_location as string | undefined,
-    isp: row.isp as string | undefined,
-    external_ip: row.external_ip as string | undefined,
-    internal_ip: row.internal_ip as string | undefined,
+    server_location:
+      row.server_location !== null && row.server_location !== undefined
+        ? (row.server_location as string)
+        : undefined,
+    isp:
+      row.isp !== null && row.isp !== undefined
+        ? (row.isp as string)
+        : undefined,
+    external_ip:
+      row.external_ip !== null && row.external_ip !== undefined
+        ? (row.external_ip as string)
+        : undefined,
+    internal_ip:
+      row.internal_ip !== null && row.internal_ip !== undefined
+        ? (row.internal_ip as string)
+        : undefined,
   }) satisfies MetricRow;
 
 export const mapConnectivityStatusRow = (

@@ -38,6 +38,7 @@ export interface QuestDBService {
   readonly writeMetric: (
     metric: NetworkMetric
   ) => Effect.Effect<void, DatabaseWriteError | DbUnavailable>;
+  readonly flush: () => Effect.Effect<void, DatabaseWriteError | DbUnavailable>;
   readonly queryMetrics: (
     params: QueryMetricsParams
   ) => Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable>;
@@ -224,10 +225,35 @@ const make = Effect.gen(function* () {
       } satisfies DatabaseHealth;
     });
 
+  const flush = (): Effect.Effect<void, DatabaseWriteError | DbUnavailable> =>
+    Effect.gen(function* () {
+      const conn = yield* connection.getConnection;
+
+      yield* Effect.tryPromise({
+        try: async () => {
+          await conn.sender.flush();
+        },
+        catch: (error) => {
+          const msg = errorMessage(error);
+          if (isLikelyConnectionError(msg)) {
+            return new DbUnavailable(msg);
+          }
+          return new DatabaseWriteError(`Failed to flush metrics: ${msg}`);
+        },
+      });
+    }).pipe(
+      Effect.catchTag("DbUnavailable", (e) =>
+        connection
+          .markDisconnected(e.message)
+          .pipe(Effect.zipRight(Effect.fail(e)))
+      )
+    );
+
   const close = (): Effect.Effect<void> => connection.close;
 
   return {
     writeMetric,
+    flush,
     queryMetrics,
     querySpeedtests,
     queryConnectivityStatus,

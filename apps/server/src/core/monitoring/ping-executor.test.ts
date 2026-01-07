@@ -48,6 +48,7 @@ const MockPingServiceLive = Layer.succeed(PingService, {
 const mockWriteMetric = vi.fn();
 const MockQuestDBLive = Layer.succeed(QuestDB, {
   writeMetric: mockWriteMetric,
+  flush: vi.fn(),
   queryMetrics: vi.fn(),
   querySpeedtests: vi.fn(),
   queryConnectivityStatus: vi.fn(),
