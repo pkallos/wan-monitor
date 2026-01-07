@@ -32,7 +32,7 @@
     "format:check": "turbo run format:check",
     "check": "biome check --write .",
     "docker:build": "docker build -t wan-monitor:local .",
-    "prepare": "husky",
+    "prepare": "husky && effect-language-service patch",
     "postinstall": "sh scripts/patch-speedtest-net.sh"
   },
   "devDependencies": {

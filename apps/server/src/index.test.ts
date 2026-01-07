@@ -1,5 +1,9 @@
-import { Effect } from "effect";
+import { Cause, Data, Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
+
+class TestRegistrationError extends Data.TaggedError("TestRegistrationError")<{
+  readonly cause: unknown;
+}> {}
 
 /**
  * Regression test for PHI-31: TypeError: evaluate(...).then is not a function
@@ -27,7 +31,7 @@ describe("Server Startup - Effect.tryPromise Usage", () => {
       try: async () => {
         await mockRegister();
       },
-      catch: (error) => new Error(`Registration failed: ${error}`),
+      catch: (error) => new TestRegistrationError({ cause: error }),
     });
 
     // Verify the Effect can be run without throwing
@@ -78,10 +82,19 @@ describe("Server Startup - Effect.tryPromise Usage", () => {
       try: async () => {
         throw new Error(errorMessage);
       },
-      catch: (error) => new Error(`Caught: ${error}`),
+      catch: (error) => new TestRegistrationError({ cause: error }),
     });
 
-    // Verify the effect fails with our error
-    await expect(Effect.runPromise(failingEffect)).rejects.toThrow("Caught:");
+    // Verify the effect fails with our tagged error
+    const exit = await Effect.runPromiseExit(failingEffect);
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      const cause = exit.cause;
+      expect(Cause.isFailType(cause)).toBe(true);
+      if (Cause.isFailType(cause)) {
+        expect(cause.error).toBeInstanceOf(TestRegistrationError);
+        expect(cause.error._tag).toBe("TestRegistrationError");
+      }
+    }
   });
 });
