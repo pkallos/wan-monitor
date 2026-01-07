@@ -1,0 +1,25 @@
+services:
+  questdb-e2e:
+    image: questdb/questdb:9.2.3
+    container_name: wan-monitor-questdb-e2e
+    ports:
+      - '9100:9000'  # REST API and Web Console (mapped to avoid conflict)
+      - '9109:9009'  # InfluxDB line protocol (mapped to avoid conflict)
+      - '8912:8812'  # PostgreSQL wire protocol (mapped to avoid conflict)
+      - '9103:9003'  # Min health server (mapped to avoid conflict)
+    environment:
+      - QDB_TELEMETRY_ENABLED=false
+      # Suppress INFO/ADVISORY logs, keep ERROR and above
+      - QDB_LOG_W_STDOUT_LEVEL=ERROR
+    volumes:
+      - questdb-e2e-data:/var/lib/questdb
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf "http://localhost:9000/exec?query=SELECT%201" > /dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  questdb-e2e-data:
+    driver: local
