@@ -34,12 +34,11 @@ COPY packages/shared/package.json packages/shared/package.json
 COPY scripts scripts
 COPY patches patches
 
-# Install dependencies with BuildKit cache mount for pnpm store
-# This persists the pnpm store across builds, avoiding re-downloads
-# The key optimization: by copying source AFTER install (see below), this layer
-# only invalidates when package files change, not when source code changes
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+# Install ALL dependencies (dev + prod) - this layer caches when package files don't change
+# NOTE: We intentionally DON'T use --mount=type=cache here because cache mounts
+# prevent layer caching from working across CI runs. By keeping deps in the layer,
+# the entire layer can be cached and reused across different CI runners.
+RUN pnpm install --frozen-lockfile
 
 # -----------------------------------------------------------------------------
 # Stage 2: Build All (Frontend + Backend)
@@ -57,18 +56,20 @@ COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
 # Ensure hoisted deps are resolved during builds inside Docker
 ENV NODE_PATH=/app/node_modules
 
-# Reinstall after sources are copied to ensure workspace links remain valid in this layer
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+# Reinstall after sources are copied to ensure workspace links remain valid
+# This is fast because deps are already in node_modules from the deps stage
+RUN pnpm install --frozen-lockfile
 
 # Build all packages (frontend + backend + shared)
 RUN pnpm build
 
 # Deploy web and server with production dependencies using pnpm deploy
 # This creates standalone directories with proper node_modules structure
-# Mount the pnpm store so deploy can reuse already-compiled native modules
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm --filter=@wan-monitor/web deploy --prod /tmp/web-deploy && \
+# NOTE: pnpm deploy reuses packages from the existing pnpm store in node_modules,
+# but native modules like lzma-native must still be compiled for the target arch.
+# This step takes ~2-3min on AMD64 and ~7-8min on ARM64 (QEMU emulation).
+# The entire layer output is cached, so subsequent builds with no changes are instant.
+RUN pnpm --filter=@wan-monitor/web deploy --prod /tmp/web-deploy && \
     pnpm --filter=@wan-monitor/server deploy --prod /tmp/server-deploy
 
 # -----------------------------------------------------------------------------
