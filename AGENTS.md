@@ -21,6 +21,11 @@ When working on this project, agents should:
 4. **Document Changes**: Update documentation when adding features or changing behavior
 5. **Follow Standards**: Adhere to TypeScript, React, and project-specific best practices
 
+## UI/Styling Standards
+
+- **Tailwind CSS**: Lean on Tailwind CSS styles for all styling (check documentation online if necessary) and keep it coherent
+- **Chakra UI**: Lean on Chakra UI components (check documentation online if necessary); only use `sx={{}}` on components as a last resort
+
 ## Development Workflow
 
 ### 1. Task Planning
@@ -30,7 +35,7 @@ Before working on any feature:
 - The task should include a **full detailed description** of what needs to be done
 - Tasks should be scoped to be completable in **one PR with a simple changeset**
 - Break down large features into multiple smaller, incremental tasks
-- **When you start working on a task, immediately update its Linear status to "In Progress"**
+- Keep Linear status synchronized (see **Linear Task Status Management** section)
 
 ### 2. Branch Management
 
@@ -39,12 +44,6 @@ For each task:
   ```bash
   git fetch origin
   git checkout -b feat/feature-name origin/main
-  ```
-  Or if already on main, pull first:
-  ```bash
-  git checkout main
-  git pull origin main
-  git checkout -b feat/feature-name
   ```
 
 - Use conventional branch naming:
@@ -77,17 +76,6 @@ For each task:
 - `perf`: Performance improvements
 - `ci`: CI/CD configuration changes
 
-**Examples:**
-```
-feat: add real-time latency monitoring with WebSocket updates
-
-fix: resolve dark mode styling issue in metrics dashboard
-
-test: add E2E tests for speed test scheduling
-
-chore: update dependencies to latest stable versions
-```
-
 ### 4. Single Commit Per Feature
 
 - All changes for a task should be in **ONE commit** before pushing
@@ -98,18 +86,34 @@ chore: update dependencies to latest stable versions
 
 When the feature is complete:
 
-1. **Verify locally:**
-   - Run `pnpm dev` - must start successfully without errors
-   - Run `pnpm lint` - must pass and fix any issues and warnings
-   - Run `pnpm format` - must pass and fix any issues and warnings
-   - Run `pnpm test` - all tests must pass 
-   - Run `pnpm typecheck` - must pass and fix any issues and warnings
-   - Run `pnpm build` - must build successfully
-   - Run `pnpm docker:build` - docker image must build successfully
-   - Test the docker image:
-     ```bash
-     docker run -d --name wan-monitor-test -p 8080:80 wan-monitor:local && sleep 15 && curl http://localhost:8080/api/health/live && docker stop wan-monitor-test && docker rm wan-monitor-test
-     ```
+1. **Verify locally (MANDATORY - DO NOT SKIP):**
+
+   Execute these commands IN ORDER and ensure ALL pass:
+
+   ```bash
+   # 1. Lint Check - must pass with zero errors (warnings acceptable)
+   pnpm lint
+
+   # 2. Format Check - must pass, all files properly formatted
+   pnpm format
+
+   # 3. Unit Tests - must pass, all tests passing, no skipped tests
+   pnpm test
+
+   # 4. Type Check - must pass with zero errors
+   pnpm typecheck
+
+   # 5. Build - must succeed
+   pnpm build
+
+   # 6. Docker Build - must build successfully
+   pnpm docker:build
+
+   # 7. Test Docker Image
+   docker run -d --name wan-monitor-test -p 8080:80 wan-monitor:local && sleep 15 && curl http://localhost:8080/api/health/live && docker stop wan-monitor-test && docker rm wan-monitor-test
+   ```
+
+   **CRITICAL:** If ANY step fails, fix it before pushing. Do NOT push with failing checks.
 
 2. **Push the branch:**
    ```bash
@@ -129,7 +133,25 @@ When the feature is complete:
    - Squash all commits into one before re-requesting review
    - Once approved, the PR will be merged
 
-5. **After Merge:**
+5. **Making Changes to an Existing PR:**
+
+   If you need to make changes after the initial push:
+   1. Make the changes
+   2. Run ALL CI checks again (lint, format, test, typecheck, build)
+   3. Review the changeset (remove temp files)
+   4. Squash all commits into one (see **Non-Interactive Commands** section for how)
+   5. Force push: `git push -f origin branch-name`
+
+   **If CI fails after pushing:**
+   1. Check the CI logs - identify the exact failure
+   2. Reproduce locally - run the failing command
+   3. Fix the issue
+   4. Run ALL checks again - not just the one that failed
+   5. Squash and force push
+
+   **NEVER push multiple "fix CI" commits. Always squash.**
+
+6. **After Merge:**
    - Delete the feature branch
    - **Update the Linear task status to "Done"** (when user confirms PR is merged)
    - Move on to the next task
@@ -211,115 +233,87 @@ When working on Linear tasks, agents should:
 - **Update tags if scope changes** - Adjust labels if the work evolves during implementation
 - **Use tags for prioritization** - Consider tags when selecting which tasks to work on
 
+## Pre-Push Review (MANDATORY)
+
+Before committing, run `git status` and `git diff` to review ALL changes. Review the entire changeset against the original goal, and give yourself a constructive code review as if you were a Principal Engineer. Implement feedback that aligns with the original goal and project standards.
+
+### Files to REMOVE (never commit these):
+- ❌ Markdown files created for context (e.g., `notes.md`, `progress.md`, `temp.md`)
+- ❌ Debug files (e.g., `debug.log`, `test-output.txt`)
+- ❌ IDE-specific files (e.g., `.vscode/`, `.idea/`)
+- ❌ Temporary test files (e.g., `temp.test.ts`, `scratch.tsx`)
+
+### Verify in All Files in the Changeset:
+- ✅ Contains only production code changes relevant to the task
+- ✅ Contains only relevant test files for the changes made
+- ✅ No commented-out code blocks
+- ✅ No `console.log()` or debug statements
+- ✅ No `TODO` or `FIXME` comments without corresponding issues
+
+### Quality Checklist (answer YES to ALL before pushing):
+
+**Functionality:**
+- [ ] Does the code accomplish the original goal/issue?
+- [ ] Does it work in both light AND dark mode?
+- [ ] Does it work on different screen sizes?
+- [ ] Are there any edge cases not handled?
+
+**Code Quality:**
+- [ ] Is the code readable and well-organized?
+- [ ] Are variable/function names descriptive?
+- [ ] Is there any duplicated code that should be extracted?
+- [ ] Are there any overly complex functions that should be simplified?
+- [ ] Does it follow existing patterns in the codebase?
+
+**Performance:**
+- [ ] Are there any unnecessary re-renders?
+- [ ] Are there any memory leaks (event listeners, timers)?
+- [ ] Are expensive operations memoized/cached?
+
+**Security:**
+- [ ] Is user input validated?
+- [ ] Are there any XSS vulnerabilities?
+- [ ] Are API keys/secrets properly handled?
+
+**If you answer NO to any question, fix it before pushing.**
+
 ## Code Quality Standards
 
-### Testing Requirements
+### Testing Standards
 
-- **New features** must include tests
+**Requirements:**
+- **New features** must include unit tests for all new functions/components
 - **Bug fixes** must include regression tests
+- Tests must cover edge cases, not just happy paths
 - Aim for high test coverage on critical paths
 - Use Vitest for unit tests
-- Consider E2E tests for user-facing features
 
-### Code Style
+**Quality Standards (MANDATORY - NO EXCEPTIONS):**
 
-- Use Biome.js for linting and formatting (`pnpm check`)
-- Follow TypeScript best practices
-- Prefer functional components and hooks in React
-- Keep components small and focused
-- Use descriptive variable and function names
+- **NEVER** skip tests (`test.skip`, `it.skip`, `describe.skip`)
+- **NEVER** commit `.only` tests (`test.only`, `it.only`)
+- **NEVER** create tests that don't assert anything meaningful
+- **NEVER** create happy-path-only tests; tests should provide meaningful value
+- **NEVER** compromise functionality to make tests pass (unless fixing a real bug)
+- **NEVER** delete tests to make tests pass (unless corresponding code was removed)
+- **NEVER** rewrite real code just to make tests pass (unless tests identified a real bug)
+- Tests should fail if the feature breaks
+- Tests should be maintainable and readable
+- Always keep tests in sync with code
+- Always keep code in sync with tests
+- Keep linting rules with minimal ignores
 
 ### Documentation
 
 - Update README.md when adding new features
 - Add JSDoc comments for complex functions
 - Update API documentation if backend changes are made
-- Keep REQUIREMENTS.md in sync with implemented features
-
-## CI/CD Pipeline
-
-Before pushing code, ensure all checks pass locally:
-
-```bash
-# Run all checks
-pnpm lint
-pnpm format
-pnpm test
-pnpm build
-```
-
-## Git Best Practices
-
-1. **Keep commits atomic** - one logical change per commit
-2. **Write clear commit messages** - follow conventional commits
-3. **Rebase before merging** - keep history clean
-4. **Squash feature commits** - one commit per PR
-5. **Never commit sensitive data** - use environment variables
 
 ## Non-Interactive Commands (CRITICAL)
 
-**AI agents cannot interact with terminal prompts or editors.** Commands that open vim, nano, or wait for user input will hang indefinitely in Windsurf.
+**AI agents cannot interact with terminal prompts or editors.** Commands that open vim, nano, or wait for user input will hang indefinitely.
 
-### Commands to AVOID
-
-| ❌ Avoid | Why |
-|----------|-----|
-| `git rebase -i` | Opens editor for interactive rebase |
-| `git commit` (without `-m`) | Opens editor for commit message |
-| `vim`, `nano`, `vi` | Interactive editors |
-| `less`, `more` | Interactive pagers |
-| Any command prompting for input | Hangs waiting for response |
-
-### Non-Interactive Alternatives
-
-**Squashing commits** (instead of `git rebase -i`):
-```bash
-# Reset and recommit
-git reset --soft HEAD~N
-git commit -m "feat: combined commit message"
-```
-
-**Amending commits**:
-```bash
-# Always use --no-edit to skip editor
-git commit --amend --no-edit
-
-# Or with a new message
-git commit --amend -m "new message"
-```
-
-**Rebasing**:
-```bash
-# Non-interactive rebase onto main
-git rebase origin/main
-
-# If conflicts, resolve then:
-git add .
-git rebase --continue
-```
-
-**Aborting operations**:
-```bash
-git rebase --abort
-git merge --abort
-git cherry-pick --abort
-```
-
-**Viewing logs** (use limits to avoid paging):
-```bash
-git log -n 10 --oneline
-git diff HEAD~1
-```
-
-### Environment Variables
-
-If you must use a command that normally opens an editor, override with:
-```bash
-GIT_EDITOR=true git rebase --continue
-EDITOR=true git commit --amend
-```
-
-**Remember:** If a command hangs, it's likely waiting for interactive input. Always prefer flags like `--no-edit`, `-m`, or explicit non-interactive alternatives.
+All commands should be non-interactive. This is especially important for git operations like rebasing and squashing branches. Avoid interactive rebasing (`git rebase -i`), editors (`vim`, `nano`), and pagers (`less`, `more`). Always use flags like `--no-edit`, `-m`, or non-interactive alternatives.
 
 ## Effect-TS Best Practices
 
@@ -375,63 +369,3 @@ if (Option.isNone(option)) {
   // handle none
 }
 ```
-
-### Error Handling
-
-**❌ DON'T** use `Effect.either` and manual checks:
-```typescript
-// Bad - manual Either handling
-const result = yield* someEffect.pipe(Effect.either);
-if (result._tag === 'Left') {
-  // handle error
-} else {
-  // handle success
-}
-```
-
-**✅ DO** use `Effect.flatMap` and `Effect.catchAll`:
-```typescript
-// Good - idiomatic Effect error handling
-someEffect.pipe(
-  Effect.flatMap((value) => {
-    // Success path
-    return nextEffect(value);
-  }),
-  Effect.catchAll((error) => {
-    // Error path
-    return fallbackEffect(error);
-  })
-);
-
-// Or use Effect.match for both paths
-someEffect.pipe(
-  Effect.match({
-    onFailure: (error) => handleError(error),
-    onSuccess: (value) => handleSuccess(value),
-  })
-);
-```
-
-### Why This Matters
-
-- **Type Safety**: Type guards provide better TypeScript inference
-- **Maintainability**: Idiomatic patterns are easier to understand
-- **Future-Proof**: Effect-TS may change internal `_tag` implementations
-- **Readability**: Pattern matching is more declarative
-
-## Environment Setup
-
-- Node.js 24+ (LTS)
-- pnpm 8+
-- Use `nvm use` to switch to the correct Node version
-- Install dependencies with `pnpm install`
-
-## Resources
-
-- [Conventional Commits Specification](https://www.conventionalcommits.org/)
-- [Linear - PHI Project](https://linear.app)
-- [GitHub Repository](https://github.com/pkallos/wan-monitor)
-
-## Questions or Issues?
-
-If you encounter any issues or have questions about the development workflow, document them and discuss with @pkallos during PR review.
