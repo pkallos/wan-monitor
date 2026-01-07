@@ -14,7 +14,7 @@ class TestRegistrationError extends Data.TaggedError("TestRegistrationError")<{
  */
 describe("Server Startup - Effect.tryPromise Usage", () => {
   it("should properly wrap async operations in Effect.tryPromise", async () => {
-    // This test verifies the pattern used in src/server/index.ts
+    // This test verifies the pattern used in src/index.ts
     // The fix required wrapping app.register() calls in async functions
 
     // Simulate Fastify's register method which returns a chainable instance
