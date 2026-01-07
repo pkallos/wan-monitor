@@ -133,6 +133,29 @@
       ],
       "outputs": ["coverage/**"],
       "env": ["QUESTDB_AVAILABLE", "DB_HOST", "DB_PORT"]
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "inputs": [
+        "e2e/**/*.{ts,tsx}",
+        "playwright.config.ts",
+        "docker-compose.e2e.yml",
+        "scripts/e2e/**",
+        "package.json"
+      ],
+      "outputs": ["playwright-report/**", "test-results/**"],
+      "env": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_PROTOCOL",
+        "DB_AUTO_FLUSH_ROWS",
+        "DB_AUTO_FLUSH_INTERVAL",
+        "DB_REQUEST_TIMEOUT",
+        "DB_RETRY_TIMEOUT",
+        "WAN_MONITOR_PASSWORD",
+        "QUESTDB_AVAILABLE"
+      ]
     }
   }
 }
