@@ -62,23 +62,39 @@ describe("Metrics Handlers", () => {
     });
 
     it.effect("converts null values to undefined for optional fields", () => {
-      const mockDataWithNulls = [
+      // QuestDB returns null for missing values, while our TypeScript types use undefined.
+      // This test verifies the handler correctly converts null -> undefined.
+      // We use a type that represents the raw DB response shape with nullable fields.
+      type RawMetricRow = {
+        [K in keyof MetricRow]: MetricRow[K] | null;
+      };
+
+      const mockDataWithNulls: RawMetricRow[] = [
         {
           timestamp: "2024-01-01T12:00:00Z",
-          source: "ping" as const,
+          source: "ping",
           host: null,
           latency: null,
           jitter: null,
           packet_loss: null,
           connectivity_status: null,
+          download_speed: null,
+          upload_speed: null,
+          server_location: null,
+          isp: null,
+          external_ip: null,
+          internal_ip: null,
         },
         {
           timestamp: "2024-01-01T12:01:00Z",
-          source: "speedtest" as const,
-          download_speed: null,
-          upload_speed: null,
+          source: "speedtest",
+          host: null,
           latency: null,
           jitter: null,
+          packet_loss: null,
+          connectivity_status: null,
+          download_speed: null,
+          upload_speed: null,
           server_location: null,
           isp: null,
           external_ip: null,
@@ -88,8 +104,9 @@ describe("Metrics Handlers", () => {
 
       const QuestDBTest = Layer.succeed(QuestDB, {
         ...createMockQuestDB([]),
-        queryMetrics: () =>
-          Effect.succeed(mockDataWithNulls as unknown as MetricRow[]),
+        // Cast to MetricRow[] since that's what the service interface expects,
+        // but QuestDB actually returns nullable fields at runtime
+        queryMetrics: () => Effect.succeed(mockDataWithNulls as MetricRow[]),
       });
 
       return Effect.gen(function* () {

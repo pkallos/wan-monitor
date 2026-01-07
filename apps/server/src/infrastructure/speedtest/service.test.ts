@@ -163,16 +163,33 @@ describe("SpeedTest - timeout functionality", () => {
   });
 
   it("should handle missing optional fields in result", async () => {
-    const minimalResult = {
-      ...mockSpeedTestResult,
+    // Test that the service handles results where optional fields are missing.
+    // We create a mock result with only the required fields (download, upload, ping)
+    // and verify the service gracefully handles missing server/isp/interface.
+    type SpeedTestRawResult = typeof mockSpeedTestResult;
+    type MinimalSpeedTestResult = Pick<
+      SpeedTestRawResult,
+      | "type"
+      | "timestamp"
+      | "download"
+      | "upload"
+      | "ping"
+      | "packetLoss"
+      | "result"
+    > &
+      Partial<Pick<SpeedTestRawResult, "server" | "isp" | "interface">>;
+
+    const minimalResult: MinimalSpeedTestResult = {
+      type: "result" as const,
+      timestamp: new Date(),
       download: { bandwidth: 0, bytes: 0, elapsed: 0 },
       upload: { bandwidth: 0, bytes: 0, elapsed: 0 },
       ping: { latency: 0, jitter: 0 },
-      server: undefined as unknown as typeof mockSpeedTestResult.server,
-      isp: undefined as unknown as string,
-      interface: undefined as unknown as typeof mockSpeedTestResult.interface,
+      packetLoss: 0,
+      result: { id: "test-id", url: "https://speedtest.net/result/test-id" },
+      // server, isp, and interface are intentionally omitted to test optional field handling
     };
-    const executor = () => Promise.resolve(minimalResult);
+    const executor = () => Promise.resolve(minimalResult as SpeedTestRawResult);
     const service = makeSpeedTestService(executor, 5);
 
     const result = await Effect.runPromise(
