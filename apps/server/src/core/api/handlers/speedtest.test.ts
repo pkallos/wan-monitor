@@ -10,6 +10,16 @@ import {
 } from "@/infrastructure/database/questdb";
 import type { MetricRow } from "@/infrastructure/database/questdb/model";
 import {
+  createSpeedtestMetrics,
+  seedDatabase,
+} from "@/infrastructure/database/questdb/test-utils/seed";
+import {
+  createTestLayer,
+  isQuestDBAvailable,
+  setupIntegrationTest,
+  teardownIntegrationTest,
+} from "@/infrastructure/database/questdb/test-utils/setup";
+import {
   SpeedTestExecutionError,
   SpeedTestService,
   type SpeedTestServiceInterface,
@@ -324,5 +334,67 @@ describe("SpeedTest API Handlers", () => {
         return result;
       }).pipe(Effect.provide(QuestDBTest));
     });
+  });
+
+  describe("getSpeedTestHistory integration tests", () => {
+    const skipTests = !isQuestDBAvailable();
+    const testLayer = createTestLayer();
+
+    it.skipIf(skipTests)(
+      "should write and query speedtest data from real QuestDB",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          // Create deterministic speedtest data (2 records over 30 minutes)
+          const baseTime = new Date("2024-01-15T16:00:00Z");
+          const testMetrics = createSpeedtestMetrics(baseTime, 30);
+
+          // Seed database with test data
+          yield* seedDatabase(db, testMetrics);
+
+          // Query speedtest history with time range covering the seeded data
+          const result = yield* getSpeedTestHistoryHandler({
+            urlParams: {
+              startTime: new Date("2024-01-15T15:00:00Z").toISOString(),
+              endTime: new Date("2024-01-15T17:00:00Z").toISOString(),
+              limit: 10,
+            },
+          });
+
+          // Verify basic response structure
+          expect(result.data).toBeDefined();
+          expect(Array.isArray(result.data)).toBe(true);
+          expect(result.data.length).toBeGreaterThan(0);
+
+          // Verify meta matches data
+          expect(result.meta).toBeDefined();
+          expect(result.meta.count).toBe(result.data.length);
+
+          // Verify speedtest data structure
+          const record = result.data[0];
+          expect(record).toHaveProperty("timestamp");
+          expect(record).toHaveProperty("download_speed");
+          expect(record).toHaveProperty("upload_speed");
+          expect(record).toHaveProperty("latency");
+          expect(record).toHaveProperty("server_location");
+          expect(record).toHaveProperty("isp");
+
+          // Verify field types
+          expect(typeof record.download_speed).toBe("number");
+          expect(typeof record.upload_speed).toBe("number");
+          expect(typeof record.latency).toBe("number");
+          expect(record.download_speed).toBeGreaterThan(0);
+          expect(record.upload_speed).toBeGreaterThan(0);
+
+          // Cleanup
+          yield* teardownIntegrationTest(db);
+
+          return result;
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
   });
 });
