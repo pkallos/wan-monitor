@@ -258,8 +258,12 @@ describe("SpeedTestServiceLive - config integration", () => {
 
     const exit = await Effect.runPromiseExit(
       program.pipe(
-        Effect.provide(SpeedTestServiceLive),
-        Effect.provide(Logger.minimumLogLevel(LogLevel.None))
+        Effect.provide(
+          Layer.merge(
+            SpeedTestServiceLive,
+            Logger.minimumLogLevel(LogLevel.None)
+          )
+        )
       )
     );
 
@@ -278,9 +282,13 @@ describe("SpeedTestServiceLive - config integration", () => {
 
     const exit = await Effect.runPromiseExit(
       program.pipe(
-        Effect.provide(SpeedTestServiceLive),
-        Effect.provide(Layer.setConfigProvider(customConfig)),
-        Effect.provide(Logger.minimumLogLevel(LogLevel.None))
+        Effect.provide(
+          Layer.mergeAll(
+            SpeedTestServiceLive,
+            Layer.setConfigProvider(customConfig),
+            Logger.minimumLogLevel(LogLevel.None)
+          )
+        )
       )
     );
 
@@ -297,8 +305,12 @@ describe("SpeedTestServiceLive - config integration", () => {
 
     const exit = await Effect.runPromiseExit(
       program.pipe(
-        Effect.provide(SpeedTestServiceLive),
-        Effect.provide(Logger.minimumLogLevel(LogLevel.None))
+        Effect.provide(
+          Layer.merge(
+            SpeedTestServiceLive,
+            Logger.minimumLogLevel(LogLevel.None)
+          )
+        )
       )
     );
 
