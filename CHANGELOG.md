@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.2](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.6.1...wan-monitor-v0.6.2) (2026-01-07)
+
+
+### Bug Fixes
+
+* improve type safety in usePersistedTimeRange validation ([#132](https://github.com/pkallos/wan-monitor/issues/132)) ([6b3063a](https://github.com/pkallos/wan-monitor/commit/6b3063a68c2f2c25aa93ea852316c0ce94b30d75))
+* optimize Docker build cache for cross-runner persistence ([#129](https://github.com/pkallos/wan-monitor/issues/129)) ([e043999](https://github.com/pkallos/wan-monitor/commit/e043999ca9854cebc0676df16d663c261ebf0ce1))
+* remove NullOr from metrics schema and redundant manual types ([#127](https://github.com/pkallos/wan-monitor/issues/127)) ([201dccb](https://github.com/pkallos/wan-monitor/commit/201dccb9f646c8aef123c24690b79273b5d774ce))
+* remove unnecessary typecasts in speedtest.test.ts after instanceof checks ([#134](https://github.com/pkallos/wan-monitor/issues/134)) ([21ae903](https://github.com/pkallos/wan-monitor/commit/21ae9032cd0e170cbb112c6dc3e1dbfb725e514d))
+* replace DOM element typecast with proper null handling in main.tsx ([#131](https://github.com/pkallos/wan-monitor/issues/131)) ([bd9c10e](https://github.com/pkallos/wan-monitor/commit/bd9c10ea83933c278f7c1709e54e773c83260ac0))
+* replace unsafe DB_PROTOCOL typecast with runtime validation ([#133](https://github.com/pkallos/wan-monitor/issues/133)) ([9928091](https://github.com/pkallos/wan-monitor/commit/9928091b1c36980663e04aa67ca4c375412b24ae))
+* resolve Effect typecheck warnings from effect-language-service ([#136](https://github.com/pkallos/wan-monitor/issues/136)) ([f61d632](https://github.com/pkallos/wan-monitor/commit/f61d632c915a37971de14219c216c994bff65c7e))
+* update server index path references after directory refactor ([#137](https://github.com/pkallos/wan-monitor/issues/137)) ([3f303a7](https://github.com/pkallos/wan-monitor/commit/3f303a760bab2d7c8866cfe4ee682fc76d3982af))
+
 ## [0.6.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.6.0...wan-monitor-v0.6.1) (2026-01-06)
 
 
