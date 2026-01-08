@@ -9,6 +9,8 @@ export default defineConfig({
   sourcemap: true,
   dts: false,
   // Don't bundle dependencies - they're installed in node_modules
+  // Exception: dotenv is bundled to avoid module resolution issues with E2E tests
+  noExternal: ["dotenv"],
   external: [
     "@questdb/nodejs-client",
     "@fastify/cors",
