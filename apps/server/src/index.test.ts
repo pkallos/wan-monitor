@@ -82,6 +82,7 @@ describe("Server Lifecycle Integration Tests", () => {
 
   const QuestDBTest = Layer.succeed(QuestDB, {
     writeMetric: vi.fn(() => Effect.void),
+    flush: vi.fn(() => Effect.void),
     queryMetrics: vi.fn(),
     querySpeedtests: vi.fn(),
     queryConnectivityStatus: vi.fn(),
@@ -338,6 +339,7 @@ describe("Server Lifecycle Integration Tests", () => {
         writeMetric: vi.fn(() =>
           Effect.fail(new DbUnavailable("Connection refused"))
         ),
+        flush: vi.fn(() => Effect.void),
         queryMetrics: vi.fn(() =>
           Effect.fail(new DbUnavailable("Connection refused"))
         ),
@@ -434,6 +436,7 @@ describe("Server Lifecycle Integration Tests", () => {
       const closeMock = vi.fn(() => Effect.void);
       const QuestDBTestWithClose = Layer.succeed(QuestDB, {
         writeMetric: vi.fn(() => Effect.void),
+        flush: vi.fn(() => Effect.void),
         queryMetrics: vi.fn(),
         querySpeedtests: vi.fn(),
         queryConnectivityStatus: vi.fn(),

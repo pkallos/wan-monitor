@@ -38,6 +38,7 @@ const createTestSpeedTestService = (
 
 const createTestQuestDB = (): QuestDBService => ({
   writeMetric: () => Effect.succeed(undefined),
+  flush: () => Effect.succeed(undefined),
   queryMetrics: () => Effect.succeed([]),
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),
