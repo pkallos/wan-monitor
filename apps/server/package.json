@@ -20,7 +20,7 @@
     "@effect/schema": "^0.75.5",
     "@questdb/nodejs-client": "^4.2.0",
     "@types/pg": "^8.16.0",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.3.1",
     "effect": "^3.19.14",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.16.3",
