@@ -6,6 +6,14 @@ import {
 } from "@/infrastructure/database/questdb/service";
 
 /**
+ * Base URL for the QuestDB HTTP API used by integration tests.
+ * Integration tests run against a QuestDB instance exposed on the local
+ * REST/exec port (9000). Shared by all test utilities so the endpoint is
+ * defined in exactly one place.
+ */
+export const QUESTDB_HTTP_URL = "http://localhost:9000";
+
+/**
  * Error for test database cleanup failures
  */
 export class TestCleanupError extends Data.TaggedError("TestCleanupError")<{
@@ -65,7 +73,7 @@ const initializeDatabase = () =>
         `;
 
         const createResponse = await fetch(
-          `http://localhost:9000/exec?query=${encodeURIComponent(createQuery)}`,
+          `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(createQuery)}`,
           {
             method: "GET",
           }
@@ -101,7 +109,7 @@ export const cleanupDatabase = (_db: QuestDB["Type"]) =>
     yield* Effect.tryPromise({
       try: async () => {
         const truncateResponse = await fetch(
-          "http://localhost:9000/exec?query=TRUNCATE%20TABLE%20network_metrics",
+          `${QUESTDB_HTTP_URL}/exec?query=TRUNCATE%20TABLE%20network_metrics`,
           {
             method: "GET",
           }

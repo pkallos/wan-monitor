@@ -1,6 +1,14 @@
 import type { NetworkMetric } from "@shared/metrics";
-import { Effect } from "effect";
+import { Data, type Duration, Effect, Schedule } from "effect";
 import type { QuestDBService } from "@/infrastructure/database/questdb/service";
+import { QUESTDB_HTTP_URL } from "@/infrastructure/database/questdb/test-utils/setup";
+
+/**
+ * Error raised while waiting for seeded rows to become queryable.
+ */
+class SeedError extends Data.TaggedError("SeedError")<{
+  readonly message: string;
+}> {}
 
 /**
  * Deterministic seed data for integration tests.
@@ -148,6 +156,60 @@ export const createMultiHostTestWindow = (
 };
 
 /**
+ * Query the current row count of network_metrics via the QuestDB HTTP API.
+ * Used to detect when freshly seeded ILP writes have become queryable.
+ */
+const countMetricRows = (): Effect.Effect<number, SeedError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(
+        `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(
+          "SELECT count() FROM network_metrics"
+        )}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Count query failed: ${response.status}`);
+      }
+
+      const body = (await response.json()) as {
+        dataset?: ReadonlyArray<ReadonlyArray<number>>;
+      };
+
+      return body.dataset?.[0]?.[0] ?? 0;
+    },
+    catch: (error) =>
+      new SeedError({ message: `Failed to count metric rows: ${error}` }),
+  });
+
+/**
+ * Poll until QuestDB has indexed at least `expectedCount` rows, or the timeout
+ * elapses.
+ *
+ * ILP writes are buffered and committed asynchronously, so a freshly flushed
+ * batch is not guaranteed to be queryable immediately. A fixed sleep is flaky
+ * under CI load (the commit lag can exceed the sleep, yielding empty query
+ * results); polling the actual row count makes seeding deterministic.
+ */
+const waitForRowCount = (
+  expectedCount: number,
+  timeout: Duration.DurationInput = "15 seconds"
+): Effect.Effect<void, SeedError> =>
+  Effect.gen(function* () {
+    const count = yield* countMetricRows();
+
+    if (count < expectedCount) {
+      return yield* Effect.fail(
+        new SeedError({
+          message: `QuestDB indexed ${count} rows, expected at least ${expectedCount}`,
+        })
+      );
+    }
+  }).pipe(
+    Effect.retry(Schedule.spaced("200 millis").pipe(Schedule.upTo(timeout)))
+  );
+
+/**
  * Seed the database with test data.
  */
 export const seedDatabase = (
@@ -165,8 +227,10 @@ export const seedDatabase = (
     // so we need to force a flush before querying the data
     yield* db.flush();
 
-    // Wait for writes to be indexed by QuestDB
-    yield* Effect.sleep("1000 millis");
+    // Wait until the seeded rows are actually queryable rather than sleeping a
+    // fixed interval. Callers truncate the table before seeding, so the table
+    // should converge to exactly `metrics.length` rows.
+    yield* waitForRowCount(metrics.length);
   });
 
 /**
