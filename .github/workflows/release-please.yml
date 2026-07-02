@@ -1,22 +1,22 @@
 name: Release Please
-
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-
 permissions:
   contents: write
   pull-requests: write
-
+  actions: write
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
-
     steps:
       - name: Run Release Please
         id: release
@@ -26,13 +26,11 @@ jobs:
           manifest-file: .release-please-manifest.json
           target-branch: main
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Debug release outputs
         run: |
           echo "release_created: ${{ steps.release.outputs.release_created }}"
           echo "tag_name: ${{ steps.release.outputs.tag_name }}"
           echo "All outputs: ${{ toJSON(steps.release.outputs) }}"
-
   publish-docker:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
@@ -40,3 +38,6 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
     secrets: inherit
+    permissions:
+      contents: read
+      actions: write
