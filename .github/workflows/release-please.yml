@@ -27,10 +27,14 @@ jobs:
           target-branch: main
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Debug release outputs
+        env:
+          RELEASE_CREATED: ${{ steps.release.outputs.release_created }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+          ALL_OUTPUTS: ${{ toJSON(steps.release.outputs) }}
         run: |
-          echo "release_created: ${{ steps.release.outputs.release_created }}"
-          echo "tag_name: ${{ steps.release.outputs.tag_name }}"
-          echo "All outputs: ${{ toJSON(steps.release.outputs) }}"
+          echo "release_created: $RELEASE_CREATED"
+          echo "tag_name: $TAG_NAME"
+          echo "All outputs: $ALL_OUTPUTS"
   publish-docker:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
