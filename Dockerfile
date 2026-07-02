@@ -14,7 +14,7 @@
 # Using bookworm (Debian) instead of Alpine to ensure native modules are
 # compiled with glibc, matching the Ubuntu production image.
 # This stage installs deps ONCE and is shared by frontend/backend builders.
-FROM node:22-bookworm AS deps
+FROM node:24-bookworm AS deps
 
 # Install build dependencies for native modules (lzma-native requires liblzma-dev)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -91,8 +91,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Install Node.js 24
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
