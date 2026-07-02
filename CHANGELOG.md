@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.6.2...wan-monitor-v0.7.0) (2026-07-02)
+
+
+### Features
+
+* add integration tests for /metrics endpoint aggregation (PHI-97) ([#146](https://github.com/pkallos/wan-monitor/issues/146)) ([4b6270b](https://github.com/pkallos/wan-monitor/commit/4b6270b88a82b9eb1b973820ddc82dbca464044d))
+* add integration tests for connectivity-status endpoint ([6875fac](https://github.com/pkallos/wan-monitor/commit/6875facfbf13bf70bfba8b0b2912f06dd6d861ac))
+* add integration tests for connectivity-status endpoint ([0cd5cf2](https://github.com/pkallos/wan-monitor/commit/0cd5cf28d29e06c09c6c33969fb03ee123b94cc8))
+* automate Docker publishing on release-please tag creation ([210e9d2](https://github.com/pkallos/wan-monitor/commit/210e9d26d16fa7767a31070cd8e4acf7134793cd))
+
+
+### Bug Fixes
+
+* adjust integration test expectations for QuestDB SAMPLE BY behavior ([0eca631](https://github.com/pkallos/wan-monitor/commit/0eca631c51fc7bd3871ac34132e014cf1bf0f230))
+* make integration seed deterministic by polling row count ([ec706cf](https://github.com/pkallos/wan-monitor/commit/ec706cf765753a8d9f835776e9cafc5a765e1e34))
+* make integration seed deterministic by polling row count ([39c1d60](https://github.com/pkallos/wan-monitor/commit/39c1d6057df9b07ea3363f6be914cea5d3ebe4ab))
+* make QuestDB integration tests reliable and fast ([c18818b](https://github.com/pkallos/wan-monitor/commit/c18818b03e5c7a9e8842950690686d525187d5a2))
+* relax integration test assertions for QuestDB timing ([1da6edc](https://github.com/pkallos/wan-monitor/commit/1da6edc66743f33fe22b1774bd7847bef62db482))
+
 ## [0.6.2](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.6.1...wan-monitor-v0.6.2) (2026-01-07)
 
 
