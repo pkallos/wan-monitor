@@ -266,4 +266,67 @@ describe("NetworkMonitor", () => {
       program.pipe(Effect.provide(MixedResultsTestLayer))
     );
   });
+
+  it("should keep running the speed test loop after a failed cycle", async () => {
+    // Reproduces the bug where a single failed speed test kills the recurring
+    // schedule permanently. The first cycle fails (transient error), later
+    // cycles succeed. A healthy loop must recover and keep testing.
+    process.env.SPEEDTEST_INTERVAL_SECONDS = "1";
+
+    let callCount = 0;
+    const FlakySpeedTestService = Layer.succeed(SpeedTestService, {
+      runTest: () =>
+        Effect.suspend(() => {
+          callCount += 1;
+          if (callCount === 1) {
+            return Effect.fail(
+              new SpeedTestExecutionError("Transient speed test failure")
+            );
+          }
+          return Effect.succeed({
+            timestamp: new Date(),
+            downloadSpeed: 100,
+            uploadSpeed: 20,
+            latency: 15,
+            jitter: 2,
+          });
+        }),
+    });
+
+    const FlakyTestLayer = NetworkMonitorLive.pipe(
+      Layer.provide(MockPingExecutor),
+      Layer.provide(MockQuestDB),
+      Layer.provide(FlakySpeedTestService),
+      Layer.provide(MockConfig),
+      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+    );
+
+    const program = Effect.gen(function* () {
+      const monitor = yield* NetworkMonitor;
+
+      // Keep the parent fiber alive (as index.ts does with Effect.never) so the
+      // forked monitoring loops are not interrupted when start() returns.
+      const fiber = yield* Effect.fork(
+        Effect.gen(function* () {
+          yield* monitor.start();
+          return yield* Effect.never;
+        })
+      );
+
+      yield* Effect.sleep("2500 millis");
+
+      const stats: MonitorStats = yield* monitor.getStats();
+
+      yield* Fiber.interrupt(fiber);
+
+      // With the bug, the repeat loop terminates after the first failed cycle:
+      // runTest is invoked exactly once and never recovers.
+      expect(callCount).toBeGreaterThan(1);
+      expect(stats.successfulSpeedTests).toBeGreaterThanOrEqual(1);
+    });
+
+    await Effect.runPromise(program.pipe(Effect.provide(FlakyTestLayer)));
+
+    delete process.env.SPEEDTEST_INTERVAL_SECONDS;
+  });
 });

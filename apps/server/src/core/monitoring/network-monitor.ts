@@ -169,12 +169,12 @@ export const NetworkMonitorLive = Layer.effect(
         const schedule = Schedule.spaced(`${pingIntervalSeconds} seconds`);
 
         yield* executePingCycle.pipe(
-          Effect.repeat(schedule),
           Effect.catchAll((error) =>
             Effect.logError(`Ping cycle error: ${error}`).pipe(
               Effect.flatMap(() => Effect.void)
             )
           ),
+          Effect.repeat(schedule),
           Effect.fork
         );
 
@@ -187,12 +187,12 @@ export const NetworkMonitorLive = Layer.effect(
         );
 
         yield* executeSpeedTestCycle.pipe(
-          Effect.repeat(speedTestSchedule),
           Effect.catchAll((error) =>
             Effect.logError(`Speed test cycle error: ${error}`).pipe(
               Effect.flatMap(() => Effect.void)
             )
           ),
+          Effect.repeat(speedTestSchedule),
           Effect.fork
         );
 
