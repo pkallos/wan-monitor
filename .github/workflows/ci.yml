@@ -213,7 +213,7 @@ jobs:
 
       # Use Docker Buildx for better caching support
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build with GitHub Actions cache
       # This caches Docker layers between runs for faster builds
