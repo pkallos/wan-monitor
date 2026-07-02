@@ -65,7 +65,7 @@ jobs:
           echo "Extracted version: $VERSION from tag: $TAG"
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: phibit/wan-monitor
           tags: |
