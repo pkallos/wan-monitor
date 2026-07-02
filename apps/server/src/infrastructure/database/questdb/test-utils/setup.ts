@@ -1,4 +1,4 @@
-import { Data, Effect, Layer } from "effect";
+import { Data, Effect, Layer, Schedule } from "effect";
 import { ConfigServiceLive } from "@/infrastructure/config/config";
 import {
   QuestDB,
@@ -37,12 +37,72 @@ export const createTestLayer = () => {
 };
 
 /**
- * Wait for QuestDB connection to be established.
- * Should be called at the start of each test that needs a database connection.
+ * Poll interval and overall timeout for readiness checks. Integration tests
+ * replaced fixed sleeps with polling so each step waits exactly as long as
+ * needed: QuestDB connection setup, table creation, and TRUNCATE all complete
+ * asynchronously, and a fixed sleep is both slower (on the happy path) and
+ * flakier (under CI load) than converging on the real signal.
  */
-export const waitForConnection = () => {
-  return Effect.sleep("2000 millis");
-};
+const POLL_INTERVAL = "100 millis";
+const POLL_TIMEOUT = "10 seconds";
+
+const readinessSchedule = Schedule.spaced(POLL_INTERVAL).pipe(
+  Schedule.upTo(POLL_TIMEOUT)
+);
+
+/**
+ * Count rows in network_metrics via the QuestDB HTTP API. Fails if the table
+ * does not exist yet or the query errors, which makes it a natural readiness
+ * probe when wrapped in a retry.
+ */
+const countMetricRows = (): Effect.Effect<number, TestCleanupError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(
+        `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(
+          "SELECT count() FROM network_metrics"
+        )}`
+      );
+      if (!response.ok) {
+        throw new Error(`Count query failed: ${response.status}`);
+      }
+      const body = (await response.json()) as {
+        dataset?: ReadonlyArray<ReadonlyArray<number>>;
+      };
+      return body.dataset?.[0]?.[0] ?? 0;
+    },
+    catch: (error) =>
+      new TestCleanupError({
+        message: `Failed to count metric rows: ${error}`,
+      }),
+  });
+
+/**
+ * Poll until the network_metrics table is queryable (exists and answers a
+ * count query), replacing a fixed post-CREATE sleep. Table metadata becomes
+ * visible asynchronously after CREATE TABLE.
+ */
+const waitForTableReady = (): Effect.Effect<void, TestCleanupError> =>
+  Effect.gen(function* () {
+    yield* countMetricRows();
+  }).pipe(Effect.retry(readinessSchedule));
+
+/**
+ * Poll until the table is empty after a TRUNCATE, replacing a fixed sleep.
+ * TRUNCATE on a WAL table commits asynchronously, so the row count converges
+ * to zero shortly after the HTTP call returns.
+ */
+const waitForTableEmpty = (): Effect.Effect<void, TestCleanupError> =>
+  Effect.gen(function* () {
+    const count = yield* countMetricRows();
+    if (count > 0) {
+      return yield* Effect.fail(
+        new TestCleanupError({
+          message: `Table still has ${count} rows after truncate`,
+        })
+      );
+    }
+  }).pipe(Effect.retry(readinessSchedule));
 
 /**
  * Initialize the test database.
@@ -91,8 +151,9 @@ const initializeDatabase = () =>
         new TestCleanupError({ message: `Database init failed: ${error}` }),
     });
 
-    // Wait for table creation to be processed
-    yield* Effect.sleep("1000 millis");
+    // Wait until the table is actually queryable rather than sleeping a fixed
+    // interval (table metadata becomes visible asynchronously after CREATE).
+    yield* waitForTableReady();
   });
 
 /**
@@ -128,8 +189,9 @@ export const cleanupDatabase = (_db: QuestDB["Type"]) =>
         new TestCleanupError({ message: `Cleanup failed: ${error}` }),
     });
 
-    // Wait for truncate to be processed
-    yield* Effect.sleep("1000 millis");
+    // Wait until the table is empty rather than sleeping a fixed interval
+    // (TRUNCATE on a WAL table commits asynchronously).
+    yield* waitForTableEmpty();
   });
 
 /**
@@ -140,11 +202,9 @@ export const setupIntegrationTest = () =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
 
-    // Wait for connection
-    yield* waitForConnection();
-
-    // Verify connection with health check
-    yield* db.health();
+    // Poll the health check until the background connection loop has
+    // established a connection, instead of sleeping a fixed interval.
+    yield* db.health().pipe(Effect.retry(readinessSchedule));
 
     // Clean database
     yield* cleanupDatabase(db);
