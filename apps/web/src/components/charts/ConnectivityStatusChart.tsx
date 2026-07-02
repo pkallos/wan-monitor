@@ -243,9 +243,9 @@ export function ConnectivityStatusChart({
             onMouseLeave={handleMouseLeave}
             data-testid="connectivity-status-bar"
           >
-            {mergedSegments.map((segment, index) => (
+            {mergedSegments.map((segment) => (
               <div
-                key={`${segment.timestamp}-${index}`}
+                key={segment.timestamp}
                 style={{
                   height: "100%",
                   flex: segment.count,
