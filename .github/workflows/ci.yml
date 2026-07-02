@@ -218,7 +218,7 @@ jobs:
       # Build with GitHub Actions cache
       # This caches Docker layers between runs for faster builds
       - name: Build Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
