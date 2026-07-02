@@ -416,49 +416,47 @@ describe("QuestDBConnection integration tests", () => {
       await Effect.runPromise(program);
     });
 
-    it(
-      "should handle health check failures and reconnect",
-      { timeout: 10000 },
-      async () => {
-        let healthCheckCount = 0;
-        const mockSender = {
-          flush: vi.fn().mockResolvedValue(undefined),
-          close: vi.fn().mockResolvedValue(undefined),
-        };
-        const mockPgClient = {
-          connect: vi.fn().mockResolvedValue(undefined),
-          query: vi.fn().mockImplementation(async () => {
-            healthCheckCount++;
-            if (healthCheckCount === 2) {
-              throw new Error("Health check failed");
-            }
-            return { rows: [] };
-          }),
-          end: vi.fn().mockResolvedValue(undefined),
-          on: vi.fn(),
-        };
+    it("should handle health check failures and reconnect", {
+      timeout: 10000,
+    }, async () => {
+      let healthCheckCount = 0;
+      const mockSender = {
+        flush: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockPgClient = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        query: vi.fn().mockImplementation(async () => {
+          healthCheckCount++;
+          if (healthCheckCount === 2) {
+            throw new Error("Health check failed");
+          }
+          return { rows: [] };
+        }),
+        end: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+      };
 
-        vi.mocked(Sender.fromConfig).mockResolvedValue(
-          mockSender as unknown as Sender
-        );
-        vi.mocked(PgClient).mockImplementation(
-          () => mockPgClient as unknown as PgClient
-        );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(
+        mockSender as unknown as Sender
+      );
+      vi.mocked(PgClient).mockImplementation(
+        () => mockPgClient as unknown as PgClient
+      );
 
-        const program = Effect.gen(function* () {
-          const connection = yield* QuestDBConnection;
-          yield* Effect.sleep(Duration.millis(6000));
+      const program = Effect.gen(function* () {
+        const connection = yield* QuestDBConnection;
+        yield* Effect.sleep(Duration.millis(6000));
 
-          yield* connection.getState;
-          expect(healthCheckCount).toBeGreaterThan(1);
-        }).pipe(
-          Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer)),
-          Effect.scoped
-        );
+        yield* connection.getState;
+        expect(healthCheckCount).toBeGreaterThan(1);
+      }).pipe(
+        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer)),
+        Effect.scoped
+      );
 
-        await Effect.runPromise(program);
-      }
-    );
+      await Effect.runPromise(program);
+    });
 
     it("should handle pg error events", async () => {
       let errorHandler: ((error: Error) => void) | undefined;
