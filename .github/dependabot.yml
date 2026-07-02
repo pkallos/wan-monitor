@@ -178,3 +178,9 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    # Group all GitHub Actions bumps into a single PR to avoid the
+    # cross-conflict churn of one PR per action touching the same workflow files
+    groups:
+      github-actions:
+        patterns:
+          - "*"
