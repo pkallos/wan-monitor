@@ -26,20 +26,26 @@ updates:
           - "minor"
           - "patch"
 
-      # Chakra UI and emotion - group together
+      # Chakra UI and emotion - group together, ignore major versions
       chakra-ui:
         patterns:
           - "@chakra-ui/*"
           - "@emotion/*"
           - "framer-motion"
+        update-types:
+          - "minor"
+          - "patch"
 
-      # Testing libraries
+      # Testing libraries - ignore major versions
       testing:
         patterns:
           - "vitest"
           - "@vitest/*"
           - "@testing-library/*"
           - "jsdom"
+        update-types:
+          - "minor"
+          - "patch"
 
       # Build tools - ignore Vite major versions
       build-tools:
@@ -78,13 +84,17 @@ updates:
           - "pino"
           - "pino-pretty"
 
-      # TypeScript and type definitions
+      # TypeScript and type definitions - ignore major versions
+      # (@types/node major is pinned to match the project's Node version)
       typescript:
         patterns:
           - "typescript"
           - "@types/*"
+        update-types:
+          - "minor"
+          - "patch"
 
-      # Other utilities
+      # Other utilities - ignore major versions (recharts v3 needs a manual migration)
       utilities:
         patterns:
           - "dotenv"
@@ -93,6 +103,9 @@ updates:
           - "@tanstack/react-query"
           - "ping"
           - "@types/ping"
+        update-types:
+          - "minor"
+          - "patch"
 
     # Ignore major version updates for packages that require significant refactoring
     ignore:
@@ -118,6 +131,40 @@ updates:
 
       # Backend major versions
       - dependency-name: "fastify"
+        update-types: ["version-update:semver-major"]
+
+      # TypeScript major versions (TS 6.0 needs a manual migration)
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+      # @types/node major is pinned to the project's Node runtime (Node 24)
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+      # Vite plugin major versions (tied to Vite major, which is also ignored)
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+
+      # Chakra UI / emotion / framer-motion major versions (Chakra v3 is a full API rewrite)
+      - dependency-name: "@chakra-ui/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@emotion/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "framer-motion"
+        update-types: ["version-update:semver-major"]
+
+      # Testing library major versions (vitest 4, testing-library 16, jsdom 27 need manual migration)
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@testing-library/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
+
+      # Charting library major versions (recharts v3 needs a manual migration)
+      - dependency-name: "recharts"
         update-types: ["version-update:semver-major"]
 
       # Pinned version due to patch
