@@ -17,7 +17,7 @@ import {
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { FiEye, FiEyeOff } from "react-icons/fi";
-import { ApiError } from "@/api/errors";
+import { ApiError, AUTH_NOT_CONFIGURED } from "@/api/errors";
 import { useAuth } from "@/context/AuthContext";
 
 export function Login() {
@@ -40,12 +40,23 @@ export function Login() {
     try {
       await login(username, password);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setError("Incorrect username or password. Please try again.");
-      } else if (err instanceof ApiError && err.status === 429) {
-        setError(
-          "Too many login attempts. Please wait a moment and try again."
-        );
+      if (err instanceof ApiError) {
+        const tag = (err.details as { _tag?: string } | undefined)?._tag;
+        if (tag === AUTH_NOT_CONFIGURED || err.status === 503) {
+          setError(
+            "Authentication is not configured on the server. Contact your administrator."
+          );
+        } else if (err.status === 401) {
+          setError("Incorrect username or password. Please try again.");
+        } else if (err.status === 400) {
+          setError("Username and password are required.");
+        } else if (err.status === 429) {
+          setError(
+            "Too many login attempts. Please wait a moment and try again."
+          );
+        } else {
+          setError("Something went wrong. Please try again.");
+        }
       } else if (err instanceof Error && err.message.includes("fetch")) {
         setError("Unable to connect to server. Please check your connection.");
       } else {

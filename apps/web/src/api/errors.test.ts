@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, isDbUnavailableError, toApiError } from "@/api/errors";
+import {
+  ApiError,
+  AUTH_NOT_CONFIGURED,
+  INVALID_CREDENTIALS,
+  isDbUnavailableError,
+  MISSING_CREDENTIALS,
+  toApiError,
+} from "@/api/errors";
 
 describe("errors", () => {
   describe("isDbUnavailableError", () => {
@@ -50,6 +57,34 @@ describe("errors", () => {
       const original = new Error("network");
       expect(toApiError(original)).toBe(original);
       expect(toApiError("plain")).toBe("plain");
+    });
+
+    it("wraps MissingCredentials decoded error in a 400 ApiError", () => {
+      const decoded = { _tag: MISSING_CREDENTIALS, message: "fields required" };
+      const result = toApiError(decoded) as ApiError;
+      expect(result).toBeInstanceOf(ApiError);
+      expect(result.status).toBe(400);
+      expect(result.message).toBe("fields required");
+    });
+
+    it("wraps InvalidCredentials decoded error in a 401 ApiError", () => {
+      const decoded = {
+        _tag: INVALID_CREDENTIALS,
+        message: "wrong password",
+      };
+      const result = toApiError(decoded) as ApiError;
+      expect(result).toBeInstanceOf(ApiError);
+      expect(result.status).toBe(401);
+    });
+
+    it("wraps AuthNotConfigured decoded error in a 503 ApiError", () => {
+      const decoded = {
+        _tag: AUTH_NOT_CONFIGURED,
+        message: "not configured",
+      };
+      const result = toApiError(decoded) as ApiError;
+      expect(result).toBeInstanceOf(ApiError);
+      expect(result.status).toBe(503);
     });
   });
 });

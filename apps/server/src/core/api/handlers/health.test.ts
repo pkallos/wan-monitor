@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { HealthUnhealthy } from "@shared/api/errors";
 import { Effect, Layer } from "effect";
 import { getLiveHandler, getReadyHandler } from "@/core/api/handlers/health";
 import {
@@ -43,7 +44,8 @@ describe("Health Handlers", () => {
 
         expect(result._tag).toBe("Left");
         if (result._tag === "Left") {
-          expect(result.left).toContain("Database unhealthy");
+          expect(result.left).toBeInstanceOf(HealthUnhealthy);
+          expect(result.left.message).toContain("Database unhealthy");
         }
       }).pipe(Effect.provide(QuestDBTest));
     });
