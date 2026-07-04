@@ -400,5 +400,98 @@ describe("SpeedTest API Handlers", () => {
         await Effect.runPromise(Effect.provide(program, testLayer));
       }
     );
+
+    it.skipIf(skipTests)(
+      "should return results most-recent-first with meta matching the requested window",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          // Seed 4 speedtest rows (every 15 minutes over 60 minutes) with
+          // distinct, known timestamps: 16:00, 16:15, 16:30, 16:45.
+          const baseTime = new Date("2024-01-15T16:00:00Z");
+          const testMetrics = createSpeedtestMetrics(baseTime, 60);
+          expect(testMetrics).toHaveLength(4);
+
+          yield* seedDatabase(db, testMetrics);
+
+          const startTime = new Date("2024-01-15T15:00:00Z").toISOString();
+          const endTime = new Date("2024-01-15T17:00:00Z").toISOString();
+
+          const result = yield* getSpeedTestHistoryHandler({
+            urlParams: {
+              startTime,
+              endTime,
+              limit: 10,
+            },
+          });
+
+          // All 4 seeded rows fall within the window and under the limit.
+          expect(result.data).toHaveLength(testMetrics.length);
+
+          // Results come back most-recent-first: timestamps strictly descending.
+          for (let i = 0; i < result.data.length - 1; i++) {
+            const current = new Date(result.data[i].timestamp).getTime();
+            const next = new Date(result.data[i + 1].timestamp).getTime();
+            expect(current).toBeGreaterThan(next);
+          }
+
+          // meta.count reflects the returned rows and window matches the request.
+          expect(result.meta.count).toBe(result.data.length);
+          expect(result.meta.startTime).toBe(startTime);
+          expect(result.meta.endTime).toBe(endTime);
+
+          yield* teardownIntegrationTest(db);
+
+          return result;
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "should cap result.data.length to a limit smaller than the seeded row count",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          // Seed 4 rows, then request fewer than were seeded.
+          const baseTime = new Date("2024-01-15T16:00:00Z");
+          const testMetrics = createSpeedtestMetrics(baseTime, 60);
+          expect(testMetrics).toHaveLength(4);
+
+          yield* seedDatabase(db, testMetrics);
+
+          const limit = 2;
+          expect(limit).toBeLessThan(testMetrics.length);
+
+          const result = yield* getSpeedTestHistoryHandler({
+            urlParams: {
+              startTime: new Date("2024-01-15T15:00:00Z").toISOString(),
+              endTime: new Date("2024-01-15T17:00:00Z").toISOString(),
+              limit,
+            },
+          });
+
+          // The limit caps the number of returned rows.
+          expect(result.data).toHaveLength(limit);
+          expect(result.meta.count).toBe(result.data.length);
+
+          // The capped rows are still the most recent, in descending order.
+          for (let i = 0; i < result.data.length - 1; i++) {
+            const current = new Date(result.data[i].timestamp).getTime();
+            const next = new Date(result.data[i + 1].timestamp).getTime();
+            expect(current).toBeGreaterThan(next);
+          }
+
+          yield* teardownIntegrationTest(db);
+
+          return result;
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
   });
 });
