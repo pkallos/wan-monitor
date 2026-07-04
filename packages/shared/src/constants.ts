@@ -9,6 +9,9 @@ export const VALID_GRANULARITIES: Granularity[] = [
   "1d",
 ];
 
+export const isValidGranularity = (value: string): value is Granularity =>
+  VALID_GRANULARITIES.some((granularity) => granularity === value);
+
 /**
  * Packet-loss classification thresholds (percentages).
  *

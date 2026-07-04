@@ -12,6 +12,9 @@ import { makeTestConfigLayer } from "@/test/config";
 vi.mock("@questdb/nodejs-client");
 vi.mock("pg");
 
+const asSender = (mock: Partial<Sender>): Sender => mock as Sender;
+const asPgClient = (mock: Partial<PgClient>): PgClient => mock as PgClient;
+
 const TestConfigLayer = makeTestConfigLayer({
   database: { requestTimeout: 5000, retryTimeout: 10000 },
 });
@@ -34,12 +37,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -82,12 +81,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -136,12 +131,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -170,12 +161,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -228,12 +215,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -269,12 +252,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -304,10 +283,10 @@ describe("QuestDBConnection integration tests", () => {
         if (attemptCount === 1) {
           throw new Error("First attempt failed");
         }
-        return {
+        return asSender({
           flush: vi.fn().mockResolvedValue(undefined),
           close: vi.fn().mockResolvedValue(undefined),
-        } as unknown as Sender;
+        });
       });
 
       const mockPgClient = {
@@ -316,9 +295,7 @@ describe("QuestDBConnection integration tests", () => {
         end: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
       };
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -370,12 +347,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -421,12 +394,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -459,12 +428,8 @@ describe("QuestDBConnection integration tests", () => {
         }),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -501,12 +466,8 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(
-        mockSender as unknown as Sender
-      );
-      vi.mocked(PgClient).mockImplementation(
-        () => mockPgClient as unknown as PgClient
-      );
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(PgClient).mockImplementation(() => asPgClient(mockPgClient));
 
       const program = Effect.gen(function* () {
         const connection = yield* QuestDBConnection;

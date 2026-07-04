@@ -33,6 +33,16 @@ export interface JwtPayload {
   readonly exp: number;
 }
 
+const isJwtPayload = (value: unknown): value is JwtPayload =>
+  typeof value === "object" &&
+  value !== null &&
+  "username" in value &&
+  typeof value.username === "string" &&
+  "iat" in value &&
+  typeof value.iat === "number" &&
+  "exp" in value &&
+  typeof value.exp === "number";
+
 export interface TokenResponse {
   readonly token: string;
   readonly expiresAt: string;
@@ -83,8 +93,8 @@ export const JwtServiceLive = Layer.effect(
           expiresIn: config.auth.jwtExpiresIn as jwt.SignOptions["expiresIn"],
         });
 
-        const decoded = jwt.decode(token) as JwtPayload;
-        const expiresAt = decoded?.exp
+        const decoded = jwt.decode(token);
+        const expiresAt = isJwtPayload(decoded)
           ? new Date(decoded.exp * 1000).toISOString()
           : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -94,10 +104,10 @@ export const JwtServiceLive = Layer.effect(
     const verify = (token: string): Effect.Effect<JwtPayload, JwtError> =>
       Effect.try({
         try: () => {
-          const decoded = jwt.verify(
-            token,
-            config.auth.jwtSecret
-          ) as JwtPayload;
+          const decoded = jwt.verify(token, config.auth.jwtSecret);
+          if (!isJwtPayload(decoded)) {
+            throw new Error("Invalid token payload");
+          }
           return decoded;
         },
         catch: (error) => {
@@ -116,7 +126,8 @@ export const JwtServiceLive = Layer.effect(
     const decode = (token: string): Effect.Effect<JwtPayload | null, never> =>
       Effect.sync(() => {
         try {
-          return jwt.decode(token) as JwtPayload | null;
+          const decoded = jwt.decode(token);
+          return isJwtPayload(decoded) ? decoded : null;
         } catch {
           return null;
         }
