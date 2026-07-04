@@ -13,18 +13,34 @@ WAN Monitor is a self-hosted network monitoring dashboard that tracks:
 
 ## Core Responsibilities
 
-When working on this project, agents should:
+Understand requirements before starting, follow existing conventions, test everything, and update docs when behavior changes. The sections below define how each of these is enforced.
 
-1. **Understand Requirements**: Thoroughly read and understand the task requirements before starting work
-2. **Write Quality Code**: Follow project conventions, write clean, maintainable, tested code
-3. **Test Everything**: Ensure all code is properly tested with unit and integration tests
-4. **Document Changes**: Update documentation when adding features or changing behavior
-5. **Follow Standards**: Adhere to TypeScript, React, and project-specific best practices
+## Always-On Rules
+
+These rules apply to every response and every change, regardless of task:
+
+- **No agent attribution in commits**: Never add `Co-Authored-By` or other agent/AI attribution to commit messages.
+- **No agent labels in GitHub metadata**: Never use `[cascade]`, `[codex]`, `[copilot]`, or similar agent labels in user-visible GitHub metadata (PR titles, descriptions, commit messages, comments) unless explicitly requested.
+- **PRs are ready for review by default**: Open PRs as ready for review, not drafts, unless the user explicitly asks for a draft.
+- **Verify dependency versions before adding them**: When adding a package dependency or framework integration, verify the current latest compatible version first with `pnpm view <pkg> version` (or current docs). Do not rely on remembered version numbers.
+
+## Final Status Block
+
+Every final response must end with a one-line status block using one of these indicators:
+
+- `🟢` — the requested work unit is finished on the current branch (routine commit/PR/CI may remain).
+- `🟡` — non-routine work or a manual step is still pending.
+- `🔴` — blocked on user input.
+
+Write a short, task-specific status sentence after the indicator (never the literal placeholder text).
 
 ## UI/Styling Standards
 
 - **Tailwind CSS**: Lean on Tailwind CSS styles for all styling (check documentation online if necessary) and keep it coherent
 - **Chakra UI**: Lean on Chakra UI components (check documentation online if necessary); only use `sx={{}}` on components as a last resort
+- **TypeScript everywhere**: All source files are TypeScript. Do not add `.js` or `.mjs` source files.
+- **No native browser dialogs**: Never use `alert()`, `confirm()`, or `prompt()`. Use Chakra UI dialog/modal components instead.
+- **Optimistic UI by default**: Update local state/cache and navigate immediately, then roll back on error. Avoid click-blocking spinners except for destructive or irreversible operations.
 
 ## Development Workflow
 
@@ -78,9 +94,7 @@ For each task:
 
 ### 4. Single Commit Per Feature
 
-- All changes for a task should be in **ONE commit** before pushing
-- If multiple commits were made during development, **squash them** before opening the PR
-- The commit message should clearly describe what was accomplished
+All changes for a task must land as **ONE commit** before pushing. Squash any intermediate commits (see **Non-Interactive Commands** for how) and write a descriptive message. This single-commit rule applies to every push, including updates to an existing PR.
 
 ### 5. Pull Request Process
 
@@ -125,33 +139,13 @@ When the feature is complete:
    - Include detailed description of changes
    - Reference the Linear task ID
    - Add `@pkallos` as the reviewer
-   - Ensure CI checks pass
 
 4. **Review and Iterate:**
-   - @pkallos will review the PR and provide feedback
-   - Make requested changes in the same branch
-   - Squash all commits into one before re-requesting review
-   - Once approved, the PR will be merged
+   - @pkallos reviews and provides feedback; make changes in the same branch.
+   - Before every re-push (whether for review feedback or a CI failure): re-run the full verify list from step 1, review the changeset, then **squash into one commit** and force push: `git push -f origin branch-name`.
+   - For CI failures, read the logs, reproduce locally, fix, then re-run **all** checks — not just the one that failed. **NEVER push multiple "fix CI" commits.**
 
-5. **Making Changes to an Existing PR:**
-
-   If you need to make changes after the initial push:
-   1. Make the changes
-   2. Run ALL CI checks again (lint, format, test, typecheck, build)
-   3. Review the changeset (remove temp files)
-   4. Squash all commits into one (see **Non-Interactive Commands** section for how)
-   5. Force push: `git push -f origin branch-name`
-
-   **If CI fails after pushing:**
-   1. Check the CI logs - identify the exact failure
-   2. Reproduce locally - run the failing command
-   3. Fix the issue
-   4. Run ALL checks again - not just the one that failed
-   5. Squash and force push
-
-   **NEVER push multiple "fix CI" commits. Always squash.**
-
-6. **After Merge:**
+5. **After Merge:**
    - Delete the feature branch
    - **Update the Linear task status to "Done"** (when user confirms PR is merged)
    - Move on to the next task
@@ -215,23 +209,9 @@ Use a **two-tier tagging system**:
 3. Add Priority/Effort labels if applicable
 4. Be specific but not excessive - avoid over-tagging
 
-**Examples:**
+**Examples:** `["Feature", "backend"]` (API endpoint), `["Bug", "frontend"]` (UI fix), `["Improvement", "devops", "documentation", "quick-win"]` (docs), `["Improvement", "devops", "breaking-change"]` (CI migration).
 
-- Backend API endpoint: `["Feature", "backend"]`
-- UI bug fix: `["Bug", "frontend"]`
-- Docker documentation: `["Improvement", "devops", "documentation", "quick-win"]`
-- Database reliability feature: `["Feature", "backend", "reliability"]`
-- CI/CD breaking change: `["Improvement", "devops", "breaking-change"]`
-- Frontend performance optimization: `["Improvement", "frontend", "performance"]`
-
-#### Agent Responsibilities
-
-When working on Linear tasks, agents should:
-
-- **Verify tags before starting work** - Ensure all issues have appropriate tags
-- **Add missing tags** - If an issue is untagged or under-tagged, add appropriate labels
-- **Update tags if scope changes** - Adjust labels if the work evolves during implementation
-- **Use tags for prioritization** - Consider tags when selecting which tasks to work on
+**Agent responsibility:** Verify tags before starting; add or correct labels when an issue is untagged, under-tagged, or its scope changes.
 
 ## Pre-Push Review (MANDATORY)
 
@@ -252,30 +232,20 @@ Before committing, run `git status` and `git diff` to review ALL changes. Review
 
 ### Quality Checklist (answer YES to ALL before pushing):
 
-**Functionality:**
-- [ ] Does the code accomplish the original goal/issue?
-- [ ] Does it work in both light AND dark mode?
-- [ ] Does it work on different screen sizes?
-- [ ] Are there any edge cases not handled?
+- **Functionality**: Accomplishes the original goal, works in light/dark mode and across screen sizes, and handles edge cases.
+- **Code quality**: Readable, well-named, follows existing patterns, and free of avoidable duplication or needless complexity.
+- **Performance**: No unnecessary re-renders, no leaked listeners/timers, expensive work memoized.
+- **Security**: User input validated, no XSS vectors (secrets are covered in **Data & Migration Safety**).
 
-**Code Quality:**
-- [ ] Is the code readable and well-organized?
-- [ ] Are variable/function names descriptive?
-- [ ] Is there any duplicated code that should be extracted?
-- [ ] Are there any overly complex functions that should be simplified?
-- [ ] Does it follow existing patterns in the codebase?
+**If any answer is NO, fix it before pushing.**
 
-**Performance:**
-- [ ] Are there any unnecessary re-renders?
-- [ ] Are there any memory leaks (event listeners, timers)?
-- [ ] Are expensive operations memoized/cached?
+## Data & Migration Safety
 
-**Security:**
-- [ ] Is user input validated?
-- [ ] Are there any XSS vulnerabilities?
-- [ ] Are API keys/secrets properly handled?
+WAN Monitor persists historical time-series metrics. Losing or corrupting that data is unacceptable.
 
-**If you answer NO to any question, fix it before pushing.**
+- **Schema changes must be additive**: Never drop, rename, truncate, or destructively alter existing tables or columns in migrations or startup code. Add new columns/tables instead, and backfill where needed.
+- **No destructive operations against production data**: Never run destructive migrations or ad hoc schema pushes against a live/production database.
+- **Never hardcode secrets**: Do not commit API keys, tokens, webhook URLs, or credential-looking literals in source, docs, tests, fixtures, or generated content. Use environment variables and obviously fake placeholders in examples.
 
 ## Code Quality Standards
 
