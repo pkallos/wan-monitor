@@ -4,7 +4,7 @@ import {
   Authorization,
   Unauthorized,
 } from "@shared/api/middlewares/authorization";
-import { Context, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer } from "effect";
 import {
   type JwtError,
   type JwtPayload,
@@ -28,15 +28,15 @@ export class AuthService extends Context.Tag("AuthService")<
   AuthServiceInterface
 >() {}
 
-export class UnauthorizedError {
-  readonly _tag = "UnauthorizedError";
-  constructor(readonly message: string) {}
-}
+export class UnauthorizedError extends Data.TaggedError("UnauthorizedError")<{
+  readonly message: string;
+}> {}
 
-export class MissingAuthHeaderError {
-  readonly _tag = "MissingAuthHeaderError";
-  constructor(readonly message: string) {}
-}
+export class MissingAuthHeaderError extends Data.TaggedError(
+  "MissingAuthHeaderError"
+)<{
+  readonly message: string;
+}> {}
 
 export type AuthError = UnauthorizedError | MissingAuthHeaderError | JwtError;
 
@@ -59,7 +59,9 @@ export const AuthServiceLive = Layer.effect(
 
         if (!authHeader) {
           return yield* Effect.fail(
-            new MissingAuthHeaderError("Authorization header required")
+            new MissingAuthHeaderError({
+              message: "Authorization header required",
+            })
           );
         }
 
@@ -69,18 +71,18 @@ export const AuthServiceLive = Layer.effect(
 
         if (!token) {
           return yield* Effect.fail(
-            new MissingAuthHeaderError("Bearer token required")
+            new MissingAuthHeaderError({ message: "Bearer token required" })
           );
         }
 
-        const payload = yield* jwtService
-          .verify(token)
-          .pipe(
-            Effect.mapError(
-              (error) =>
-                new UnauthorizedError(`Invalid token: ${error.message}`)
-            )
-          );
+        const payload = yield* jwtService.verify(token).pipe(
+          Effect.mapError(
+            (error) =>
+              new UnauthorizedError({
+                message: `Invalid token: ${error.message}`,
+              })
+          )
+        );
 
         return payload;
       });

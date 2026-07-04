@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer } from "effect";
 import jwt from "jsonwebtoken";
 import { ConfigService } from "@/infrastructure/config/config";
 
@@ -6,20 +6,17 @@ import { ConfigService } from "@/infrastructure/config/config";
 // Error Types
 // ============================================================================
 
-export class JwtInvalidError {
-  readonly _tag = "JwtInvalidError";
-  constructor(readonly message: string) {}
-}
+export class JwtInvalidError extends Data.TaggedError("JwtInvalidError")<{
+  readonly message: string;
+}> {}
 
-export class JwtExpiredError {
-  readonly _tag = "JwtExpiredError";
-  constructor(readonly message: string) {}
-}
+export class JwtExpiredError extends Data.TaggedError("JwtExpiredError")<{
+  readonly message: string;
+}> {}
 
-export class JwtMissingError {
-  readonly _tag = "JwtMissingError";
-  constructor(readonly message: string) {}
-}
+export class JwtMissingError extends Data.TaggedError("JwtMissingError")<{
+  readonly message: string;
+}> {}
 
 export type JwtError = JwtInvalidError | JwtExpiredError | JwtMissingError;
 
@@ -113,13 +110,13 @@ export const JwtServiceLive = Layer.effect(
         catch: (error) => {
           if (error instanceof Error) {
             if (error.name === "TokenExpiredError") {
-              return new JwtExpiredError(error.message);
+              return new JwtExpiredError({ message: error.message });
             }
             if (error.name === "JsonWebTokenError") {
-              return new JwtInvalidError(error.message);
+              return new JwtInvalidError({ message: error.message });
             }
           }
-          return new JwtInvalidError("Invalid token");
+          return new JwtInvalidError({ message: "Invalid token" });
         },
       });
 

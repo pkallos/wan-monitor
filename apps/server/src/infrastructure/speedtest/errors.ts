@@ -5,14 +5,18 @@
  * native module dependencies when only type checking is needed.
  */
 
-export class SpeedTestExecutionError {
-  readonly _tag = "SpeedTestExecutionError";
-  constructor(readonly message: string) {}
-}
+import { Data } from "effect";
 
-export class SpeedTestTimeoutError {
-  readonly _tag = "SpeedTestTimeoutError";
-  constructor(readonly timeoutMs: number) {}
-}
+export class SpeedTestExecutionError extends Data.TaggedError(
+  "SpeedTestExecutionError"
+)<{
+  readonly message: string;
+}> {}
+
+export class SpeedTestTimeoutError extends Data.TaggedError(
+  "SpeedTestTimeoutError"
+)<{
+  readonly timeoutMs: number;
+}> {}
 
 export type SpeedTestError = SpeedTestExecutionError | SpeedTestTimeoutError;
