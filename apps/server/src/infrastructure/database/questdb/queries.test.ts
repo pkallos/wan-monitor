@@ -114,10 +114,7 @@ describe("buildQueryMetrics", () => {
   });
 
   it("should fail with invalid granularity", async () => {
-    const params: QueryMetricsParams = {
-      // biome-ignore lint/suspicious/noExplicitAny: Testing invalid input
-      granularity: "invalid" as any,
-    };
+    const params: QueryMetricsParams = { granularity: "invalid" };
 
     const result = await Effect.runPromiseExit(buildQueryMetrics(params));
 
@@ -299,10 +296,7 @@ describe("buildQueryConnectivityStatus", () => {
   });
 
   it("should fail with invalid granularity", async () => {
-    const params: QueryMetricsParams = {
-      // biome-ignore lint/suspicious/noExplicitAny: Testing invalid input
-      granularity: "invalid" as any,
-    };
+    const params: QueryMetricsParams = { granularity: "invalid" };
 
     const result = await Effect.runPromiseExit(
       buildQueryConnectivityStatus(params)

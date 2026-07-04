@@ -273,6 +273,12 @@ WAN Monitor persists historical time-series metrics. Losing or corrupting that d
 - Always keep code in sync with tests
 - Keep linting rules with minimal ignores
 
+### Linting Standards (MANDATORY - NO EXCEPTIONS)
+
+- **NEVER** add `biome-ignore` comments to the codebase. Fix the underlying lint violation instead of suppressing it.
+- If a rule genuinely needs to be relaxed, change the Biome configuration explicitly rather than scattering inline suppressions.
+- **NEVER** use `as unknown as` double casts. They defeat type safety — there is always a better way (fix the type, add a proper type guard, decode through a schema, or use `@ts-expect-error` in tests when deliberately exercising invalid input).
+
 ### Documentation
 
 - Update README.md when adding new features

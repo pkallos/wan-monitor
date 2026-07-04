@@ -1,5 +1,3 @@
-import type { Granularity } from "@wan-monitor/shared";
-
 export interface MetricRow {
   readonly timestamp: string;
   readonly source: "ping" | "speedtest";
@@ -29,7 +27,7 @@ export interface QueryMetricsParams {
   readonly endTime?: Date;
   readonly host?: string;
   readonly limit?: number;
-  readonly granularity?: Granularity;
+  readonly granularity?: string;
 }
 
 export interface QuerySpeedtestsParams {

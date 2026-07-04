@@ -1,6 +1,6 @@
 import {
+  isValidGranularity,
   PACKET_LOSS_THRESHOLDS,
-  VALID_GRANULARITIES,
 } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
@@ -40,7 +40,7 @@ export const buildQueryMetrics = (
     }
 
     const granularity = params.granularity;
-    if (granularity && !VALID_GRANULARITIES.includes(granularity)) {
+    if (granularity && !isValidGranularity(granularity)) {
       return yield* Effect.fail(
         new DatabaseQueryError(`Invalid granularity: ${granularity}`)
       );
@@ -149,7 +149,7 @@ export const buildQueryConnectivityStatus = (
     const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
 
     const granularity = params.granularity ?? "5m";
-    if (!VALID_GRANULARITIES.includes(granularity)) {
+    if (!isValidGranularity(granularity)) {
       return yield* Effect.fail(
         new DatabaseQueryError(`Invalid granularity: ${granularity}`)
       );

@@ -8,16 +8,17 @@ describe("ILP integration tests", () => {
     vi.clearAllMocks();
   });
 
-  const createMockSender = () => {
-    const mock = {
-      table: vi.fn().mockReturnThis(),
-      symbol: vi.fn().mockReturnThis(),
-      floatColumn: vi.fn().mockReturnThis(),
-      intColumn: vi.fn().mockReturnThis(),
-      stringColumn: vi.fn().mockReturnThis(),
-      at: vi.fn().mockReturnThis(),
-    };
-    return mock as unknown as Sender;
+  const createMockSender = (): Sender => {
+    const sender: Partial<Sender> = {};
+    Object.assign(sender, {
+      table: vi.fn(() => sender),
+      symbol: vi.fn(() => sender),
+      floatColumn: vi.fn(() => sender),
+      intColumn: vi.fn(() => sender),
+      stringColumn: vi.fn(() => sender),
+      at: vi.fn(() => sender),
+    });
+    return sender as Sender;
   };
 
   describe("writeMetricToSender", () => {
