@@ -9,6 +9,7 @@ export interface AppConfig {
   readonly database: {
     readonly host: string;
     readonly port: number;
+    readonly pgPort: number;
     readonly protocol: "http" | "tcp";
     readonly autoFlushRows: number;
     readonly autoFlushInterval: number;
@@ -46,6 +47,9 @@ const makeConfig = Effect.gen(function* () {
     Config.withDefault("localhost")
   );
   const dbPort = yield* Config.number("DB_PORT").pipe(Config.withDefault(9000));
+  const dbPgPort = yield* Config.number("DB_PG_PORT").pipe(
+    Config.withDefault(8812)
+  );
   const dbProtocol = yield* Config.string("DB_PROTOCOL").pipe(
     Config.withDefault("http"),
     Config.mapOrFail(
@@ -105,6 +109,7 @@ const makeConfig = Effect.gen(function* () {
     database: {
       host: dbHost,
       port: dbPort,
+      pgPort: dbPgPort,
       protocol: dbProtocol,
       autoFlushRows: dbAutoFlushRows,
       autoFlushInterval: dbAutoFlushInterval,

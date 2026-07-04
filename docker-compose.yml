@@ -20,6 +20,36 @@ services:
       retries: 3
       start_period: 40s
 
+  # Isolated, ephemeral QuestDB for integration + E2E tests. Gated behind the
+  # `test` profile so it never starts with the default dev `docker compose up`.
+  # Uses distinct ports and its own volume so tests can run alongside a live dev
+  # DB and never touch dev data. Managed automatically by the test runners
+  # (Playwright globalSetup for e2e, Vitest globalSetup for integration); start
+  # manually with:
+  #   docker compose --profile test up -d questdb-test
+  questdb-test:
+    image: questdb/questdb:9.2.3
+    container_name: wan-monitor-questdb-test
+    profiles: ['test']
+    ports:
+      - '9100:9000'  # REST API and Web Console
+      - '9109:9009'  # InfluxDB line protocol
+      - '8912:8812'  # PostgreSQL wire protocol
+      - '9103:9003'  # Min health server
+    environment:
+      - QDB_TELEMETRY_ENABLED=false
+      - QDB_LOG_W_STDOUT_LEVEL=ERROR
+    volumes:
+      - questdb-test-data:/var/lib/questdb
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf "http://localhost:9000/exec?query=SELECT%201" > /dev/null || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 volumes:
   questdb-data:
+    driver: local
+  questdb-test-data:
     driver: local

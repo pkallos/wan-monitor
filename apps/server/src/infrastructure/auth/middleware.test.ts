@@ -9,33 +9,12 @@ import {
   UnauthorizedError,
 } from "@/infrastructure/auth/middleware";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
+import { makeTestAppConfig } from "@/test/config";
 
 const createTestConfigService = (
   password: string,
   jwtSecret = "test-secret"
-): AppConfig => ({
-  server: { port: 3001, host: "0.0.0.0" },
-  database: {
-    host: "localhost",
-    port: 9000,
-    protocol: "http",
-    autoFlushRows: 100,
-    autoFlushInterval: 1000,
-    requestTimeout: 10000,
-    retryTimeout: 1000,
-  },
-  ping: {
-    timeout: 5,
-    trainCount: 10,
-    hosts: ["8.8.8.8"],
-  },
-  auth: {
-    username: "admin",
-    password,
-    jwtSecret,
-    jwtExpiresIn: "24h",
-  },
-});
+): AppConfig => makeTestAppConfig({ auth: { password, jwtSecret } });
 
 describe("AuthService", () => {
   describe("isAuthRequired", () => {

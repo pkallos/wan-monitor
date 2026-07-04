@@ -7,11 +7,26 @@ import {
 
 /**
  * Base URL for the QuestDB HTTP API used by integration tests.
- * Integration tests run against a QuestDB instance exposed on the local
- * REST/exec port (9000). Shared by all test utilities so the endpoint is
- * defined in exactly one place.
+ *
+ * Resolved from the environment so integration tests can target an isolated
+ * dockerized QuestDB (see vitest.config.ts integration mode) instead of the
+ * dev database. Precedence:
+ *   1. QUESTDB_HTTP_URL (explicit override)
+ *   2. http://${DB_HOST}:${DB_PORT} (matches the server's REST/exec endpoint)
+ *   3. http://localhost:9000 (default dev/CI port)
+ * Shared by all test utilities so the endpoint is defined in exactly one place.
  */
-export const QUESTDB_HTTP_URL = "http://localhost:9000";
+const resolveQuestDBHttpUrl = (): string => {
+  const explicit = process.env.QUESTDB_HTTP_URL;
+  if (explicit && explicit.length > 0) {
+    return explicit.replace(/\/+$/, "");
+  }
+  const host = process.env.DB_HOST ?? "localhost";
+  const port = process.env.DB_PORT ?? "9000";
+  return `http://${host}:${port}`;
+};
+
+export const QUESTDB_HTTP_URL = resolveQuestDBHttpUrl();
 
 /**
  * Error for test database cleanup failures

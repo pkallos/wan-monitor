@@ -20,8 +20,6 @@ export interface QuestDBConnectionState {
   readonly connectedSince: Option.Option<Date>;
 }
 
-const QUESTDB_PG_PORT = 8812;
-
 const initialState: QuestDBConnectionState = {
   connection: Option.none(),
   isConnecting: false,
@@ -102,7 +100,7 @@ const make = Effect.gen(function* () {
 
     const pgClient = new PgClient({
       host: config.database.host,
-      port: QUESTDB_PG_PORT,
+      port: config.database.pgPort,
       database: "qdb",
       user: "admin",
       password: "quest",

@@ -6,30 +6,10 @@ import {
   JwtServiceLive,
 } from "@/infrastructure/auth/jwt";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
+import { makeTestAppConfig } from "@/test/config";
 
-const createTestConfigService = (jwtSecret: string): AppConfig => ({
-  server: { port: 3001, host: "0.0.0.0" },
-  database: {
-    host: "localhost",
-    port: 9000,
-    protocol: "http",
-    autoFlushRows: 100,
-    autoFlushInterval: 1000,
-    requestTimeout: 10000,
-    retryTimeout: 1000,
-  },
-  ping: {
-    timeout: 5,
-    trainCount: 10,
-    hosts: ["8.8.8.8"],
-  },
-  auth: {
-    username: "admin",
-    password: "test-password",
-    jwtSecret,
-    jwtExpiresIn: "24h",
-  },
-});
+const createTestConfigService = (jwtSecret: string): AppConfig =>
+  makeTestAppConfig({ auth: { password: "test-password", jwtSecret } });
 
 describe("JWT Service", () => {
   describe("sign", () => {

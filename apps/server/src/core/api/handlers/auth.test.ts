@@ -9,30 +9,10 @@ import {
 } from "@/core/api/handlers/auth";
 import { JwtService } from "@/infrastructure/auth/jwt";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
+import { makeTestAppConfig } from "@/test/config";
 
-const createMockConfig = (username: string, password: string): AppConfig => ({
-  server: { port: 3001, host: "0.0.0.0" },
-  database: {
-    host: "localhost",
-    port: 9000,
-    protocol: "http",
-    autoFlushRows: 100,
-    autoFlushInterval: 1000,
-    requestTimeout: 10000,
-    retryTimeout: 1000,
-  },
-  ping: {
-    timeout: 5,
-    trainCount: 10,
-    hosts: ["8.8.8.8"],
-  },
-  auth: {
-    username,
-    password,
-    jwtSecret: "test-secret",
-    jwtExpiresIn: "24h",
-  },
-});
+const createMockConfig = (username: string, password: string): AppConfig =>
+  makeTestAppConfig({ auth: { username, password } });
 
 const createMockJwtService = () => ({
   sign: (_username: string) =>

@@ -10,6 +10,7 @@ import { AuthService } from "@/infrastructure/auth/middleware";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
+import { makeTestAppConfig } from "@/test/config";
 
 /**
  * Integration tests for server startup and lifecycle (index.ts)
@@ -30,30 +31,14 @@ describe("Server Lifecycle Integration Tests", () => {
   // Helper to create a test config layer
   const createConfigServiceTest = (config: Partial<AppConfig> = {}) => {
     const defaultConfig: AppConfig = {
-      server: {
-        port: 0, // Use port 0 to let OS assign available port
-        host: "0.0.0.0",
-      },
-      database: {
-        host: "localhost",
-        port: 9000,
-        protocol: "http",
-        autoFlushRows: 100,
-        autoFlushInterval: 1000,
-        requestTimeout: 10000,
-        retryTimeout: 1000,
-      },
-      ping: {
-        hosts: ["8.8.8.8", "1.1.1.1", "cloudflare.com"],
-        timeout: 5000,
-        trainCount: 10,
-      },
-      auth: {
-        username: "admin",
-        password: "testpassword",
-        jwtSecret: "test-secret",
-        jwtExpiresIn: "1h",
-      },
+      ...makeTestAppConfig({
+        server: { port: 0 }, // Use port 0 to let OS assign available port
+        ping: {
+          hosts: ["8.8.8.8", "1.1.1.1", "cloudflare.com"],
+          timeout: 5000,
+        },
+        auth: { password: "testpassword", jwtExpiresIn: "1h" },
+      }),
       ...config,
     };
 

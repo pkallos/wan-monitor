@@ -8,6 +8,7 @@
     "start": "node ../../dist/server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "VITEST_INTEGRATION=true vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",

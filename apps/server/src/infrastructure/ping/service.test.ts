@@ -1,6 +1,5 @@
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it, vi } from "vitest";
-import { ConfigService } from "@/infrastructure/config/config";
 import {
   PingHostUnreachableError,
   PingNetworkError,
@@ -9,6 +8,7 @@ import {
   PingServiceLive,
   PingTimeoutError,
 } from "@/infrastructure/ping/service";
+import { makeTestConfigLayer } from "@/test/config";
 
 // Mock the ping module
 vi.mock("ping", () => ({
@@ -26,24 +26,9 @@ import ping from "ping";
 const mockProbe = ping.promise.probe as ReturnType<typeof vi.fn>;
 
 // Test config layer
-const TestConfigLive = Layer.succeed(ConfigService, {
-  server: { port: 3001, host: "0.0.0.0" },
-  database: {
-    host: "localhost",
-    port: 9000,
-    protocol: "http",
-    autoFlushRows: 100,
-    autoFlushInterval: 1000,
-    requestTimeout: 10000,
-    retryTimeout: 1000,
-  },
-  ping: { timeout: 5, trainCount: 10, hosts: ["8.8.8.8", "1.1.1.1"] },
-  auth: {
-    username: "admin",
-    password: "testpassword",
-    jwtSecret: "test-secret",
-    jwtExpiresIn: "1h",
-  },
+const TestConfigLive = makeTestConfigLayer({
+  ping: { hosts: ["8.8.8.8", "1.1.1.1"] },
+  auth: { password: "testpassword", jwtExpiresIn: "1h" },
 });
 
 const TestPingServiceLive = Layer.provide(PingServiceLive, TestConfigLive);
