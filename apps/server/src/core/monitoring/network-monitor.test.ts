@@ -1,5 +1,5 @@
 import type { NetworkMetric } from "@shared/metrics";
-import { ConfigProvider, Effect, Fiber, Layer, Logger, LogLevel } from "effect";
+import { Effect, Fiber, Layer, Logger, LogLevel } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
   type MonitorStats,
@@ -20,13 +20,6 @@ import { SpeedTestService } from "@/infrastructure/speedtest/types";
 import { makeTestConfigLayer } from "@/test/config";
 
 describe("NetworkMonitor", () => {
-  // Inject config through Effect's ConfigProvider rather than mutating
-  // process.env, which leaks global state between tests.
-  const withConfigProvider = (entries: Record<string, string>) =>
-    Effect.withConfigProvider(
-      ConfigProvider.fromMap(new Map(Object.entries(entries)))
-    );
-
   const mockPingResults: readonly PingExecutionResult[] = [
     {
       host: "8.8.8.8",
@@ -75,7 +68,8 @@ describe("NetworkMonitor", () => {
   });
 
   const MockConfig = makeTestConfigLayer({
-    ping: { hosts: ["8.8.8.8", "1.1.1.1"], timeout: 5000 },
+    ping: { hosts: ["8.8.8.8", "1.1.1.1"], timeout: 5000, intervalSeconds: 30 },
+    speedtest: { intervalSeconds: 3600, timeoutSeconds: 120 },
     auth: { password: "testpassword", jwtExpiresIn: "1h" },
   });
 
@@ -130,6 +124,24 @@ describe("NetworkMonitor", () => {
   });
 
   it("should respect custom ping interval from config", async () => {
+    const CustomPingConfig = makeTestConfigLayer({
+      ping: {
+        hosts: ["8.8.8.8", "1.1.1.1"],
+        timeout: 5000,
+        intervalSeconds: 30,
+      },
+      speedtest: { intervalSeconds: 3600, timeoutSeconds: 120 },
+      auth: { password: "testpassword", jwtExpiresIn: "1h" },
+    });
+
+    const CustomPingTestLayer = NetworkMonitorLive.pipe(
+      Layer.provide(MockPingExecutor),
+      Layer.provide(MockQuestDB),
+      Layer.provide(MockSpeedTestService),
+      Layer.provide(CustomPingConfig),
+      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+    );
+
     const program = Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const fiber = yield* Effect.fork(monitor.start());
@@ -143,12 +155,7 @@ describe("NetworkMonitor", () => {
       yield* Fiber.interrupt(fiber);
     });
 
-    await Effect.runPromise(
-      program.pipe(
-        Effect.provide(TestLayer),
-        withConfigProvider({ PING_INTERVAL_SECONDS: "30" })
-      )
-    );
+    await Effect.runPromise(program.pipe(Effect.provide(CustomPingTestLayer)));
   });
 
   it("should handle ping executor returning empty results", async () => {
@@ -186,6 +193,24 @@ describe("NetworkMonitor", () => {
   });
 
   it("should track speed test configuration from config", async () => {
+    const SpeedTestConfig = makeTestConfigLayer({
+      ping: {
+        hosts: ["8.8.8.8", "1.1.1.1"],
+        timeout: 5000,
+        intervalSeconds: 30,
+      },
+      speedtest: { intervalSeconds: 10, timeoutSeconds: 120 },
+      auth: { password: "testpassword", jwtExpiresIn: "1h" },
+    });
+
+    const SpeedTestTestLayer = NetworkMonitorLive.pipe(
+      Layer.provide(MockPingExecutor),
+      Layer.provide(MockQuestDB),
+      Layer.provide(MockSpeedTestService),
+      Layer.provide(SpeedTestConfig),
+      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+    );
+
     const program = Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const fiber = yield* Effect.fork(monitor.start());
@@ -198,12 +223,7 @@ describe("NetworkMonitor", () => {
       yield* Fiber.interrupt(fiber);
     });
 
-    await Effect.runPromise(
-      program.pipe(
-        Effect.provide(TestLayer),
-        withConfigProvider({ SPEEDTEST_INTERVAL_SECONDS: "10" })
-      )
-    );
+    await Effect.runPromise(program.pipe(Effect.provide(SpeedTestTestLayer)));
   });
 
   it("should handle partial ping failures in results", async () => {
@@ -287,7 +307,17 @@ describe("NetworkMonitor", () => {
       Layer.provide(MockPingExecutor),
       Layer.provide(MockQuestDB),
       Layer.provide(FlakySpeedTestService),
-      Layer.provide(MockConfig),
+      Layer.provide(
+        makeTestConfigLayer({
+          ping: {
+            hosts: ["8.8.8.8", "1.1.1.1"],
+            timeout: 5000,
+            intervalSeconds: 30,
+          },
+          speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
+          auth: { password: "testpassword", jwtExpiresIn: "1h" },
+        })
+      ),
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
@@ -315,12 +345,7 @@ describe("NetworkMonitor", () => {
       expect(stats.successfulSpeedTests).toBeGreaterThanOrEqual(1);
     });
 
-    await Effect.runPromise(
-      program.pipe(
-        Effect.provide(FlakyTestLayer),
-        withConfigProvider({ SPEEDTEST_INTERVAL_SECONDS: "1" })
-      )
-    );
+    await Effect.runPromise(program.pipe(Effect.provide(FlakyTestLayer)));
   });
 
   it("should count a speed test as failed when the DB write fails", async () => {
@@ -360,7 +385,17 @@ describe("NetworkMonitor", () => {
       Layer.provide(MockPingExecutor),
       Layer.provide(FailingSpeedTestWriteQuestDB),
       Layer.provide(SucceedingSpeedTestService),
-      Layer.provide(MockConfig),
+      Layer.provide(
+        makeTestConfigLayer({
+          ping: {
+            hosts: ["8.8.8.8", "1.1.1.1"],
+            timeout: 5000,
+            intervalSeconds: 30,
+          },
+          speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
+          auth: { password: "testpassword", jwtExpiresIn: "1h" },
+        })
+      ),
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
@@ -387,10 +422,7 @@ describe("NetworkMonitor", () => {
     });
 
     await Effect.runPromise(
-      program.pipe(
-        Effect.provide(FailingWriteTestLayer),
-        withConfigProvider({ SPEEDTEST_INTERVAL_SECONDS: "1" })
-      )
+      program.pipe(Effect.provide(FailingWriteTestLayer))
     );
   });
 
@@ -407,7 +439,17 @@ describe("NetworkMonitor", () => {
       Layer.provide(MockPingExecutor),
       Layer.provide(MockQuestDB),
       Layer.provide(TimingOutSpeedTestService),
-      Layer.provide(MockConfig),
+      Layer.provide(
+        makeTestConfigLayer({
+          ping: {
+            hosts: ["8.8.8.8", "1.1.1.1"],
+            timeout: 5000,
+            intervalSeconds: 30,
+          },
+          speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
+          auth: { password: "testpassword", jwtExpiresIn: "1h" },
+        })
+      ),
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
@@ -431,11 +473,95 @@ describe("NetworkMonitor", () => {
       expect(stats.failedSpeedTests).toBeGreaterThanOrEqual(1);
     });
 
-    await Effect.runPromise(
-      program.pipe(
-        Effect.provide(TimeoutTestLayer),
-        withConfigProvider({ SPEEDTEST_INTERVAL_SECONDS: "1" })
-      )
+    await Effect.runPromise(program.pipe(Effect.provide(TimeoutTestLayer)));
+  });
+
+  it("should maintain consistent counters after concurrent ping and speedtest cycles", async () => {
+    // PHI-150: Verify that Ref-based stats remain consistent when ping and
+    // speedtest cycles run concurrently. Each cycle increments counters
+    // atomically via Ref.update, so the final snapshot should reflect the
+    // exact number of operations completed.
+    const pingCallCount = { value: 0 };
+    const speedTestCallCount = { value: 0 };
+
+    const ConcurrentPingExecutor = Layer.succeed(PingExecutor, {
+      executePing: vi.fn(),
+      executeAll: () =>
+        Effect.sync(() => {
+          pingCallCount.value += 1;
+          return mockPingResults;
+        }),
+      executeHosts: vi.fn(),
+    });
+
+    const ConcurrentSpeedTestService = Layer.succeed(SpeedTestService, {
+      runTest: () =>
+        Effect.sync(() => {
+          speedTestCallCount.value += 1;
+          return {
+            timestamp: new Date(),
+            downloadSpeed: 100,
+            uploadSpeed: 20,
+            latency: 15,
+            jitter: 2,
+          };
+        }),
+    });
+
+    const ConcurrentConfig = makeTestConfigLayer({
+      ping: {
+        hosts: ["8.8.8.8", "1.1.1.1"],
+        timeout: 5000,
+        intervalSeconds: 1,
+      },
+      speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
+      auth: { password: "testpassword", jwtExpiresIn: "1h" },
+    });
+
+    const ConcurrentTestLayer = NetworkMonitorLive.pipe(
+      Layer.provide(ConcurrentPingExecutor),
+      Layer.provide(MockQuestDB),
+      Layer.provide(ConcurrentSpeedTestService),
+      Layer.provide(ConcurrentConfig),
+      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
+
+    const program = Effect.gen(function* () {
+      const monitor = yield* NetworkMonitor;
+
+      const fiber = yield* Effect.fork(
+        Effect.gen(function* () {
+          yield* monitor.start();
+          return yield* Effect.never;
+        })
+      );
+
+      // Let both loops run concurrently for a short window
+      yield* Effect.sleep("2500 millis");
+
+      const stats: MonitorStats = yield* monitor.getStats();
+
+      yield* Fiber.interrupt(fiber);
+
+      // Counters must be internally consistent: successful + failed pings
+      // should equal the total ping calls times the number of hosts per call.
+      const totalPingResults = pingCallCount.value * mockPingResults.length;
+      expect(stats.successfulPings + stats.failedPings).toBe(totalPingResults);
+
+      // Speed test counters: successful + failed should equal total calls
+      expect(stats.successfulSpeedTests + stats.failedSpeedTests).toBe(
+        speedTestCallCount.value
+      );
+
+      // All pings in mockPingResults are successful
+      expect(stats.successfulPings).toBe(totalPingResults);
+      expect(stats.failedPings).toBe(0);
+
+      // All speed tests succeeded and DB writes succeeded (mock)
+      expect(stats.successfulSpeedTests).toBe(speedTestCallCount.value);
+      expect(stats.failedSpeedTests).toBe(0);
+    });
+
+    await Effect.runPromise(program.pipe(Effect.provide(ConcurrentTestLayer)));
   });
 });

@@ -20,7 +20,12 @@ export interface AppConfig {
   readonly ping: {
     readonly timeout: number;
     readonly trainCount: number;
+    readonly intervalSeconds: number;
     readonly hosts: readonly string[];
+  };
+  readonly speedtest: {
+    readonly intervalSeconds: number;
+    readonly timeoutSeconds: number;
   };
   readonly auth: {
     readonly username: string;
@@ -87,10 +92,20 @@ const makeConfig = Effect.gen(function* () {
   const pingTrainCount = yield* Config.number("PING_TRAIN_COUNT").pipe(
     Config.withDefault(10)
   );
+  const pingIntervalSeconds = yield* Config.number(
+    "PING_INTERVAL_SECONDS"
+  ).pipe(Config.withDefault(30));
   const pingHostsStr = yield* Config.string("PING_HOSTS").pipe(
     Config.withDefault("8.8.8.8,1.1.1.1,cloudflare.com")
   );
   const pingHosts = pingHostsStr.split(",").map((h) => h.trim());
+
+  const speedTestIntervalSeconds = yield* Config.number(
+    "SPEEDTEST_INTERVAL_SECONDS"
+  ).pipe(Config.withDefault(3600));
+  const speedTestTimeoutSeconds = yield* Config.number(
+    "SPEEDTEST_TIMEOUT_SECONDS"
+  ).pipe(Config.withDefault(120));
 
   const authUsername = yield* Config.string("WAN_MONITOR_USERNAME").pipe(
     Config.withDefault("admin")
@@ -124,7 +139,12 @@ const makeConfig = Effect.gen(function* () {
     ping: {
       timeout: pingTimeout,
       trainCount: pingTrainCount,
+      intervalSeconds: pingIntervalSeconds,
       hosts: pingHosts,
+    },
+    speedtest: {
+      intervalSeconds: speedTestIntervalSeconds,
+      timeoutSeconds: speedTestTimeoutSeconds,
     },
     auth: {
       username: authUsername,

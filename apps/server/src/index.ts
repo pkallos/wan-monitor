@@ -38,7 +38,7 @@ import { SpeedTestServiceLive } from "@/infrastructure/speedtest/service";
 
 // Base layers (no dependencies or self-contained)
 const ConfigLayer = ConfigServiceLive;
-const SpeedTestLayer = SpeedTestServiceLive;
+const SpeedTestLayer = SpeedTestServiceLive.pipe(Layer.provide(ConfigLayer));
 
 // Level 1: Services depending only on Config
 const QuestDBLayer = QuestDBLive.pipe(Layer.provide(ConfigLayer));

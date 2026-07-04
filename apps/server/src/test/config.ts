@@ -10,6 +10,7 @@ export interface TestConfigOverrides {
   server?: Partial<AppConfig["server"]>;
   database?: Partial<AppConfig["database"]>;
   ping?: Partial<AppConfig["ping"]>;
+  speedtest?: Partial<AppConfig["speedtest"]>;
   auth?: Partial<AppConfig["auth"]>;
 }
 
@@ -34,7 +35,18 @@ export const makeTestAppConfig = (
     retryTimeout: 1000,
     ...overrides.database,
   },
-  ping: { timeout: 5, trainCount: 10, hosts: ["8.8.8.8"], ...overrides.ping },
+  ping: {
+    timeout: 5,
+    trainCount: 10,
+    intervalSeconds: 30,
+    hosts: ["8.8.8.8"],
+    ...overrides.ping,
+  },
+  speedtest: {
+    intervalSeconds: 3600,
+    timeoutSeconds: 120,
+    ...overrides.speedtest,
+  },
   auth: {
     username: "admin",
     password: "",
