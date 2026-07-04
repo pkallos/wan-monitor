@@ -98,9 +98,9 @@ const make = Effect.gen(function* () {
         return s;
       },
       catch: (error) =>
-        new DatabaseConnectionError(
-          `Sender connection failed: ${errorMessage(error)}`
-        ),
+        new DatabaseConnectionError({
+          message: `Sender connection failed: ${errorMessage(error)}`,
+        }),
     });
 
     const pgClient = new Pool({
@@ -123,9 +123,9 @@ const make = Effect.gen(function* () {
     yield* Effect.tryPromise({
       try: () => pgClient.query("SELECT 1"),
       catch: (error) =>
-        new DatabaseConnectionError(
-          `Connection verification failed: ${errorMessage(error)}`
-        ),
+        new DatabaseConnectionError({
+          message: `Connection verification failed: ${errorMessage(error)}`,
+        }),
     }).pipe(
       Effect.catchAll((error) =>
         Effect.gen(function* () {
@@ -290,7 +290,7 @@ const make = Effect.gen(function* () {
       const errorMsg = Option.isSome(state.lastError)
         ? state.lastError.value.message
         : "Database not connected";
-      return yield* Effect.fail(new DbUnavailable(errorMsg));
+      return yield* Effect.fail(new DbUnavailable({ message: errorMsg }));
     }
     return state.connection.value;
   });

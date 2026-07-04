@@ -343,7 +343,9 @@ describe("NetworkMonitor", () => {
     const FailingSpeedTestWriteQuestDB = Layer.succeed(QuestDB, {
       writeMetric: vi.fn((metric: NetworkMetric) =>
         metric.source === "speedtest"
-          ? Effect.fail(new DatabaseWriteError("speed test write failed"))
+          ? Effect.fail(
+              new DatabaseWriteError({ message: "speed test write failed" })
+            )
           : Effect.void
       ),
       flush: vi.fn(() => Effect.void),

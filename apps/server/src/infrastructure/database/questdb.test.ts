@@ -51,11 +51,11 @@ describe("QuestDB Service Types", () => {
   });
 
   it("should export error types", () => {
-    const connError = new DatabaseConnectionError("test");
+    const connError = new DatabaseConnectionError({ message: "test" });
     expect(connError._tag).toBe("DatabaseConnectionError");
     expect(connError.message).toBe("test");
 
-    const writeError = new DatabaseWriteError("test");
+    const writeError = new DatabaseWriteError({ message: "test" });
     expect(writeError._tag).toBe("DatabaseWriteError");
     expect(writeError.message).toBe("test");
   });

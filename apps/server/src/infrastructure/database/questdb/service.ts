@@ -79,9 +79,11 @@ const make = Effect.gen(function* () {
         catch: (error) => {
           const msg = errorMessage(error);
           if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable(msg);
+            return new DbUnavailable({ message: msg });
           }
-          return new DatabaseWriteError(`Failed to write metric: ${msg}`);
+          return new DatabaseWriteError({
+            message: `Failed to write metric: ${msg}`,
+          });
         },
       });
     }).pipe(
@@ -105,9 +107,11 @@ const make = Effect.gen(function* () {
         catch: (error) => {
           const msg = errorMessage(error);
           if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable(msg);
+            return new DbUnavailable({ message: msg });
           }
-          return new DatabaseQueryError(`Failed to query metrics: ${msg}`);
+          return new DatabaseQueryError({
+            message: `Failed to query metrics: ${msg}`,
+          });
         },
       });
 
@@ -137,9 +141,11 @@ const make = Effect.gen(function* () {
         catch: (error) => {
           const msg = errorMessage(error);
           if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable(msg);
+            return new DbUnavailable({ message: msg });
           }
-          return new DatabaseQueryError(`Failed to query speedtests: ${msg}`);
+          return new DatabaseQueryError({
+            message: `Failed to query speedtests: ${msg}`,
+          });
         },
       });
 
@@ -172,11 +178,11 @@ const make = Effect.gen(function* () {
         catch: (error) => {
           const msg = errorMessage(error);
           if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable(msg);
+            return new DbUnavailable({ message: msg });
           }
-          return new DatabaseQueryError(
-            `Failed to query connectivity status: ${msg}`
-          );
+          return new DatabaseQueryError({
+            message: `Failed to query connectivity status: ${msg}`,
+          });
         },
       });
 
@@ -204,7 +210,7 @@ const make = Effect.gen(function* () {
         const errorMsg = Option.isSome(state.lastError)
           ? state.lastError.value.message
           : "Database not connected";
-        return yield* Effect.fail(new DbUnavailable(errorMsg));
+        return yield* Effect.fail(new DbUnavailable({ message: errorMsg }));
       }
 
       const conn = state.connection.value;
@@ -212,7 +218,9 @@ const make = Effect.gen(function* () {
       yield* Effect.tryPromise({
         try: () => conn.pgClient.query("SELECT 1"),
         catch: (error) =>
-          new DatabaseConnectionError(`Health check failed: ${error}`),
+          new DatabaseConnectionError({
+            message: `Health check failed: ${error}`,
+          }),
       });
 
       const uptime = Option.isSome(state.connectedSince)
@@ -236,9 +244,11 @@ const make = Effect.gen(function* () {
         catch: (error) => {
           const msg = errorMessage(error);
           if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable(msg);
+            return new DbUnavailable({ message: msg });
           }
-          return new DatabaseWriteError(`Failed to flush metrics: ${msg}`);
+          return new DatabaseWriteError({
+            message: `Failed to flush metrics: ${msg}`,
+          });
         },
       });
     }).pipe(

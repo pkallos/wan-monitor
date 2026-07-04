@@ -1,19 +1,19 @@
-export class DatabaseConnectionError {
-  readonly _tag = "DatabaseConnectionError";
-  constructor(readonly message: string) {}
-}
+import { Data } from "effect";
 
-export class DbUnavailable {
-  readonly _tag = "DbUnavailable";
-  constructor(readonly message: string) {}
-}
+export class DatabaseConnectionError extends Data.TaggedError(
+  "DatabaseConnectionError"
+)<{
+  readonly message: string;
+}> {}
 
-export class DatabaseWriteError {
-  readonly _tag = "DatabaseWriteError";
-  constructor(readonly message: string) {}
-}
+export class DbUnavailable extends Data.TaggedError("DbUnavailable")<{
+  readonly message: string;
+}> {}
 
-export class DatabaseQueryError {
-  readonly _tag = "DatabaseQueryError";
-  constructor(readonly message: string) {}
-}
+export class DatabaseWriteError extends Data.TaggedError("DatabaseWriteError")<{
+  readonly message: string;
+}> {}
+
+export class DatabaseQueryError extends Data.TaggedError("DatabaseQueryError")<{
+  readonly message: string;
+}> {}

@@ -50,9 +50,9 @@ const introspectColumns = (
       return (result.rows as ColumnNameRow[]).map((row) => row.name);
     },
     catch: (error) =>
-      new DatabaseConnectionError(
-        `Schema introspection failed: ${errorMessage(error)}`
-      ),
+      new DatabaseConnectionError({
+        message: `Schema introspection failed: ${errorMessage(error)}`,
+      }),
   });
 
 /**
@@ -73,9 +73,9 @@ export const bootstrapSchema = (
     yield* Effect.tryPromise({
       try: () => pgClient.query(buildCreateTableSql()),
       catch: (error) =>
-        new DatabaseConnectionError(
-          `Schema bootstrap (create table) failed: ${errorMessage(error)}`
-        ),
+        new DatabaseConnectionError({
+          message: `Schema bootstrap (create table) failed: ${errorMessage(error)}`,
+        }),
     });
 
     const existing = yield* introspectColumns(pgClient);
@@ -86,11 +86,11 @@ export const bootstrapSchema = (
       const outcome = yield* Effect.tryPromise({
         try: () => pgClient.query(buildAddColumnSql(column)),
         catch: (error) =>
-          new DatabaseConnectionError(
-            `Schema migration (add column ${column.name}) failed: ${errorMessage(
+          new DatabaseConnectionError({
+            message: `Schema migration (add column ${column.name}) failed: ${errorMessage(
               error
-            )}`
-          ),
+            )}`,
+          }),
       }).pipe(
         Effect.as("added" as const),
         // A concurrent writer (ILP schema-on-write) may have created the column

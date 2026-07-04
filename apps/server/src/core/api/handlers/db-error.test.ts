@@ -21,7 +21,7 @@ describe("mapQueryError", () => {
     Effect.gen(function* () {
       const error = yield* Effect.flip(
         mapQueryError("Failed to query metrics")(
-          new DbUnavailable("connection refused")
+          new DbUnavailable({ message: "connection refused" })
         )
       );
       expect(error).toMatchObject({ error: "DB_UNAVAILABLE" });
@@ -31,7 +31,9 @@ describe("mapQueryError", () => {
   it.effect("maps any other failure to a labelled string error", () =>
     Effect.gen(function* () {
       const error = yield* Effect.flip(
-        mapQueryError("Failed to query metrics")(new DatabaseQueryError("boom"))
+        mapQueryError("Failed to query metrics")(
+          new DatabaseQueryError({ message: "boom" })
+        )
       );
       expect(typeof error).toBe("string");
       expect(error).toContain("Failed to query metrics");
