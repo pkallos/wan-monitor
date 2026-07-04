@@ -98,6 +98,43 @@ describe("SpeedTest API Handlers", () => {
       }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
     });
 
+    it.effect(
+      "flushes the DB after a successful write so the client refetch sees the row",
+      () => {
+        const mockResult = {
+          timestamp: new Date("2024-01-01T12:00:00Z"),
+          downloadSpeed: 100.5,
+          uploadSpeed: 50.2,
+          latency: 15.3,
+        };
+
+        let flushCount = 0;
+        const questDb: QuestDBService = {
+          ...createTestQuestDB(),
+          flush: () =>
+            Effect.sync(() => {
+              flushCount++;
+            }),
+        };
+
+        const SpeedTestServiceTest = Layer.succeed(
+          SpeedTestService,
+          createTestSpeedTestService(Effect.succeed(mockResult))
+        );
+        const QuestDBTest = Layer.succeed(QuestDB, questDb);
+
+        return Effect.gen(function* () {
+          const isRunningRef = yield* Ref.make(false);
+          const result = yield* triggerSpeedTestHandler(isRunningRef);
+
+          expect(result.success).toBe(true);
+          expect(flushCount).toBe(1);
+
+          return result;
+        }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
+      }
+    );
+
     it.effect("handles speed test timeout error", () => {
       const SpeedTestServiceTest = Layer.succeed(
         SpeedTestService,

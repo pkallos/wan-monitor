@@ -52,6 +52,9 @@ export default defineConfig({
         DB_PG_PORT: "8912",
         DB_PROTOCOL: "http",
         WAN_MONITOR_PASSWORD: "",
+        // Return deterministic, offline speed test results so the "Run Speed
+        // Test" E2E flow never touches the real network.
+        SPEEDTEST_STUB: "true",
       },
     },
     {

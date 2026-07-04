@@ -88,6 +88,19 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
                 )
               );
 
+            // Flush the ILP buffer so the row is committed before we return
+            // success. Without this the client's immediate history refetch can
+            // race the sender's periodic auto-flush and miss the new result.
+            yield* db
+              .flush()
+              .pipe(
+                Effect.catchAll((dbError) =>
+                  Effect.logError(
+                    `Speed test DB flush failed: ${dbError._tag} - ${dbError.message}`
+                  )
+                )
+              );
+
             yield* Ref.set(isRunningRef, false);
 
             return {

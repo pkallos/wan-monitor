@@ -3,12 +3,15 @@ import * as path from "node:path";
 import { ConfigProvider, Effect, Exit, Layer, Logger, LogLevel } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  createStubSpeedTestExecutor,
   DEFAULT_SPEEDTEST_TIMEOUT_SECONDS,
   makeSpeedTestService,
   SpeedTestExecutionError,
   SpeedTestService,
   SpeedTestServiceLive,
   SpeedTestTimeoutError,
+  STUB_SPEEDTEST_DOWNLOAD_MBPS,
+  STUB_SPEEDTEST_UPLOAD_MBPS,
 } from "@/infrastructure/speedtest/service";
 
 const isMacArm64 = process.platform === "darwin" && process.arch === "arm64";
@@ -315,6 +318,56 @@ describe("SpeedTestServiceLive - config integration", () => {
     );
 
     expect(Exit.isSuccess(exit)).toBe(true);
+  });
+});
+
+describe("SpeedTest - deterministic stub executor", () => {
+  it("createStubSpeedTestExecutor yields the documented download/upload speeds", async () => {
+    const service = makeSpeedTestService(createStubSpeedTestExecutor(), 5);
+
+    const result = await Effect.runPromise(
+      service
+        .runTest()
+        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
+    );
+
+    expect(result.downloadSpeed).toBe(STUB_SPEEDTEST_DOWNLOAD_MBPS);
+    expect(result.uploadSpeed).toBe(STUB_SPEEDTEST_UPLOAD_MBPS);
+    expect(result.latency).toBe(12.5);
+    expect(result.jitter).toBe(1.5);
+    expect(result.isp).toBe("E2E Stub ISP");
+  });
+
+  it("SpeedTestServiceLive returns stub results when SPEEDTEST_STUB is enabled", async () => {
+    const previous = process.env.SPEEDTEST_STUB;
+    process.env.SPEEDTEST_STUB = "true";
+
+    try {
+      const program = Effect.gen(function* () {
+        const service = yield* SpeedTestService;
+        return yield* service.runTest();
+      });
+
+      const result = await Effect.runPromise(
+        program.pipe(
+          Effect.provide(
+            Layer.merge(
+              SpeedTestServiceLive,
+              Logger.minimumLogLevel(LogLevel.None)
+            )
+          )
+        )
+      );
+
+      expect(result.downloadSpeed).toBe(STUB_SPEEDTEST_DOWNLOAD_MBPS);
+      expect(result.uploadSpeed).toBe(STUB_SPEEDTEST_UPLOAD_MBPS);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.SPEEDTEST_STUB;
+      } else {
+        process.env.SPEEDTEST_STUB = previous;
+      }
+    }
   });
 });
 

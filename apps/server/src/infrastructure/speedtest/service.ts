@@ -102,6 +102,58 @@ export const makeSpeedTestService = (
   };
 };
 
+// Deterministic values returned by the stub executor. Chosen well outside the
+// E2E seed ranges (100-125 Mbps down, 10-20 Mbps up) so a stubbed result is
+// unambiguously distinguishable in the UI and in assertions.
+export const STUB_SPEEDTEST_DOWNLOAD_MBPS = 500;
+export const STUB_SPEEDTEST_UPLOAD_MBPS = 100;
+
+/**
+ * A deterministic, offline speed test executor for test/E2E mode.
+ *
+ * Returns fixed results without touching the network so `pnpm test:e2e` and
+ * `SPEEDTEST_STUB=true` runs are fast and reproducible. `bandwidth` is in
+ * bytes/sec (the speedtest-net contract): Mbps = bandwidth * 8 / 1_000_000.
+ */
+export const createStubSpeedTestExecutor = (): SpeedTestExecutor => () =>
+  Promise.resolve({
+    type: "result",
+    timestamp: new Date(),
+    download: {
+      bandwidth: (STUB_SPEEDTEST_DOWNLOAD_MBPS * 1_000_000) / 8,
+      bytes: 0,
+      elapsed: 0,
+    },
+    upload: {
+      bandwidth: (STUB_SPEEDTEST_UPLOAD_MBPS * 1_000_000) / 8,
+      bytes: 0,
+      elapsed: 0,
+    },
+    ping: { latency: 12.5, jitter: 1.5 },
+    server: {
+      id: 1,
+      name: "E2E Stub Server",
+      location: "Test City, TC",
+      country: "Testland",
+      host: "stub.speedtest.local",
+      port: 8080,
+      ip: "203.0.113.10",
+    },
+    isp: "E2E Stub ISP",
+    interface: {
+      externalIp: "203.0.113.10",
+      internalIp: "192.168.1.50",
+      isVpn: false,
+      macAddr: "00:00:00:00:00:00",
+      name: "eth0",
+    },
+    packetLoss: 0,
+    result: {
+      id: "e2e-stub",
+      url: "https://stub.speedtest.local/result/e2e-stub",
+    },
+  }) as ReturnType<typeof speedTest>;
+
 export const SpeedTestServiceLive = Layer.effect(
   SpeedTestService,
   Effect.gen(function* () {
@@ -109,11 +161,25 @@ export const SpeedTestServiceLive = Layer.effect(
       "SPEEDTEST_TIMEOUT_SECONDS"
     ).pipe(Config.withDefault(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS));
 
-    const executor: SpeedTestExecutor = () =>
-      speedTest({
-        acceptLicense: true,
-        acceptGdpr: true,
-      });
+    // Test/E2E hook: when set, return deterministic offline results instead of
+    // invoking the native speedtest-net binary against the real network.
+    const useStub = yield* Config.boolean("SPEEDTEST_STUB").pipe(
+      Config.withDefault(false)
+    );
+
+    if (useStub) {
+      yield* Effect.logWarning(
+        "SPEEDTEST_STUB enabled: returning deterministic stub speed test results"
+      );
+    }
+
+    const executor: SpeedTestExecutor = useStub
+      ? createStubSpeedTestExecutor()
+      : () =>
+          speedTest({
+            acceptLicense: true,
+            acceptGdpr: true,
+          });
 
     return makeSpeedTestService(executor, timeoutSeconds);
   })
