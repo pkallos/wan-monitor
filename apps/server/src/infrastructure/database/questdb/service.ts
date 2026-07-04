@@ -1,5 +1,6 @@
 import type { DatabaseHealth, NetworkMetric } from "@shared/metrics";
 import { Context, Effect, Layer, Option } from "effect";
+import { ConfigService } from "@/infrastructure/config/config";
 import {
   QuestDBConnection,
   QuestDBConnectionLive,
@@ -65,6 +66,8 @@ export class QuestDB extends Context.Tag("QuestDB")<
 
 const make = Effect.gen(function* () {
   const connection = yield* QuestDBConnection;
+  const config = yield* ConfigService;
+  const table = config.database.table;
 
   const writeMetric = (
     metric: NetworkMetric
@@ -74,7 +77,7 @@ const make = Effect.gen(function* () {
 
       yield* Effect.tryPromise({
         try: async () => {
-          writeMetricToSender(conn.sender, metric);
+          writeMetricToSender(conn.sender, metric, table);
         },
         catch: (error) => {
           const msg = errorMessage(error);
@@ -98,7 +101,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const conn = yield* connection.getConnection;
 
-      const spec = yield* buildQueryMetrics(params);
+      const spec = yield* buildQueryMetrics(params, table);
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
@@ -130,7 +133,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const conn = yield* connection.getConnection;
 
-      const spec = buildQuerySpeedtests(params);
+      const spec = buildQuerySpeedtests(params, table);
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
@@ -165,7 +168,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const conn = yield* connection.getConnection;
 
-      const spec = yield* buildQueryConnectivityStatus(params);
+      const spec = yield* buildQueryConnectivityStatus(params, table);
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),

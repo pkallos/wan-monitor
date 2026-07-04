@@ -323,3 +323,48 @@ describe("buildQueryConnectivityStatus", () => {
     expect(result.query).toContain("ORDER BY timestamp ASC");
   });
 });
+
+describe("table name parameterization", () => {
+  it("buildQueryMetrics targets a custom table when provided", async () => {
+    const result = await Effect.runPromise(
+      buildQueryMetrics({}, "network_metrics_test_2")
+    );
+
+    expect(result.query).toContain("FROM network_metrics_test_2");
+    expect(result.query).not.toContain("FROM network_metrics\n");
+  });
+
+  it("buildQueryMetrics targets a custom table in the granularity branch", async () => {
+    const result = await Effect.runPromise(
+      buildQueryMetrics({ granularity: "5m" }, "network_metrics_test_2")
+    );
+
+    expect(result.query).toContain("FROM network_metrics_test_2");
+  });
+
+  it("buildQuerySpeedtests targets a custom table when provided", () => {
+    const result = buildQuerySpeedtests({}, "network_metrics_test_2");
+
+    expect(result.query).toContain("FROM network_metrics_test_2");
+  });
+
+  it("buildQueryConnectivityStatus targets a custom table when provided", async () => {
+    const result = await Effect.runPromise(
+      buildQueryConnectivityStatus({}, "network_metrics_test_2")
+    );
+
+    expect(result.query).toContain("FROM network_metrics_test_2");
+  });
+
+  it("defaults to the canonical network_metrics table", async () => {
+    const metrics = await Effect.runPromise(buildQueryMetrics({}));
+    const speedtests = buildQuerySpeedtests({});
+    const connectivity = await Effect.runPromise(
+      buildQueryConnectivityStatus({})
+    );
+
+    expect(metrics.query).toContain("FROM network_metrics");
+    expect(speedtests.query).toContain("FROM network_metrics");
+    expect(connectivity.query).toContain("FROM network_metrics");
+  });
+});

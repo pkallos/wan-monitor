@@ -1,5 +1,5 @@
 import { buildCreateTableSql } from "@wan-monitor/shared/db-schema";
-import { Data, Effect, Layer, Schedule } from "effect";
+import { ConfigProvider, Data, Effect, Layer, Schedule } from "effect";
 import { ConfigServiceLive } from "@/infrastructure/config/config";
 import {
   QuestDB,
@@ -30,6 +30,20 @@ const resolveQuestDBHttpUrl = (): string => {
 export const QUESTDB_HTTP_URL = resolveQuestDBHttpUrl();
 
 /**
+ * Per-worker metrics table name for integration tests.
+ *
+ * Each Vitest worker gets its own table (`network_metrics_test_<pool-id>`) so
+ * that test files running in parallel across workers never collide: one
+ * worker's TRUNCATE can no longer wipe another worker's freshly-seeded rows.
+ * Files within a single worker still run sequentially, so a single shared table
+ * per worker is safe. `VITEST_POOL_ID` is assigned per worker by the pool and
+ * falls back to "1" outside the pool (e.g. a direct import).
+ */
+export const TEST_TABLE = `network_metrics_test_${
+  process.env.VITEST_POOL_ID ?? "1"
+}`;
+
+/**
  * Error for test database cleanup failures
  */
 export class TestCleanupError extends Data.TaggedError("TestCleanupError")<{
@@ -45,12 +59,33 @@ export const isQuestDBAvailable = (): boolean => {
 };
 
 /**
- * Create the Effect Layer stack for integration tests.
- * This includes ConfigService and QuestDB with real connections.
+ * ConfigProvider that points the ConfigService-driven production code paths
+ * (ILP writer, query builders, schema bootstrap) at this worker's table.
+ *
+ * It overrides only `DB_TABLE` and falls back to the environment for every
+ * other key (DB_HOST, DB_PORT, ... supplied by vitest.config integration
+ * mode). This is the Effect-idiomatic way to inject test configuration — no
+ * `process.env` mutation, and the override is scoped to the test layer rather
+ * than leaking into the whole worker process.
  */
-export const createTestLayer = () => {
-  return Layer.provide(QuestDBLive, ConfigServiceLive);
-};
+const testConfigProvider = (): ConfigProvider.ConfigProvider =>
+  ConfigProvider.fromMap(new Map([["DB_TABLE", TEST_TABLE]])).pipe(
+    ConfigProvider.orElse(() => ConfigProvider.fromEnv())
+  );
+
+/**
+ * Create the Effect Layer stack for integration tests.
+ * This includes ConfigService (backed by {@link testConfigProvider}) and
+ * QuestDB with real connections.
+ */
+export const createTestLayer = () =>
+  Layer.provide(
+    QuestDBLive,
+    Layer.provide(
+      ConfigServiceLive,
+      Layer.setConfigProvider(testConfigProvider())
+    )
+  );
 
 /**
  * Poll interval and overall timeout for readiness checks. Integration tests
@@ -76,7 +111,7 @@ const countMetricRows = (): Effect.Effect<number, TestCleanupError> =>
     try: async () => {
       const response = await fetch(
         `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(
-          "SELECT count() FROM network_metrics"
+          `SELECT count() FROM ${TEST_TABLE}`
         )}`
       );
       if (!response.ok) {
@@ -130,8 +165,9 @@ const initializeDatabase = () =>
     yield* Effect.tryPromise({
       try: async () => {
         // Use the canonical schema so integration tests, CI, E2E, and the
-        // server bootstrap all create an identical table (no drift).
-        const createQuery = buildCreateTableSql();
+        // server bootstrap all create an identical table (no drift). The
+        // per-worker table name isolates parallel workers from each other.
+        const createQuery = buildCreateTableSql(TEST_TABLE);
 
         const createResponse = await fetch(
           `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(createQuery)}`,
@@ -142,7 +178,7 @@ const initializeDatabase = () =>
 
         if (!createResponse.ok) {
           throw new Error(
-            `Failed to create network_metrics table: ${createResponse.status}`
+            `Failed to create ${TEST_TABLE} table: ${createResponse.status}`
           );
         }
 
@@ -171,7 +207,9 @@ export const cleanupDatabase = (_db: QuestDB["Type"]) =>
     yield* Effect.tryPromise({
       try: async () => {
         const truncateResponse = await fetch(
-          `${QUESTDB_HTTP_URL}/exec?query=TRUNCATE%20TABLE%20network_metrics`,
+          `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(
+            `TRUNCATE TABLE ${TEST_TABLE}`
+          )}`,
           {
             method: "GET",
           }
@@ -180,7 +218,7 @@ export const cleanupDatabase = (_db: QuestDB["Type"]) =>
         if (!truncateResponse.ok) {
           const text = await truncateResponse.text();
           throw new Error(
-            `Failed to truncate network_metrics table: ${truncateResponse.status} - ${text}`
+            `Failed to truncate ${TEST_TABLE} table: ${truncateResponse.status} - ${text}`
           );
         }
 

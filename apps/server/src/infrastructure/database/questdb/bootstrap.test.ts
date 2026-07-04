@@ -70,6 +70,31 @@ describe("db-schema canonical builders", () => {
     });
   });
 
+  describe("table name parameterization", () => {
+    it("defaults buildCreateTableSql to the canonical table", () => {
+      expect(buildCreateTableSql()).toContain(
+        `CREATE TABLE IF NOT EXISTS ${NETWORK_METRICS_TABLE}`
+      );
+    });
+
+    it("targets a custom table in buildCreateTableSql when provided", () => {
+      const custom = buildCreateTableSql("network_metrics_test_3");
+      expect(custom).toContain(
+        "CREATE TABLE IF NOT EXISTS network_metrics_test_3"
+      );
+      expect(custom).not.toContain("IF NOT EXISTS network_metrics (");
+    });
+
+    it("targets a custom table in buildAddColumnSql when provided", () => {
+      expect(
+        buildAddColumnSql(
+          { name: "isp", type: "STRING" },
+          "network_metrics_test_3"
+        )
+      ).toBe("ALTER TABLE network_metrics_test_3 ADD COLUMN isp STRING;");
+    });
+  });
+
   describe("missingColumns", () => {
     it("returns nothing when all canonical columns exist", () => {
       expect(missingColumns(allColumnNames)).toEqual([]);
@@ -114,6 +139,30 @@ describe("bootstrapSchema", () => {
       (sql as string).includes("ADD COLUMN")
     );
     expect(alterCalls).toHaveLength(0);
+  });
+
+  it("threads a custom table name through create, introspect, and alter", async () => {
+    const existing = allColumnNames.filter((name) => name !== "isp");
+    const { client, query } = createMockPgClient(existing);
+
+    await Effect.runPromise(bootstrapSchema(client, "network_metrics_test_2"));
+
+    const sqlTexts = query.mock.calls.map(([sql]) => sql as string);
+    expect(
+      sqlTexts.some((sql) =>
+        sql.includes("CREATE TABLE IF NOT EXISTS network_metrics_test_2")
+      )
+    ).toBe(true);
+    expect(
+      sqlTexts.some((sql) =>
+        sql.includes("table_columns('network_metrics_test_2')")
+      )
+    ).toBe(true);
+    expect(
+      sqlTexts.some((sql) =>
+        sql.includes("ALTER TABLE network_metrics_test_2 ADD COLUMN isp")
+      )
+    ).toBe(true);
   });
 
   it("adds exactly the missing columns on a partially-migrated table", async () => {

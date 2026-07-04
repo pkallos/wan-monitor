@@ -149,7 +149,7 @@ const make = Effect.gen(function* () {
     // Bootstrap the canonical schema on every connection so production and
     // local dev no longer depend on ILP schema-on-write (the source of missing
     // columns and HTTP 500s). Idempotent and non-destructive.
-    yield* bootstrapSchema(pgClient).pipe(
+    yield* bootstrapSchema(pgClient, config.database.table).pipe(
       Effect.catchAll((error) =>
         Effect.gen(function* () {
           yield* Effect.promise(async () => {

@@ -15,7 +15,8 @@ export interface SqlQuerySpec {
 }
 
 export const buildQueryMetrics = (
-  params: QueryMetricsParams
+  params: QueryMetricsParams,
+  table = "network_metrics"
 ): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
   Effect.gen(function* () {
     const startTime =
@@ -62,7 +63,7 @@ export const buildQueryMetrics = (
             last(isp) as isp,
             last(external_ip) as external_ip,
             last(internal_ip) as internal_ip
-          FROM network_metrics
+          FROM ${table}
           WHERE timestamp >= $1
             AND timestamp <= $2
             AND (latency IS NULL OR latency >= 0)
@@ -86,7 +87,7 @@ export const buildQueryMetrics = (
             isp,
             external_ip,
             internal_ip
-          FROM network_metrics
+          FROM ${table}
           WHERE timestamp >= $1
             AND timestamp <= $2
             ${hostFilter}
@@ -98,7 +99,8 @@ export const buildQueryMetrics = (
   });
 
 export const buildQuerySpeedtests = (
-  params: QuerySpeedtestsParams
+  params: QuerySpeedtestsParams,
+  table = "network_metrics"
 ): SqlQuerySpec => {
   const startTime =
     params.startTime?.toISOString() ??
@@ -128,7 +130,7 @@ export const buildQuerySpeedtests = (
           isp,
           external_ip,
           internal_ip
-        FROM network_metrics
+        FROM ${table}
         WHERE timestamp >= $1
           AND timestamp <= $2
           AND source = 'speedtest'
@@ -140,7 +142,8 @@ export const buildQuerySpeedtests = (
 };
 
 export const buildQueryConnectivityStatus = (
-  params: QueryMetricsParams
+  params: QueryMetricsParams,
+  table = "network_metrics"
 ): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
   Effect.gen(function* () {
     const startTime =
@@ -188,7 +191,7 @@ export const buildQueryConnectivityStatus = (
             ELSE 0
           END) as up_count,
           COUNT(*) as total_count
-        FROM network_metrics
+        FROM ${table}
         WHERE timestamp >= $1
           AND timestamp <= $2
           AND source = 'ping'

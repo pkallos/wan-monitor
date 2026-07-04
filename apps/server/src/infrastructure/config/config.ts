@@ -11,6 +11,7 @@ export interface AppConfig {
     readonly port: number;
     readonly pgPort: number;
     readonly protocol: "http" | "tcp";
+    readonly table: string;
     readonly autoFlushRows: number;
     readonly autoFlushInterval: number;
     readonly requestTimeout: number;
@@ -64,6 +65,9 @@ const makeConfig = Effect.gen(function* () {
             )
     )
   );
+  const dbTable = yield* Config.string("DB_TABLE").pipe(
+    Config.withDefault("network_metrics")
+  );
   const dbAutoFlushRows = yield* Config.number("DB_AUTO_FLUSH_ROWS").pipe(
     Config.withDefault(100)
   );
@@ -111,6 +115,7 @@ const makeConfig = Effect.gen(function* () {
       port: dbPort,
       pgPort: dbPgPort,
       protocol: dbProtocol,
+      table: dbTable,
       autoFlushRows: dbAutoFlushRows,
       autoFlushInterval: dbAutoFlushInterval,
       requestTimeout: dbRequestTimeout,

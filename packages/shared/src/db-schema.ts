@@ -61,12 +61,14 @@ export const NETWORK_METRICS_COLUMNS: readonly ColumnDefinition[] = [
  * schema. Uses WAL and daily partitioning so test and production tables share
  * identical semantics.
  */
-export const buildCreateTableSql = (): string => {
+export const buildCreateTableSql = (
+  table: string = NETWORK_METRICS_TABLE
+): string => {
   const columns = NETWORK_METRICS_COLUMNS.map(
     (column) => `  ${column.name} ${column.type}`
   ).join(",\n");
 
-  return `CREATE TABLE IF NOT EXISTS ${NETWORK_METRICS_TABLE} (\n${columns}\n) TIMESTAMP(${DESIGNATED_TIMESTAMP}) PARTITION BY DAY WAL;`;
+  return `CREATE TABLE IF NOT EXISTS ${table} (\n${columns}\n) TIMESTAMP(${DESIGNATED_TIMESTAMP}) PARTITION BY DAY WAL;`;
 };
 
 /**
@@ -74,8 +76,10 @@ export const buildCreateTableSql = (): string => {
  * Used by the migration path when a pre-existing table is missing a canonical
  * column. Additive and non-destructive: no existing data is affected.
  */
-export const buildAddColumnSql = (column: ColumnDefinition): string =>
-  `ALTER TABLE ${NETWORK_METRICS_TABLE} ADD COLUMN ${column.name} ${column.type};`;
+export const buildAddColumnSql = (
+  column: ColumnDefinition,
+  table: string = NETWORK_METRICS_TABLE
+): string => `ALTER TABLE ${table} ADD COLUMN ${column.name} ${column.type};`;
 
 /**
  * Given the column names that currently exist on the table, return the
