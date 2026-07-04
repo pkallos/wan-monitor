@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 test.describe("WAN Monitor Dashboard", () => {
   test.beforeEach(async ({ page }) => {
@@ -47,24 +47,6 @@ test.describe("WAN Monitor Dashboard", () => {
     await expect(
       page.getByRole("heading", { name: "Speed Test History", exact: true })
     ).toBeVisible();
-  });
-
-  test("should display charts with seeded data", async ({ page }) => {
-    // Wait for dashboard to fully load
-    await expect(
-      page.getByRole("heading", { name: /wan monitor/i })
-    ).toBeVisible({ timeout: 10000 });
-
-    // Wait a bit for charts to render (they load data via API)
-    await page.waitForTimeout(2000);
-
-    // Check that chart containers exist (Recharts renders SVGs)
-    const svgCharts = page.locator("svg.recharts-surface");
-    await expect(svgCharts.first()).toBeVisible({ timeout: 10000 });
-
-    // Should have multiple charts
-    const chartCount = await svgCharts.count();
-    expect(chartCount).toBeGreaterThan(0);
   });
 
   test("should display date range selector", async ({ page }) => {
@@ -180,6 +162,124 @@ test.describe("WAN Monitor Dashboard", () => {
     await expect(page.getByText("Unknown ISP")).toHaveCount(0, {
       timeout: 15000,
     });
+  });
+});
+
+test.describe("Dashboard renders seeded data (PHI-93)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: /wan monitor/i })
+    ).toBeVisible({ timeout: 10000 });
+  });
+
+  // Locate a top metric card by its (case-sensitive) heading, returning the
+  // card container so we can assert on the value it renders.
+  const metricCard = (page: Page, title: string) =>
+    page.getByRole("heading", { name: title, exact: true }).locator("..");
+
+  test("top metric cards show non-placeholder seeded values", async ({
+    page,
+  }) => {
+    // The seed anchors the most recent ping and speedtest at "now", so even the
+    // default 1h window has data behind every top card.
+
+    // Connectivity resolves to a real status, never a placeholder.
+    await expect(metricCard(page, "Connectivity")).toContainText(
+      /Online|Offline/,
+      { timeout: 15000 }
+    );
+
+    // A digit immediately before "Mbps" proves a real reading; the empty state
+    // renders "-Mbps", which this pattern rejects.
+    await expect(metricCard(page, "Download Speed")).toContainText(
+      /\d+(\.\d+)?\s*Mbps/,
+      { timeout: 15000 }
+    );
+    await expect(metricCard(page, "Upload Speed")).toContainText(
+      /\d+(\.\d+)?\s*Mbps/,
+      { timeout: 15000 }
+    );
+  });
+
+  test("connectivity status timeline renders seeded data", async ({ page }) => {
+    // The timeline exposes role="img" only when it has segments to draw; the
+    // empty state is a plain box, so visibility here proves data rendered.
+    await expect(
+      page.getByRole("img", { name: "Connectivity status timeline" })
+    ).toBeVisible({ timeout: 15000 });
+
+    // Uptime is always rendered, so assert it resolved to a real, non-zero
+    // percentage rather than the 0.00% no-data value.
+    const uptime = page.getByText(/^Uptime: \d+\.\d+%$/);
+    await expect(uptime).toBeVisible({ timeout: 15000 });
+    const uptimeText = (await uptime.textContent()) ?? "";
+    const uptimePct = Number(uptimeText.match(/([\d.]+)%/)?.[1]);
+    expect(uptimePct).toBeGreaterThan(0);
+  });
+
+  test("network quality charts render seeded data lines", async ({ page }) => {
+    // Seed writes a ping every 15m across the last 24h. The 7-day view buckets
+    // at 15m granularity, so those points align into continuous line paths
+    // (shorter ranges bucket to 1m/5m and leave the sparse points isolated).
+    await page.getByRole("button", { name: "7 Days" }).click();
+
+    for (const label of ["Latency (ms)", "Packet Loss (%)", "Jitter (ms)"]) {
+      // Scope to the chart via its visible section label, then read recharts'
+      // own line path — no test-only markup on the components.
+      const curve = page
+        .getByText(label, { exact: true })
+        .locator("..")
+        .locator(".recharts-line-curve")
+        .first();
+      await expect(curve).toBeAttached({ timeout: 15000 });
+      // A drawn multi-point path starts with a MoveTo and carries draw
+      // commands; an isolated/empty series would be absent or a trivial "M x,y".
+      await expect
+        .poll(async () => (await curve.getAttribute("d"))?.length ?? 0, {
+          timeout: 15000,
+        })
+        .toBeGreaterThan(20);
+    }
+  });
+
+  test("speed test history renders seeded lines and stats", async ({
+    page,
+  }) => {
+    // The 6 seeded speedtests span the last 24h; widen to 24h so both the
+    // download and upload lines have multiple points to draw.
+    await page.getByRole("button", { name: "24 Hours" }).click();
+
+    // The heading sits inside a header row (HStack); its grandparent is the
+    // section box that also holds the chart and stats.
+    const speedSection = page
+      .getByRole("heading", { name: "Speed Test History" })
+      .locator("../..");
+
+    const curve = speedSection.locator(".recharts-line-curve").first();
+    await expect(curve).toBeAttached({ timeout: 15000 });
+    await expect
+      .poll(async () => (await curve.getAttribute("d"))?.length ?? 0, {
+        timeout: 15000,
+      })
+      .toBeGreaterThan(20);
+
+    // Each Stat pairs a label with a number; scope by the label and assert the
+    // number resolves to a value, not the "-" fallback.
+    for (const label of [
+      "Avg Download",
+      "Avg Upload",
+      "Max Download",
+      "Max Upload",
+    ]) {
+      const stat = speedSection
+        .locator(".chakra-stat")
+        .filter({ hasText: label });
+      await expect(stat.locator(".chakra-stat__number")).toHaveText(
+        /^\d+(\.\d+)?\s*Mbps/,
+        { timeout: 15000 }
+      );
+    }
   });
 });
 

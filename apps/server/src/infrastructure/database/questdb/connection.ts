@@ -1,6 +1,6 @@
 import { Sender } from "@questdb/nodejs-client";
 import { Context, Duration, Effect, Layer, Option, Ref } from "effect";
-import { Client as PgClient } from "pg";
+import { Pool } from "pg";
 import { ConfigService } from "@/infrastructure/config/config";
 import { bootstrapSchema } from "@/infrastructure/database/questdb/bootstrap";
 import {
@@ -11,7 +11,11 @@ import { errorMessage } from "@/infrastructure/database/questdb/util";
 
 export interface QuestDBRawConnection {
   readonly sender: Sender;
-  readonly pgClient: PgClient;
+  // A connection pool (not a single client) so concurrent API reads — the
+  // dashboard fires metrics, speedtest, and connectivity queries in parallel —
+  // each acquire their own backing connection instead of colliding on one
+  // client ("client is already executing a query").
+  readonly pgClient: Pool;
 }
 
 export interface QuestDBConnectionState {
@@ -99,7 +103,7 @@ const make = Effect.gen(function* () {
         ),
     });
 
-    const pgClient = new PgClient({
+    const pgClient = new Pool({
       host: config.database.host,
       port: config.database.pgPort,
       database: "qdb",
@@ -108,30 +112,14 @@ const make = Effect.gen(function* () {
       connectionTimeoutMillis: connectTimeoutMs,
       query_timeout: connectTimeoutMs,
       statement_timeout: connectTimeoutMs,
+      // Cap concurrent backing connections; QuestDB's pgwire handles multiple
+      // sessions, and the app's concurrency is bounded by parallel API reads.
+      max: 10,
+      idleTimeoutMillis: 30_000,
     });
 
-    yield* Effect.tryPromise({
-      try: () => pgClient.connect(),
-      catch: (error) =>
-        new DatabaseConnectionError(
-          `PgWire connection failed: ${errorMessage(error)}`
-        ),
-    }).pipe(
-      Effect.catchAll((error) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(async () => {
-            try {
-              await sender.close();
-            } catch {}
-            try {
-              await pgClient.end();
-            } catch {}
-          });
-          return yield* Effect.fail(error);
-        })
-      )
-    );
-
+    // A Pool connects lazily, so the first query both establishes a backing
+    // connection and verifies the database is reachable.
     yield* Effect.tryPromise({
       try: () => pgClient.query("SELECT 1"),
       catch: (error) =>
@@ -204,7 +192,7 @@ const make = Effect.gen(function* () {
       yield* Effect.logWarning(`QuestDB disconnected: ${error}`);
     });
 
-  const attachPgErrorHandler = (pgClient: PgClient): void => {
+  const attachPgErrorHandler = (pgClient: Pool): void => {
     pgClient.on("error", (error: Error) => {
       Effect.runFork(markDisconnected(error.message));
     });
