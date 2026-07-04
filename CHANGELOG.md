@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.8.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.7.0...wan-monitor-v0.8.0) (2026-07-04)
+
+
+### Features
+
+* add Playwright E2E + local integration test infrastructure with isolated QuestDB ([9398cbc](https://github.com/pkallos/wan-monitor/commit/9398cbc4a553adf2b5a5f12cd52899d7a9dea986))
+* bootstrap and migrate QuestDB schema from a single source of truth ([77306f3](https://github.com/pkallos/wan-monitor/commit/77306f327572ccf3ebf40d86ee131736595d85b1))
+* bootstrap and migrate QuestDB schema from a single source of truth ([10cbfec](https://github.com/pkallos/wan-monitor/commit/10cbfec8d0dad46248bb783b3ce8f6bb6f869a7f))
+* bootstrap worktrees via Windsurf post_setup_worktree hook ([843ce6e](https://github.com/pkallos/wan-monitor/commit/843ce6e1014d7bce30e73ad7ec2076e9b2cd1a14))
+* bootstrap worktrees via Windsurf post_setup_worktree hook ([7051cf8](https://github.com/pkallos/wan-monitor/commit/7051cf8cce3b508930ba3635d2ed6ac4b9b719fd))
+* Playwright E2E + local integration test infrastructure with isolated QuestDB ([86e29b9](https://github.com/pkallos/wan-monitor/commit/86e29b93e17251b54974b2b6fbf8d1c02486d30c))
+
+
+### Bug Fixes
+
+* correct connectivity status classification and document uptime semantics (PHI-140) ([10ddf0b](https://github.com/pkallos/wan-monitor/commit/10ddf0bc07659c50df067a2441f058a13ae11d6f))
+* correct connectivity status classification and document uptime semantics (PHI-140) ([8db9f59](https://github.com/pkallos/wan-monitor/commit/8db9f59d19f72419e1a03adb74aee025a77a10c6))
+* override lzma-native to skip native build (PHI-145) ([81906f3](https://github.com/pkallos/wan-monitor/commit/81906f3617e95a04f72e0ff8dc5507a108060ad2))
+* override lzma-native to skip native build (PHI-145) ([1a3025a](https://github.com/pkallos/wan-monitor/commit/1a3025afde7af36aa0c48ff0c203864c09d28962))
+* persist theme selection across page reloads ([5a40247](https://github.com/pkallos/wan-monitor/commit/5a40247888e20c6796b84a07cdef3cc75e6a933e))
+* persist theme selection across page reloads ([a6471e7](https://github.com/pkallos/wan-monitor/commit/a6471e7c1bbaf1ebf03fea816f43571ec7fdacbb))
+* scope last-updated e2e locator to avoid strict-mode violation ([defebe9](https://github.com/pkallos/wan-monitor/commit/defebe9207cc216a121c62b5e5d265d052d1dcb4))
+* scope last-updated e2e locator to avoid strict-mode violation ([b2cbd68](https://github.com/pkallos/wan-monitor/commit/b2cbd68d1a19fb401c0b84113b568b4957d7b91f))
+* surface DB-unavailable banner via real 503 contract ([5783c19](https://github.com/pkallos/wan-monitor/commit/5783c19f82286b7ee0047608072bd3d2b74b9558))
+* surface DB-unavailable banner via real 503 contract ([bf28448](https://github.com/pkallos/wan-monitor/commit/bf28448a7baa8e987c17005e58c905edb368a6e3))
+* use pg.Pool for concurrent QuestDB reads; add PHI-93 smoke test ([55ec077](https://github.com/pkallos/wan-monitor/commit/55ec07787af9ed34589606b6deb7d949d50fd82c))
+* use pg.Pool for concurrent QuestDB reads; add PHI-93 smoke test ([618b02c](https://github.com/pkallos/wan-monitor/commit/618b02c056f907a063c83bb1f38ecd2331ed261d))
+
 ## [0.7.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.6.2...wan-monitor-v0.7.0) (2026-07-02)
 
 
