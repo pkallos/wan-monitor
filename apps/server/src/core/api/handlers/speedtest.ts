@@ -23,9 +23,11 @@ type SpeedTestErrorCode =
 
 export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
   Effect.gen(function* () {
-    const isRunning = yield* Ref.get(isRunningRef);
+    const acquired = yield* Ref.modify(isRunningRef, (running) =>
+      running ? [false, true] : [true, true]
+    );
 
-    if (isRunning) {
+    if (!acquired) {
       return {
         success: false as const,
         timestamp: new Date().toISOString(),
@@ -36,16 +38,13 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
       };
     }
 
-    yield* Ref.set(isRunningRef, true);
     const speedTestService = yield* SpeedTestService;
     const db = yield* QuestDB;
 
     const result = yield* speedTestService.runTest().pipe(
       Effect.matchEffect({
         onFailure: (error) =>
-          Effect.gen(function* () {
-            yield* Ref.set(isRunningRef, false);
-
+          Effect.sync(() => {
             let errorCode: SpeedTestErrorCode =
               SpeedTestErrorCode.EXECUTION_FAILED;
             let errorMessage = "Speed test execution failed";
@@ -89,8 +88,6 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
                 )
               );
 
-            yield* Ref.set(isRunningRef, false);
-
             return {
               success: true as const,
               timestamp: testResult.timestamp.toISOString(),
@@ -105,7 +102,8 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
               },
             };
           }),
-      })
+      }),
+      Effect.ensuring(Ref.set(isRunningRef, false))
     );
 
     return result;
