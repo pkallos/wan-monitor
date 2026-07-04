@@ -152,23 +152,35 @@ export const buildQueryConnectivityStatus = (
       );
     }
 
+    // Connectivity classification. These three CASE branches are exhaustive and
+    // mutually exclusive, so `up_count + degraded_count + down_count` always
+    // equals `total_count` for every bucket:
+    //   - down:     connectivity_status = 'down' (authoritative — set by the
+    //               ping executor whenever a host is unreachable).
+    //   - degraded: reachable (not down) but with >= 5% packet loss. There is no
+    //               upper packet-loss bound: any reachable-but-lossy sample is
+    //               degraded, including 50-99% loss which previously fell through
+    //               a gap and was silently dropped from all counts.
+    //   - up:       everything else (reachable with < 5% loss, or no packet-loss
+    //               measurement). Emitted via the residual condition so no sample
+    //               is left unclassified.
+    // Latency is intentionally NOT used for classification: a successful ping
+    // with an unknown latency is stored as -1 (a valid, reachable sample), so
+    // keying off latency sign double-counted such rows as both up and down.
     const query = `
         SELECT
           timestamp,
           SUM(CASE
-            WHEN connectivity_status = 'down' OR latency < 0 THEN 1
+            WHEN connectivity_status = 'down' THEN 1
             ELSE 0
           END) as down_count,
           SUM(CASE
-            WHEN (latency >= 0 OR latency IS NOT NULL)
-              AND connectivity_status != 'down'
-              AND packet_loss >= 5
-              AND packet_loss < 50 THEN 1
+            WHEN connectivity_status != 'down'
+              AND packet_loss >= 5 THEN 1
             ELSE 0
           END) as degraded_count,
           SUM(CASE
-            WHEN (latency > 0 OR latency IS NOT NULL)
-              AND connectivity_status != 'down'
+            WHEN connectivity_status != 'down'
               AND (packet_loss < 5 OR packet_loss IS NULL) THEN 1
             ELSE 0
           END) as up_count,

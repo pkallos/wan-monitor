@@ -413,4 +413,111 @@ describe("Connectivity Status Integration Tests", () => {
       await Effect.runPromise(Effect.provide(program, testLayer));
     }
   );
+
+  // Regression guard for PHI-140. Two classification bugs previously corrupted
+  // these counts:
+  //   1. Gap: a reachable sample with >= 50% packet loss matched none of the
+  //      up/degraded/down branches, so it was dropped from every count while
+  //      still inflating total_count.
+  //   2. Overlap: a reachable sample with the -1 "unknown latency" sentinel was
+  //      counted as BOTH up and down.
+  // The fixed classification is exhaustive and mutually exclusive, so the three
+  // per-bucket percentages must sum to exactly 100.
+  it.skipIf(skipTests)(
+    "classifies high-loss and unknown-latency alive samples without dropping or double-counting",
+    async () => {
+      const baseTime = new Date("2024-01-20T13:00:00.000Z");
+      const baseMs = baseTime.getTime();
+      const metrics: NetworkMetric[] = [];
+
+      // 4 clean up samples (reachable, no loss)
+      for (let i = 0; i < 4; i++) {
+        metrics.push({
+          timestamp: new Date(baseMs + i * 30000),
+          source: "ping",
+          host: "8.8.8.8",
+          latency: 15.0,
+          jitter: 1.0,
+          packetLoss: 0.0,
+          connectivityStatus: "up",
+        });
+      }
+
+      // 3 reachable samples with 60% packet loss (the >= 50% gap case).
+      // These must be counted as degraded, not silently dropped.
+      for (let i = 0; i < 3; i++) {
+        metrics.push({
+          timestamp: new Date(baseMs + (4 + i) * 30000),
+          source: "ping",
+          host: "8.8.8.8",
+          latency: 35.0,
+          jitter: 6.0,
+          packetLoss: 60.0,
+          connectivityStatus: "up",
+        });
+      }
+
+      // 1 reachable sample with the -1 unknown-latency sentinel (the overlap
+      // case). It must be counted as up exactly once, never as down.
+      metrics.push({
+        timestamp: new Date(baseMs + 7 * 30000),
+        source: "ping",
+        host: "8.8.8.8",
+        latency: -1.0,
+        jitter: 0.0,
+        packetLoss: 0.0,
+        connectivityStatus: "up",
+      });
+
+      // 2 down samples (unreachable; latency omitted -> NULL in DB)
+      for (let i = 0; i < 2; i++) {
+        metrics.push({
+          timestamp: new Date(baseMs + (8 + i) * 30000),
+          source: "ping",
+          host: "8.8.8.8",
+          packetLoss: 100.0,
+          connectivityStatus: "down",
+        });
+      }
+
+      const program = Effect.gen(function* () {
+        const db = yield* setupIntegrationTest();
+
+        yield* seedDatabase(db, metrics);
+
+        const result = yield* getConnectivityStatusHandler({
+          urlParams: {
+            startTime: baseTime.toISOString(),
+            endTime: new Date(baseMs + 5 * 60000).toISOString(),
+            granularity: "5m",
+          },
+        });
+
+        expect(result.data).toHaveLength(1);
+        const bucket = result.data[0];
+
+        // 5 up (4 clean + 1 unknown-latency), 3 degraded, 2 down of 10 total.
+        expect(bucket.upPercentage).toBe(50);
+        expect(bucket.degradedPercentage).toBe(30);
+        expect(bucket.downPercentage).toBe(20);
+
+        // Invariant: exhaustive + mutually exclusive classification.
+        expect(
+          bucket.upPercentage +
+            bucket.degradedPercentage +
+            bucket.downPercentage
+        ).toBe(100);
+
+        // At least one sample is down, so the bucket's worst-case status is down.
+        expect(bucket.status).toBe("down");
+
+        // Strict-up uptime: only the 5 clean-up samples count. 5 / 10 = 50%.
+        expect(result.meta.uptimePercentage).toBe(50);
+
+        yield* teardownIntegrationTest(db);
+      });
+
+      await Effect.runPromise(Effect.provide(program, testLayer));
+    }
+  );
 });
