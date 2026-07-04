@@ -4,7 +4,8 @@ import type { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
 import { mbpsToBps } from "@shared/metrics";
 import type { SpeedMetric } from "@wan-monitor/shared";
 import { Effect, Ref, type Schema } from "effect";
-import { DbUnavailable, QuestDB } from "@/infrastructure/database/questdb";
+import { mapQueryError } from "@/core/api/handlers/db-error";
+import { QuestDB } from "@/infrastructure/database/questdb";
 import {
   SpeedTestExecutionError,
   SpeedTestTimeoutError,
@@ -126,14 +127,11 @@ export const getSpeedTestHistoryHandler = ({
       limit: urlParams.limit,
     };
 
-    const data = yield* db.querySpeedtests(params).pipe(
-      Effect.catchAll((error) => {
-        if (error instanceof DbUnavailable) {
-          return Effect.fail("Database temporarily unavailable");
-        }
-        return Effect.fail(`Failed to query speedtest history: ${error}`);
-      })
-    );
+    const data = yield* db
+      .querySpeedtests(params)
+      .pipe(
+        Effect.catchAll(mapQueryError("Failed to query speedtest history"))
+      );
 
     const speedMetrics: SpeedMetric[] = data.map((m) => ({
       timestamp: m.timestamp,

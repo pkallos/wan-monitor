@@ -1,4 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
+import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
 
@@ -94,6 +95,7 @@ export const SpeedTestApiGroup = HttpApiGroup.make("speedtest")
     HttpApiEndpoint.get("getSpeedTestHistory", "/history")
       .setUrlParams(SpeedTestHistoryQuery)
       .addSuccess(SpeedTestHistoryResponse)
+      .addError(DbUnavailableErrorSchema, { status: 503 })
       .addError(Schema.String)
   )
   .middleware(Authorization);

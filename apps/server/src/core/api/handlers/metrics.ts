@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import type { GetMetricsQueryParams } from "@shared/api/routes/metrics";
 import { Effect, type Schema } from "effect";
+import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
 export const getMetricsHandler = ({
@@ -47,9 +48,7 @@ export const getMetricsHandler = ({
         count: data.length,
       },
     };
-  }).pipe(
-    Effect.catchAll((error) => Effect.fail(`Failed to query metrics: ${error}`))
-  );
+  }).pipe(Effect.catchAll(mapQueryError("Failed to query metrics")));
 
 export const MetricsGroupLive = HttpApiBuilder.group(
   WanMonitorApi,
