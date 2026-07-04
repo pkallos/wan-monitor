@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.8.0...wan-monitor-v0.8.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* harden worktree bootstrap pnpm and PATH resolution ([0c58937](https://github.com/pkallos/wan-monitor/commit/0c58937a622ddd06f41b0b04d01f477ad888b8ff))
+* harden worktree bootstrap pnpm and PATH resolution ([0987f8f](https://github.com/pkallos/wan-monitor/commit/0987f8f76679a48e66f66095481cbd425a048cd6))
+* use native process.loadEnvFile instead of bundled dotenv ([#202](https://github.com/pkallos/wan-monitor/issues/202)) ([d6bc2a5](https://github.com/pkallos/wan-monitor/commit/d6bc2a5e1adaeb8cc9257ccdb80809ab4dac2219))
+
 ## [0.8.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.7.0...wan-monitor-v0.8.0) (2026-07-04)
 
 
