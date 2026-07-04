@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "post_setup_worktree": [
+      {
+        "command": "bash \"$ROOT_WORKSPACE_PATH/scripts/bootstrap-worktree.sh\"",
+        "show_output": true
+      }
+    ]
+  }
+}
