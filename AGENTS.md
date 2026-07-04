@@ -345,3 +345,38 @@ if (Option.isNone(option)) {
   // handle none
 }
 ```
+
+### Error Definitions
+
+Define tagged errors with Effect's built-in constructors. **Never hand-roll a plain class with a manual `readonly _tag` field** — it doesn't extend `Error` (no stack traces, `instanceof Error` is false), has no value equality, and duplicates boilerplate.
+
+**Domain errors (in-process only)** — use `Data.TaggedError`:
+
+```typescript
+import { Data } from 'effect';
+
+export class PingTimeoutError extends Data.TaggedError('PingTimeoutError')<{
+  readonly host: string;
+  readonly timeoutMs: number;
+}> {}
+
+// Construction uses a props object:
+new PingTimeoutError({ host, timeoutMs });
+```
+
+Benefits: `_tag` is set automatically, the class extends `Error` (real stack traces + `instanceof Error`), you get value equality/hashing via `Data`, and a typed props constructor.
+
+**Serializable / API-boundary errors** — use `Schema.TaggedError` (so they encode/decode across the HTTP boundary), as in `packages/shared/src/api/middlewares/authorization.ts`:
+
+```typescript
+import { HttpApiSchema } from '@effect/platform';
+import { Schema } from 'effect';
+
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
+  'Unauthorized',
+  {},
+  HttpApiSchema.annotations({ status: 401 })
+) {}
+```
+
+Rule of thumb: if the error only ever flows through the Effect error channel in-process, use `Data.TaggedError`. If it crosses a serialization boundary (HTTP response, worker message), use `Schema.TaggedError`. Discriminate either kind with `catchTag` / Effect type guards — never with direct `_tag` comparisons.

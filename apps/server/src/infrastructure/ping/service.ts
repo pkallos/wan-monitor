@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Data, Effect, Layer, Schema } from "effect";
 import ping from "ping";
 import { ConfigService } from "@/infrastructure/config/config";
 
@@ -6,29 +6,22 @@ import { ConfigService } from "@/infrastructure/config/config";
 // Error Types
 // ============================================================================
 
-export class PingNetworkError {
-  readonly _tag = "PingNetworkError";
-  constructor(
-    readonly host: string,
-    readonly message: string
-  ) {}
-}
+export class PingNetworkError extends Data.TaggedError("PingNetworkError")<{
+  readonly host: string;
+  readonly message: string;
+}> {}
 
-export class PingTimeoutError {
-  readonly _tag = "PingTimeoutError";
-  constructor(
-    readonly host: string,
-    readonly timeoutMs: number
-  ) {}
-}
+export class PingTimeoutError extends Data.TaggedError("PingTimeoutError")<{
+  readonly host: string;
+  readonly timeoutMs: number;
+}> {}
 
-export class PingHostUnreachableError {
-  readonly _tag = "PingHostUnreachableError";
-  constructor(
-    readonly host: string,
-    readonly message: string
-  ) {}
-}
+export class PingHostUnreachableError extends Data.TaggedError(
+  "PingHostUnreachableError"
+)<{
+  readonly host: string;
+  readonly message: string;
+}> {}
 
 export type PingError =
   | PingNetworkError
@@ -116,10 +109,10 @@ export const PingServiceLive = Layer.effect(
           });
 
           if (!result.alive) {
-            throw new PingHostUnreachableError(
+            throw new PingHostUnreachableError({
               host,
-              result.output || "Host unreachable"
-            );
+              message: result.output || "Host unreachable",
+            });
           }
 
           // Parse numeric value that might be 'unknown' string at runtime
@@ -146,12 +139,15 @@ export const PingServiceLive = Layer.effect(
             return error;
           }
           if (error instanceof Error && error.message.includes("timeout")) {
-            return new PingTimeoutError(host, pingConfig.timeout * 1000);
+            return new PingTimeoutError({
+              host,
+              timeoutMs: pingConfig.timeout * 1000,
+            });
           }
-          return new PingNetworkError(
+          return new PingNetworkError({
             host,
-            error instanceof Error ? error.message : String(error)
-          );
+            message: error instanceof Error ? error.message : String(error),
+          });
         },
       }).pipe(
         Effect.flatMap((result) => {

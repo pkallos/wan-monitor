@@ -85,7 +85,10 @@ describe("PingExecutor", () => {
     it("should handle ping failure and write metric with NULL latency", async () => {
       mockPing.mockReturnValue(
         Effect.fail(
-          new PingHostUnreachableError("unreachable.host", "Host unreachable")
+          new PingHostUnreachableError({
+            host: "unreachable.host",
+            message: "Host unreachable",
+          })
         )
       );
       mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
@@ -140,7 +143,10 @@ describe("PingExecutor", () => {
     it("should ignore database write errors when ping itself fails", async () => {
       mockPing.mockReturnValue(
         Effect.fail(
-          new PingHostUnreachableError("unreachable.host", "Host unreachable")
+          new PingHostUnreachableError({
+            host: "unreachable.host",
+            message: "Host unreachable",
+          })
         )
       );
       mockWriteMetric.mockReturnValue(

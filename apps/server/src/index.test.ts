@@ -1,4 +1,13 @@
-import { Cause, Effect, Exit, Fiber, Layer, Logger, LogLevel } from "effect";
+import {
+  Cause,
+  Data,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  LogLevel,
+} from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   NetworkMonitor,
@@ -315,23 +324,22 @@ describe("Server Lifecycle Integration Tests", () => {
 
   describe("Error Scenarios", () => {
     it("should handle database connection failures during startup", async () => {
-      class DbUnavailable {
-        readonly _tag = "DbUnavailable";
-        constructor(readonly message: string) {}
-      }
+      class DbUnavailable extends Data.TaggedError("DbUnavailable")<{
+        readonly message: string;
+      }> {}
 
       const QuestDBFailingTest = Layer.succeed(QuestDB, {
         writeMetric: vi.fn(() =>
-          Effect.fail(new DbUnavailable("Connection refused"))
+          Effect.fail(new DbUnavailable({ message: "Connection refused" }))
         ),
         flush: vi.fn(() => Effect.void),
         queryMetrics: vi.fn(() =>
-          Effect.fail(new DbUnavailable("Connection refused"))
+          Effect.fail(new DbUnavailable({ message: "Connection refused" }))
         ),
         querySpeedtests: vi.fn(),
         queryConnectivityStatus: vi.fn(),
         health: vi.fn(() =>
-          Effect.fail(new DbUnavailable("Connection refused"))
+          Effect.fail(new DbUnavailable({ message: "Connection refused" }))
         ),
         close: vi.fn(() => Effect.void),
       });

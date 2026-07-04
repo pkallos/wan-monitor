@@ -283,21 +283,27 @@ describe("PingResult Schema", () => {
 
 describe("Error Types", () => {
   it("should create PingNetworkError with correct tag", () => {
-    const error = new PingNetworkError("8.8.8.8", "Network down");
+    const error = new PingNetworkError({
+      host: "8.8.8.8",
+      message: "Network down",
+    });
     expect(error._tag).toBe("PingNetworkError");
     expect(error.host).toBe("8.8.8.8");
     expect(error.message).toBe("Network down");
   });
 
   it("should create PingTimeoutError with correct tag", () => {
-    const error = new PingTimeoutError("8.8.8.8", 5000);
+    const error = new PingTimeoutError({ host: "8.8.8.8", timeoutMs: 5000 });
     expect(error._tag).toBe("PingTimeoutError");
     expect(error.host).toBe("8.8.8.8");
     expect(error.timeoutMs).toBe(5000);
   });
 
   it("should create PingHostUnreachableError with correct tag", () => {
-    const error = new PingHostUnreachableError("8.8.8.8", "No route");
+    const error = new PingHostUnreachableError({
+      host: "8.8.8.8",
+      message: "No route",
+    });
     expect(error._tag).toBe("PingHostUnreachableError");
     expect(error.host).toBe("8.8.8.8");
     expect(error.message).toBe("No route");

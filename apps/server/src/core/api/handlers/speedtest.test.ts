@@ -102,7 +102,7 @@ describe("SpeedTest API Handlers", () => {
       const SpeedTestServiceTest = Layer.succeed(
         SpeedTestService,
         createTestSpeedTestService(
-          Effect.fail(new SpeedTestTimeoutError(120000))
+          Effect.fail(new SpeedTestTimeoutError({ timeoutMs: 120000 }))
         )
       );
 
@@ -126,7 +126,11 @@ describe("SpeedTest API Handlers", () => {
       const SpeedTestServiceTest = Layer.succeed(
         SpeedTestService,
         createTestSpeedTestService(
-          Effect.fail(new SpeedTestExecutionError("Network connection failed"))
+          Effect.fail(
+            new SpeedTestExecutionError({
+              message: "Network connection failed",
+            })
+          )
         )
       );
 

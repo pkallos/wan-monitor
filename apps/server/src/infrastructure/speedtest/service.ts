@@ -44,9 +44,9 @@ export const makeSpeedTestService = (
         const executeSpeedTest = Effect.tryPromise({
           try: () => executor(),
           catch: (error) => {
-            return new SpeedTestExecutionError(
-              error instanceof Error ? error.message : String(error)
-            );
+            return new SpeedTestExecutionError({
+              message: error instanceof Error ? error.message : String(error),
+            });
           },
         });
 
@@ -57,7 +57,9 @@ export const makeSpeedTestService = (
               yield* Effect.logWarning(
                 `Speed test timed out after ${timeoutSeconds}s`
               );
-              return yield* Effect.fail(new SpeedTestTimeoutError(timeoutMs));
+              return yield* Effect.fail(
+                new SpeedTestTimeoutError({ timeoutMs })
+              );
             })
           )
         );

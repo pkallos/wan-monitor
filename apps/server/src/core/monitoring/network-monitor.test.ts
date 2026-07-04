@@ -59,7 +59,7 @@ describe("NetworkMonitor", () => {
 
   const MockSpeedTestService = Layer.succeed(SpeedTestService, {
     runTest: vi.fn(() =>
-      Effect.fail(new SpeedTestExecutionError("Mock error"))
+      Effect.fail(new SpeedTestExecutionError({ message: "Mock error" }))
     ),
   });
 
@@ -258,7 +258,9 @@ describe("NetworkMonitor", () => {
           callCount += 1;
           if (callCount === 1) {
             return Effect.fail(
-              new SpeedTestExecutionError("Transient speed test failure")
+              new SpeedTestExecutionError({
+                message: "Transient speed test failure",
+              })
             );
           }
           return Effect.succeed({
