@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import type { GetConnectivityStatusQuery } from "@shared/api/routes/connectivity-status";
 import { Effect, type Schema } from "effect";
+import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
 export const getConnectivityStatusHandler = ({
@@ -59,9 +60,7 @@ export const getConnectivityStatusHandler = ({
       },
     };
   }).pipe(
-    Effect.catchAll((error) =>
-      Effect.fail(`Failed to query connectivity status: ${error}`)
-    )
+    Effect.catchAll(mapQueryError("Failed to query connectivity status"))
   );
 
 export const ConnectivityStatusGroupLive = HttpApiBuilder.group(

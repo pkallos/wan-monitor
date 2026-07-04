@@ -1,4 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
+import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
 
@@ -59,6 +60,7 @@ export const MetricsApiGroup = HttpApiGroup.make("metrics")
     HttpApiEndpoint.get("getMetrics", "/")
       .setUrlParams(GetMetricsQueryParams)
       .addSuccess(GetMetricsResponse)
+      .addError(DbUnavailableErrorSchema, { status: 503 })
       .addError(Schema.String)
   )
   .middleware(Authorization);

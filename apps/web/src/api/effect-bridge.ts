@@ -1,6 +1,7 @@
 import { FetchHttpClient } from "@effect/platform";
 import { Effect } from "effect";
 import { WanMonitorClient } from "@/api/effect-client";
+import { toApiError } from "@/api/errors";
 
 export const runEffect = <A, E>(
   effect: Effect.Effect<A, E, WanMonitorClient>
@@ -25,7 +26,7 @@ export const runEffectWithError = async <A, E>(
   );
 
   if (result._tag === "Left") {
-    throw result.left;
+    throw toApiError(result.left);
   }
 
   return result.right;

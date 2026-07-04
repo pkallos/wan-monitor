@@ -1,4 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
+import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
 
@@ -55,6 +56,7 @@ export const ConnectivityStatusApiGroup = HttpApiGroup.make(
     HttpApiEndpoint.get("getConnectivityStatus", "/")
       .setUrlParams(GetConnectivityStatusQuery)
       .addSuccess(ConnectivityStatusResponse)
+      .addError(DbUnavailableErrorSchema, { status: 503 })
       .addError(Schema.String)
   )
   .middleware(Authorization);
