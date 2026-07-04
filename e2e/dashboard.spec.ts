@@ -144,8 +144,12 @@ test.describe("WAN Monitor Dashboard", () => {
       page.getByRole("heading", { name: /wan monitor/i })
     ).toBeVisible({ timeout: 10000 });
 
-    // Look for "last updated" or "ago" text
-    await expect(page.getByText(/ago/i)).toBeVisible({ timeout: 15000 });
+    // Scope to the "Updated …s/m ago" indicator specifically. A bare /ago/i
+    // also matches the MetricCard "as of …ago" subtitles (Connectivity,
+    // Download, Upload), which is a strict-mode violation.
+    await expect(page.getByText(/updated .*ago/i)).toBeVisible({
+      timeout: 15000,
+    });
   });
 
   test("should have manual refresh button", async ({ page }) => {
