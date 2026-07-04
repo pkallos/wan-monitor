@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Ref } from "effect";
+import { Effect, Fiber, Layer, Ref } from "effect";
 import {
   getSpeedTestHistoryHandler,
   triggerSpeedTestHandler,
@@ -181,6 +181,88 @@ describe("SpeedTest API Handlers", () => {
         }
 
         return result;
+      }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
+    });
+
+    it.live(
+      "concurrent triggerSpeedTest calls: exactly one runs, other returns ALREADY_RUNNING",
+      () => {
+        const mockResult = {
+          timestamp: new Date("2024-01-01T12:00:00Z"),
+          downloadSpeed: 100.5,
+          uploadSpeed: 50.2,
+          latency: 15.3,
+          jitter: 2.5,
+          serverLocation: "San Francisco, CA",
+          isp: "Test ISP",
+          externalIp: "1.2.3.4",
+          internalIp: "192.168.1.100",
+        };
+
+        const SpeedTestServiceTest = Layer.succeed(
+          SpeedTestService,
+          createTestSpeedTestService(
+            Effect.sleep("200 millis").pipe(Effect.map(() => mockResult))
+          )
+        );
+
+        const QuestDBTest = Layer.succeed(QuestDB, createTestQuestDB());
+
+        return Effect.gen(function* () {
+          const isRunningRef = yield* Ref.make(false);
+
+          const fiber = yield* Effect.fork(
+            triggerSpeedTestHandler(isRunningRef)
+          );
+
+          yield* Effect.sleep("20 millis");
+
+          const secondResult = yield* triggerSpeedTestHandler(isRunningRef);
+          expect(secondResult.success).toBe(false);
+          if (!secondResult.success) {
+            expect(secondResult.error.code).toBe("SPEED_TEST_ALREADY_RUNNING");
+          }
+
+          const firstResult = yield* Fiber.join(fiber);
+          expect(firstResult.success).toBe(true);
+
+          const isRunning = yield* Ref.get(isRunningRef);
+          expect(isRunning).toBe(false);
+        }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
+      }
+    );
+
+    it.live("interrupted run leaves isRunning === false", () => {
+      const SpeedTestServiceTest = Layer.succeed(
+        SpeedTestService,
+        createTestSpeedTestService(
+          Effect.sleep("10 seconds").pipe(
+            Effect.map(() => ({
+              timestamp: new Date("2024-01-01T12:00:00Z"),
+              downloadSpeed: 100.5,
+              uploadSpeed: 50.2,
+              latency: 15.3,
+            }))
+          )
+        )
+      );
+
+      const QuestDBTest = Layer.succeed(QuestDB, createTestQuestDB());
+
+      return Effect.gen(function* () {
+        const isRunningRef = yield* Ref.make(false);
+
+        const fiber = yield* Effect.fork(triggerSpeedTestHandler(isRunningRef));
+
+        yield* Effect.sleep("50 millis");
+
+        const isRunningBefore = yield* Ref.get(isRunningRef);
+        expect(isRunningBefore).toBe(true);
+
+        yield* Fiber.interrupt(fiber);
+
+        const isRunningAfter = yield* Ref.get(isRunningRef);
+        expect(isRunningAfter).toBe(false);
       }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
     });
   });
