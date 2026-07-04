@@ -87,7 +87,7 @@
         "package.json"
       ],
       "outputs": [],
-      "env": ["QUESTDB_AVAILABLE", "DB_HOST", "DB_PORT"]
+      "env": ["QUESTDB_AVAILABLE", "DB_HOST", "DB_PORT", "DB_PG_PORT"]
     },
     "lint": {
       "inputs": [
@@ -132,7 +132,7 @@
         "package.json"
       ],
       "outputs": ["coverage/**"],
-      "env": ["QUESTDB_AVAILABLE", "DB_HOST", "DB_PORT"]
+      "env": ["QUESTDB_AVAILABLE", "DB_HOST", "DB_PORT", "DB_PG_PORT"]
     }
   }
 }

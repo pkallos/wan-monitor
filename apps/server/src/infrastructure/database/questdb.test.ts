@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { ConfigProvider, Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   ConfigService,
@@ -10,6 +10,7 @@ import {
   QuestDB,
   QuestDBLive,
 } from "@/infrastructure/database/questdb";
+import { makeTestConfigLayer } from "@/test/config";
 
 describe("ConfigService", () => {
   it("should load config with default values", async () => {
@@ -18,8 +19,15 @@ describe("ConfigService", () => {
       return config;
     });
 
+    // Use an empty ConfigProvider so this test verifies the built-in defaults
+    // in isolation, independent of any DB_* env vars set by the caller
+    // (e.g. the integration test runner exports DB_PORT/DB_PG_PORT).
+    const TestConfigLive = ConfigServiceLive.pipe(
+      Layer.provide(Layer.setConfigProvider(ConfigProvider.fromMap(new Map())))
+    );
+
     const result = await Effect.runPromise(
-      Effect.provide(program, ConfigServiceLive)
+      Effect.provide(program, TestConfigLive)
     );
 
     expect(result).toHaveProperty("server");
@@ -28,6 +36,7 @@ describe("ConfigService", () => {
     expect(result.server.host).toBe("0.0.0.0");
     expect(result.database.host).toBe("localhost");
     expect(result.database.port).toBe(9000);
+    expect(result.database.pgPort).toBe(8812);
     expect(result.database.protocol).toBe("http");
     expect(result.database.autoFlushRows).toBe(100);
     expect(result.database.autoFlushInterval).toBe(1000);
@@ -105,28 +114,10 @@ describe("QuestDB Integration", () => {
     "should fail health check when database is unreachable",
     async () => {
       // Create a config that points to wrong host
-      const BadConfigLive = Layer.succeed(ConfigService, {
-        server: { port: 3001, host: "0.0.0.0" },
-        database: {
-          host: "nonexistent-host",
-          port: 9000,
-          protocol: "http",
-          autoFlushRows: 100,
-          autoFlushInterval: 1000,
-          requestTimeout: 10000,
-          retryTimeout: 1000,
-        },
-        ping: {
-          timeout: 5,
-          trainCount: 10,
-          hosts: ["8.8.8.8", "1.1.1.1"],
-        },
-        auth: {
-          username: "admin",
-          password: "testpassword",
-          jwtSecret: "test-secret",
-          jwtExpiresIn: "1h",
-        },
+      const BadConfigLive = makeTestConfigLayer({
+        database: { host: "nonexistent-host" },
+        ping: { hosts: ["8.8.8.8", "1.1.1.1"] },
+        auth: { password: "testpassword", jwtExpiresIn: "1h" },
       });
 
       const MainLive = Layer.provide(QuestDBLive, BadConfigLive);

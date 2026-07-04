@@ -4,7 +4,6 @@ import {
   PingExecutor,
   PingExecutorLive,
 } from "@/core/monitoring/ping-executor";
-import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import {
   type PingError,
@@ -12,26 +11,12 @@ import {
   type PingResult,
   PingService,
 } from "@/infrastructure/ping/service";
+import { makeTestConfigLayer } from "@/test/config";
 
 // Mock config
-const TestConfigLive = Layer.succeed(ConfigService, {
-  server: { port: 3001, host: "0.0.0.0" },
-  database: {
-    host: "localhost",
-    port: 9000,
-    protocol: "http",
-    autoFlushRows: 100,
-    autoFlushInterval: 1000,
-    requestTimeout: 10000,
-    retryTimeout: 1000,
-  },
-  ping: { timeout: 5, trainCount: 10, hosts: ["8.8.8.8", "1.1.1.1"] },
-  auth: {
-    username: "admin",
-    password: "testpassword",
-    jwtSecret: "test-secret",
-    jwtExpiresIn: "1h",
-  },
+const TestConfigLive = makeTestConfigLayer({
+  ping: { hosts: ["8.8.8.8", "1.1.1.1"] },
+  auth: { password: "testpassword", jwtExpiresIn: "1h" },
 });
 
 // Mock PingService

@@ -41,8 +41,7 @@
         "apps/server/**/*.ts",
         "apps/server/**/*.tsx",
         "packages/**/*.ts",
-        "packages/**/*.tsx",
-        "!**/e2e/**"
+        "packages/**/*.tsx"
       ],
       "plugins": ["./.grit/no-relative-imports.grit"]
     }

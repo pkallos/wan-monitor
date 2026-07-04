@@ -7,6 +7,7 @@ import {
   type PingExecutorInterface,
 } from "@/core/monitoring/ping-executor";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
+import { makeTestAppConfig } from "@/test/config";
 
 const createMockPingExecutor = (
   executeHostsResult: readonly PingExecutionResult[],
@@ -32,29 +33,8 @@ const createMockPingExecutor = (
     Effect.succeed(executeHostsResult),
 });
 
-const createMockConfig = (hosts: readonly string[]): AppConfig => ({
-  server: { port: 3001, host: "0.0.0.0" },
-  database: {
-    host: "localhost",
-    port: 9000,
-    protocol: "http",
-    autoFlushRows: 100,
-    autoFlushInterval: 1000,
-    requestTimeout: 10000,
-    retryTimeout: 1000,
-  },
-  ping: {
-    timeout: 5,
-    trainCount: 10,
-    hosts,
-  },
-  auth: {
-    username: "admin",
-    password: "",
-    jwtSecret: "test-secret",
-    jwtExpiresIn: "24h",
-  },
-});
+const createMockConfig = (hosts: readonly string[]): AppConfig =>
+  makeTestAppConfig({ ping: { hosts } });
 
 describe("Ping Handlers", () => {
   describe("triggerPing", () => {

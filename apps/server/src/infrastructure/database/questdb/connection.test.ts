@@ -1,33 +1,20 @@
 import { Sender } from "@questdb/nodejs-client";
-import { type Context, Duration, Effect, Layer, Option } from "effect";
+import { Duration, Effect, Layer, Option } from "effect";
 import { Client as PgClient } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ConfigService } from "@/infrastructure/config/config";
 import {
   QuestDBConnection,
   QuestDBConnectionLive,
 } from "@/infrastructure/database/questdb/connection";
 import { DbUnavailable } from "@/infrastructure/database/questdb/errors";
+import { makeTestConfigLayer } from "@/test/config";
 
 vi.mock("@questdb/nodejs-client");
 vi.mock("pg");
 
-const mockConfig = {
-  database: {
-    host: "localhost",
-    port: 9000,
-    protocol: "http" as const,
-    autoFlushRows: 100,
-    autoFlushInterval: 1000,
-    requestTimeout: 5000,
-    retryTimeout: 10000,
-  },
-} as const;
-
-const TestConfigLayer = Layer.succeed(
-  ConfigService,
-  mockConfig as unknown as Context.Tag.Service<ConfigService>
-);
+const TestConfigLayer = makeTestConfigLayer({
+  database: { requestTimeout: 5000, retryTimeout: 10000 },
+});
 
 describe("QuestDBConnection integration tests", () => {
   beforeEach(() => {
@@ -75,16 +62,13 @@ describe("QuestDBConnection integration tests", () => {
     });
 
     it("should create connection with tcp protocol and call connect", async () => {
-      const tcpConfig = {
+      const TestConfigTcpLayer = makeTestConfigLayer({
         database: {
-          ...mockConfig.database,
-          protocol: "tcp" as const,
+          requestTimeout: 5000,
+          retryTimeout: 10000,
+          protocol: "tcp",
         },
-      };
-      const TestConfigTcpLayer = Layer.succeed(
-        ConfigService,
-        tcpConfig as unknown as Context.Tag.Service<ConfigService>
-      );
+      });
 
       const mockSender = {
         connect: vi.fn().mockResolvedValue(undefined),

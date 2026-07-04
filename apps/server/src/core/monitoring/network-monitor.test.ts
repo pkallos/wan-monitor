@@ -9,11 +9,11 @@ import {
   type PingExecutionResult,
   PingExecutor,
 } from "@/core/monitoring/ping-executor";
-import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import { SpeedTestExecutionError } from "@/infrastructure/speedtest/errors";
 // Import from speedtest-service to avoid native module loading
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
+import { makeTestConfigLayer } from "@/test/config";
 
 describe("NetworkMonitor", () => {
   const mockPingResults: readonly PingExecutionResult[] = [
@@ -63,31 +63,9 @@ describe("NetworkMonitor", () => {
     ),
   });
 
-  const MockConfig = Layer.succeed(ConfigService, {
-    server: {
-      port: 3001,
-      host: "0.0.0.0",
-    },
-    database: {
-      host: "localhost",
-      port: 9000,
-      protocol: "http" as const,
-      autoFlushRows: 100,
-      autoFlushInterval: 1000,
-      requestTimeout: 10000,
-      retryTimeout: 1000,
-    },
-    ping: {
-      hosts: ["8.8.8.8", "1.1.1.1"],
-      timeout: 5000,
-      trainCount: 10,
-    },
-    auth: {
-      username: "admin",
-      password: "testpassword",
-      jwtSecret: "test-secret",
-      jwtExpiresIn: "1h",
-    },
+  const MockConfig = makeTestConfigLayer({
+    ping: { hosts: ["8.8.8.8", "1.1.1.1"], timeout: 5000 },
+    auth: { password: "testpassword", jwtExpiresIn: "1h" },
   });
 
   const TestLayer = NetworkMonitorLive.pipe(
