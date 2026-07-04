@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, vi } from "@effect/vitest";
 import {
   buildAddColumnSql,
   buildCreateTableSql,
@@ -6,7 +7,6 @@ import {
   NETWORK_METRICS_TABLE,
 } from "@wan-monitor/shared/db-schema";
 import { Effect, Exit } from "effect";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bootstrapSchema } from "@/infrastructure/database/questdb/bootstrap";
 
 /**
@@ -115,121 +115,155 @@ describe("bootstrapSchema", () => {
     vi.clearAllMocks();
   });
 
-  it("creates the table before introspecting columns", async () => {
+  it.effect("creates the table before introspecting columns", () => {
     const { client, query } = createMockPgClient(allColumnNames);
 
-    await Effect.runPromise(bootstrapSchema(client));
+    return Effect.gen(function* () {
+      yield* bootstrapSchema(client);
 
-    const createCallIndex = query.mock.calls.findIndex(([sql]) =>
-      (sql as string).includes("CREATE TABLE IF NOT EXISTS")
-    );
-    const introspectCallIndex = query.mock.calls.findIndex(([sql]) =>
-      (sql as string).includes("table_columns")
-    );
-    expect(createCallIndex).toBeGreaterThanOrEqual(0);
-    expect(introspectCallIndex).toBeGreaterThan(createCallIndex);
-  });
-
-  it("adds no columns when the existing table already matches the canonical schema", async () => {
-    const { client, query } = createMockPgClient(allColumnNames);
-
-    await Effect.runPromise(bootstrapSchema(client));
-
-    const alterCalls = query.mock.calls.filter(([sql]) =>
-      (sql as string).includes("ADD COLUMN")
-    );
-    expect(alterCalls).toHaveLength(0);
-  });
-
-  it("threads a custom table name through create, introspect, and alter", async () => {
-    const existing = allColumnNames.filter((name) => name !== "isp");
-    const { client, query } = createMockPgClient(existing);
-
-    await Effect.runPromise(bootstrapSchema(client, "network_metrics_test_2"));
-
-    const sqlTexts = query.mock.calls.map(([sql]) => sql as string);
-    expect(
-      sqlTexts.some((sql) =>
-        sql.includes("CREATE TABLE IF NOT EXISTS network_metrics_test_2")
-      )
-    ).toBe(true);
-    expect(
-      sqlTexts.some((sql) =>
-        sql.includes("table_columns('network_metrics_test_2')")
-      )
-    ).toBe(true);
-    expect(
-      sqlTexts.some((sql) =>
-        sql.includes("ALTER TABLE network_metrics_test_2 ADD COLUMN isp")
-      )
-    ).toBe(true);
-  });
-
-  it("adds exactly the missing columns on a partially-migrated table", async () => {
-    const existing = allColumnNames.filter(
-      (name) => name !== "external_ip" && name !== "internal_ip"
-    );
-    const { client, query } = createMockPgClient(existing);
-
-    await Effect.runPromise(bootstrapSchema(client));
-
-    const altered = query.mock.calls
-      .map(([sql]) => sql as string)
-      .filter((sql) => sql.includes("ADD COLUMN"));
-    expect(altered).toHaveLength(2);
-    expect(altered.some((sql) => sql.includes("external_ip STRING"))).toBe(
-      true
-    );
-    expect(altered.some((sql) => sql.includes("internal_ip STRING"))).toBe(
-      true
-    );
-  });
-
-  it("fails with DatabaseConnectionError when table creation fails", async () => {
-    const query = vi.fn(() => Promise.reject(new Error("boom")));
-    const client = { query } as never;
-
-    const exit = await Effect.runPromiseExit(bootstrapSchema(client));
-
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      expect(String(error)).toContain("DatabaseConnectionError");
-    }
-  });
-
-  it("treats a concurrent duplicate-column error as success (race hardening)", async () => {
-    // introspection reports `isp` missing, but a concurrent ILP write creates
-    // it before our ALTER lands, so QuestDB rejects the ADD COLUMN.
-    const existing = allColumnNames.filter((name) => name !== "isp");
-    const { client } = createMockPgClient(existing, {
-      alterError: "column already exists [name=isp]",
+      const createCallIndex = query.mock.calls.findIndex(([sql]) =>
+        (sql as string).includes("CREATE TABLE IF NOT EXISTS")
+      );
+      const introspectCallIndex = query.mock.calls.findIndex(([sql]) =>
+        (sql as string).includes("table_columns")
+      );
+      expect(createCallIndex).toBeGreaterThanOrEqual(0);
+      expect(introspectCallIndex).toBeGreaterThan(createCallIndex);
     });
-
-    const exit = await Effect.runPromiseExit(bootstrapSchema(client));
-
-    expect(Exit.isSuccess(exit)).toBe(true);
   });
 
-  it("treats a 'Duplicate column' error variant as success", async () => {
+  it.effect(
+    "adds no columns when the existing table already matches the canonical schema",
+    () => {
+      const { client, query } = createMockPgClient(allColumnNames);
+
+      return Effect.gen(function* () {
+        yield* bootstrapSchema(client);
+
+        const alterCalls = query.mock.calls.filter(([sql]) =>
+          (sql as string).includes("ADD COLUMN")
+        );
+        expect(alterCalls).toHaveLength(0);
+      });
+    }
+  );
+
+  it.effect(
+    "threads a custom table name through create, introspect, and alter",
+    () => {
+      const existing = allColumnNames.filter((name) => name !== "isp");
+      const { client, query } = createMockPgClient(existing);
+
+      return Effect.gen(function* () {
+        yield* bootstrapSchema(client, "network_metrics_test_2");
+
+        const sqlTexts = query.mock.calls.map(([sql]) => sql as string);
+        expect(
+          sqlTexts.some((sql) =>
+            sql.includes("CREATE TABLE IF NOT EXISTS network_metrics_test_2")
+          )
+        ).toBe(true);
+        expect(
+          sqlTexts.some((sql) =>
+            sql.includes("table_columns('network_metrics_test_2')")
+          )
+        ).toBe(true);
+        expect(
+          sqlTexts.some((sql) =>
+            sql.includes("ALTER TABLE network_metrics_test_2 ADD COLUMN isp")
+          )
+        ).toBe(true);
+      });
+    }
+  );
+
+  it.effect(
+    "adds exactly the missing columns on a partially-migrated table",
+    () => {
+      const existing = allColumnNames.filter(
+        (name) => name !== "external_ip" && name !== "internal_ip"
+      );
+      const { client, query } = createMockPgClient(existing);
+
+      return Effect.gen(function* () {
+        yield* bootstrapSchema(client);
+
+        const altered = query.mock.calls
+          .map(([sql]) => sql as string)
+          .filter((sql) => sql.includes("ADD COLUMN"));
+        expect(altered).toHaveLength(2);
+        expect(altered.some((sql) => sql.includes("external_ip STRING"))).toBe(
+          true
+        );
+        expect(altered.some((sql) => sql.includes("internal_ip STRING"))).toBe(
+          true
+        );
+      });
+    }
+  );
+
+  it.effect(
+    "fails with DatabaseConnectionError when table creation fails",
+    () => {
+      const query = vi.fn(() => Promise.reject(new Error("boom")));
+      const client = { query } as never;
+
+      return Effect.gen(function* () {
+        const exit = yield* Effect.exit(bootstrapSchema(client));
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          const error = exit.cause;
+          expect(String(error)).toContain("DatabaseConnectionError");
+        }
+      });
+    }
+  );
+
+  it.effect(
+    "treats a concurrent duplicate-column error as success (race hardening)",
+    () => {
+      // introspection reports `isp` missing, but a concurrent ILP write creates
+      // it before our ALTER lands, so QuestDB rejects the ADD COLUMN.
+      const existing = allColumnNames.filter((name) => name !== "isp");
+      const { client } = createMockPgClient(existing, {
+        alterError: "column already exists [name=isp]",
+      });
+
+      return Effect.gen(function* () {
+        const exit = yield* Effect.exit(bootstrapSchema(client));
+
+        expect(Exit.isSuccess(exit)).toBe(true);
+      });
+    }
+  );
+
+  it.effect("treats a 'Duplicate column' error variant as success", () => {
     const existing = allColumnNames.filter((name) => name !== "isp");
     const { client } = createMockPgClient(existing, {
       alterError: "Duplicate column [name=isp]",
     });
 
-    const exit = await Effect.runPromiseExit(bootstrapSchema(client));
+    return Effect.gen(function* () {
+      const exit = yield* Effect.exit(bootstrapSchema(client));
 
-    expect(Exit.isSuccess(exit)).toBe(true);
-  });
-
-  it("still fails when an ALTER raises a non-duplicate (real) error", async () => {
-    const existing = allColumnNames.filter((name) => name !== "isp");
-    const { client } = createMockPgClient(existing, {
-      alterError: "table lock timeout",
+      expect(Exit.isSuccess(exit)).toBe(true);
     });
-
-    const exit = await Effect.runPromiseExit(bootstrapSchema(client));
-
-    expect(Exit.isFailure(exit)).toBe(true);
   });
+
+  it.effect(
+    "still fails when an ALTER raises a non-duplicate (real) error",
+    () => {
+      const existing = allColumnNames.filter((name) => name !== "isp");
+      const { client } = createMockPgClient(existing, {
+        alterError: "table lock timeout",
+      });
+
+      return Effect.gen(function* () {
+        const exit = yield* Effect.exit(bootstrapSchema(client));
+
+        expect(Exit.isFailure(exit)).toBe(true);
+      });
+    }
+  );
 });

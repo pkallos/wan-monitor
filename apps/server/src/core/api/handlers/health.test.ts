@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { HealthUnhealthy } from "@shared/api/errors";
-import { Effect, Layer } from "effect";
+import { Effect, Either, Layer } from "effect";
 import { getLiveHandler, getReadyHandler } from "@/core/api/handlers/health";
 import {
   QuestDB,
@@ -42,8 +42,8 @@ describe("Health Handlers", () => {
       return Effect.gen(function* () {
         const result = yield* Effect.either(getReadyHandler());
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(HealthUnhealthy);
           expect(result.left.message).toContain("Database unhealthy");
         }

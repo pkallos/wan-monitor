@@ -1,3 +1,4 @@
+import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import {
   Cause,
   Data,
@@ -8,7 +9,6 @@ import {
   Logger,
   LogLevel,
 } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   NetworkMonitor,
   NetworkMonitorLive,
@@ -159,35 +159,35 @@ describe("Server Lifecycle Integration Tests", () => {
   };
 
   describe("Server Startup", () => {
-    it("should start NetworkMonitor and initialize services successfully", async () => {
-      const program = Effect.gen(function* () {
-        const monitor = yield* NetworkMonitor;
-        const config = yield* ConfigService;
+    it.live(
+      "should start NetworkMonitor and initialize services successfully",
+      () =>
+        Effect.gen(function* () {
+          const monitor = yield* NetworkMonitor;
+          const config = yield* ConfigService;
 
-        // Verify monitor is available and config is loaded
-        expect(monitor).toBeDefined();
-        expect(config).toBeDefined();
-        expect(config.server.port).toBe(0);
+          // Verify monitor is available and config is loaded
+          expect(monitor).toBeDefined();
+          expect(config).toBeDefined();
+          expect(config.server.port).toBe(0);
 
-        // Start monitoring (mimics index.ts behavior)
-        const fiber = yield* Effect.fork(monitor.start());
+          // Start monitoring (mimics index.ts behavior)
+          const fiber = yield* Effect.fork(monitor.start());
 
-        // Wait briefly for async effects
-        yield* Effect.sleep("100 millis");
+          // Wait briefly for async effects
+          yield* Effect.sleep("100 millis");
 
-        // Verify monitoring is running
-        const stats = yield* monitor.getStats();
-        expect(stats.uptime).toBeGreaterThan(0);
-        expect(stats.successfulPings).toBeGreaterThanOrEqual(1);
+          // Verify monitoring is running
+          const stats = yield* monitor.getStats();
+          expect(stats.uptime).toBeGreaterThan(0);
+          expect(stats.successfulPings).toBeGreaterThanOrEqual(1);
 
-        // Clean shutdown
-        yield* Fiber.interrupt(fiber);
-      });
+          // Clean shutdown
+          yield* Fiber.interrupt(fiber);
+        }).pipe(Effect.provide(createTestLayer()))
+    );
 
-      await Effect.runPromise(program.pipe(Effect.provide(createTestLayer())));
-    });
-
-    it("should start with custom configuration", async () => {
+    it.live("should start with custom configuration", () => {
       const customConfig: Partial<AppConfig> = {
         server: {
           port: 8080,
@@ -201,7 +201,7 @@ describe("Server Lifecycle Integration Tests", () => {
         },
       };
 
-      const program = Effect.gen(function* () {
+      return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
         const config = yield* ConfigService;
 
@@ -218,15 +218,11 @@ describe("Server Lifecycle Integration Tests", () => {
         expect(stats.uptime).toBeGreaterThan(0);
 
         yield* Fiber.interrupt(fiber);
-      });
-
-      await Effect.runPromise(
-        program.pipe(Effect.provide(createTestLayer(customConfig)))
-      );
+      }).pipe(Effect.provide(createTestLayer(customConfig)));
     });
 
-    it("should initialize all required service layers", async () => {
-      const program = Effect.gen(function* () {
+    it.effect("should initialize all required service layers", () =>
+      Effect.gen(function* () {
         // Verify all services are available (mimics MainLive layer composition)
         const config = yield* ConfigService;
         const monitor = yield* NetworkMonitor;
@@ -250,15 +246,13 @@ describe("Server Lifecycle Integration Tests", () => {
 
         const tokenResponse = yield* jwt.sign("admin");
         expect(tokenResponse.token).toBe("mock-token");
-      });
-
-      await Effect.runPromise(program.pipe(Effect.provide(createTestLayer())));
-    });
+      }).pipe(Effect.provide(createTestLayer()))
+    );
   });
 
   describe("NetworkMonitor Lifecycle", () => {
-    it("should start NetworkMonitor and collect metrics", async () => {
-      const program = Effect.gen(function* () {
+    it.live("should start NetworkMonitor and collect metrics", () =>
+      Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
         // Start monitoring
@@ -275,13 +269,11 @@ describe("Server Lifecycle Integration Tests", () => {
         expect(stats.failedPings).toBe(0);
 
         yield* Fiber.interrupt(fiber);
-      });
+      }).pipe(Effect.provide(createTestLayer()))
+    );
 
-      await Effect.runPromise(program.pipe(Effect.provide(createTestLayer())));
-    });
-
-    it("should handle NetworkMonitor interruption gracefully", async () => {
-      const program = Effect.gen(function* () {
+    it.live("should handle NetworkMonitor interruption gracefully", () =>
+      Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
         const fiber = yield* Effect.fork(monitor.start());
@@ -292,13 +284,11 @@ describe("Server Lifecycle Integration Tests", () => {
 
         // Should complete successfully
         expect(Exit.isSuccess(interruptExit)).toBe(true);
-      });
+      }).pipe(Effect.provide(createTestLayer()))
+    );
 
-      await Effect.runPromise(program.pipe(Effect.provide(createTestLayer())));
-    });
-
-    it("should maintain stats during operation", async () => {
-      const program = Effect.gen(function* () {
+    it.live("should maintain stats during operation", () =>
+      Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
         const fiber = yield* Effect.fork(monitor.start());
@@ -318,74 +308,73 @@ describe("Server Lifecycle Integration Tests", () => {
         );
 
         yield* Fiber.interrupt(fiber);
-      });
-
-      await Effect.runPromise(program.pipe(Effect.provide(createTestLayer())));
-    });
+      }).pipe(Effect.provide(createTestLayer()))
+    );
   });
 
   describe("Error Scenarios", () => {
-    it("should handle database connection failures during startup", async () => {
-      class DbUnavailable extends Data.TaggedError("DbUnavailable")<{
-        readonly message: string;
-      }> {}
+    it.effect(
+      "should handle database connection failures during startup",
+      () => {
+        class DbUnavailable extends Data.TaggedError("DbUnavailable")<{
+          readonly message: string;
+        }> {}
 
-      const QuestDBFailingTest = Layer.succeed(QuestDB, {
-        writeMetric: vi.fn(() =>
-          Effect.fail(new DbUnavailable({ message: "Connection refused" }))
-        ),
-        flush: vi.fn(() => Effect.void),
-        queryMetrics: vi.fn(() =>
-          Effect.fail(new DbUnavailable({ message: "Connection refused" }))
-        ),
-        querySpeedtests: vi.fn(),
-        queryConnectivityStatus: vi.fn(),
-        health: vi.fn(() =>
-          Effect.fail(new DbUnavailable({ message: "Connection refused" }))
-        ),
-        close: vi.fn(() => Effect.void),
-      });
+        const QuestDBFailingTest = Layer.succeed(QuestDB, {
+          writeMetric: vi.fn(() =>
+            Effect.fail(new DbUnavailable({ message: "Connection refused" }))
+          ),
+          flush: vi.fn(() => Effect.void),
+          queryMetrics: vi.fn(() =>
+            Effect.fail(new DbUnavailable({ message: "Connection refused" }))
+          ),
+          querySpeedtests: vi.fn(),
+          queryConnectivityStatus: vi.fn(),
+          health: vi.fn(() =>
+            Effect.fail(new DbUnavailable({ message: "Connection refused" }))
+          ),
+          close: vi.fn(() => Effect.void),
+        });
 
-      const ConfigServiceTest = createConfigServiceTest();
-      const NetworkMonitorTest = NetworkMonitorLive.pipe(
-        Layer.provide(PingExecutorTest),
-        Layer.provide(QuestDBFailingTest),
-        Layer.provide(SpeedTestServiceTest),
-        Layer.provide(ConfigServiceTest)
-      );
+        const ConfigServiceTest = createConfigServiceTest();
+        const NetworkMonitorTest = NetworkMonitorLive.pipe(
+          Layer.provide(PingExecutorTest),
+          Layer.provide(QuestDBFailingTest),
+          Layer.provide(SpeedTestServiceTest),
+          Layer.provide(ConfigServiceTest)
+        );
 
-      const TestLayer = Layer.mergeAll(
-        ConfigServiceTest,
-        NetworkMonitorTest,
-        PingExecutorTest,
-        QuestDBFailingTest,
-        SpeedTestServiceTest,
-        JwtServiceTest,
-        AuthServiceTest
-      ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
+        const TestLayer = Layer.mergeAll(
+          ConfigServiceTest,
+          NetworkMonitorTest,
+          PingExecutorTest,
+          QuestDBFailingTest,
+          SpeedTestServiceTest,
+          JwtServiceTest,
+          AuthServiceTest
+        ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
 
-      const program = Effect.gen(function* () {
-        const questdb = yield* QuestDB;
+        return Effect.gen(function* () {
+          const questdb = yield* QuestDB;
 
-        // Attempt to check health
-        const healthExit = yield* Effect.exit(questdb.health());
+          // Attempt to check health
+          const healthExit = yield* Effect.exit(questdb.health());
 
-        // Should fail with database error
-        expect(Exit.isFailure(healthExit)).toBe(true);
-        if (Exit.isFailure(healthExit)) {
-          const cause = healthExit.cause;
-          expect(Cause.isFailType(cause)).toBe(true);
-          if (Cause.isFailType(cause)) {
-            expect(cause.error).toBeInstanceOf(DbUnavailable);
-            expect(cause.error._tag).toBe("DbUnavailable");
+          // Should fail with database error
+          expect(Exit.isFailure(healthExit)).toBe(true);
+          if (Exit.isFailure(healthExit)) {
+            const cause = healthExit.cause;
+            expect(Cause.isFailType(cause)).toBe(true);
+            if (Cause.isFailType(cause)) {
+              expect(cause.error).toBeInstanceOf(DbUnavailable);
+              expect(cause.error._tag).toBe("DbUnavailable");
+            }
           }
-        }
-      });
+        }).pipe(Effect.provide(TestLayer));
+      }
+    );
 
-      await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
-    });
-
-    it("should handle PingExecutor returning empty results", async () => {
+    it.live("should handle PingExecutor returning empty results", () => {
       const EmptyPingExecutorTest = Layer.succeed(PingExecutor, {
         executePing: vi.fn(),
         executeAll: () => Effect.succeed([]),
@@ -410,7 +399,7 @@ describe("Server Lifecycle Integration Tests", () => {
         AuthServiceTest
       ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
 
-      const program = Effect.gen(function* () {
+      return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
         const fiber = yield* Effect.fork(monitor.start());
 
@@ -422,14 +411,12 @@ describe("Server Lifecycle Integration Tests", () => {
         expect(stats.lastPingTime).not.toBeNull();
 
         yield* Fiber.interrupt(fiber);
-      });
-
-      await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
+      }).pipe(Effect.provide(TestLayer));
     });
   });
 
   describe("Shutdown and Cleanup", () => {
-    it("should clean up resources on shutdown", async () => {
+    it.live("should clean up resources on shutdown", () => {
       const closeMock = vi.fn(() => Effect.void);
       const QuestDBTestWithClose = Layer.succeed(QuestDB, {
         writeMetric: vi.fn(() => Effect.void),
@@ -465,7 +452,7 @@ describe("Server Lifecycle Integration Tests", () => {
         AuthServiceTest
       ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
 
-      const program = Effect.gen(function* () {
+      return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
         const questdb = yield* QuestDB;
 
@@ -481,13 +468,11 @@ describe("Server Lifecycle Integration Tests", () => {
 
         // Note: Layer cleanup happens automatically when Effect completes
         expect(questdb.close).toBeDefined();
-      });
-
-      await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
+      }).pipe(Effect.provide(TestLayer));
     });
 
-    it("should handle multiple rapid shutdown requests", async () => {
-      const program = Effect.gen(function* () {
+    it.live("should handle multiple rapid shutdown requests", () =>
+      Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
         const fiber = yield* Effect.fork(monitor.start());
@@ -501,9 +486,7 @@ describe("Server Lifecycle Integration Tests", () => {
 
         expect(Exit.isSuccess(exit1) || Exit.isInterrupted(exit1)).toBe(true);
         expect(Exit.isSuccess(exit2) || Exit.isInterrupted(exit2)).toBe(true);
-      });
-
-      await Effect.runPromise(program.pipe(Effect.provide(createTestLayer())));
-    });
+      }).pipe(Effect.provide(createTestLayer()))
+    );
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Either, Layer } from "effect";
 import {
   JwtInvalidError,
   JwtService,
@@ -92,8 +92,8 @@ describe("JWT Service", () => {
           jwtService.verify("invalid.token.here")
         );
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(JwtInvalidError);
         }
         return result;
@@ -117,8 +117,8 @@ describe("JWT Service", () => {
 
         const result = yield* Effect.either(jwtService.verify(fakeToken));
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(JwtInvalidError);
         }
         return result;

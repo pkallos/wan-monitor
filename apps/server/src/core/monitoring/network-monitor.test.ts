@@ -1,6 +1,7 @@
+import { describe, expect, it } from "@effect/vitest";
 import type { NetworkMetric } from "@shared/metrics";
 import { Effect, Fiber, Layer, Logger, LogLevel } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { vi } from "vitest";
 import {
   type MonitorStats,
   NetworkMonitor,
@@ -81,8 +82,8 @@ describe("NetworkMonitor", () => {
     Layer.provide(Logger.minimumLogLevel(LogLevel.None))
   );
 
-  it("should get initial stats", async () => {
-    const program = Effect.gen(function* () {
+  it.effect("should get initial stats", () =>
+    Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const stats: MonitorStats = yield* monitor.getStats();
 
@@ -93,13 +94,11 @@ describe("NetworkMonitor", () => {
       expect(stats.lastSpeedTestTime).toBeNull();
       expect(stats.successfulSpeedTests).toBe(0);
       expect(stats.failedSpeedTests).toBe(0);
-    });
+    }).pipe(Effect.provide(TestLayer))
+  );
 
-    await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
-  });
-
-  it("should start monitoring and update stats after initial ping", async () => {
-    const program = Effect.gen(function* () {
+  it.live("should start monitoring and update stats after initial ping", () =>
+    Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
       // Fork the start and interrupt after assertions
@@ -118,12 +117,10 @@ describe("NetworkMonitor", () => {
 
       // Interrupt the background monitor
       yield* Fiber.interrupt(fiber);
-    });
+    }).pipe(Effect.provide(TestLayer))
+  );
 
-    await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
-  });
-
-  it("should respect custom ping interval from config", async () => {
+  it.live("should respect custom ping interval from config", () => {
     const CustomPingConfig = makeTestConfigLayer({
       ping: {
         hosts: ["8.8.8.8", "1.1.1.1"],
@@ -142,7 +139,7 @@ describe("NetworkMonitor", () => {
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
-    const program = Effect.gen(function* () {
+    return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const fiber = yield* Effect.fork(monitor.start());
       yield* Effect.sleep("100 millis");
@@ -153,12 +150,10 @@ describe("NetworkMonitor", () => {
 
       // Interrupt the background monitor
       yield* Fiber.interrupt(fiber);
-    });
-
-    await Effect.runPromise(program.pipe(Effect.provide(CustomPingTestLayer)));
+    }).pipe(Effect.provide(CustomPingTestLayer));
   });
 
-  it("should handle ping executor returning empty results", async () => {
+  it.live("should handle ping executor returning empty results", () => {
     const EmptyResultsPingExecutor = Layer.succeed(PingExecutor, {
       executePing: vi.fn(),
       executeAll: () => Effect.succeed([]),
@@ -173,7 +168,7 @@ describe("NetworkMonitor", () => {
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
-    const program = Effect.gen(function* () {
+    return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const fiber = yield* Effect.fork(monitor.start());
 
@@ -185,14 +180,10 @@ describe("NetworkMonitor", () => {
       expect(stats.lastPingTime).not.toBeNull();
 
       yield* Fiber.interrupt(fiber);
-    });
-
-    await Effect.runPromise(
-      program.pipe(Effect.provide(EmptyResultsTestLayer))
-    );
+    }).pipe(Effect.provide(EmptyResultsTestLayer));
   });
 
-  it("should track speed test configuration from config", async () => {
+  it.live("should track speed test configuration from config", () => {
     const SpeedTestConfig = makeTestConfigLayer({
       ping: {
         hosts: ["8.8.8.8", "1.1.1.1"],
@@ -211,7 +202,7 @@ describe("NetworkMonitor", () => {
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
-    const program = Effect.gen(function* () {
+    return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const fiber = yield* Effect.fork(monitor.start());
 
@@ -221,12 +212,10 @@ describe("NetworkMonitor", () => {
       expect(stats.lastSpeedTestTime).toBeNull();
 
       yield* Fiber.interrupt(fiber);
-    });
-
-    await Effect.runPromise(program.pipe(Effect.provide(SpeedTestTestLayer)));
+    }).pipe(Effect.provide(SpeedTestTestLayer));
   });
 
-  it("should handle partial ping failures in results", async () => {
+  it.live("should handle partial ping failures in results", () => {
     const MixedResultsPingExecutor = Layer.succeed(PingExecutor, {
       executePing: vi.fn(),
       executeAll: () =>
@@ -259,7 +248,7 @@ describe("NetworkMonitor", () => {
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
-    const program = Effect.gen(function* () {
+    return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
       const fiber = yield* Effect.fork(monitor.start());
 
@@ -270,85 +259,82 @@ describe("NetworkMonitor", () => {
       expect(stats.failedPings).toBe(1);
 
       yield* Fiber.interrupt(fiber);
-    });
-
-    await Effect.runPromise(
-      program.pipe(Effect.provide(MixedResultsTestLayer))
-    );
+    }).pipe(Effect.provide(MixedResultsTestLayer));
   });
 
-  it("should keep running the speed test loop after a failed cycle", async () => {
-    // Reproduces the bug where a single failed speed test kills the recurring
-    // schedule permanently. The first cycle fails (transient error), later
-    // cycles succeed. A healthy loop must recover and keep testing.
-    let callCount = 0;
-    const FlakySpeedTestService = Layer.succeed(SpeedTestService, {
-      runTest: () =>
-        Effect.suspend(() => {
-          callCount += 1;
-          if (callCount === 1) {
-            return Effect.fail(
-              new SpeedTestExecutionError({
-                message: "Transient speed test failure",
-              })
-            );
-          }
-          return Effect.succeed({
-            timestamp: new Date(),
-            downloadSpeed: 100,
-            uploadSpeed: 20,
-            latency: 15,
-            jitter: 2,
-          });
-        }),
-    });
+  it.live(
+    "should keep running the speed test loop after a failed cycle",
+    () => {
+      // Reproduces the bug where a single failed speed test kills the recurring
+      // schedule permanently. The first cycle fails (transient error), later
+      // cycles succeed. A healthy loop must recover and keep testing.
+      let callCount = 0;
+      const FlakySpeedTestService = Layer.succeed(SpeedTestService, {
+        runTest: () =>
+          Effect.suspend(() => {
+            callCount += 1;
+            if (callCount === 1) {
+              return Effect.fail(
+                new SpeedTestExecutionError({
+                  message: "Transient speed test failure",
+                })
+              );
+            }
+            return Effect.succeed({
+              timestamp: new Date(),
+              downloadSpeed: 100,
+              uploadSpeed: 20,
+              latency: 15,
+              jitter: 2,
+            });
+          }),
+      });
 
-    const FlakyTestLayer = NetworkMonitorLive.pipe(
-      Layer.provide(MockPingExecutor),
-      Layer.provide(MockQuestDB),
-      Layer.provide(FlakySpeedTestService),
-      Layer.provide(
-        makeTestConfigLayer({
-          ping: {
-            hosts: ["8.8.8.8", "1.1.1.1"],
-            timeout: 5000,
-            intervalSeconds: 30,
-          },
-          speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
-          auth: { password: "testpassword", jwtExpiresIn: "1h" },
-        })
-      ),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
-    );
-
-    const program = Effect.gen(function* () {
-      const monitor = yield* NetworkMonitor;
-
-      // Keep the parent fiber alive (as index.ts does with Effect.never) so the
-      // forked monitoring loops are not interrupted when start() returns.
-      const fiber = yield* Effect.fork(
-        Effect.gen(function* () {
-          yield* monitor.start();
-          return yield* Effect.never;
-        })
+      const FlakyTestLayer = NetworkMonitorLive.pipe(
+        Layer.provide(MockPingExecutor),
+        Layer.provide(MockQuestDB),
+        Layer.provide(FlakySpeedTestService),
+        Layer.provide(
+          makeTestConfigLayer({
+            ping: {
+              hosts: ["8.8.8.8", "1.1.1.1"],
+              timeout: 5000,
+              intervalSeconds: 30,
+            },
+            speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
+            auth: { password: "testpassword", jwtExpiresIn: "1h" },
+          })
+        ),
+        Layer.provide(Logger.minimumLogLevel(LogLevel.None))
       );
 
-      yield* Effect.sleep("2500 millis");
+      return Effect.gen(function* () {
+        const monitor = yield* NetworkMonitor;
 
-      const stats: MonitorStats = yield* monitor.getStats();
+        // Keep the parent fiber alive (as index.ts does with Effect.never) so the
+        // forked monitoring loops are not interrupted when start() returns.
+        const fiber = yield* Effect.fork(
+          Effect.gen(function* () {
+            yield* monitor.start();
+            return yield* Effect.never;
+          })
+        );
 
-      yield* Fiber.interrupt(fiber);
+        yield* Effect.sleep("2500 millis");
 
-      // With the bug, the repeat loop terminates after the first failed cycle:
-      // runTest is invoked exactly once and never recovers.
-      expect(callCount).toBeGreaterThan(1);
-      expect(stats.successfulSpeedTests).toBeGreaterThanOrEqual(1);
-    });
+        const stats: MonitorStats = yield* monitor.getStats();
 
-    await Effect.runPromise(program.pipe(Effect.provide(FlakyTestLayer)));
-  });
+        yield* Fiber.interrupt(fiber);
 
-  it("should count a speed test as failed when the DB write fails", async () => {
+        // With the bug, the repeat loop terminates after the first failed cycle:
+        // runTest is invoked exactly once and never recovers.
+        expect(callCount).toBeGreaterThan(1);
+        expect(stats.successfulSpeedTests).toBeGreaterThanOrEqual(1);
+      }).pipe(Effect.provide(FlakyTestLayer));
+    }
+  );
+
+  it.live("should count a speed test as failed when the DB write fails", () => {
     // The speed test itself succeeds, but persisting the result to the
     // database fails. The monitor must record this as a failed speed test
     // (not a successful one) and keep the loop alive.
@@ -399,7 +385,7 @@ describe("NetworkMonitor", () => {
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
-    const program = Effect.gen(function* () {
+    return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
       // Keep the parent fiber alive so the forked speed-test loop survives.
@@ -419,14 +405,10 @@ describe("NetworkMonitor", () => {
       expect(stats.successfulSpeedTests).toBe(0);
       expect(stats.failedSpeedTests).toBeGreaterThanOrEqual(1);
       expect(stats.lastSpeedTestTime).toBeInstanceOf(Date);
-    });
-
-    await Effect.runPromise(
-      program.pipe(Effect.provide(FailingWriteTestLayer))
-    );
+    }).pipe(Effect.provide(FailingWriteTestLayer));
   });
 
-  it("should count a failed speed test when the test times out", async () => {
+  it.live("should count a failed speed test when the test times out", () => {
     // A speed-test timeout is a distinct error variant from an execution
     // error; the monitor must log it and count it as a failed speed test
     // without killing the recurring loop.
@@ -453,7 +435,7 @@ describe("NetworkMonitor", () => {
       Layer.provide(Logger.minimumLogLevel(LogLevel.None))
     );
 
-    const program = Effect.gen(function* () {
+    return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
       const fiber = yield* Effect.fork(
@@ -471,97 +453,98 @@ describe("NetworkMonitor", () => {
 
       expect(stats.successfulSpeedTests).toBe(0);
       expect(stats.failedSpeedTests).toBeGreaterThanOrEqual(1);
-    });
-
-    await Effect.runPromise(program.pipe(Effect.provide(TimeoutTestLayer)));
+    }).pipe(Effect.provide(TimeoutTestLayer));
   });
 
-  it("should maintain consistent counters after concurrent ping and speedtest cycles", async () => {
-    // PHI-150: Verify that Ref-based stats remain consistent when ping and
-    // speedtest cycles run concurrently. Each cycle increments counters
-    // atomically via Ref.update, so the final snapshot should reflect the
-    // exact number of operations completed.
-    const pingCallCount = { value: 0 };
-    const speedTestCallCount = { value: 0 };
+  it.live(
+    "should maintain consistent counters after concurrent ping and speedtest cycles",
+    () => {
+      // PHI-150: Verify that Ref-based stats remain consistent when ping and
+      // speedtest cycles run concurrently. Each cycle increments counters
+      // atomically via Ref.update, so the final snapshot should reflect the
+      // exact number of operations completed.
+      const pingCallCount = { value: 0 };
+      const speedTestCallCount = { value: 0 };
 
-    const ConcurrentPingExecutor = Layer.succeed(PingExecutor, {
-      executePing: vi.fn(),
-      executeAll: () =>
-        Effect.sync(() => {
-          pingCallCount.value += 1;
-          return mockPingResults;
-        }),
-      executeHosts: vi.fn(),
-    });
+      const ConcurrentPingExecutor = Layer.succeed(PingExecutor, {
+        executePing: vi.fn(),
+        executeAll: () =>
+          Effect.sync(() => {
+            pingCallCount.value += 1;
+            return mockPingResults;
+          }),
+        executeHosts: vi.fn(),
+      });
 
-    const ConcurrentSpeedTestService = Layer.succeed(SpeedTestService, {
-      runTest: () =>
-        Effect.sync(() => {
-          speedTestCallCount.value += 1;
-          return {
-            timestamp: new Date(),
-            downloadSpeed: 100,
-            uploadSpeed: 20,
-            latency: 15,
-            jitter: 2,
-          };
-        }),
-    });
+      const ConcurrentSpeedTestService = Layer.succeed(SpeedTestService, {
+        runTest: () =>
+          Effect.sync(() => {
+            speedTestCallCount.value += 1;
+            return {
+              timestamp: new Date(),
+              downloadSpeed: 100,
+              uploadSpeed: 20,
+              latency: 15,
+              jitter: 2,
+            };
+          }),
+      });
 
-    const ConcurrentConfig = makeTestConfigLayer({
-      ping: {
-        hosts: ["8.8.8.8", "1.1.1.1"],
-        timeout: 5000,
-        intervalSeconds: 1,
-      },
-      speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
-      auth: { password: "testpassword", jwtExpiresIn: "1h" },
-    });
+      const ConcurrentConfig = makeTestConfigLayer({
+        ping: {
+          hosts: ["8.8.8.8", "1.1.1.1"],
+          timeout: 5000,
+          intervalSeconds: 1,
+        },
+        speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
+        auth: { password: "testpassword", jwtExpiresIn: "1h" },
+      });
 
-    const ConcurrentTestLayer = NetworkMonitorLive.pipe(
-      Layer.provide(ConcurrentPingExecutor),
-      Layer.provide(MockQuestDB),
-      Layer.provide(ConcurrentSpeedTestService),
-      Layer.provide(ConcurrentConfig),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
-    );
-
-    const program = Effect.gen(function* () {
-      const monitor = yield* NetworkMonitor;
-
-      const fiber = yield* Effect.fork(
-        Effect.gen(function* () {
-          yield* monitor.start();
-          return yield* Effect.never;
-        })
+      const ConcurrentTestLayer = NetworkMonitorLive.pipe(
+        Layer.provide(ConcurrentPingExecutor),
+        Layer.provide(MockQuestDB),
+        Layer.provide(ConcurrentSpeedTestService),
+        Layer.provide(ConcurrentConfig),
+        Layer.provide(Logger.minimumLogLevel(LogLevel.None))
       );
 
-      // Let both loops run concurrently for a short window
-      yield* Effect.sleep("2500 millis");
+      return Effect.gen(function* () {
+        const monitor = yield* NetworkMonitor;
 
-      const stats: MonitorStats = yield* monitor.getStats();
+        const fiber = yield* Effect.fork(
+          Effect.gen(function* () {
+            yield* monitor.start();
+            return yield* Effect.never;
+          })
+        );
 
-      yield* Fiber.interrupt(fiber);
+        // Let both loops run concurrently for a short window
+        yield* Effect.sleep("2500 millis");
 
-      // Counters must be internally consistent: successful + failed pings
-      // should equal the total ping calls times the number of hosts per call.
-      const totalPingResults = pingCallCount.value * mockPingResults.length;
-      expect(stats.successfulPings + stats.failedPings).toBe(totalPingResults);
+        const stats: MonitorStats = yield* monitor.getStats();
 
-      // Speed test counters: successful + failed should equal total calls
-      expect(stats.successfulSpeedTests + stats.failedSpeedTests).toBe(
-        speedTestCallCount.value
-      );
+        yield* Fiber.interrupt(fiber);
 
-      // All pings in mockPingResults are successful
-      expect(stats.successfulPings).toBe(totalPingResults);
-      expect(stats.failedPings).toBe(0);
+        // Counters must be internally consistent: successful + failed pings
+        // should equal the total ping calls times the number of hosts per call.
+        const totalPingResults = pingCallCount.value * mockPingResults.length;
+        expect(stats.successfulPings + stats.failedPings).toBe(
+          totalPingResults
+        );
 
-      // All speed tests succeeded and DB writes succeeded (mock)
-      expect(stats.successfulSpeedTests).toBe(speedTestCallCount.value);
-      expect(stats.failedSpeedTests).toBe(0);
-    });
+        // Speed test counters: successful + failed should equal total calls
+        expect(stats.successfulSpeedTests + stats.failedSpeedTests).toBe(
+          speedTestCallCount.value
+        );
 
-    await Effect.runPromise(program.pipe(Effect.provide(ConcurrentTestLayer)));
-  });
+        // All pings in mockPingResults are successful
+        expect(stats.successfulPings).toBe(totalPingResults);
+        expect(stats.failedPings).toBe(0);
+
+        // All speed tests succeeded and DB writes succeeded (mock)
+        expect(stats.successfulSpeedTests).toBe(speedTestCallCount.value);
+        expect(stats.failedSpeedTests).toBe(0);
+      }).pipe(Effect.provide(ConcurrentTestLayer));
+    }
+  );
 });

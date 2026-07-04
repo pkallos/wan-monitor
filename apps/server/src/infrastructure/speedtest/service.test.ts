@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { describe, expect, it } from "@effect/vitest";
 import {
+  Cause,
   Duration,
   Effect,
   Exit,
@@ -12,7 +14,6 @@ import {
   TestClock,
   TestContext,
 } from "effect";
-import { describe, expect, it } from "vitest";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
   DEFAULT_SPEEDTEST_TIMEOUT_SECONDS,
@@ -60,99 +61,104 @@ describe("SpeedTest - timeout functionality", () => {
     expect(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS).toBe(120);
   });
 
-  it("should complete successfully when executor resolves before timeout", async () => {
-    const fastExecutor = () => Promise.resolve(mockSpeedTestResult);
-    const service = makeSpeedTestService(fastExecutor, 5);
+  it.effect(
+    "should complete successfully when executor resolves before timeout",
+    () => {
+      const fastExecutor = () => Promise.resolve(mockSpeedTestResult);
+      const service = makeSpeedTestService(fastExecutor, 5);
 
-    const result = await Effect.runPromise(
-      service
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
+      return Effect.gen(function* () {
+        const result = yield* service.runTest();
 
-    expect(result.downloadSpeed).toBeCloseTo(100, 0);
-    expect(result.uploadSpeed).toBeCloseTo(50, 0);
-    expect(result.latency).toBe(15.5);
-    expect(result.jitter).toBe(2.1);
-    expect(result.serverName).toBe("Test Server");
-    expect(result.isp).toBe("Test ISP");
-  });
-
-  it("should return SpeedTestTimeoutError when executor exceeds timeout", async () => {
-    const slowExecutor = () =>
-      new Promise<typeof mockSpeedTestResult>((resolve) => {
-        setTimeout(() => resolve(mockSpeedTestResult), 5000);
-      });
-
-    const timeoutSeconds = 0.1;
-    const service = makeSpeedTestService(slowExecutor, timeoutSeconds);
-
-    const exit = await Effect.runPromiseExit(
-      service
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
-
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      expect(error._tag).toBe("Fail");
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SpeedTestTimeoutError);
-        if (error.error instanceof SpeedTestTimeoutError) {
-          expect(error.error.timeoutMs).toBe(100);
-        }
-      }
+        expect(result.downloadSpeed).toBeCloseTo(100, 0);
+        expect(result.uploadSpeed).toBeCloseTo(50, 0);
+        expect(result.latency).toBe(15.5);
+        expect(result.jitter).toBe(2.1);
+        expect(result.serverName).toBe("Test Server");
+        expect(result.isp).toBe("Test ISP");
+      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
     }
-  });
+  );
 
-  it("should return SpeedTestExecutionError when executor throws", async () => {
-    const failingExecutor = () =>
-      Promise.reject(new Error("Network connection failed"));
-    const service = makeSpeedTestService(failingExecutor, 5);
+  it.live(
+    "should return SpeedTestTimeoutError when executor exceeds timeout",
+    () => {
+      const slowExecutor = () =>
+        new Promise<typeof mockSpeedTestResult>((resolve) => {
+          setTimeout(() => resolve(mockSpeedTestResult), 5000);
+        });
 
-    const exit = await Effect.runPromiseExit(
-      service
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
+      const timeoutSeconds = 0.1;
+      const service = makeSpeedTestService(slowExecutor, timeoutSeconds);
 
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      expect(error._tag).toBe("Fail");
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SpeedTestExecutionError);
-        if (error.error instanceof SpeedTestExecutionError) {
-          expect(error.error.message).toBe("Network connection failed");
+      return Effect.gen(function* () {
+        const exit = yield* Effect.exit(service.runTest());
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          const cause = exit.cause;
+          expect(Cause.isFailType(cause)).toBe(true);
+          if (Cause.isFailType(cause)) {
+            expect(cause.error).toBeInstanceOf(SpeedTestTimeoutError);
+            if (cause.error instanceof SpeedTestTimeoutError) {
+              expect(cause.error.timeoutMs).toBe(100);
+            }
+          }
         }
-      }
+      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
     }
-  });
+  );
 
-  it("should return SpeedTestExecutionError when executor throws non-Error", async () => {
-    const failingExecutor = () => Promise.reject("string error");
-    const service = makeSpeedTestService(failingExecutor, 5);
+  it.effect(
+    "should return SpeedTestExecutionError when executor throws",
+    () => {
+      const failingExecutor = () =>
+        Promise.reject(new Error("Network connection failed"));
+      const service = makeSpeedTestService(failingExecutor, 5);
 
-    const exit = await Effect.runPromiseExit(
-      service
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
+      return Effect.gen(function* () {
+        const exit = yield* Effect.exit(service.runTest());
 
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SpeedTestExecutionError);
-        if (error.error instanceof SpeedTestExecutionError) {
-          expect(error.error.message).toBe("string error");
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          const cause = exit.cause;
+          expect(Cause.isFailType(cause)).toBe(true);
+          if (Cause.isFailType(cause)) {
+            expect(cause.error).toBeInstanceOf(SpeedTestExecutionError);
+            if (cause.error instanceof SpeedTestExecutionError) {
+              expect(cause.error.message).toBe("Network connection failed");
+            }
+          }
         }
-      }
+      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
     }
-  });
+  );
 
-  it("should use configured timeout value", async () => {
+  it.effect(
+    "should return SpeedTestExecutionError when executor throws non-Error",
+    () => {
+      const failingExecutor = () => Promise.reject("string error");
+      const service = makeSpeedTestService(failingExecutor, 5);
+
+      return Effect.gen(function* () {
+        const exit = yield* Effect.exit(service.runTest());
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          const cause = exit.cause;
+          expect(Cause.isFailType(cause)).toBe(true);
+          if (Cause.isFailType(cause)) {
+            expect(cause.error).toBeInstanceOf(SpeedTestExecutionError);
+            if (cause.error instanceof SpeedTestExecutionError) {
+              expect(cause.error.message).toBe("string error");
+            }
+          }
+        }
+      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+    }
+  );
+
+  it.live("should use configured timeout value", () => {
     const slowExecutor = () =>
       new Promise<typeof mockSpeedTestResult>((resolve) => {
         setTimeout(() => resolve(mockSpeedTestResult), 500);
@@ -161,23 +167,16 @@ describe("SpeedTest - timeout functionality", () => {
     const shortTimeoutService = makeSpeedTestService(slowExecutor, 0.2);
     const longTimeoutService = makeSpeedTestService(slowExecutor, 2);
 
-    const shortExit = await Effect.runPromiseExit(
-      shortTimeoutService
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
+    return Effect.gen(function* () {
+      const shortExit = yield* Effect.exit(shortTimeoutService.runTest());
+      const longExit = yield* Effect.exit(longTimeoutService.runTest());
 
-    const longExit = await Effect.runPromiseExit(
-      longTimeoutService
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
-
-    expect(Exit.isFailure(shortExit)).toBe(true);
-    expect(Exit.isSuccess(longExit)).toBe(true);
+      expect(Exit.isFailure(shortExit)).toBe(true);
+      expect(Exit.isSuccess(longExit)).toBe(true);
+    }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
   });
 
-  it("should handle missing optional fields in result", async () => {
+  it.effect("should handle missing optional fields in result", () => {
     // Test that the service handles results where optional fields are missing.
     // We create a mock result with only the required fields (download, upload, ping)
     // and verify the service gracefully handles missing server/isp/interface.
@@ -207,21 +206,19 @@ describe("SpeedTest - timeout functionality", () => {
     const executor = () => Promise.resolve(minimalResult as SpeedTestRawResult);
     const service = makeSpeedTestService(executor, 5);
 
-    const result = await Effect.runPromise(
-      service
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
+    return Effect.gen(function* () {
+      const result = yield* service.runTest();
 
-    expect(result.downloadSpeed).toBe(0);
-    expect(result.uploadSpeed).toBe(0);
-    expect(result.latency).toBe(0);
-    expect(result.serverName).toBeUndefined();
-    expect(result.isp).toBeUndefined();
-    expect(result.externalIp).toBeUndefined();
+      expect(result.downloadSpeed).toBe(0);
+      expect(result.uploadSpeed).toBe(0);
+      expect(result.latency).toBe(0);
+      expect(result.serverName).toBeUndefined();
+      expect(result.isp).toBeUndefined();
+      expect(result.externalIp).toBeUndefined();
+    }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
   });
 
-  it("should include correct timeoutMs in SpeedTestTimeoutError", async () => {
+  it.live("should include correct timeoutMs in SpeedTestTimeoutError", () => {
     const slowExecutor = () =>
       new Promise<typeof mockSpeedTestResult>((resolve) => {
         setTimeout(() => resolve(mockSpeedTestResult), 5000);
@@ -230,23 +227,22 @@ describe("SpeedTest - timeout functionality", () => {
     const timeoutSeconds = 0.05;
     const service = makeSpeedTestService(slowExecutor, timeoutSeconds);
 
-    const exit = await Effect.runPromiseExit(
-      service
-        .runTest()
-        .pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-    );
+    return Effect.gen(function* () {
+      const exit = yield* Effect.exit(service.runTest());
 
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      const error = exit.cause;
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SpeedTestTimeoutError);
-        if (error.error instanceof SpeedTestTimeoutError) {
-          expect(error.error.timeoutMs).toBe(50);
-          expect(error.error._tag).toBe("SpeedTestTimeoutError");
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        const cause = exit.cause;
+        expect(Cause.isFailType(cause)).toBe(true);
+        if (Cause.isFailType(cause)) {
+          expect(cause.error).toBeInstanceOf(SpeedTestTimeoutError);
+          if (cause.error instanceof SpeedTestTimeoutError) {
+            expect(cause.error.timeoutMs).toBe(50);
+            expect(cause.error._tag).toBe("SpeedTestTimeoutError");
+          }
         }
       }
-    }
+    }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
   });
 });
 
@@ -262,7 +258,7 @@ describe("SpeedTestServiceLive - config integration", () => {
     expectedTimeoutMs: number
   ) => {
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+    if (Exit.isFailure(exit) && Cause.isFailType(exit.cause)) {
       expect(exit.cause.error).toBeInstanceOf(SpeedTestTimeoutError);
       if (exit.cause.error instanceof SpeedTestTimeoutError) {
         expect(exit.cause.error.timeoutMs).toBe(expectedTimeoutMs);
@@ -288,65 +284,66 @@ describe("SpeedTestServiceLive - config integration", () => {
       Logger.minimumLogLevel(LogLevel.None)
     );
 
-  it("builds the production SpeedTestServiceLive layer without error", async () => {
-    const exit = await Effect.runPromiseExit(
-      SpeedTestService.pipe(
-        Effect.provide(
-          Layer.merge(
-            SpeedTestServiceLive.pipe(
-              Layer.provide(Layer.succeed(ConfigService, makeTestAppConfig()))
-            ),
-            Logger.minimumLogLevel(LogLevel.None)
+  it.effect(
+    "builds the production SpeedTestServiceLive layer without error",
+    () =>
+      Effect.gen(function* () {
+        const exit = yield* Effect.exit(
+          SpeedTestService.pipe(
+            Effect.provide(
+              Layer.merge(
+                SpeedTestServiceLive.pipe(
+                  Layer.provide(
+                    Layer.succeed(ConfigService, makeTestAppConfig())
+                  )
+                ),
+                Logger.minimumLogLevel(LogLevel.None)
+              )
+            )
           )
-        )
-      )
-    );
+        );
 
-    expect(Exit.isSuccess(exit)).toBe(true);
-  });
+        expect(Exit.isSuccess(exit)).toBe(true);
+      })
+  );
 
-  it("reads speedtest.timeoutSeconds from ConfigService and applies it as the effective timeout", async () => {
-    const program = Effect.gen(function* () {
-      const service = yield* SpeedTestService;
-      const fiber = yield* Effect.fork(service.runTest());
+  it.effect(
+    "reads speedtest.timeoutSeconds from ConfigService and applies it as the effective timeout",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* SpeedTestService;
+        const fiber = yield* Effect.fork(service.runTest());
 
-      // One second before the configured timeout the test must still be running:
-      // this proves the configured value (45s) is honored rather than the
-      // 120s default, which would not have fired yet either.
-      yield* TestClock.adjust(Duration.seconds(44));
-      const beforeTimeout = yield* Fiber.poll(fiber);
+        // One second before the configured timeout the test must still be running:
+        // this proves the configured value (45s) is honored rather than the
+        // 120s default, which would not have fired yet either.
+        yield* TestClock.adjust(Duration.seconds(44));
+        const beforeTimeout = yield* Fiber.poll(fiber);
 
-      // Crossing the configured boundary must produce the timeout failure.
-      yield* TestClock.adjust(Duration.seconds(1));
-      const exit = yield* Fiber.await(fiber);
+        // Crossing the configured boundary must produce the timeout failure.
+        yield* TestClock.adjust(Duration.seconds(1));
+        const exit = yield* Fiber.await(fiber);
 
-      return { beforeTimeout, exit };
-    });
+        expect(Option.isNone(beforeTimeout)).toBe(true);
+        expectTimeout(exit, 45_000);
+      }).pipe(Effect.provide(testLayer(45)))
+  );
 
-    const { beforeTimeout, exit } = await Effect.runPromise(
-      program.pipe(Effect.provide(testLayer(45)))
-    );
+  it.effect(
+    "falls back to the default timeout when speedtest.timeoutSeconds is the default",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* SpeedTestService;
+        const fiber = yield* Effect.fork(service.runTest());
+        yield* TestClock.adjust(
+          Duration.seconds(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS)
+        );
 
-    expect(Option.isNone(beforeTimeout)).toBe(true);
-    expectTimeout(exit, 45_000);
-  });
+        const exit = yield* Fiber.await(fiber);
 
-  it("falls back to the default timeout when speedtest.timeoutSeconds is the default", async () => {
-    const program = Effect.gen(function* () {
-      const service = yield* SpeedTestService;
-      const fiber = yield* Effect.fork(service.runTest());
-      yield* TestClock.adjust(
-        Duration.seconds(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS)
-      );
-      return yield* Fiber.await(fiber);
-    });
-
-    const exit = await Effect.runPromise(
-      program.pipe(Effect.provide(testLayer(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS)))
-    );
-
-    expectTimeout(exit, DEFAULT_SPEEDTEST_TIMEOUT_SECONDS * 1000);
-  });
+        expectTimeout(exit, DEFAULT_SPEEDTEST_TIMEOUT_SECONDS * 1000);
+      }).pipe(Effect.provide(testLayer(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS)))
+  );
 });
 
 describe.skipIf(!isMacArm64)("SpeedTest - speedtest-net ARM64 patch", () => {
