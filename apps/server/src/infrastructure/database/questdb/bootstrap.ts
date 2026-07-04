@@ -40,12 +40,13 @@ export const isDuplicateColumnError = (message: string): boolean => {
  * this the normal fresh-database path).
  */
 const introspectColumns = (
-  pgClient: PgClient
+  pgClient: PgClient,
+  table: string
 ): Effect.Effect<readonly string[], DatabaseConnectionError> =>
   Effect.tryPromise({
     try: async () => {
       const result = await pgClient.query(
-        `SELECT "column" AS name FROM table_columns('${NETWORK_METRICS_TABLE}')`
+        `SELECT "column" AS name FROM table_columns('${table}')`
       );
       return (result.rows as ColumnNameRow[]).map((row) => row.name);
     },
@@ -67,24 +68,25 @@ const introspectColumns = (
  * every connection establishment and existing data is always preserved.
  */
 export const bootstrapSchema = (
-  pgClient: PgClient
+  pgClient: PgClient,
+  table: string = NETWORK_METRICS_TABLE
 ): Effect.Effect<void, DatabaseConnectionError> =>
   Effect.gen(function* () {
     yield* Effect.tryPromise({
-      try: () => pgClient.query(buildCreateTableSql()),
+      try: () => pgClient.query(buildCreateTableSql(table)),
       catch: (error) =>
         new DatabaseConnectionError(
           `Schema bootstrap (create table) failed: ${errorMessage(error)}`
         ),
     });
 
-    const existing = yield* introspectColumns(pgClient);
+    const existing = yield* introspectColumns(pgClient, table);
     const toAdd = missingColumns(existing);
 
     let added = 0;
     for (const column of toAdd) {
       const outcome = yield* Effect.tryPromise({
-        try: () => pgClient.query(buildAddColumnSql(column)),
+        try: () => pgClient.query(buildAddColumnSql(column, table)),
         catch: (error) =>
           new DatabaseConnectionError(
             `Schema migration (add column ${column.name}) failed: ${errorMessage(

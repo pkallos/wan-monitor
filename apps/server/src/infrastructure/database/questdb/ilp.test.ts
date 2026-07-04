@@ -372,6 +372,31 @@ describe("ILP integration tests", () => {
       );
     });
 
+    it("should default to the network_metrics table when none is provided", () => {
+      const sender = createMockSender();
+      const metric: NetworkMetric = {
+        timestamp: new Date("2024-01-01T12:00:00.000Z"),
+        source: "ping",
+      };
+
+      writeMetricToSender(sender, metric);
+
+      expect(sender.table).toHaveBeenCalledWith("network_metrics");
+    });
+
+    it("should write to a custom table when one is provided", () => {
+      const sender = createMockSender();
+      const metric: NetworkMetric = {
+        timestamp: new Date("2024-01-01T12:00:00.000Z"),
+        source: "ping",
+      };
+
+      writeMetricToSender(sender, metric, "network_metrics_test_2");
+
+      expect(sender.table).toHaveBeenCalledWith("network_metrics_test_2");
+      expect(sender.table).not.toHaveBeenCalledWith("network_metrics");
+    });
+
     it("should chain sender calls in correct order", () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {

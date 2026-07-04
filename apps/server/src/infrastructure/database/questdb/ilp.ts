@@ -3,9 +3,10 @@ import type { NetworkMetric } from "@shared/metrics";
 
 export const writeMetricToSender = (
   sender: Sender,
-  metric: NetworkMetric
+  metric: NetworkMetric,
+  table = "network_metrics"
 ): void => {
-  let row = sender.table("network_metrics").symbol("source", metric.source);
+  let row = sender.table(table).symbol("source", metric.source);
 
   if (metric.host) row = row.symbol("host", metric.host);
   if (metric.latency !== undefined)

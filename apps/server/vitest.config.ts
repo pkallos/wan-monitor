@@ -22,12 +22,10 @@ export default defineConfig({
     globals: true,
     environment: "node",
     testTimeout: 15000, // 15 seconds for integration tests
-    // Integration tests share a single QuestDB `network_metrics` table and
-    // isolate themselves via TRUNCATE in setup/teardown. Running test files in
-    // parallel lets one file's TRUNCATE wipe another file's freshly-seeded rows
-    // between seed and query, producing flaky "expected 0 to be greater than 0"
-    // failures. Serialize test files so the shared table has a single writer.
-    fileParallelism: false,
+    // Integration tests isolate themselves with a per-Vitest-worker QuestDB
+    // table (`network_metrics_test_<pool-id>`, see test-utils/setup.ts), so
+    // parallel test files across workers never collide on a shared table. File
+    // parallelism is therefore safe and left at Vitest's default (enabled).
     // In integration mode, boot/seed the isolated test DB and point the client
     // at it (REST/ILP on 9100, PgWire on 8912).
     globalSetup: integrationMode

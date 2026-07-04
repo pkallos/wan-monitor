@@ -1,7 +1,10 @@
 import type { NetworkMetric } from "@shared/metrics";
 import { Data, type Duration, Effect, Schedule } from "effect";
 import type { QuestDBService } from "@/infrastructure/database/questdb/service";
-import { QUESTDB_HTTP_URL } from "@/infrastructure/database/questdb/test-utils/setup";
+import {
+  QUESTDB_HTTP_URL,
+  TEST_TABLE,
+} from "@/infrastructure/database/questdb/test-utils/setup";
 
 /**
  * Error raised while waiting for seeded rows to become queryable.
@@ -164,7 +167,7 @@ const countMetricRows = (): Effect.Effect<number, SeedError> =>
     try: async () => {
       const response = await fetch(
         `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(
-          "SELECT count() FROM network_metrics"
+          `SELECT count() FROM ${TEST_TABLE}`
         )}`
       );
 

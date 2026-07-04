@@ -27,6 +27,7 @@ export const makeTestAppConfig = (
     port: 9000,
     pgPort: 8812,
     protocol: "http",
+    table: "network_metrics",
     autoFlushRows: 100,
     autoFlushInterval: 1000,
     requestTimeout: 10000,
