@@ -168,16 +168,16 @@ export function SpeedChart({
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: "6px",
             }}
-            labelFormatter={(ts: number) =>
-              new Date(ts).toLocaleString([], {
+            labelFormatter={(ts) =>
+              new Date(ts as number).toLocaleString([], {
                 month: "short",
                 day: "numeric",
                 hour: "2-digit",
                 minute: "2-digit",
               })
             }
-            formatter={(value: number, name: string) => [
-              `${value?.toFixed(1)} Mbps`,
+            formatter={(value, name) => [
+              `${(value as number | undefined)?.toFixed(1)} Mbps`,
               name === "download" ? "Download" : "Upload",
             ]}
           />

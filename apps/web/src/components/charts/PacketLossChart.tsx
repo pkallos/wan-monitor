@@ -218,16 +218,16 @@ export function PacketLossChart({
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: "6px",
             }}
-            labelFormatter={(ts: number) =>
-              new Date(ts).toLocaleString([], {
+            labelFormatter={(ts) =>
+              new Date(ts as number).toLocaleString([], {
                 month: "short",
                 day: "numeric",
                 hour: "2-digit",
                 minute: "2-digit",
               })
             }
-            formatter={(value: number) => [
-              `${value?.toFixed(1)}%`,
+            formatter={(value) => [
+              `${(value as number | undefined)?.toFixed(1)}%`,
               "Packet Loss",
             ]}
           />

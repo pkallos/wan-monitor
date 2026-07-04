@@ -196,15 +196,18 @@ export function JitterChart({
               border: `1px solid ${theme.tooltipBorder}`,
               borderRadius: "6px",
             }}
-            labelFormatter={(ts: number) =>
-              new Date(ts).toLocaleString([], {
+            labelFormatter={(ts) =>
+              new Date(ts as number).toLocaleString([], {
                 month: "short",
                 day: "numeric",
                 hour: "2-digit",
                 minute: "2-digit",
               })
             }
-            formatter={(value: number) => [`${value?.toFixed(2)} ms`, "Jitter"]}
+            formatter={(value) => [
+              `${(value as number | undefined)?.toFixed(2)} ms`,
+              "Jitter",
+            ]}
           />
 
           {/* Acceptable jitter threshold line */}
