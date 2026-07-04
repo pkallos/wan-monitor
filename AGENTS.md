@@ -291,6 +291,21 @@ WAN Monitor persists historical time-series metrics. Losing or corrupting that d
 
 All commands should be non-interactive. This is especially important for git operations like rebasing and squashing branches. Avoid interactive rebasing (`git rebase -i`), editors (`vim`, `nano`), and pagers (`less`, `more`). Always use flags like `--no-edit`, `-m`, or non-interactive alternatives.
 
+### Commit Messages
+
+**NEVER pass multi-line commit messages as quoted `-m` strings.** Inline heredocs and multi-line quoted arguments are brittle in the agent shell (quoting/escaping breaks, and they can hang or corrupt the message). Instead, write the message to a temp file and use `-F`:
+
+```bash
+# Write the message with the write_to_file tool (NOT via echo/heredoc):
+#   /tmp/commit-msg.txt
+git commit -F /tmp/commit-msg.txt
+git commit --amend -F /tmp/commit-msg.txt   # when amending
+```
+
+- A single-line message may use `-m "..."`.
+- Any message with a body (multiple lines / blank lines) MUST use `-F <file>`.
+- The message file is a scratch artifact — write it outside the repo (e.g. `/tmp`) so it is never staged or committed.
+
 ## Effect-TS Best Practices
 
 This project uses Effect-TS for functional programming. Follow these idiomatic patterns:

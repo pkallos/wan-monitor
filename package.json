@@ -18,6 +18,7 @@
     "build": "turbo run build",
     "build:server": "turbo run build --filter=@wan-monitor/server",
     "start:server": "node dist/server/index.js",
+    "smoke:server": "tsx scripts/smoke-server.ts",
     "preview": "pnpm --filter @wan-monitor/web preview",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
@@ -51,6 +52,7 @@
     "@wan-monitor/shared": "workspace:*",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
+    "tsx": "^4.23.0",
     "turbo": "^2.10.2",
     "typescript": "^5.3.3",
     "vitest": "^3.2.0"

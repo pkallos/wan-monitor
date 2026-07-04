@@ -41,6 +41,8 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Smoke test built backend
+        run: pnpm smoke:server
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
