@@ -1,5 +1,10 @@
 import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
+import {
+  AuthNotConfigured,
+  InvalidCredentials,
+  MissingCredentials,
+} from "@shared/api/errors";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
 import { Effect } from "effect";
 import { JwtService } from "@/infrastructure/auth/jwt";
@@ -15,12 +20,19 @@ export const loginHandler = ({
     const jwtService = yield* JwtService;
 
     if (!payload.username || !payload.password) {
-      return yield* Effect.fail("Username and password are required");
+      return yield* Effect.fail(
+        new MissingCredentials({
+          message: "Username and password are required",
+        })
+      );
     }
 
     if (!config.auth.password) {
       return yield* Effect.fail(
-        "Authentication is not configured. Set WAN_MONITOR_PASSWORD."
+        new AuthNotConfigured({
+          message:
+            "Authentication is not configured. Set WAN_MONITOR_PASSWORD.",
+        })
       );
     }
 
@@ -28,7 +40,9 @@ export const loginHandler = ({
       payload.username !== config.auth.username ||
       payload.password !== config.auth.password
     ) {
-      return yield* Effect.fail("Invalid username or password");
+      return yield* Effect.fail(
+        new InvalidCredentials({ message: "Invalid username or password" })
+      );
     }
 
     const { token, expiresAt } = yield* jwtService.sign(payload.username);

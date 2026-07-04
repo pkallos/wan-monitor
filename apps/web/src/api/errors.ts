@@ -33,6 +33,39 @@ export function isDbUnavailableError(error: unknown): boolean {
   return isDbUnavailablePayload(error);
 }
 
+// ---------------------------------------------------------------------------
+// Typed error discrimination — Schema.TaggedError subclasses are decoded by
+// the HttpApiClient into plain objects carrying an _tag field. These helpers
+// normalize them into ApiError so the rest of the app keys off a single type.
+// ---------------------------------------------------------------------------
+
+/** Stable _tag values the server emits for typed auth/health errors. */
+export const MISSING_CREDENTIALS = "MissingCredentials" as const;
+export const INVALID_CREDENTIALS = "InvalidCredentials" as const;
+export const AUTH_NOT_CONFIGURED = "AuthNotConfigured" as const;
+export const HEALTH_UNHEALTHY = "HealthUnhealthy" as const;
+
+interface DecodedTaggedError {
+  readonly _tag: string;
+  readonly message: string;
+}
+
+function isDecodedTaggedError(value: unknown): value is DecodedTaggedError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { _tag?: unknown })._tag === "string"
+  );
+}
+
+/** Status code each typed error tag maps to. */
+const TAG_TO_STATUS: Record<string, number> = {
+  [MISSING_CREDENTIALS]: 400,
+  [INVALID_CREDENTIALS]: 401,
+  [AUTH_NOT_CONFIGURED]: 503,
+  [HEALTH_UNHEALTHY]: 503,
+};
+
 /**
  * Normalizes the DB-unavailable failure decoded by the HttpApiClient into an
  * `ApiError`, so the rest of the app keys off a single error type. Any other
@@ -46,6 +79,12 @@ export function toApiError(error: unknown): unknown {
       503,
       error
     );
+  }
+  if (isDecodedTaggedError(error)) {
+    const status = TAG_TO_STATUS[error._tag];
+    if (status !== undefined) {
+      return new ApiError(error.message, status, error);
+    }
   }
   return error;
 }

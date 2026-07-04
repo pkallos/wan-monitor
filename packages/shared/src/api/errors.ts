@@ -1,3 +1,4 @@
+import { HttpApiSchema } from "@effect/platform";
 import { Schema } from "effect";
 
 /**
@@ -21,3 +22,37 @@ export const DbUnavailableErrorSchema = Schema.Struct({
 export type DbUnavailableError = Schema.Schema.Type<
   typeof DbUnavailableErrorSchema
 >;
+
+// ---------------------------------------------------------------------------
+// Typed HTTP errors — Schema.TaggedError subclasses with status annotations.
+// These replace plain `Effect.fail("string")` so the client can discriminate
+// failures by error tag + HTTP status instead of string matching.
+// ---------------------------------------------------------------------------
+
+/** 400 — required fields missing from the login request. */
+export class MissingCredentials extends Schema.TaggedError<MissingCredentials>()(
+  "MissingCredentials",
+  { message: Schema.String },
+  HttpApiSchema.annotations({ status: 400 })
+) {}
+
+/** 401 — username/password do not match configured credentials. */
+export class InvalidCredentials extends Schema.TaggedError<InvalidCredentials>()(
+  "InvalidCredentials",
+  { message: Schema.String },
+  HttpApiSchema.annotations({ status: 401 })
+) {}
+
+/** 503 — auth is not configured (WAN_MONITOR_PASSWORD not set). */
+export class AuthNotConfigured extends Schema.TaggedError<AuthNotConfigured>()(
+  "AuthNotConfigured",
+  { message: Schema.String },
+  HttpApiSchema.annotations({ status: 503 })
+) {}
+
+/** 503 — a dependency health check failed (e.g. QuestDB unreachable). */
+export class HealthUnhealthy extends Schema.TaggedError<HealthUnhealthy>()(
+  "HealthUnhealthy",
+  { message: Schema.String },
+  HttpApiSchema.annotations({ status: 503 })
+) {}

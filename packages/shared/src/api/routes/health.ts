@@ -1,4 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
+import { HealthUnhealthy } from "@shared/api/errors";
 import { Schema } from "effect";
 
 const HealthStatus = Schema.Struct({
@@ -9,7 +10,7 @@ const HealthStatus = Schema.Struct({
 export const HealthApiGroup = HttpApiGroup.make("health")
   .add(
     HttpApiEndpoint.get("getReady")`/ready`
-      .addError(Schema.String)
+      .addError(HealthUnhealthy)
       .addSuccess(HealthStatus)
   )
   .add(

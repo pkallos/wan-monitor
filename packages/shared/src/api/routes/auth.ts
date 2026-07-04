@@ -1,4 +1,9 @@
 import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
+import {
+  AuthNotConfigured,
+  InvalidCredentials,
+  MissingCredentials,
+} from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
 
@@ -32,7 +37,9 @@ export const AuthApiGroup = HttpApiGroup.make("auth")
     HttpApiEndpoint.post("login", "/login")
       .setPayload(LoginRequest)
       .addSuccess(LoginResponse)
-      .addError(Schema.String, { status: 401 })
+      .addError(MissingCredentials)
+      .addError(InvalidCredentials)
+      .addError(AuthNotConfigured)
   )
   .add(
     HttpApiEndpoint.post("logout", "/logout")

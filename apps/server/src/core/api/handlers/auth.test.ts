@@ -1,4 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
+import {
+  AuthNotConfigured,
+  InvalidCredentials,
+  MissingCredentials,
+} from "@shared/api/errors";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
 import { Effect, Layer } from "effect";
 import {
@@ -70,7 +75,10 @@ describe("Auth Handlers", () => {
 
         expect(result._tag).toBe("Left");
         if (result._tag === "Left") {
-          expect(result.left).toBe("Username and password are required");
+          expect(result.left).toBeInstanceOf(MissingCredentials);
+          expect(result.left.message).toBe(
+            "Username and password are required"
+          );
         }
       }).pipe(Effect.provide(TestLayers));
     });
@@ -90,7 +98,10 @@ describe("Auth Handlers", () => {
 
         expect(result._tag).toBe("Left");
         if (result._tag === "Left") {
-          expect(result.left).toContain("Authentication is not configured");
+          expect(result.left).toBeInstanceOf(AuthNotConfigured);
+          expect(result.left.message).toContain(
+            "Authentication is not configured"
+          );
         }
       }).pipe(Effect.provide(TestLayers));
     });
@@ -110,7 +121,8 @@ describe("Auth Handlers", () => {
 
         expect(result._tag).toBe("Left");
         if (result._tag === "Left") {
-          expect(result.left).toBe("Invalid username or password");
+          expect(result.left).toBeInstanceOf(InvalidCredentials);
+          expect(result.left.message).toBe("Invalid username or password");
         }
       }).pipe(Effect.provide(TestLayers));
     });

@@ -21,9 +21,7 @@ export const triggerPingHandler = ({
       timestamp: new Date().toISOString(),
       results,
     };
-  }).pipe(
-    Effect.catchAll((error) => Effect.fail(`Failed to execute ping: ${error}`))
-  );
+  });
 
 export const getHostsHandler = () =>
   Effect.gen(function* () {
