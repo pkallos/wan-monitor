@@ -1,3 +1,4 @@
+import { buildCreateTableSql } from "@wan-monitor/shared/db-schema";
 import { Data, Effect, Layer, Schedule } from "effect";
 import { ConfigServiceLive } from "@/infrastructure/config/config";
 import {
@@ -128,24 +129,9 @@ const initializeDatabase = () =>
   Effect.gen(function* () {
     yield* Effect.tryPromise({
       try: async () => {
-        // Create table with full schema to ensure consistent column types
-        const createQuery = `
-          CREATE TABLE IF NOT EXISTS network_metrics (
-            source SYMBOL,
-            host SYMBOL,
-            latency DOUBLE,
-            jitter DOUBLE,
-            packet_loss DOUBLE,
-            connectivity_status STRING,
-            download_bandwidth LONG,
-            upload_bandwidth LONG,
-            server_location STRING,
-            isp STRING,
-            external_ip STRING,
-            internal_ip STRING,
-            timestamp TIMESTAMP
-          ) timestamp(timestamp) PARTITION BY DAY;
-        `;
+        // Use the canonical schema so integration tests, CI, E2E, and the
+        // server bootstrap all create an identical table (no drift).
+        const createQuery = buildCreateTableSql();
 
         const createResponse = await fetch(
           `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(createQuery)}`,

@@ -11,6 +11,10 @@
     "./metrics": {
       "types": "./src/metrics.ts",
       "default": "./src/metrics.ts"
+    },
+    "./db-schema": {
+      "types": "./src/db-schema.ts",
+      "default": "./src/db-schema.ts"
     }
   },
   "scripts": {

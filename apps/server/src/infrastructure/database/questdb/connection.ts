@@ -2,6 +2,7 @@ import { Sender } from "@questdb/nodejs-client";
 import { Context, Duration, Effect, Layer, Option, Ref } from "effect";
 import { Client as PgClient } from "pg";
 import { ConfigService } from "@/infrastructure/config/config";
+import { bootstrapSchema } from "@/infrastructure/database/questdb/bootstrap";
 import {
   DatabaseConnectionError,
   DbUnavailable,
@@ -138,6 +139,29 @@ const make = Effect.gen(function* () {
           `Connection verification failed: ${errorMessage(error)}`
         ),
     }).pipe(
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(async () => {
+            try {
+              await sender.close();
+            } catch {
+              // ignore
+            }
+            try {
+              await pgClient.end();
+            } catch {
+              // ignore
+            }
+          });
+          return yield* Effect.fail(error);
+        })
+      )
+    );
+
+    // Bootstrap the canonical schema on every connection so production and
+    // local dev no longer depend on ILP schema-on-write (the source of missing
+    // columns and HTTP 500s). Idempotent and non-destructive.
+    yield* bootstrapSchema(pgClient).pipe(
       Effect.catchAll((error) =>
         Effect.gen(function* () {
           yield* Effect.promise(async () => {
