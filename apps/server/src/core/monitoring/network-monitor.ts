@@ -119,26 +119,30 @@ export const NetworkMonitorLive = Layer.effect(
       const timestamp = new Date();
 
       const result = yield* speedTestService.runTest().pipe(
-        Effect.catchAll((error) =>
-          Effect.gen(function* () {
-            yield* Ref.update(statsRef, (s) => ({
-              ...s,
-              failedSpeedTests: s.failedSpeedTests + 1,
-            }));
-            const errorMessage =
-              error._tag === "SpeedTestExecutionError"
-                ? error.message
-                : error._tag === "SpeedTestTimeoutError"
-                  ? `Timeout after ${error.timeoutMs}ms`
-                  : String(error);
-            return yield* Effect.flatMap(
-              Effect.logError(
-                `Speed test failed: ${error._tag} - ${errorMessage}`
-              ),
-              () => Effect.fail(error)
-            );
-          })
-        )
+        Effect.catchTags({
+          SpeedTestExecutionError: (error) =>
+            Effect.gen(function* () {
+              yield* Ref.update(statsRef, (s) => ({
+                ...s,
+                failedSpeedTests: s.failedSpeedTests + 1,
+              }));
+              yield* Effect.logError(
+                `Speed test failed: SpeedTestExecutionError - ${error.message}`
+              );
+              return yield* Effect.fail(error);
+            }),
+          SpeedTestTimeoutError: (error) =>
+            Effect.gen(function* () {
+              yield* Ref.update(statsRef, (s) => ({
+                ...s,
+                failedSpeedTests: s.failedSpeedTests + 1,
+              }));
+              yield* Effect.logError(
+                `Speed test failed: SpeedTestTimeoutError - Timeout after ${error.timeoutMs}ms`
+              );
+              return yield* Effect.fail(error);
+            }),
+        })
       );
 
       // Write speed test result to database

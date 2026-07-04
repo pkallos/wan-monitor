@@ -1,4 +1,4 @@
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, Either, ManagedRuntime } from "effect";
 import { WanMonitorClient } from "@/api/effect-client";
 import { toApiError } from "@/api/errors";
 
@@ -13,7 +13,7 @@ export const runEffectWithError = async <A, E>(
 ): Promise<A> => {
   const result = await runtime.runPromise(effect.pipe(Effect.either));
 
-  if (result._tag === "Left") {
+  if (Either.isLeft(result)) {
     throw toApiError(result.left);
   }
 
