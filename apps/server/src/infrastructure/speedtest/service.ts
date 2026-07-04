@@ -102,19 +102,30 @@ export const makeSpeedTestService = (
   };
 };
 
-export const SpeedTestServiceLive = Layer.effect(
-  SpeedTestService,
-  Effect.gen(function* () {
-    const timeoutSeconds = yield* Config.number(
-      "SPEEDTEST_TIMEOUT_SECONDS"
-    ).pipe(Config.withDefault(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS));
+/**
+ * Build a SpeedTestService layer around a given executor, resolving the timeout
+ * from `SPEEDTEST_TIMEOUT_SECONDS` via the ambient `ConfigProvider`.
+ *
+ * The executor is a parameter so tests can supply a deterministic stand-in and
+ * exercise the config -> effective-timeout wiring without the native module or
+ * a real network round-trip.
+ */
+export const makeSpeedTestServiceLayer = (executor: SpeedTestExecutor) =>
+  Layer.effect(
+    SpeedTestService,
+    Effect.gen(function* () {
+      const timeoutSeconds = yield* Config.number(
+        "SPEEDTEST_TIMEOUT_SECONDS"
+      ).pipe(Config.withDefault(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS));
 
-    const executor: SpeedTestExecutor = () =>
-      speedTest({
-        acceptLicense: true,
-        acceptGdpr: true,
-      });
+      return makeSpeedTestService(executor, timeoutSeconds);
+    })
+  );
 
-    return makeSpeedTestService(executor, timeoutSeconds);
-  })
-);
+const liveExecutor: SpeedTestExecutor = () =>
+  speedTest({
+    acceptLicense: true,
+    acceptGdpr: true,
+  });
+
+export const SpeedTestServiceLive = makeSpeedTestServiceLayer(liveExecutor);

@@ -1,11 +1,25 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ConfigProvider, Effect, Exit, Layer, Logger, LogLevel } from "effect";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  ConfigProvider,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  LogLevel,
+  Option,
+  TestClock,
+  TestContext,
+} from "effect";
+import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SPEEDTEST_TIMEOUT_SECONDS,
   makeSpeedTestService,
+  makeSpeedTestServiceLayer,
   SpeedTestExecutionError,
+  type SpeedTestExecutor,
   SpeedTestService,
   SpeedTestServiceLive,
   SpeedTestTimeoutError,
@@ -236,28 +250,39 @@ describe("SpeedTest - timeout functionality", () => {
 });
 
 describe("SpeedTestServiceLive - config integration", () => {
-  const originalEnv = process.env.SPEEDTEST_TIMEOUT_SECONDS;
+  // An executor that never settles, so the only way runTest can complete is by
+  // hitting the configured timeout. Combined with TestClock this lets us assert
+  // the *effective* timeout deterministically without a real network round-trip.
+  const neverSettlingExecutor: SpeedTestExecutor = () =>
+    new Promise<never>(() => {});
 
-  beforeEach(() => {
-    delete process.env.SPEEDTEST_TIMEOUT_SECONDS;
-  });
-
-  afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.SPEEDTEST_TIMEOUT_SECONDS = originalEnv;
-    } else {
-      delete process.env.SPEEDTEST_TIMEOUT_SECONDS;
+  const expectTimeout = (
+    exit: Exit.Exit<unknown, unknown>,
+    expectedTimeoutMs: number
+  ) => {
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      expect(exit.cause.error).toBeInstanceOf(SpeedTestTimeoutError);
+      if (exit.cause.error instanceof SpeedTestTimeoutError) {
+        expect(exit.cause.error.timeoutMs).toBe(expectedTimeoutMs);
+      }
     }
-  });
+  };
 
-  it("should use default timeout when env var is not set", async () => {
-    const program = Effect.gen(function* () {
-      const service = yield* SpeedTestService;
-      return service;
-    });
+  // Build a fully-wired test layer: the service layer resolves its timeout from
+  // `config`, running under a TestClock so we can advance virtual time.
+  const testLayer = (config: ConfigProvider.ConfigProvider) =>
+    Layer.mergeAll(
+      makeSpeedTestServiceLayer(neverSettlingExecutor).pipe(
+        Layer.provide(Layer.setConfigProvider(config))
+      ),
+      TestContext.TestContext,
+      Logger.minimumLogLevel(LogLevel.None)
+    );
 
+  it("builds the production SpeedTestServiceLive layer without error", async () => {
     const exit = await Effect.runPromiseExit(
-      program.pipe(
+      SpeedTestService.pipe(
         Effect.provide(
           Layer.merge(
             SpeedTestServiceLive,
@@ -270,51 +295,53 @@ describe("SpeedTestServiceLive - config integration", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
   });
 
-  it("should read SPEEDTEST_TIMEOUT_SECONDS from config provider", async () => {
+  it("reads SPEEDTEST_TIMEOUT_SECONDS from the ConfigProvider and applies it as the effective timeout", async () => {
     const customConfig = ConfigProvider.fromMap(
-      new Map([["SPEEDTEST_TIMEOUT_SECONDS", "30"]])
+      new Map([["SPEEDTEST_TIMEOUT_SECONDS", "45"]])
     );
 
     const program = Effect.gen(function* () {
       const service = yield* SpeedTestService;
-      return service;
+      const fiber = yield* Effect.fork(service.runTest());
+
+      // One second before the configured timeout the test must still be running:
+      // this proves the configured value (45s) is honored rather than the
+      // 120s default, which would not have fired yet either.
+      yield* TestClock.adjust(Duration.seconds(44));
+      const beforeTimeout = yield* Fiber.poll(fiber);
+
+      // Crossing the configured boundary must produce the timeout failure.
+      yield* TestClock.adjust(Duration.seconds(1));
+      const exit = yield* Fiber.await(fiber);
+
+      return { beforeTimeout, exit };
     });
 
-    const exit = await Effect.runPromiseExit(
-      program.pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            SpeedTestServiceLive,
-            Layer.setConfigProvider(customConfig),
-            Logger.minimumLogLevel(LogLevel.None)
-          )
-        )
-      )
+    const { beforeTimeout, exit } = await Effect.runPromise(
+      program.pipe(Effect.provide(testLayer(customConfig)))
     );
 
-    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(Option.isNone(beforeTimeout)).toBe(true);
+    expectTimeout(exit, 45_000);
   });
 
-  it("should read SPEEDTEST_TIMEOUT_SECONDS from environment variable", async () => {
-    process.env.SPEEDTEST_TIMEOUT_SECONDS = "45";
+  it("falls back to the default timeout when SPEEDTEST_TIMEOUT_SECONDS is not set", async () => {
+    const emptyConfig = ConfigProvider.fromMap(new Map());
 
     const program = Effect.gen(function* () {
       const service = yield* SpeedTestService;
-      return service;
+      const fiber = yield* Effect.fork(service.runTest());
+      yield* TestClock.adjust(
+        Duration.seconds(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS)
+      );
+      return yield* Fiber.await(fiber);
     });
 
-    const exit = await Effect.runPromiseExit(
-      program.pipe(
-        Effect.provide(
-          Layer.merge(
-            SpeedTestServiceLive,
-            Logger.minimumLogLevel(LogLevel.None)
-          )
-        )
-      )
+    const exit = await Effect.runPromise(
+      program.pipe(Effect.provide(testLayer(emptyConfig)))
     );
 
-    expect(Exit.isSuccess(exit)).toBe(true);
+    expectTimeout(exit, DEFAULT_SPEEDTEST_TIMEOUT_SECONDS * 1000);
   });
 });
 
