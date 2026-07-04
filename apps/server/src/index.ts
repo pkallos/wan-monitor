@@ -1,10 +1,11 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { config } from "dotenv";
 
-// Load environment variables from .env.local (dev) or .env (prod)
-// Try monorepo root first (when running via turbo), then package root
-// dotenv will not override existing environment variables, so .env.local takes precedence
+// Load environment variables from .env.local (dev) or .env (prod) using Node's
+// native loader (process.loadEnvFile, stable since v24.10 — see engines.node).
+// Try package root first, then monorepo root (when running via turbo).
+// Node never overrides variables already present in process.env, and across
+// multiple loads the first file to set a key wins, so .env.local takes precedence.
 const envPaths = [
   resolve(process.cwd(), ".env.local"),
   resolve(process.cwd(), "../../.env.local"),
@@ -13,7 +14,7 @@ const envPaths = [
 ];
 for (const envPath of envPaths) {
   if (existsSync(envPath)) {
-    config({ path: envPath });
+    process.loadEnvFile(envPath);
   }
 }
 

@@ -111,6 +111,13 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
+      # Runs the real built bundle and asserts it boots + serves
+      # /api/health/live. Catches startup crashes (e.g. a CJS dep bundled into
+      # ESM emitting a "Dynamic require" shim) that compile cleanly but would
+      # crash-loop the container. No DB needed — /live is pure liveness.
+      - name: Smoke test built backend
+        run: pnpm smoke:server
+
   coverage:
     name: Tests (with Coverage)
     runs-on: ubuntu-latest

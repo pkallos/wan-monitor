@@ -21,7 +21,6 @@
     "@effect/schema": "^0.75.5",
     "@questdb/nodejs-client": "^4.2.0",
     "@types/pg": "^8.20.0",
-    "dotenv": "^17.4.2",
     "effect": "^3.21.4",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.22.0",
