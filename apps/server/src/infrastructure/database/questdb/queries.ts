@@ -43,7 +43,9 @@ export const buildQueryMetrics = (
     const granularity = params.granularity;
     if (granularity && !isValidGranularity(granularity)) {
       return yield* Effect.fail(
-        new DatabaseQueryError(`Invalid granularity: ${granularity}`)
+        new DatabaseQueryError({
+          message: `Invalid granularity: ${granularity}`,
+        })
       );
     }
 
@@ -154,7 +156,9 @@ export const buildQueryConnectivityStatus = (
     const granularity = params.granularity ?? "5m";
     if (!isValidGranularity(granularity)) {
       return yield* Effect.fail(
-        new DatabaseQueryError(`Invalid granularity: ${granularity}`)
+        new DatabaseQueryError({
+          message: `Invalid granularity: ${granularity}`,
+        })
       );
     }
 

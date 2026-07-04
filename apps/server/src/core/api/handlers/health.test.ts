@@ -11,7 +11,9 @@ const createMockQuestDB = (healthy: boolean): QuestDBService => ({
   health: () =>
     healthy
       ? Effect.succeed({ connected: true, version: "1.0.0", uptime: 100 })
-      : Effect.fail(new DatabaseConnectionError("Database connection failed")),
+      : Effect.fail(
+          new DatabaseConnectionError({ message: "Database connection failed" })
+        ),
   writeMetric: () => Effect.void,
   flush: () => Effect.void,
   queryMetrics: () => Effect.succeed([]),
