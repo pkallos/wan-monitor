@@ -5,7 +5,7 @@ import {
   MissingCredentials,
 } from "@shared/api/errors";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
-import { Effect, Layer } from "effect";
+import { Effect, Either, Layer } from "effect";
 import {
   loginHandler,
   logoutHandler,
@@ -73,8 +73,8 @@ describe("Auth Handlers", () => {
           loginHandler({ payload: { username: "", password: "" } })
         );
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(MissingCredentials);
           expect(result.left.message).toBe(
             "Username and password are required"
@@ -96,8 +96,8 @@ describe("Auth Handlers", () => {
           loginHandler({ payload: { username: "admin", password: "wrong" } })
         );
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(AuthNotConfigured);
           expect(result.left.message).toContain(
             "Authentication is not configured"
@@ -119,8 +119,8 @@ describe("Auth Handlers", () => {
           loginHandler({ payload: { username: "admin", password: "wrong" } })
         );
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(InvalidCredentials);
           expect(result.left.message).toBe("Invalid username or password");
         }

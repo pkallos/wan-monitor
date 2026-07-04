@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Either, Layer } from "effect";
 import { JwtService, JwtServiceLive } from "@/infrastructure/auth/jwt";
 import {
   AuthorizationLive,
@@ -101,8 +101,8 @@ describe("AuthService", () => {
           authService.verifyRequest(undefined)
         );
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(MissingAuthHeaderError);
           if (result.left instanceof MissingAuthHeaderError) {
             expect(result.left.message).toContain(
@@ -132,8 +132,8 @@ describe("AuthService", () => {
           authService.verifyRequest("Bearer ")
         );
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(MissingAuthHeaderError);
           expect(result.left.message).toContain("Bearer token required");
         }
@@ -184,8 +184,8 @@ describe("AuthService", () => {
           authService.verifyRequest("Bearer invalid.token.here")
         );
 
-        expect(result._tag).toBe("Left");
-        if (result._tag === "Left") {
+        expect(Either.isLeft(result)).toBe(true);
+        if (Either.isLeft(result)) {
           expect(result.left).toBeInstanceOf(UnauthorizedError);
           if (result.left instanceof UnauthorizedError) {
             expect(result.left.message).toContain("Invalid token");
