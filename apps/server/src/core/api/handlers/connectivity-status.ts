@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import type { GetConnectivityStatusQuery } from "@shared/api/routes/connectivity-status";
-import { Effect, type Schema } from "effect";
+import { Clock, Effect, type Schema } from "effect";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
@@ -12,6 +12,7 @@ export const getConnectivityStatusHandler = ({
 }) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
+    const now = yield* Clock.currentTimeMillis;
 
     const rows = yield* db.queryConnectivityStatus({
       startTime: urlParams.startTime
@@ -54,8 +55,8 @@ export const getConnectivityStatusHandler = ({
         uptimePercentage,
         startTime:
           urlParams.startTime ||
-          new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        endTime: urlParams.endTime || new Date().toISOString(),
+          new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+        endTime: urlParams.endTime || new Date(now).toISOString(),
         count: data.length,
       },
     };

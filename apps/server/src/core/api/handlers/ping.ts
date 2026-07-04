@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
 import { ConfigService } from "@/infrastructure/config/config";
 
@@ -16,9 +16,11 @@ export const triggerPingHandler = ({
       ? yield* pingExecutor.executeHosts(payload.hosts)
       : yield* pingExecutor.executeAll();
 
+    const now = yield* Clock.currentTimeMillis;
+
     return {
       success: true,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(now).toISOString(),
       results,
     };
   });

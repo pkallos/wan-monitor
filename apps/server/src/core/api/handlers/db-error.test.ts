@@ -10,12 +10,14 @@ import {
 } from "@/infrastructure/database/questdb";
 
 describe("mapQueryError", () => {
-  it("makeDbUnavailableError returns the structured 503 payload", () => {
-    const payload = makeDbUnavailableError();
-    expect(payload.error).toBe("DB_UNAVAILABLE");
-    expect(payload.message).toBe("Database temporarily unavailable");
-    expect(typeof payload.timestamp).toBe("string");
-  });
+  it.effect("makeDbUnavailableError returns the structured 503 payload", () =>
+    Effect.gen(function* () {
+      const payload = yield* makeDbUnavailableError();
+      expect(payload.error).toBe("DB_UNAVAILABLE");
+      expect(payload.message).toBe("Database temporarily unavailable");
+      expect(typeof payload.timestamp).toBe("string");
+    })
+  );
 
   it.effect("maps a DbUnavailable failure to the structured 503 payload", () =>
     Effect.gen(function* () {

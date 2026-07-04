@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import type { GetMetricsQueryParams } from "@shared/api/routes/metrics";
-import { Effect, type Schema } from "effect";
+import { Clock, Effect, type Schema } from "effect";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
@@ -12,6 +12,7 @@ export const getMetricsHandler = ({
 }) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
+    const now = yield* Clock.currentTimeMillis;
 
     const rawData = yield* db.queryMetrics({
       startTime: urlParams.startTime
@@ -42,9 +43,8 @@ export const getMetricsHandler = ({
     return {
       data,
       meta: {
-        startTime:
-          urlParams.startTime || new Date(Date.now() - 3600000).toISOString(),
-        endTime: urlParams.endTime || new Date().toISOString(),
+        startTime: urlParams.startTime || new Date(now - 3600000).toISOString(),
+        endTime: urlParams.endTime || new Date(now).toISOString(),
         count: data.length,
       },
     };
