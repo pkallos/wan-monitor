@@ -3,7 +3,7 @@ import { WanMonitorApi } from "@shared/api";
 import type { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
 import { mbpsToBps } from "@shared/metrics";
 import type { SpeedMetric } from "@wan-monitor/shared";
-import { Effect, Ref, type Schema } from "effect";
+import { Clock, Effect, Ref, type Schema } from "effect";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import {
@@ -28,9 +28,10 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
     );
 
     if (!acquired) {
+      const now = yield* Clock.currentTimeMillis;
       return {
         success: false as const,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date(now).toISOString(),
         error: {
           code: SpeedTestErrorCode.ALREADY_RUNNING as SpeedTestErrorCode,
           message: "A speed test is already in progress",
@@ -44,7 +45,8 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
     const result = yield* speedTestService.runTest().pipe(
       Effect.matchEffect({
         onFailure: (error) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
             let errorCode: SpeedTestErrorCode =
               SpeedTestErrorCode.EXECUTION_FAILED;
             let errorMessage = "Speed test execution failed";
@@ -58,7 +60,7 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
 
             return {
               success: false as const,
-              timestamp: new Date().toISOString(),
+              timestamp: new Date(now).toISOString(),
               error: {
                 code: errorCode,
                 message: errorMessage,
@@ -116,6 +118,7 @@ export const getSpeedTestHistoryHandler = ({
 }) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
+    const now = yield* Clock.currentTimeMillis;
 
     const params = {
       startTime: urlParams.startTime
@@ -148,8 +151,8 @@ export const getSpeedTestHistoryHandler = ({
       meta: {
         startTime:
           params.startTime?.toISOString() ??
-          new Date(Date.now() - 3600000).toISOString(),
-        endTime: params.endTime?.toISOString() ?? new Date().toISOString(),
+          new Date(now - 3600000).toISOString(),
+        endTime: params.endTime?.toISOString() ?? new Date(now).toISOString(),
         count: data.length,
       },
     };

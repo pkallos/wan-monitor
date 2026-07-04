@@ -1,5 +1,5 @@
 import { mbpsToBps } from "@shared/metrics";
-import { Context, Effect, Layer, Ref, Schedule } from "effect";
+import { Clock, Context, Effect, Layer, Ref, Schedule } from "effect";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
 import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
@@ -11,11 +11,11 @@ import { SpeedTestService } from "@/infrastructure/speedtest/types";
 // ============================================================================
 
 interface StatsState {
-  readonly startTime: Date | null;
-  readonly lastPingTime: Date | null;
+  readonly startTime: number | null;
+  readonly lastPingTime: number | null;
   readonly successfulPings: number;
   readonly failedPings: number;
-  readonly lastSpeedTestTime: Date | null;
+  readonly lastSpeedTestTime: number | null;
   readonly successfulSpeedTests: number;
   readonly failedSpeedTests: number;
 }
@@ -91,7 +91,7 @@ export const NetworkMonitorLive = Layer.effect(
      * Execute a single ping cycle and update stats
      */
     const executePingCycle = Effect.gen(function* () {
-      const timestamp = new Date();
+      const timestamp = yield* Clock.currentTimeMillis;
 
       yield* Effect.logInfo("Starting ping cycle");
 
@@ -116,7 +116,7 @@ export const NetworkMonitorLive = Layer.effect(
      * Execute a single speedtest cycle and update stats
      */
     const executeSpeedTestCycle = Effect.gen(function* () {
-      const timestamp = new Date();
+      const timestamp = yield* Clock.currentTimeMillis;
 
       const result = yield* speedTestService.runTest().pipe(
         Effect.catchTags({
@@ -181,9 +181,10 @@ export const NetworkMonitorLive = Layer.effect(
      */
     const start = () =>
       Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
         yield* Ref.update(statsRef, (s) => ({
           ...s,
-          startTime: new Date(),
+          startTime: now,
         }));
 
         yield* Effect.logInfo(
@@ -233,12 +234,15 @@ export const NetworkMonitorLive = Layer.effect(
     const getStats = () =>
       Effect.gen(function* () {
         const s = yield* Ref.get(statsRef);
+        const now = yield* Clock.currentTimeMillis;
         return {
-          uptime: s.startTime ? Date.now() - s.startTime.getTime() : 0,
-          lastPingTime: s.lastPingTime,
+          uptime: s.startTime ? now - s.startTime : 0,
+          lastPingTime: s.lastPingTime ? new Date(s.lastPingTime) : null,
           successfulPings: s.successfulPings,
           failedPings: s.failedPings,
-          lastSpeedTestTime: s.lastSpeedTestTime,
+          lastSpeedTestTime: s.lastSpeedTestTime
+            ? new Date(s.lastSpeedTestTime)
+            : null,
           successfulSpeedTests: s.successfulSpeedTests,
           failedSpeedTests: s.failedSpeedTests,
         } satisfies MonitorStats;

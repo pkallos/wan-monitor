@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, TestClock } from "effect";
 import { getMetricsHandler } from "@/core/api/handlers/metrics";
 import {
   QuestDB,
@@ -137,5 +137,25 @@ describe("Metrics Handlers", () => {
         return result;
       }).pipe(Effect.provide(QuestDBTest));
     });
+
+    it.effect(
+      "default time window uses Clock.currentTimeMillis (TestClock)",
+      () => {
+        const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB([]));
+        const fixedNow = new Date("2025-01-15T12:00:00Z").getTime();
+
+        return Effect.gen(function* () {
+          yield* TestClock.setTime(fixedNow);
+
+          const result = yield* getMetricsHandler({ urlParams: {} });
+
+          // Default window is now-1h to now
+          expect(result.meta.startTime).toBe(
+            new Date(fixedNow - 3600000).toISOString()
+          );
+          expect(result.meta.endTime).toBe(new Date(fixedNow).toISOString());
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
   });
 });

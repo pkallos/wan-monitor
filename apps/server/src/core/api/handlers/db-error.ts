@@ -1,13 +1,17 @@
 import { DB_UNAVAILABLE, type DbUnavailableError } from "@shared/api/errors";
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { DbUnavailable } from "@/infrastructure/database/questdb";
 
 /** Structured 503 body signalling QuestDB is unreachable. */
-export const makeDbUnavailableError = (): DbUnavailableError => ({
-  error: DB_UNAVAILABLE,
-  message: "Database temporarily unavailable",
-  timestamp: new Date().toISOString(),
-});
+export const makeDbUnavailableError = (): Effect.Effect<DbUnavailableError> =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    return {
+      error: DB_UNAVAILABLE,
+      message: "Database temporarily unavailable",
+      timestamp: new Date(now).toISOString(),
+    };
+  });
 
 /**
  * Uniform error mapping for data-query handlers: a `DbUnavailable` failure
@@ -18,6 +22,10 @@ export const makeDbUnavailableError = (): DbUnavailableError => ({
 export const mapQueryError =
   (label: string) =>
   (error: unknown): Effect.Effect<never, DbUnavailableError | string> =>
-    error instanceof DbUnavailable
-      ? Effect.fail(makeDbUnavailableError())
-      : Effect.fail(`${label}: ${error}`);
+    Effect.gen(function* () {
+      if (error instanceof DbUnavailable) {
+        const err = yield* makeDbUnavailableError();
+        return yield* Effect.fail(err);
+      }
+      return yield* Effect.fail(`${label}: ${error}`);
+    });
