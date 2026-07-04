@@ -16,5 +16,5 @@ export type {
   SpeedTestResponseType,
 } from "./api/routes/speedtest";
 export { SpeedMetricSchema } from "./api/routes/speedtest";
-export { VALID_GRANULARITIES } from "./constants";
+export { PACKET_LOSS_THRESHOLDS, VALID_GRANULARITIES } from "./constants";
 export { bpsToMbps, mbpsToBps } from "./metrics";
