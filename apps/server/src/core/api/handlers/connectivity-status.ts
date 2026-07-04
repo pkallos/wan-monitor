@@ -36,6 +36,12 @@ export const getConnectivityStatusHandler = ({
       };
     });
 
+    // Uptime is deliberately "clean up only": it counts strictly `up` samples
+    // (reachable with < 5% packet loss) over all samples. Degraded samples
+    // (reachable but >= 5% loss) count toward the denominator but NOT the
+    // numerator, so degradation lowers the uptime figure rather than being
+    // treated as full availability. Per-bucket degradedPercentage exposes the
+    // degraded share separately for callers that need an availability view.
     const totalPoints = rows.reduce((sum, row) => sum + row.total_count, 0);
     const totalUpPoints = rows.reduce((sum, row) => sum + row.up_count, 0);
     const uptimePercentage =

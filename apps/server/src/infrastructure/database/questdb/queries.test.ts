@@ -264,8 +264,22 @@ describe("buildQueryConnectivityStatus", () => {
     expect(result.query).toContain("up_count");
     expect(result.query).toContain("total_count");
     expect(result.query).toContain("connectivity_status = 'down'");
+    expect(result.query).toContain("connectivity_status != 'down'");
     expect(result.query).toContain("packet_loss >= 5");
-    expect(result.query).toContain("packet_loss < 50");
+  });
+
+  it("classifies via connectivity_status without a packet-loss ceiling or latency gap", async () => {
+    // Regression guard for PHI-140: the previous SQL dropped reachable samples
+    // with >= 50% packet loss (upper bound) and double-counted samples with a
+    // negative latency sentinel as both up and down. The exhaustive/mutually-
+    // exclusive classification removes both the `packet_loss < 50` ceiling and
+    // any latency-based branch.
+    const result = await Effect.runPromise(buildQueryConnectivityStatus({}));
+
+    expect(result.query).not.toContain("packet_loss < 50");
+    expect(result.query).not.toContain("latency < 0");
+    expect(result.query).not.toContain("latency >= 0");
+    expect(result.query).not.toContain("latency > 0");
   });
 
   it("should fail with invalid granularity", async () => {

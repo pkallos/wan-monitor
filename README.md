@@ -150,6 +150,16 @@ All configuration is done via environment variables.
 - **Speed Test History**: Download and upload speeds over time
 - **ISP & IP Display**: Shows your current ISP and external IP address
 
+### How connectivity status is classified
+
+Each ping sample is classified into exactly one state:
+
+- **Up**: reachable with less than 5% packet loss.
+- **Degraded**: reachable but with 5% or more packet loss (any amount, including severe loss).
+- **Down**: host unreachable.
+
+The **uptime percentage** is deliberately "clean up only": it counts strictly *up* samples over all samples. Degraded samples are still reachable but are **not** counted toward uptime, so packet loss lowers the uptime figure rather than being treated as full availability. The per-interval degraded share is shown separately on the connectivity chart.
+
 **Time Range Options**: 1 hour, 6 hours, 24 hours, 7 days, 30 days
 
 Charts support linked cursors (hovering on one chart highlights the same time on others) and automatic data aggregation based on the selected time range.
