@@ -6,9 +6,13 @@ import {
   SCHEMA_VERSION,
 } from "@wan-monitor/shared/db-schema";
 import { Effect } from "effect";
-import type { Client as PgClient } from "pg";
+import type { Client, Pool } from "pg";
 import { DatabaseConnectionError } from "@/infrastructure/database/questdb/errors";
 import { errorMessage } from "@/infrastructure/database/questdb/util";
+
+// Accept either a pooled or single connection: production/runtime passes a Pool,
+// while integration tests drive bootstrap with a one-off Client.
+type PgClient = Client | Pool;
 
 interface ColumnNameRow {
   readonly name: string;

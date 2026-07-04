@@ -41,7 +41,10 @@ export default defineConfig({
       // Backend API server, pointed at the isolated test QuestDB (REST/ILP on
       // 9100, PgWire on 8912) with auth disabled for tests.
       command: "pnpm --filter @wan-monitor/server dev",
-      url: "http://localhost:3001/api/health/live",
+      // Gate on readiness, not liveness: /ready fails until the QuestDB
+      // connection is established, so tests never start against a server that
+      // would return empty data on the first dashboard load.
+      url: "http://localhost:3001/api/health/ready",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: "pipe",
