@@ -293,6 +293,22 @@ All commands should be non-interactive. This is especially important for git ope
 
 ## Effect-TS Best Practices
 
+**📚 Full reference library: [`docs/effect-ts/`](./docs/effect-ts/).** Before writing or reviewing
+Effect code, read the topic that matches your task — every pattern there is grounded in real files in
+this repo:
+
+- [`docs/effect-ts/README.md`](./docs/effect-ts/README.md) — index, library versions, house rules
+- [`services-and-layers.md`](./docs/effect-ts/services-and-layers.md) — `Context.Tag`, `Layer.*`, dependency graph
+- [`error-handling.md`](./docs/effect-ts/error-handling.md) — tagged errors, `catchTag`, wrapping Promises
+- [`effect-gen-and-composition.md`](./docs/effect-ts/effect-gen-and-composition.md) — `Effect.gen`, `pipe`, fibers, runners
+- [`schema.md`](./docs/effect-ts/schema.md) — `Schema.Struct`, deriving types, decode/encode
+- [`configuration.md`](./docs/effect-ts/configuration.md) — `Config`, `ConfigProvider`, test injection
+- [`http-api.md`](./docs/effect-ts/http-api.md) — `HttpApi*`, handlers, middleware, typed errors
+- [`testing.md`](./docs/effect-ts/testing.md) — `@effect/vitest`, `it.effect`, mock layers
+
+The rules below are the quick summary; the docs above are authoritative. Keep them in sync — if you
+change an Effect pattern in the codebase, update the matching doc in the same PR.
+
 This project uses Effect-TS for functional programming. Follow these idiomatic patterns:
 
 ### Pattern Matching and Type Guards
