@@ -1,3 +1,5 @@
+import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
+
 /**
  * Connectivity status colors
  * Using Chakra UI color values for consistency
@@ -26,9 +28,9 @@ export const CONNECTIVITY_THRESHOLDS = {
   /** Percentage threshold for considering a status dominant */
   dominantStatusPercentage: 50,
   /** Packet loss percentage threshold for degraded status */
-  degradedPacketLoss: 5,
+  degradedPacketLoss: PACKET_LOSS_THRESHOLDS.degradedFloor,
   /** Maximum packet loss percentage for degraded status */
-  maxDegradedPacketLoss: 50,
+  maxDegradedPacketLoss: PACKET_LOSS_THRESHOLDS.degradedCeiling,
   /** Gap detection multiplier (gaps larger than this * interval are filled) */
   gapDetectionMultiplier: 1.5,
 } as const;

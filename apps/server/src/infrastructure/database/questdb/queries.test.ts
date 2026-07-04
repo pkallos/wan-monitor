@@ -1,3 +1,4 @@
+import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
@@ -280,6 +281,21 @@ describe("buildQueryConnectivityStatus", () => {
     expect(result.query).not.toContain("latency < 0");
     expect(result.query).not.toContain("latency >= 0");
     expect(result.query).not.toContain("latency > 0");
+  });
+
+  it("should classify packet loss using the shared PACKET_LOSS_THRESHOLDS", async () => {
+    const params: QueryMetricsParams = {};
+
+    const result = await Effect.runPromise(
+      buildQueryConnectivityStatus(params)
+    );
+
+    expect(result.query).toContain(
+      `packet_loss >= ${PACKET_LOSS_THRESHOLDS.degradedFloor}`
+    );
+    expect(result.query).toContain(
+      `packet_loss < ${PACKET_LOSS_THRESHOLDS.degradedFloor} OR packet_loss IS NULL`
+    );
   });
 
   it("should fail with invalid granularity", async () => {

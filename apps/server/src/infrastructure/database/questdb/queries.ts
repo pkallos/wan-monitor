@@ -1,4 +1,7 @@
-import { VALID_GRANULARITIES } from "@wan-monitor/shared";
+import {
+  PACKET_LOSS_THRESHOLDS,
+  VALID_GRANULARITIES,
+} from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
 import type {
@@ -176,12 +179,12 @@ export const buildQueryConnectivityStatus = (
           END) as down_count,
           SUM(CASE
             WHEN connectivity_status != 'down'
-              AND packet_loss >= 5 THEN 1
+              AND packet_loss >= ${PACKET_LOSS_THRESHOLDS.degradedFloor} THEN 1
             ELSE 0
           END) as degraded_count,
           SUM(CASE
             WHEN connectivity_status != 'down'
-              AND (packet_loss < 5 OR packet_loss IS NULL) THEN 1
+              AND (packet_loss < ${PACKET_LOSS_THRESHOLDS.degradedFloor} OR packet_loss IS NULL) THEN 1
             ELSE 0
           END) as up_count,
           COUNT(*) as total_count
