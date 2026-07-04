@@ -10,6 +10,13 @@
  * window, regardless of what time of day the suite runs.
  */
 
+import {
+  buildCreateTableSql,
+  NETWORK_METRICS_TABLE,
+} from "@wan-monitor/shared/db-schema";
+
+// Value tuples in buildPingRows/buildSpeedtestRows are positioned to match this
+// exact column order.
 const COLUMNS = [
   "timestamp",
   "source",
@@ -26,7 +33,7 @@ const COLUMNS = [
   "internal_ip",
 ].join(", ");
 
-const TABLE = "network_metrics";
+const TABLE = NETWORK_METRICS_TABLE;
 
 interface ExecResponse {
   readonly error?: string;
@@ -75,24 +82,9 @@ export const waitForQuestDb = async (
  */
 export const resetSchema = async (baseUrl: string): Promise<void> => {
   await exec(baseUrl, `DROP TABLE IF EXISTS ${TABLE}`);
-  await exec(
-    baseUrl,
-    `CREATE TABLE ${TABLE} (
-      timestamp TIMESTAMP,
-      source SYMBOL,
-      host SYMBOL,
-      latency DOUBLE,
-      jitter DOUBLE,
-      packet_loss DOUBLE,
-      connectivity_status STRING,
-      download_bandwidth LONG,
-      upload_bandwidth LONG,
-      server_location STRING,
-      isp STRING,
-      external_ip STRING,
-      internal_ip STRING
-    ) TIMESTAMP(timestamp) PARTITION BY DAY WAL;`
-  );
+  // Recreate from the canonical schema so E2E, CI, integration tests, and the
+  // server bootstrap all share one identical table definition (no drift).
+  await exec(baseUrl, buildCreateTableSql());
 };
 
 const isoAt = (epochMs: number): string =>

@@ -23,6 +23,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.2
+      '@wan-monitor/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       husky:
         specifier: ^9.1.7
         version: 9.1.7

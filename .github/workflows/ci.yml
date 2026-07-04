@@ -161,25 +161,10 @@ jobs:
           echo "QuestDB failed to start"
           exit 1
 
-      - name: Bootstrap test database
-        run: |
-          echo "Creating network_metrics table..."
-          curl -G http://localhost:9000/exec --data-urlencode "query=CREATE TABLE IF NOT EXISTS network_metrics (
-            timestamp TIMESTAMP,
-            source SYMBOL,
-            host SYMBOL,
-            latency DOUBLE,
-            jitter DOUBLE,
-            packet_loss DOUBLE,
-            connectivity_status STRING,
-            download_bandwidth LONG,
-            upload_bandwidth LONG,
-            server_location STRING,
-            isp STRING,
-            external_ip STRING,
-            internal_ip STRING
-          ) TIMESTAMP(timestamp) PARTITION BY DAY WAL;"
-          echo "Table created successfully"
+      # Schema is bootstrapped by the QuestDB client on connect (see
+      # questdb/bootstrap.ts) and by the integration-test setup, both from the
+      # canonical definition in @wan-monitor/shared/db-schema. No manual
+      # CREATE TABLE step is needed here.
 
       - name: Run tests with coverage
         run: pnpm test:coverage
