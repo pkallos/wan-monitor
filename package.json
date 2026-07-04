@@ -59,6 +59,11 @@
     "node": ">=24.0.0",
     "pnpm": ">=8.0.0"
   },
+  "pnpm": {
+    "overrides": {
+      "lzma-native": "npm:@favware/skip-dependency@1.2.2"
+    }
+  },
   "lint-staged": {
     "*.{ts,tsx}": [
       "biome check --write --assist-enabled=true",
