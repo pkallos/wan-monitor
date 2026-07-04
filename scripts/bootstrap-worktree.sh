@@ -26,7 +26,38 @@ if [ -n "${CI:-}" ]; then
   exit 0
 fi
 
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+# Cascade/Devin hooks run in a minimal non-interactive shell whose PATH often
+# omits the locations where node, pnpm, and corepack were installed (nvm,
+# Homebrew, the pnpm home). Augment PATH with the usual suspects so tool
+# resolution below does not silently fail. Only existing directories are added.
+for dir in \
+  "${PNPM_HOME:-}" \
+  "$HOME/Library/pnpm" \
+  "$HOME/.local/share/pnpm" \
+  "/opt/homebrew/bin" \
+  "/usr/local/bin"; do
+  if [ -n "$dir" ] && [ -d "$dir" ]; then
+    case ":$PATH:" in
+      *":$dir:"*) ;;
+      *) PATH="$dir:$PATH" ;;
+    esac
+  fi
+done
+# Prefer the currently-active nvm node, else the newest installed one.
+for node_bin in "${NVM_BIN:-}" "$HOME"/.nvm/versions/node/*/bin; do
+  if [ -n "$node_bin" ] && [ -d "$node_bin" ]; then
+    case ":$PATH:" in
+      *":$node_bin:"*) ;;
+      *) PATH="$node_bin:$PATH" ;;
+    esac
+  fi
+done
+export PATH
+
+# The hook runs inside the new worktree, so the working directory is the target
+# repo. Fall back to $PWD if git is unavailable rather than exiting silently.
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT="$PWD"
+[ -n "$REPO_ROOT" ] || REPO_ROOT="$PWD"
 
 # Resolve the primary (original) worktree. Prefer $ROOT_WORKSPACE_PATH, which
 # Windsurf/Devin Cascade sets for the post_setup_worktree hook; otherwise fall
@@ -56,13 +87,28 @@ fi
 
 # --- 2. Install dependencies when missing -----------------------------------
 if [ ! -d "$REPO_ROOT/node_modules" ]; then
+  # Resolve a pnpm runner. Prefer a pnpm already on PATH, then well-known
+  # install locations, then corepack (bundled with node), which also honors the
+  # packageManager version pinned in package.json.
+  PNPM_RUN=""
   if command -v pnpm >/dev/null 2>&1; then
-    echo "📦 bootstrap: installing dependencies (pnpm install)..."
-    if ! (CDPATH= cd -- "$REPO_ROOT" && pnpm install); then
-      echo "⚠️  bootstrap: pnpm install failed — run 'pnpm install' manually." >&2
+    PNPM_RUN="pnpm"
+  elif [ -n "${PNPM_HOME:-}" ] && [ -x "$PNPM_HOME/pnpm" ]; then
+    PNPM_RUN="$PNPM_HOME/pnpm"
+  elif [ -x "$HOME/Library/pnpm/pnpm" ]; then
+    PNPM_RUN="$HOME/Library/pnpm/pnpm"
+  elif command -v corepack >/dev/null 2>&1; then
+    corepack enable pnpm >/dev/null 2>&1 || true
+    PNPM_RUN="corepack pnpm"
+  fi
+
+  if [ -n "$PNPM_RUN" ]; then
+    echo "📦 bootstrap: installing dependencies ($PNPM_RUN install)..."
+    if ! (CDPATH= cd -- "$REPO_ROOT" && $PNPM_RUN install); then
+      echo "⚠️  bootstrap: dependency install failed — run 'pnpm install' manually." >&2
     fi
   else
-    echo "⚠️  bootstrap: pnpm not found on PATH — install dependencies manually." >&2
+    echo "⚠️  bootstrap: could not locate pnpm or corepack — install dependencies manually." >&2
   fi
 fi
 
