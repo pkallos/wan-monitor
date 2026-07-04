@@ -1,9 +1,34 @@
 import { mbpsToBps } from "@shared/metrics";
-import { Config, Context, Effect, Layer, Schedule } from "effect";
+import { Context, Effect, Layer, Ref, Schedule } from "effect";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
+import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 // Import from speedtest-service to avoid native module loading in tests
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
+
+// ============================================================================
+// Internal Stats State (managed via Ref for atomic concurrent updates)
+// ============================================================================
+
+interface StatsState {
+  readonly startTime: Date | null;
+  readonly lastPingTime: Date | null;
+  readonly successfulPings: number;
+  readonly failedPings: number;
+  readonly lastSpeedTestTime: Date | null;
+  readonly successfulSpeedTests: number;
+  readonly failedSpeedTests: number;
+}
+
+const initialStats: StatsState = {
+  startTime: null,
+  lastPingTime: null,
+  successfulPings: 0,
+  failedPings: 0,
+  lastSpeedTestTime: null,
+  successfulSpeedTests: 0,
+  failedSpeedTests: 0,
+};
 
 // ============================================================================
 // Types
@@ -54,25 +79,13 @@ export const NetworkMonitorLive = Layer.effect(
     const pingExecutor = yield* PingExecutor;
     const speedTestService = yield* SpeedTestService;
     const db = yield* QuestDB;
+    const config = yield* ConfigService;
 
-    // Read ping interval from config (default: 30 seconds)
-    const pingIntervalSeconds = yield* Config.number(
-      "PING_INTERVAL_SECONDS"
-    ).pipe(Config.withDefault(30));
+    const pingIntervalSeconds = config.ping.intervalSeconds;
+    const speedTestIntervalSeconds = config.speedtest.intervalSeconds;
 
-    // Read speedtest interval from config (default: 1 hour = 3600 seconds)
-    const speedTestIntervalSeconds = yield* Config.number(
-      "SPEEDTEST_INTERVAL_SECONDS"
-    ).pipe(Config.withDefault(3600));
-
-    // Stats tracking
-    let startTime: Date | null = null;
-    let lastPingTime: Date | null = null;
-    let successfulPings = 0;
-    let failedPings = 0;
-    let lastSpeedTestTime: Date | null = null;
-    let successfulSpeedTests = 0;
-    let failedSpeedTests = 0;
+    // Stats tracking via Ref for atomic concurrent updates
+    const statsRef = yield* Ref.make<StatsState>(initialStats);
 
     /**
      * Execute a single ping cycle and update stats
@@ -84,12 +97,15 @@ export const NetworkMonitorLive = Layer.effect(
 
       const results = yield* pingExecutor.executeAll();
 
-      lastPingTime = timestamp;
       const successCount = results.filter((r) => r.success).length;
       const failCount = results.filter((r) => !r.success).length;
 
-      successfulPings += successCount;
-      failedPings += failCount;
+      yield* Ref.update(statsRef, (s) => ({
+        ...s,
+        lastPingTime: timestamp,
+        successfulPings: s.successfulPings + successCount,
+        failedPings: s.failedPings + failCount,
+      }));
 
       yield* Effect.logInfo(
         `Ping cycle completed: ${successCount} successful, ${failCount} failed`
@@ -103,21 +119,26 @@ export const NetworkMonitorLive = Layer.effect(
       const timestamp = new Date();
 
       const result = yield* speedTestService.runTest().pipe(
-        Effect.catchAll((error) => {
-          failedSpeedTests++;
-          const errorMessage =
-            error._tag === "SpeedTestExecutionError"
-              ? error.message
-              : error._tag === "SpeedTestTimeoutError"
-                ? `Timeout after ${error.timeoutMs}ms`
-                : String(error);
-          return Effect.flatMap(
-            Effect.logError(
-              `Speed test failed: ${error._tag} - ${errorMessage}`
-            ),
-            () => Effect.fail(error)
-          );
-        })
+        Effect.catchAll((error) =>
+          Effect.gen(function* () {
+            yield* Ref.update(statsRef, (s) => ({
+              ...s,
+              failedSpeedTests: s.failedSpeedTests + 1,
+            }));
+            const errorMessage =
+              error._tag === "SpeedTestExecutionError"
+                ? error.message
+                : error._tag === "SpeedTestTimeoutError"
+                  ? `Timeout after ${error.timeoutMs}ms`
+                  : String(error);
+            return yield* Effect.flatMap(
+              Effect.logError(
+                `Speed test failed: ${error._tag} - ${errorMessage}`
+              ),
+              () => Effect.fail(error)
+            );
+          })
+        )
       );
 
       // Write speed test result to database
@@ -143,12 +164,12 @@ export const NetworkMonitorLive = Layer.effect(
           )
         );
 
-      lastSpeedTestTime = timestamp;
-      if (writeSucceeded) {
-        successfulSpeedTests++;
-      } else {
-        failedSpeedTests++;
-      }
+      yield* Ref.update(statsRef, (s) => ({
+        ...s,
+        lastSpeedTestTime: timestamp,
+        successfulSpeedTests: s.successfulSpeedTests + (writeSucceeded ? 1 : 0),
+        failedSpeedTests: s.failedSpeedTests + (writeSucceeded ? 0 : 1),
+      }));
     });
 
     /**
@@ -156,7 +177,10 @@ export const NetworkMonitorLive = Layer.effect(
      */
     const start = () =>
       Effect.gen(function* () {
-        startTime = new Date();
+        yield* Ref.update(statsRef, (s) => ({
+          ...s,
+          startTime: new Date(),
+        }));
 
         yield* Effect.logInfo(
           `Starting network monitor (ping interval: ${pingIntervalSeconds}s)`
@@ -203,15 +227,18 @@ export const NetworkMonitorLive = Layer.effect(
      * Get monitoring statistics
      */
     const getStats = () =>
-      Effect.succeed({
-        uptime: startTime ? Date.now() - startTime.getTime() : 0,
-        lastPingTime,
-        successfulPings,
-        failedPings,
-        lastSpeedTestTime,
-        successfulSpeedTests,
-        failedSpeedTests,
-      } satisfies MonitorStats);
+      Effect.gen(function* () {
+        const s = yield* Ref.get(statsRef);
+        return {
+          uptime: s.startTime ? Date.now() - s.startTime.getTime() : 0,
+          lastPingTime: s.lastPingTime,
+          successfulPings: s.successfulPings,
+          failedPings: s.failedPings,
+          lastSpeedTestTime: s.lastSpeedTestTime,
+          successfulSpeedTests: s.successfulSpeedTests,
+          failedSpeedTests: s.failedSpeedTests,
+        } satisfies MonitorStats;
+      });
 
     return {
       start,

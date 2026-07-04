@@ -1,5 +1,6 @@
-import { Config, Duration, Effect, Layer } from "effect";
+import { Duration, Effect, Layer } from "effect";
 import speedTest from "speedtest-net";
+import { ConfigService } from "@/infrastructure/config/config";
 import {
   SpeedTestExecutionError,
   SpeedTestTimeoutError,
@@ -104,7 +105,7 @@ export const makeSpeedTestService = (
 
 /**
  * Build a SpeedTestService layer around a given executor, resolving the timeout
- * from `SPEEDTEST_TIMEOUT_SECONDS` via the ambient `ConfigProvider`.
+ * from `ConfigService` (`speedtest.timeoutSeconds`).
  *
  * The executor is a parameter so tests can supply a deterministic stand-in and
  * exercise the config -> effective-timeout wiring without the native module or
@@ -114,9 +115,8 @@ export const makeSpeedTestServiceLayer = (executor: SpeedTestExecutor) =>
   Layer.effect(
     SpeedTestService,
     Effect.gen(function* () {
-      const timeoutSeconds = yield* Config.number(
-        "SPEEDTEST_TIMEOUT_SECONDS"
-      ).pipe(Config.withDefault(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS));
+      const config = yield* ConfigService;
+      const timeoutSeconds = config.speedtest.timeoutSeconds;
 
       return makeSpeedTestService(executor, timeoutSeconds);
     })

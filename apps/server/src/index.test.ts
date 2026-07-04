@@ -142,7 +142,8 @@ describe("Server Lifecycle Integration Tests", () => {
     const NetworkMonitorTest = NetworkMonitorLive.pipe(
       Layer.provide(PingExecutorTest),
       Layer.provide(QuestDBTest),
-      Layer.provide(SpeedTestServiceTest)
+      Layer.provide(SpeedTestServiceTest),
+      Layer.provide(ConfigServiceTest)
     );
 
     // Merge all test services (API server startup tested separately in handler tests)
@@ -196,6 +197,7 @@ describe("Server Lifecycle Integration Tests", () => {
           hosts: ["8.8.8.8"],
           timeout: 10000,
           trainCount: 5,
+          intervalSeconds: 30,
         },
       };
 
@@ -348,7 +350,8 @@ describe("Server Lifecycle Integration Tests", () => {
       const NetworkMonitorTest = NetworkMonitorLive.pipe(
         Layer.provide(PingExecutorTest),
         Layer.provide(QuestDBFailingTest),
-        Layer.provide(SpeedTestServiceTest)
+        Layer.provide(SpeedTestServiceTest),
+        Layer.provide(ConfigServiceTest)
       );
 
       const TestLayer = Layer.mergeAll(
@@ -393,7 +396,8 @@ describe("Server Lifecycle Integration Tests", () => {
       const NetworkMonitorTest = NetworkMonitorLive.pipe(
         Layer.provide(EmptyPingExecutorTest),
         Layer.provide(QuestDBTest),
-        Layer.provide(SpeedTestServiceTest)
+        Layer.provide(SpeedTestServiceTest),
+        Layer.provide(ConfigServiceTest)
       );
 
       const TestLayer = Layer.mergeAll(
@@ -447,7 +451,8 @@ describe("Server Lifecycle Integration Tests", () => {
       const NetworkMonitorTest = NetworkMonitorLive.pipe(
         Layer.provide(PingExecutorTest),
         Layer.provide(QuestDBTestWithClose),
-        Layer.provide(SpeedTestServiceTest)
+        Layer.provide(SpeedTestServiceTest),
+        Layer.provide(ConfigServiceTest)
       );
 
       const TestLayer = Layer.mergeAll(

@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-  ConfigProvider,
   Duration,
   Effect,
   Exit,
@@ -14,6 +13,7 @@ import {
   TestContext,
 } from "effect";
 import { describe, expect, it } from "vitest";
+import { ConfigService } from "@/infrastructure/config/config";
 import {
   DEFAULT_SPEEDTEST_TIMEOUT_SECONDS,
   makeSpeedTestService,
@@ -24,6 +24,7 @@ import {
   SpeedTestServiceLive,
   SpeedTestTimeoutError,
 } from "@/infrastructure/speedtest/service";
+import { makeTestAppConfig } from "@/test/config";
 
 const isMacArm64 = process.platform === "darwin" && process.arch === "arm64";
 
@@ -270,11 +271,18 @@ describe("SpeedTestServiceLive - config integration", () => {
   };
 
   // Build a fully-wired test layer: the service layer resolves its timeout from
-  // `config`, running under a TestClock so we can advance virtual time.
-  const testLayer = (config: ConfigProvider.ConfigProvider) =>
+  // ConfigService, running under a TestClock so we can advance virtual time.
+  const testLayer = (timeoutSeconds: number) =>
     Layer.mergeAll(
       makeSpeedTestServiceLayer(neverSettlingExecutor).pipe(
-        Layer.provide(Layer.setConfigProvider(config))
+        Layer.provide(
+          Layer.succeed(
+            ConfigService,
+            makeTestAppConfig({
+              speedtest: { intervalSeconds: 3600, timeoutSeconds },
+            })
+          )
+        )
       ),
       TestContext.TestContext,
       Logger.minimumLogLevel(LogLevel.None)
@@ -285,7 +293,9 @@ describe("SpeedTestServiceLive - config integration", () => {
       SpeedTestService.pipe(
         Effect.provide(
           Layer.merge(
-            SpeedTestServiceLive,
+            SpeedTestServiceLive.pipe(
+              Layer.provide(Layer.succeed(ConfigService, makeTestAppConfig()))
+            ),
             Logger.minimumLogLevel(LogLevel.None)
           )
         )
@@ -295,11 +305,7 @@ describe("SpeedTestServiceLive - config integration", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
   });
 
-  it("reads SPEEDTEST_TIMEOUT_SECONDS from the ConfigProvider and applies it as the effective timeout", async () => {
-    const customConfig = ConfigProvider.fromMap(
-      new Map([["SPEEDTEST_TIMEOUT_SECONDS", "45"]])
-    );
-
+  it("reads speedtest.timeoutSeconds from ConfigService and applies it as the effective timeout", async () => {
     const program = Effect.gen(function* () {
       const service = yield* SpeedTestService;
       const fiber = yield* Effect.fork(service.runTest());
@@ -318,16 +324,14 @@ describe("SpeedTestServiceLive - config integration", () => {
     });
 
     const { beforeTimeout, exit } = await Effect.runPromise(
-      program.pipe(Effect.provide(testLayer(customConfig)))
+      program.pipe(Effect.provide(testLayer(45)))
     );
 
     expect(Option.isNone(beforeTimeout)).toBe(true);
     expectTimeout(exit, 45_000);
   });
 
-  it("falls back to the default timeout when SPEEDTEST_TIMEOUT_SECONDS is not set", async () => {
-    const emptyConfig = ConfigProvider.fromMap(new Map());
-
+  it("falls back to the default timeout when speedtest.timeoutSeconds is the default", async () => {
     const program = Effect.gen(function* () {
       const service = yield* SpeedTestService;
       const fiber = yield* Effect.fork(service.runTest());
@@ -338,7 +342,7 @@ describe("SpeedTestServiceLive - config integration", () => {
     });
 
     const exit = await Effect.runPromise(
-      program.pipe(Effect.provide(testLayer(emptyConfig)))
+      program.pipe(Effect.provide(testLayer(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS)))
     );
 
     expectTimeout(exit, DEFAULT_SPEEDTEST_TIMEOUT_SECONDS * 1000);
