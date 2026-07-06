@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.8.1...wan-monitor-v0.9.0) (2026-07-06)
+
+
+### Features
+
+* replace mutable let state with Ref&lt;Stats&gt; and fold Config into ConfigService ([#212](https://github.com/pkallos/wan-monitor/issues/212)) ([1326d1f](https://github.com/pkallos/wan-monitor/commit/1326d1f27298a1e648b98a7c9608775f29e95d07))
+* replace string HTTP errors with typed Schema.TaggedError in auth/health/ping ([#210](https://github.com/pkallos/wan-monitor/issues/210)) ([d3105f3](https://github.com/pkallos/wan-monitor/commit/d3105f3d8f8958a2e56f11b9cc9a461f5f66f9a8))
+
+
+### Bug Fixes
+
+* make speedtest isRunning guard atomic and interruption-safe ([#208](https://github.com/pkallos/wan-monitor/issues/208)) ([358abeb](https://github.com/pkallos/wan-monitor/commit/358abeb266f26d720ceec095835aecd8443e6130))
+* replace _tag comparisons with type guards (PHI-148) and direct clock reads with Clock service (PHI-156) ([#214](https://github.com/pkallos/wan-monitor/issues/214)) ([16e0f09](https://github.com/pkallos/wan-monitor/commit/16e0f09db5836077171ced81759c62283a08d0eb))
+
+
+### Performance Improvements
+
+* reuse single ManagedRuntime in web Effect bridge ([#207](https://github.com/pkallos/wan-monitor/issues/207)) ([fba233f](https://github.com/pkallos/wan-monitor/commit/fba233f54f052415cfb6ddcaabebd90d34fa14ad))
+
 ## [0.8.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.8.0...wan-monitor-v0.8.1) (2026-07-04)
 
 
