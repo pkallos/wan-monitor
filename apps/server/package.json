@@ -16,12 +16,12 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform": "^0.96.2",
-    "@effect/platform-node": "^0.107.0",
+    "@effect/platform": "^0.97.0",
+    "@effect/platform-node": "^0.108.0",
     "@effect/schema": "^0.75.5",
     "@questdb/nodejs-client": "^4.2.0",
     "@types/pg": "^8.20.0",
-    "effect": "^3.21.4",
+    "effect": "^3.22.0",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.22.0",
     "ping": "^1.0.0",
@@ -30,7 +30,7 @@
     "speedtest-net": "2.2.0"
   },
   "devDependencies": {
-    "@effect/vitest": "^0.29.0",
+    "@effect/vitest": "^0.30.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.13.3",
     "@types/ping": "^0.4.4",
