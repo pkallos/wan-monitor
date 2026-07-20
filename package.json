@@ -48,7 +48,7 @@
     "@effect/language-service": "^0.86.4",
     "@effect/vitest": "^0.29.0",
     "@playwright/test": "^1.49.1",
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.13.3",
     "@wan-monitor/shared": "workspace:*",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
