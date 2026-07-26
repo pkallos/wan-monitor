@@ -1,169 +1,223 @@
-# HTTP API (`@effect/platform`)
+# HttpApi
 
-WAN Monitor's HTTP layer is built with the `HttpApi*` modules. The API is **defined once** in
-`packages/shared` as a typed contract, then reused to (a) implement the server and (b) derive a
-fully-typed client for the web app. This keeps server, client, and docs aligned.
+Schema-first HTTP API definition and serving. In v4 this all lives in core, under two subpath
+modules — `effect/unstable/http` (transport primitives: request, response, client, router,
+middleware plumbing) and `effect/unstable/httpapi` (the schema-driven API layer: `HttpApi`,
+`HttpApiGroup`, `HttpApiEndpoint`, `HttpApiBuilder`, `HttpApiMiddleware`, `HttpApiClient`). Neither
+lives in `@effect/platform` anymore — that package folded entirely into `effect` for v4. The `unstable`
+prefix means these modules can get breaking changes in minor releases, unlike the rest of the `effect`
+barrel; expect some churn if you bump the beta version.
 
-```
-HttpApi ("WanMonitorAPI")
-├── HttpApiGroup ("metrics")
-│   └── HttpApiEndpoint ("getMetrics")
-├── HttpApiGroup ("auth")
-└── ... (health, ping, speedtest, connectivity-status)
-```
+`packages/shared/src/api/` defines the whole API contract once; `apps/server` implements it;
+`apps/web` consumes it through a generated client. Neither side redeclares a route or a schema by hand.
 
-## Layer 1 — Define the contract (shared)
+## Defining an endpoint
 
-### Endpoints + groups
-
-Reference: `packages/shared/src/api/routes/metrics.ts`.
-
-```typescript
-import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
+```ts
 import { Schema } from "effect";
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/unstable/httpapi";
 
-export const MetricsApiGroup = HttpApiGroup.make("metrics")
-  .prefix("/metrics")
+export const AuthApiGroup = HttpApiGroup.make("auth")
   .add(
-    HttpApiEndpoint.get("getMetrics", "/")
-      .setUrlParams(GetMetricsQueryParams)     // decoded into the handler
-      .addSuccess(GetMetricsResponse)          // encoded response schema
-      .addError(DbUnavailableErrorSchema, { status: 503 })
-      .addError(Schema.String)
+    HttpApiEndpoint.post("login", "/login", {
+      payload: LoginRequest,
+      success: LoginResponse,
+      error: [MissingCredentials, InvalidCredentials, AuthNotConfigured],
+    })
   )
-  .middleware(Authorization);                  // require auth for the group
+  .add(
+    HttpApiEndpoint.get("me", "/me", {
+      success: MeResponse,
+      error: HttpApiSchema.status(401)(Schema.String),
+    }).middleware(Authorization)
+  );
 ```
 
-Endpoint builders: `HttpApiEndpoint.get/post/put/del(name, path)`, then chain
-`.setUrlParams`, `.setPayload`, `.setPath`, `.addSuccess`, `.addError`. All schemas come from
-[`schema.md`](./schema.md).
+`HttpApiEndpoint.get`/`post`/etc. take `(id, path, options)` where `options` is a plain object:
+`payload`, `query`, `success`, `error`. This is v4's endpoint shape — v3 built the same endpoint with a
+builder-method chain (`.setPayload(...)`, `.addSuccess(...)`, `.addError(...)`, `.setUrlParams(...)`);
+none of those methods exist anymore. `error` accepts either a single schema or an array of them (each
+member of a tagged-error union), replacing v3's repeated `.addError(...)` calls. Query params are the
+`query` option (v3's `setUrlParams` / `urlParams`) — this renames both the endpoint definition and the
+handler's destructured parameter (see below). `HttpApiEndpoint.get("id")\`/path\`` — the v3
+template-literal form for a path with no options — is also gone; always pass the path as a plain
+string, the second positional argument.
 
-### Assembling the API
+See `packages/shared/src/api/routes/*.ts` for every group in this API.
 
-Reference: `packages/shared/src/api/index.ts`.
+## Assembling the API
 
-```typescript
-import { HttpApi } from "@effect/platform";
+```ts
+import { HttpApi } from "effect/unstable/httpapi";
 
 export const WanMonitorApi = HttpApi.make("WanMonitorAPI")
   .add(AuthApiGroup.prefix("/auth"))
   .add(MetricsApiGroup.prefix("/metrics"))
-  .add(HealthApiGroup.prefix("/health"))
-  // ... ping, speedtest, connectivity-status
+  // ...
   .prefix("/api");
 ```
 
-## Layer 2 — Implement the handlers (server)
+`packages/shared/src/api/index.ts`. Unchanged shape from v3.
 
-Each endpoint is implemented in a handler `Effect`, then wired into a group `Live` layer with
-`HttpApiBuilder.group`. Reference: `apps/server/src/core/api/handlers/metrics.ts`.
+## Implementing handlers
 
-```typescript
-import { HttpApiBuilder } from "@effect/platform";
+```ts
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-// Handler: receives already-decoded params, returns the success schema shape
-const getMetricsHandler = ({ urlParams }: { urlParams: /* Schema.Type of GetMetricsQueryParams */ }) =>
+export const loginHandler = ({ payload }: { payload: LoginRequestType }) =>
   Effect.gen(function* () {
-    const db = yield* QuestDB;
-    const rawData = yield* db.queryMetrics({ /* ...from urlParams... */ });
-    return { data: rawData.map(/* ... */), meta: { /* ... */ } };
-  }).pipe(Effect.catchAll(mapQueryError("Failed to query metrics")));
+    // ...
+    return { token, expiresAt, username: payload.username };
+  });
 
-// Group Live: bind endpoint names to handlers
-export const MetricsGroupLive = HttpApiBuilder.group(
-  WanMonitorApi,
-  "metrics",
-  (handlers) => handlers.handle("getMetrics", getMetricsHandler)
+export const AuthGroupLive = HttpApiBuilder.group(WanMonitorApi, "auth", (handlers) =>
+  handlers
+    .handle("login", loginHandler)
+    .handle("logout", logoutHandler)
+    .handle("me", meHandler)
 );
 ```
 
-- The handler **returns the decoded success shape**; the platform encodes it via the response schema.
-- Errors declared with `.addError(...)` can be returned via the error channel and are serialized with
-  their status code. Map internal errors to declared ones at the handler edge (see
-  [error-handling](./error-handling.md)).
+`HttpApiBuilder.group` kept its v3 signature exactly — this is an import-only change. A handler
+destructures whichever of `payload`/`query`/`params` the endpoint declared; a handler for an endpoint
+with `query: GetMetricsQueryParams` receives `{ query }`, not `{ urlParams }`.
 
-## Layer 3 — Compose + serve
+Assembling all groups into one servable layer uses `HttpApiBuilder.layer` (v3's `HttpApiBuilder.api`,
+renamed, same shape):
 
-The API layer merges all group implementations. Reference: `apps/server/src/core/api/service.ts`.
-
-```typescript
-import { HttpApiBuilder } from "@effect/platform";
-
-export const ApiServiceLayer = HttpApiBuilder.api(WanMonitorApi).pipe(
-  Layer.provide([
-    AuthGroupLive,
-    MetricsGroupLive,
-    HealthGroupLive,
-    /* ...other groups... */
-  ]),
+```ts
+// apps/server/src/core/api/service.ts
+export const ApiServiceLayer = HttpApiBuilder.layer(WanMonitorApi).pipe(
+  Layer.provide([AuthGroupLive, MetricsGroupLive, /* ... */]),
   Layer.provide(AuthServiceLive),
   Layer.provide(AuthorizationLive)
 );
 ```
 
-Serving binds the API to a Node HTTP server. Reference: `apps/server/src/core/api/server.ts` +
-`apps/server/src/index.ts`.
+## Serving
 
-```typescript
-import { HttpApiBuilder, HttpMiddleware } from "@effect/platform";
-import { NodeHttpServer } from "@effect/platform-node";
+```ts
+// apps/server/src/core/api/server.ts
+import { HttpRouter } from "effect/unstable/http";
 
-export const ApiServerLive = HttpApiBuilder.serve(HttpMiddleware.logger);
+export const ApiServerLive = HttpRouter.serve(ApiServiceLayer);
+```
 
-export const NodeHttpServerLayer = Layer.unwrapEffect(
+`HttpApiBuilder.serve(middleware)` is gone. v4's `HttpRouter.serve(appLayer, options?)` takes the
+concrete, fully-assembled API layer as its argument (not something provided into it later downstream)
+and logs every request by default (`options.disableLogger` defaults to `false`) — this replaces v3's
+explicit `HttpApiBuilder.serve(HttpMiddleware.logger)`. Because `HttpRouter.serve` needs the concrete
+layer up front, `ApiServiceLayer` is imported directly into `server.ts` rather than composed later in
+`index.ts` the way v3 could defer it.
+
+## Custom middleware
+
+`HttpApiMiddleware.Tag` is gone; middleware is declared with `HttpApiMiddleware.Service`, and — this is
+the one genuine behavioral change, not just a rename — **the middleware implementation itself wraps
+the downstream response effect**, rather than resolving directly to the value it provides:
+
+```ts
+// packages/shared/src/api/middlewares/authorization.ts
+export class AuthenticatedUser extends Context.Service<AuthenticatedUser, AuthenticatedUserValue>()(
+  "AuthenticatedUser"
+) {}
+
+export class Authorization extends HttpApiMiddleware.Service<
+  Authorization,
+  { provides: AuthenticatedUser }
+>()("Http/Authorization", { error: Unauthorized }) {}
+```
+
+```ts
+// apps/server/src/infrastructure/auth/middleware.ts
+export const AuthorizationLive = Layer.effect(
+  Authorization,
   Effect.gen(function* () {
-    const config = yield* ConfigService;
-    return NodeHttpServer.layer(createServer, { port: config.server.port });
+    const authService = yield* AuthService;
+
+    return (httpEffect) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const payload = yield* authService
+          .verifyRequest(request.headers.authorization)
+          .pipe(Effect.mapError((error) => new Unauthorized({ message: error.message ?? "Unauthorized" })));
+
+        return yield* httpEffect.pipe(
+          Effect.provideService(AuthenticatedUser, payload ?? anonymousUser)
+        );
+      });
   })
 );
 ```
 
-`index.ts` then provides `ApiServiceLayer` + `NodeHttpServerLayer` + the service deps into
-`ApiServerLive` (see [`services-and-layers.md`](./services-and-layers.md) for the full graph).
+v3's version resolved to `AuthenticatedUserValue` directly and the framework injected it; v4's
+`HttpApiMiddleware<Provides, E, Requires>` type is a function
+`(httpEffect: Effect<HttpServerResponse, ...>, options) => Effect<HttpServerResponse, ...>` — the
+middleware receives the downstream handler's response effect and must call `Effect.provideService`
+on it itself before returning it. There's no official example of this exact shape (manual header
+decode + a `provides` config, no `security` scheme) in the upstream JSDoc; this was derived from
+`Effect-TS/effect`'s own httpapi test fixtures. A middleware that fails before reaching `httpEffect`
+(the way this one does when `verifyRequest` fails) never invokes the downstream handler at all — the
+short-circuit works the same as any other `Effect.gen`.
 
-## Middleware & auth
+## Typed errors
 
-Auth is an `HttpApiMiddleware` defined in shared and implemented on the server.
+See `error-handling.md`'s `Schema.TaggedErrorClass` + `httpApiStatus` section — that's what
+`MissingCredentials`, `InvalidCredentials`, `Unauthorized`, and the rest are built from.
 
-Definition — Reference: `packages/shared/src/api/middlewares/authorization.ts`.
+## Testing a full app instance
 
-```typescript
-import { HttpApiMiddleware, HttpApiSchema } from "@effect/platform";
-import { Context, Schema } from "effect";
+```ts
+import { HttpRouter, HttpServer } from "effect/unstable/http";
 
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
-  "Unauthorized", {}, HttpApiSchema.annotations({ status: 401 })
-) {}
+const MockServicesLayer = Layer.mergeAll(ConfigLayer, JwtLayer, /* mocks */);
 
-export class AuthenticatedUser extends Context.Tag("AuthenticatedUser")<
-  AuthenticatedUser, AuthenticatedUserValue
->() {}
+const ProvidedApiLayer = ApiServiceLayer.pipe(
+  Layer.provide(Layer.mergeAll(MockServicesLayer, AuthLayer)),
+  Layer.provide(HttpServer.layerServices), // FileSystem, Path, Etag.Generator
+  Layer.provide(HttpRouter.layer)          // an HttpRouter instance
+);
 
-export class Authorization extends HttpApiMiddleware.Tag<Authorization>()(
-  "Http/Authorization",
-  { failure: Unauthorized, provides: AuthenticatedUser }
-) {}
+// Every group handler's own leftover requirement is tracked internally as
+// `HttpRouter.Request.From<"Requires", R>` (see HttpApiBuilder's
+// `HandlerRequirements` type) — a per-request channel, not an ordinary Layer
+// dependency, so Layer.provide above can never discharge it. Build a Context
+// from the same mock/config/jwt layers and pass it as toWebHandler's second
+// argument on every call instead.
+const requestContext = MockServicesLayer.pipe(
+  Layer.build,
+  Effect.scoped,
+  Effect.runSync
+);
+
+const { handler: rawHandler, dispose } = HttpRouter.toWebHandler(ProvidedApiLayer);
+const handler = (request: Request) => rawHandler(request, requestContext);
 ```
 
-- `failure` — the typed error the middleware can produce (serialized with its status).
-- `provides` — the service the middleware injects into downstream handlers (the authenticated user).
-- Apply it per group with `.middleware(Authorization)` (see the metrics group above).
+`HttpApiBuilder.toWebHandler` is gone; `HttpRouter.toWebHandler(appLayer, options?)` replaces it with
+the same `{ handler, dispose }` return shape. It needs the platform-default-services layer
+(`HttpServer.layerServices`, v3's `HttpServer.layerContext`) **provided into** the api layer, not
+merged alongside it as a sibling — `Layer.provide`, not `Layer.mergeAll` — plus an `HttpRouter`
+instance (`HttpRouter.layer`), which `toWebHandler` needs but `HttpServer.layerServices` doesn't supply.
+See `apps/server/src/core/api/handlers/auth.http.test.ts` for the full working composition, including
+mocked `QuestDB`/`PingExecutor`/`SpeedTestService` dependencies alongside a real `JwtService` and
+`AuthService`.
 
-Implementation — Reference: `apps/server/src/infrastructure/auth/middleware.ts` (`AuthorizationLive`),
-which reads `HttpServerRequest`, verifies the token via `AuthService`, and maps failures to
-`Unauthorized`.
-
-## Deriving a client (web)
-
-Because the contract lives in shared, the web app derives a typed client from `WanMonitorApi` with
-`HttpApiClient.make(WanMonitorApi, { baseUrl })` — no hand-written fetch calls, and response/error
-types come straight from the schemas.
+`HttpRouter.serve` (what `apps/server/src/core/api/server.ts` uses in production) unwraps every
+`Request.From<"Requires", _>`/`Request.From<"GlobalRequires", _>` marker back to its plain service type
+in its own return type, so `index.ts`'s ordinary `Layer.provide(Layer.mergeAll(...))` closes it there.
+`toWebHandler` doesn't do that unwrapping — it exposes the raw requirement as the handler's second
+argument on purpose, so a caller can supply different per-request context on each call. A test with a
+fixed set of mocks just builds that context once, as above, instead of threading it through every call
+site.
 
 ## Anti-patterns
 
-- ❌ Defining request/response shapes on the server. Define them in `packages/shared` so the client
-  shares them.
-- ❌ Returning raw strings/status codes from handlers. Return the success schema shape; declare and
-  return typed errors.
-- ❌ Hand-rolling `fetch` in the web app. Derive the client from `WanMonitorApi`.
-- ❌ Ad-hoc auth checks inside handlers. Use the `Authorization` middleware on the group.
+- ❌ `HttpApiEndpoint.get("id").setPayload(...).addSuccess(...)` builder-chain calls — that's the v3
+  shape. Use the options object: `HttpApiEndpoint.get("id", "/path", { success, error })`.
+- ❌ Destructuring `{ urlParams }` in a handler for an endpoint declared with `query`.
+- ❌ A middleware that resolves directly to the value it provides instead of wrapping `httpEffect` and
+  calling `Effect.provideService` on it.
+- ❌ `Layer.mergeAll(apiLayer, HttpServer.layerServices)` instead of `apiLayer.pipe(Layer.provide(HttpServer.layerServices))`
+  when building a `toWebHandler` test — merge treats them as independent siblings; provide wires one's
+  output into the other's remaining requirements.

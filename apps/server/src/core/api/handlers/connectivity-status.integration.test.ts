@@ -256,7 +256,7 @@ describe("Connectivity Status Integration Tests", () => {
 
         // Query with 5-minute granularity
         const result = yield* getConnectivityStatusHandler({
-          urlParams: {
+          query: {
             startTime: baseTime.toISOString(),
             endTime: new Date(baseTime.getTime() + 30 * 60000).toISOString(),
             granularity: "5m",
@@ -318,7 +318,7 @@ describe("Connectivity Status Integration Tests", () => {
 
         // Test 1-minute granularity (should produce more data points)
         const result1m = yield* getConnectivityStatusHandler({
-          urlParams: {
+          query: {
             startTime: baseTime.toISOString(),
             endTime,
             granularity: "1m",
@@ -333,7 +333,7 @@ describe("Connectivity Status Integration Tests", () => {
 
         // Test 15-minute granularity (should produce fewer data points)
         const result15m = yield* getConnectivityStatusHandler({
-          urlParams: {
+          query: {
             startTime: baseTime.toISOString(),
             endTime,
             granularity: "15m",
@@ -382,7 +382,7 @@ describe("Connectivity Status Integration Tests", () => {
 
         // Query with 5-minute granularity
         const result = yield* getConnectivityStatusHandler({
-          urlParams: {
+          query: {
             startTime: baseTime.toISOString(),
             endTime: new Date(baseTime.getTime() + 30 * 60000).toISOString(),
             granularity: "5m",
@@ -486,7 +486,7 @@ describe("Connectivity Status Integration Tests", () => {
         yield* seedDatabase(db, metrics);
 
         const result = yield* getConnectivityStatusHandler({
-          urlParams: {
+          query: {
             startTime: baseTime.toISOString(),
             endTime: new Date(baseMs + 5 * 60000).toISOString(),
             granularity: "5m",

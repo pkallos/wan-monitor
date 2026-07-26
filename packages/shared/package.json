@@ -24,9 +24,7 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform": "^0.97.0",
-    "@effect/schema": "^0.75.5",
-    "effect": "^3.22.0"
+    "effect": "4.0.0-beta.101"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

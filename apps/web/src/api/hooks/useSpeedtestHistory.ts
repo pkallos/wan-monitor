@@ -35,7 +35,7 @@ export function useSpeedtestHistory(options: UseSpeedtestHistoryOptions = {}) {
         Effect.gen(function* () {
           const client = yield* WanMonitorClient;
           const response = yield* client.speedtest.getSpeedTestHistory({
-            urlParams: {
+            query: {
               startTime: startTime?.toISOString(),
               endTime: endTime?.toISOString(),
               limit,

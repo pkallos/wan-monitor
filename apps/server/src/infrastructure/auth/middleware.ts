@@ -1,10 +1,11 @@
-import { HttpServerRequest } from "@effect/platform";
 import {
+  AuthenticatedUser,
   type AuthenticatedUserValue,
   Authorization,
   Unauthorized,
 } from "@shared/api/middlewares/authorization";
 import { Context, Data, Effect, Layer } from "effect";
+import { HttpServerRequest } from "effect/unstable/http";
 import {
   type JwtError,
   type JwtPayload,
@@ -23,10 +24,10 @@ export interface AuthServiceInterface {
   readonly isAuthRequired: () => Effect.Effect<boolean, never>;
 }
 
-export class AuthService extends Context.Tag("AuthService")<
+export class AuthService extends Context.Service<
   AuthService,
   AuthServiceInterface
->() {}
+>()("AuthService") {}
 
 export class UnauthorizedError extends Data.TaggedError("UnauthorizedError")<{
   readonly message: string;
@@ -99,27 +100,31 @@ export const AuthorizationLive = Layer.effect(
   Effect.gen(function* () {
     const authService = yield* AuthService;
 
-    // Middleware implementation as an Effect that can access HttpServerRequest
-    return Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest;
-      const authHeader = request.headers.authorization;
+    // Middleware wraps the downstream handler's response effect, providing
+    // AuthenticatedUser to it once the request is verified.
+    return (httpEffect) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const authHeader = request.headers.authorization;
 
-      const payload = yield* authService
-        .verifyRequest(authHeader)
-        .pipe(
-          Effect.mapError(
-            (error) =>
-              new Unauthorized({ message: error.message ?? "Unauthorized" })
-          )
+        const payload = yield* authService
+          .verifyRequest(authHeader)
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new Unauthorized({ message: error.message ?? "Unauthorized" })
+            )
+          );
+
+        const anonymous: AuthenticatedUserValue = {
+          username: "anonymous",
+          iat: Date.now() / 1000,
+          exp: Date.now() / 1000 + 86400,
+        };
+
+        return yield* httpEffect.pipe(
+          Effect.provideService(AuthenticatedUser, payload ?? anonymous)
         );
-
-      const anonymous: AuthenticatedUserValue = {
-        username: "anonymous",
-        iat: Date.now() / 1000,
-        exp: Date.now() / 1000 + 86400,
-      };
-
-      return payload ?? anonymous;
-    });
+      });
   })
 );

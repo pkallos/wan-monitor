@@ -1,7 +1,11 @@
-import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
 import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
+import {
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiSchema,
+} from "effect/unstable/httpapi";
 
 const SpeedTestResult = Schema.Struct({
   downloadMbps: Schema.Number,
@@ -19,11 +23,11 @@ const SpeedTestSuccessResponse = Schema.Struct({
   result: SpeedTestResult,
 });
 
-const SpeedTestErrorCode = Schema.Literal(
+const SpeedTestErrorCode = Schema.Literals([
   "SPEED_TEST_ALREADY_RUNNING",
   "SPEED_TEST_EXECUTION_FAILED",
-  "SPEED_TEST_TIMEOUT"
-);
+  "SPEED_TEST_TIMEOUT",
+]);
 
 const SpeedTestErrorResponse = Schema.Struct({
   success: Schema.Literal(false),
@@ -34,10 +38,10 @@ const SpeedTestErrorResponse = Schema.Struct({
   }),
 });
 
-const SpeedTestResponse = Schema.Union(
+const SpeedTestResponse = Schema.Union([
   SpeedTestSuccessResponse,
-  SpeedTestErrorResponse
-);
+  SpeedTestErrorResponse,
+]);
 
 const SpeedTestStatusResponse = Schema.Struct({
   isRunning: Schema.Boolean,
@@ -82,20 +86,25 @@ export type SpeedTestHistoryResponseType = Schema.Schema.Type<
 export const SpeedTestApiGroup = HttpApiGroup.make("speedtest")
   .prefix("/speedtest")
   .add(
-    HttpApiEndpoint.post("triggerSpeedTest", "/trigger")
-      .addSuccess(SpeedTestResponse)
-      .addError(Schema.String)
+    HttpApiEndpoint.post("triggerSpeedTest", "/trigger", {
+      success: SpeedTestResponse,
+      error: Schema.String,
+    })
   )
   .add(
-    HttpApiEndpoint.get("getSpeedTestStatus", "/status")
-      .addSuccess(SpeedTestStatusResponse)
-      .addError(Schema.String)
+    HttpApiEndpoint.get("getSpeedTestStatus", "/status", {
+      success: SpeedTestStatusResponse,
+      error: Schema.String,
+    })
   )
   .add(
-    HttpApiEndpoint.get("getSpeedTestHistory", "/history")
-      .setUrlParams(SpeedTestHistoryQuery)
-      .addSuccess(SpeedTestHistoryResponse)
-      .addError(DbUnavailableErrorSchema, { status: 503 })
-      .addError(Schema.String)
+    HttpApiEndpoint.get("getSpeedTestHistory", "/history", {
+      query: SpeedTestHistoryQuery,
+      success: SpeedTestHistoryResponse,
+      error: [
+        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
+        Schema.String,
+      ],
+    })
   )
   .middleware(Authorization);

@@ -1,5 +1,5 @@
-import { HttpApiBuilder, HttpServer } from "@effect/platform";
 import { Effect, Layer } from "effect";
+import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiServiceLayer } from "@/core/api/service";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
@@ -18,7 +18,7 @@ import { makeTestAppConfig } from "@/test/config";
  *
  * Unlike auth.test.ts / index.test.ts, which invoke handlers directly with a
  * MOCKED JwtService, these tests exercise the full app instance built by
- * `ApiServiceLayer` through `HttpApiBuilder.toWebHandler`. Requests go in as
+ * `ApiServiceLayer` through `HttpRouter.toWebHandler`. Requests go in as
  * real `Request` objects and responses come back as real `Response` objects,
  * so routing, payload decoding, the Authorization middleware, and the real
  * `JwtService` signing/verification all run end-to-end.
@@ -97,24 +97,39 @@ const makeTestApp = (
     Layer.provide(Layer.mergeAll(ConfigLayer, JwtLayer))
   );
 
-  const ProvidedApiLayer = ApiServiceLayer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        ConfigLayer,
-        JwtLayer,
-        AuthLayer,
-        Layer.succeed(QuestDB, mockQuestDB),
-        mockPingExecutorLayer,
-        mockSpeedTestServiceLayer
-      )
-    )
+  const MockServicesLayer = Layer.mergeAll(
+    ConfigLayer,
+    JwtLayer,
+    Layer.succeed(QuestDB, mockQuestDB),
+    mockPingExecutorLayer,
+    mockSpeedTestServiceLayer
   );
 
-  // Merge (not provide) the platform context so the router's default services
-  // remain in the layer's output, matching toWebHandler's expected shape.
-  const AppLayer = Layer.mergeAll(ProvidedApiLayer, HttpServer.layerContext);
+  const ProvidedApiLayer = ApiServiceLayer.pipe(
+    Layer.provide(Layer.mergeAll(MockServicesLayer, AuthLayer)),
+    // Platform services (FileSystem, Path, Etag.Generator) and a router
+    // instance that HttpApiBuilder needs at the build-time layer level.
+    Layer.provide(HttpServer.layerServices),
+    Layer.provide(HttpRouter.layer)
+  );
 
-  return HttpApiBuilder.toWebHandler(AppLayer);
+  // HttpApiBuilder tracks each handler's own leftover requirements as a
+  // per-request `Request<"Requires", _>` channel, not an ordinary Layer
+  // dependency, so `Layer.provide` above can't discharge it — it's built to
+  // be satisfied per call instead, via toWebHandler's second `context`
+  // argument. Build that context once here, from the same mock/config/jwt
+  // layers, rather than threading it through every `post`/`get` call site.
+  const requestContext = MockServicesLayer.pipe(
+    Layer.build,
+    Effect.scoped,
+    Effect.runSync
+  );
+
+  const { handler, dispose } = HttpRouter.toWebHandler(ProvidedApiLayer);
+  return {
+    handler: (request: Request) => handler(request, requestContext),
+    dispose,
+  };
 };
 
 const post = (app: TestApp, path: string, body: unknown): Promise<Response> =>

@@ -5,7 +5,7 @@ import {
   MissingCredentials,
 } from "@shared/api/errors";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 import {
   loginHandler,
   logoutHandler,
@@ -69,14 +69,14 @@ describe("Auth Handlers", () => {
       const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
 
       return Effect.gen(function* () {
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           loginHandler({ payload: { username: "", password: "" } })
         );
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(MissingCredentials);
-          expect(result.left.message).toBe(
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(MissingCredentials);
+          expect(result.failure.message).toBe(
             "Username and password are required"
           );
         }
@@ -92,14 +92,14 @@ describe("Auth Handlers", () => {
       const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
 
       return Effect.gen(function* () {
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           loginHandler({ payload: { username: "admin", password: "wrong" } })
         );
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(AuthNotConfigured);
-          expect(result.left.message).toContain(
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(AuthNotConfigured);
+          expect(result.failure.message).toContain(
             "Authentication is not configured"
           );
         }
@@ -115,14 +115,14 @@ describe("Auth Handlers", () => {
       const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
 
       return Effect.gen(function* () {
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           loginHandler({ payload: { username: "admin", password: "wrong" } })
         );
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(InvalidCredentials);
-          expect(result.left.message).toBe("Invalid username or password");
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(InvalidCredentials);
+          expect(result.failure.message).toBe("Invalid username or password");
         }
       }).pipe(Effect.provide(TestLayers));
     });

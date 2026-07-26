@@ -1,25 +1,23 @@
-import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import type { GetConnectivityStatusQuery } from "@shared/api/routes/connectivity-status";
 import { Clock, Effect, type Schema } from "effect";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
 export const getConnectivityStatusHandler = ({
-  urlParams,
+  query,
 }: {
-  urlParams: Schema.Schema.Type<typeof GetConnectivityStatusQuery>;
+  query: Schema.Schema.Type<typeof GetConnectivityStatusQuery>;
 }) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
     const now = yield* Clock.currentTimeMillis;
 
     const rows = yield* db.queryConnectivityStatus({
-      startTime: urlParams.startTime
-        ? new Date(urlParams.startTime)
-        : undefined,
-      endTime: urlParams.endTime ? new Date(urlParams.endTime) : undefined,
-      granularity: urlParams.granularity,
+      startTime: query.startTime ? new Date(query.startTime) : undefined,
+      endTime: query.endTime ? new Date(query.endTime) : undefined,
+      granularity: query.granularity,
     });
 
     const data = rows.map((row) => {
@@ -54,15 +52,12 @@ export const getConnectivityStatusHandler = ({
       meta: {
         uptimePercentage,
         startTime:
-          urlParams.startTime ||
-          new Date(now - 24 * 60 * 60 * 1000).toISOString(),
-        endTime: urlParams.endTime || new Date(now).toISOString(),
+          query.startTime || new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+        endTime: query.endTime || new Date(now).toISOString(),
         count: data.length,
       },
     };
-  }).pipe(
-    Effect.catchAll(mapQueryError("Failed to query connectivity status"))
-  );
+  }).pipe(Effect.catch(mapQueryError("Failed to query connectivity status")));
 
 export const ConnectivityStatusGroupLive = HttpApiBuilder.group(
   WanMonitorApi,

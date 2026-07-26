@@ -8,12 +8,10 @@ import {
   Exit,
   Fiber,
   Layer,
-  Logger,
-  LogLevel,
   Option,
-  TestClock,
-  TestContext,
+  References,
 } from "effect";
+import { TestClock } from "effect/testing";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
   DEFAULT_SPEEDTEST_TIMEOUT_SECONDS,
@@ -76,7 +74,9 @@ describe("SpeedTest - timeout functionality", () => {
         expect(result.jitter).toBe(2.1);
         expect(result.serverName).toBe("Test Server");
         expect(result.isp).toBe("Test ISP");
-      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+      }).pipe(
+        Effect.provide(Layer.succeed(References.MinimumLogLevel, "None"))
+      );
     }
   );
 
@@ -96,16 +96,18 @@ describe("SpeedTest - timeout functionality", () => {
 
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isFailure(exit)) {
-          const cause = exit.cause;
-          expect(Cause.isFailType(cause)).toBe(true);
-          if (Cause.isFailType(cause)) {
-            expect(cause.error).toBeInstanceOf(SpeedTestTimeoutError);
-            if (cause.error instanceof SpeedTestTimeoutError) {
-              expect(cause.error.timeoutMs).toBe(100);
+          const error = Cause.findErrorOption(exit.cause);
+          expect(Option.isSome(error)).toBe(true);
+          if (Option.isSome(error)) {
+            expect(error.value).toBeInstanceOf(SpeedTestTimeoutError);
+            if (error.value instanceof SpeedTestTimeoutError) {
+              expect(error.value.timeoutMs).toBe(100);
             }
           }
         }
-      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+      }).pipe(
+        Effect.provide(Layer.succeed(References.MinimumLogLevel, "None"))
+      );
     }
   );
 
@@ -121,16 +123,18 @@ describe("SpeedTest - timeout functionality", () => {
 
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isFailure(exit)) {
-          const cause = exit.cause;
-          expect(Cause.isFailType(cause)).toBe(true);
-          if (Cause.isFailType(cause)) {
-            expect(cause.error).toBeInstanceOf(SpeedTestExecutionError);
-            if (cause.error instanceof SpeedTestExecutionError) {
-              expect(cause.error.message).toBe("Network connection failed");
+          const error = Cause.findErrorOption(exit.cause);
+          expect(Option.isSome(error)).toBe(true);
+          if (Option.isSome(error)) {
+            expect(error.value).toBeInstanceOf(SpeedTestExecutionError);
+            if (error.value instanceof SpeedTestExecutionError) {
+              expect(error.value.message).toBe("Network connection failed");
             }
           }
         }
-      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+      }).pipe(
+        Effect.provide(Layer.succeed(References.MinimumLogLevel, "None"))
+      );
     }
   );
 
@@ -145,16 +149,18 @@ describe("SpeedTest - timeout functionality", () => {
 
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isFailure(exit)) {
-          const cause = exit.cause;
-          expect(Cause.isFailType(cause)).toBe(true);
-          if (Cause.isFailType(cause)) {
-            expect(cause.error).toBeInstanceOf(SpeedTestExecutionError);
-            if (cause.error instanceof SpeedTestExecutionError) {
-              expect(cause.error.message).toBe("string error");
+          const error = Cause.findErrorOption(exit.cause);
+          expect(Option.isSome(error)).toBe(true);
+          if (Option.isSome(error)) {
+            expect(error.value).toBeInstanceOf(SpeedTestExecutionError);
+            if (error.value instanceof SpeedTestExecutionError) {
+              expect(error.value.message).toBe("string error");
             }
           }
         }
-      }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+      }).pipe(
+        Effect.provide(Layer.succeed(References.MinimumLogLevel, "None"))
+      );
     }
   );
 
@@ -173,7 +179,7 @@ describe("SpeedTest - timeout functionality", () => {
 
       expect(Exit.isFailure(shortExit)).toBe(true);
       expect(Exit.isSuccess(longExit)).toBe(true);
-    }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+    }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
   });
 
   it.effect("should handle missing optional fields in result", () => {
@@ -215,7 +221,7 @@ describe("SpeedTest - timeout functionality", () => {
       expect(result.serverName).toBeUndefined();
       expect(result.isp).toBeUndefined();
       expect(result.externalIp).toBeUndefined();
-    }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+    }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
   });
 
   it.live("should include correct timeoutMs in SpeedTestTimeoutError", () => {
@@ -232,17 +238,17 @@ describe("SpeedTest - timeout functionality", () => {
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        const cause = exit.cause;
-        expect(Cause.isFailType(cause)).toBe(true);
-        if (Cause.isFailType(cause)) {
-          expect(cause.error).toBeInstanceOf(SpeedTestTimeoutError);
-          if (cause.error instanceof SpeedTestTimeoutError) {
-            expect(cause.error.timeoutMs).toBe(50);
-            expect(cause.error._tag).toBe("SpeedTestTimeoutError");
+        const error = Cause.findErrorOption(exit.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toBeInstanceOf(SpeedTestTimeoutError);
+          if (error.value instanceof SpeedTestTimeoutError) {
+            expect(error.value.timeoutMs).toBe(50);
+            expect(error.value._tag).toBe("SpeedTestTimeoutError");
           }
         }
       }
-    }).pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)));
+    }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
   });
 });
 
@@ -258,10 +264,13 @@ describe("SpeedTestServiceLive - config integration", () => {
     expectedTimeoutMs: number
   ) => {
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit) && Cause.isFailType(exit.cause)) {
-      expect(exit.cause.error).toBeInstanceOf(SpeedTestTimeoutError);
-      if (exit.cause.error instanceof SpeedTestTimeoutError) {
-        expect(exit.cause.error.timeoutMs).toBe(expectedTimeoutMs);
+    const error = Exit.isFailure(exit)
+      ? Cause.findErrorOption(exit.cause)
+      : Option.none();
+    if (Option.isSome(error)) {
+      expect(error.value).toBeInstanceOf(SpeedTestTimeoutError);
+      if (error.value instanceof SpeedTestTimeoutError) {
+        expect(error.value.timeoutMs).toBe(expectedTimeoutMs);
       }
     }
   };
@@ -280,8 +289,7 @@ describe("SpeedTestServiceLive - config integration", () => {
           )
         )
       ),
-      TestContext.TestContext,
-      Logger.minimumLogLevel(LogLevel.None)
+      Layer.succeed(References.MinimumLogLevel, "None")
     );
 
   it.effect(
@@ -297,7 +305,7 @@ describe("SpeedTestServiceLive - config integration", () => {
                     Layer.succeed(ConfigService, makeTestAppConfig())
                   )
                 ),
-                Logger.minimumLogLevel(LogLevel.None)
+                Layer.succeed(References.MinimumLogLevel, "None")
               )
             )
           )
@@ -312,19 +320,19 @@ describe("SpeedTestServiceLive - config integration", () => {
     () =>
       Effect.gen(function* () {
         const service = yield* SpeedTestService;
-        const fiber = yield* Effect.fork(service.runTest());
+        const fiber = yield* Effect.forkChild(service.runTest());
 
         // One second before the configured timeout the test must still be running:
         // this proves the configured value (45s) is honored rather than the
         // 120s default, which would not have fired yet either.
         yield* TestClock.adjust(Duration.seconds(44));
-        const beforeTimeout = yield* Fiber.poll(fiber);
+        const beforeTimeout = fiber.pollUnsafe();
 
         // Crossing the configured boundary must produce the timeout failure.
         yield* TestClock.adjust(Duration.seconds(1));
         const exit = yield* Fiber.await(fiber);
 
-        expect(Option.isNone(beforeTimeout)).toBe(true);
+        expect(beforeTimeout).toBeUndefined();
         expectTimeout(exit, 45_000);
       }).pipe(Effect.provide(testLayer(45)))
   );
@@ -334,7 +342,7 @@ describe("SpeedTestServiceLive - config integration", () => {
     () =>
       Effect.gen(function* () {
         const service = yield* SpeedTestService;
-        const fiber = yield* Effect.fork(service.runTest());
+        const fiber = yield* Effect.forkChild(service.runTest());
         yield* TestClock.adjust(
           Duration.seconds(DEFAULT_SPEEDTEST_TIMEOUT_SECONDS)
         );

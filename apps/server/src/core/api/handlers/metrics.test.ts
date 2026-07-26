@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, TestClock } from "effect";
+import { Effect, Layer } from "effect";
+import { TestClock } from "effect/testing";
 import { getMetricsHandler } from "@/core/api/handlers/metrics";
 import {
   QuestDB,
@@ -38,7 +39,7 @@ describe("Metrics Handlers", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(mockData));
 
       return Effect.gen(function* () {
-        const result = yield* getMetricsHandler({ urlParams: {} });
+        const result = yield* getMetricsHandler({ query: {} });
 
         expect(result.data).toEqual(mockData);
         expect(result.meta.count).toBe(2);
@@ -54,7 +55,7 @@ describe("Metrics Handlers", () => {
 
       return Effect.gen(function* () {
         const result = yield* getMetricsHandler({
-          urlParams: { startTime, endTime },
+          query: { startTime, endTime },
         });
 
         expect(result.meta.startTime).toBe(startTime);
@@ -111,7 +112,7 @@ describe("Metrics Handlers", () => {
       });
 
       return Effect.gen(function* () {
-        const result = yield* getMetricsHandler({ urlParams: {} });
+        const result = yield* getMetricsHandler({ query: {} });
 
         expect(result.data).toHaveLength(2);
 
@@ -147,7 +148,7 @@ describe("Metrics Handlers", () => {
         return Effect.gen(function* () {
           yield* TestClock.setTime(fixedNow);
 
-          const result = yield* getMetricsHandler({ urlParams: {} });
+          const result = yield* getMetricsHandler({ query: {} });
 
           // Default window is now-1h to now
           expect(result.meta.startTime).toBe(

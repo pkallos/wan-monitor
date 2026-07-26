@@ -94,7 +94,7 @@ describe("PingService", () => {
 
       expect(Exit.isFailure(result)).toBe(true);
       if (Exit.isFailure(result)) {
-        const error = Cause.failureOption(result.cause);
+        const error = Cause.findErrorOption(result.cause);
         expect(Option.isSome(error)).toBe(true);
         if (Option.isSome(error)) {
           expect(error.value).toMatchObject({
@@ -119,7 +119,7 @@ describe("PingService", () => {
 
       expect(Exit.isFailure(result)).toBe(true);
       if (Exit.isFailure(result)) {
-        const error = Cause.failureOption(result.cause);
+        const error = Cause.findErrorOption(result.cause);
         expect(Option.isSome(error)).toBe(true);
         if (Option.isSome(error)) {
           expect(error.value).toMatchObject({
@@ -145,7 +145,7 @@ describe("PingService", () => {
 
       expect(Exit.isFailure(result)).toBe(true);
       if (Exit.isFailure(result)) {
-        const error = Cause.failureOption(result.cause);
+        const error = Cause.findErrorOption(result.cause);
         expect(Option.isSome(error)).toBe(true);
         if (Option.isSome(error)) {
           expect(error.value).toMatchObject({

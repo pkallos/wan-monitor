@@ -1,104 +1,95 @@
-# Effect.gen & Composition
+# Effect.gen, pipe, and Composition
 
-`Effect.gen` lets you write effectful logic that reads like synchronous code, with explicit control
-over async, errors, and dependencies. `pipe` chains transformations. This repo uses `Effect.gen` as
-the default and drops into `pipe` for post-processing (error mapping, retries, timeouts).
+Effectful logic in this codebase is written with `Effect.gen`, composed with `pipe`, and forked or run
+with one of a small set of documented combinators. There's no bare `async`/`await` outside an
+`Effect.tryPromise`/`Effect.promise` boundary.
 
-## `Effect.gen` basics
+## `Effect.gen`
 
-```typescript
-import { Effect } from "effect";
+Write sequential effectful logic as a generator; `yield*` unwraps an `Effect`, and a thrown/failed
+inner effect short-circuits the whole block:
 
-const program = Effect.gen(function* () {
-  const db = yield* QuestDB;                 // resolve a service
-  const rows = yield* db.queryMetrics(params); // run an effect, unwrap its success
-  return transform(rows);                    // plain values are returned directly
-});
+```ts
+const verifyRequest = (authHeader: string | undefined): Effect.Effect<JwtPayload | null, AuthError> =>
+  Effect.gen(function* () {
+    if (!config.auth.password) return null;
+    if (!authHeader) {
+      return yield* Effect.fail(new MissingAuthHeaderError({ message: "Authorization header required" }));
+    }
+    const payload = yield* jwtService.verify(token).pipe(
+      Effect.mapError((error) => new UnauthorizedError({ message: `Invalid token: ${error.message}` }))
+    );
+    return payload;
+  });
 ```
 
-- `yield*` runs an effect and unwraps its success value. If the effect fails, the generator
-  short-circuits and the failure propagates.
-- `yield*` a **`Context.Tag`** to resolve a service (see [`services-and-layers.md`](./services-and-layers.md)).
-- Return the final value at the end; no need to wrap it in `Effect.succeed`.
-- Tagged errors are yieldable: `return yield* new SomeError({ ... })` fails the effect.
+See `apps/server/src/infrastructure/auth/middleware.ts` for the full version. This is unchanged from
+v3 — `Effect.gen` itself didn't move.
 
-Reference: `apps/server/src/core/api/handlers/metrics.ts`, `apps/server/src/index.ts`.
+## `pipe` and sequencing combinators
 
-## `.pipe` for composition
+`Effect.andThen` sequences two effects and keeps the second result, discarding the first — v4's rename
+of v3's `Effect.zipRight` (same semantics: "run this, then run that, keep only the second"):
 
-Attach combinators after a `gen` block or any effect:
-
-```typescript
-Effect.gen(function* () { /* ... */ }).pipe(
-  Effect.catchAll(mapQueryError("Failed to query metrics"))
+```ts
+connectionLoop.pipe(
+  Effect.catchCause((cause) =>
+    Effect.logError("Connection loop crashed", cause).pipe(
+      Effect.andThen(Effect.sleep(Duration.seconds(5))),
+      Effect.andThen(connectionLoop)
+    )
+  )
 );
 ```
 
-Prefer `.pipe(...)` (method form) as used throughout the repo, rather than the standalone `pipe()`
-function.
+See `apps/server/src/infrastructure/database/questdb/connection.ts`. `Effect.andThen` also accepts a
+function (`Effect.andThen((a) => nextEffect(a))`), in which case it behaves like `flatMap` — pick
+whichever form reads more clearly at the call site.
 
-## Combinators used in this repo
+## Forking fibers
 
-| Combinator | Purpose | Seen in |
+| Combinator | Lifetime | Use it when |
 | --- | --- | --- |
-| `Effect.map` | Transform the success value | `ping/service.ts` (`isReachable`) |
-| `Effect.flatMap` | Sequence an effect that depends on the previous value | `ping/service.ts` |
-| `Effect.catchAll` / `catchTag` | Recover from errors ([error-handling](./error-handling.md)) | `metrics.ts`, `questdb/service.ts` |
-| `Effect.mapError` | Re-tag an error | `auth/middleware.ts` |
-| `Effect.zipRight` | Run two effects, keep the second's result | `questdb/service.ts` |
-| `Effect.tapErrorCause` | Side-effect on failure (logging) without handling | `index.ts` |
-| `Effect.sleep` | Delay (accepts a `Duration` like `"100 millis"`) | `network-monitor.test.ts` |
-| `Effect.fork` | Run an effect on a new fiber (concurrency) | `network-monitor.test.ts` |
-| `Effect.never` | Never completes — keeps the server alive | `index.ts` |
-| `Effect.void` | Succeed with `void` | mock layers in tests |
-| `Effect.log` / `Effect.logError` | Structured logging | `server.ts`, `index.ts` |
+| `Effect.forkChild` | Attached to the **parent fiber's** scope. Interrupted when the parent terminates ("auto supervision" — no fiber leaks). | The common case: a background task that should die with whatever started it. v4's rename of v3's `Effect.fork` — identical semantics, confirmed by the source doc verbatim. |
+| `Effect.forkScoped` | Attached to the **enclosing `Scope`**. Interrupted when that scope closes, independent of the parent fiber's own lifetime. | A resource-lifecycle task started inside a `Layer.effect` constructor, meant to run for as long as the layer is alive — see `questdb/connection.ts`'s retry loop. |
+| `Effect.forkDetach` | Attached to the **global scope**. Outlives the fiber that forked it. | A genuine daemon that should keep running after its caller returns — rare; most "background work" in this codebase wants `forkChild`, not this. |
 
-## Concurrency & fibers
-
-Effects run on **fibers** (lightweight virtual threads). Fork to run work in the background, then
-observe or interrupt it.
-
-```typescript
-// network-monitor.test.ts
-const fiber = yield* Effect.fork(monitor.start());
-yield* Effect.sleep("100 millis");
-const stats = yield* monitor.getStats();
-// fiber is interrupted automatically when the scope/program ends
-```
-
-Use `Fiber.await(fiber)` to wait for completion, `Fiber.interrupt(fiber)` to cancel. Effect
-interruption is cooperative and safe — resources acquired with `Layer.scoped`/`acquireRelease` are
-released on interruption.
-
-## Durations
-
-Many time-based combinators accept a human-readable `Duration` string: `"100 millis"`, `"5 seconds"`,
-`"1 minute"`. Prefer these over raw millisecond numbers.
-
-## Running effects (the edge)
-
-Run an effect **only at the boundary** — the app entry point, an HTTP handler wired by the platform,
-or a test. Never `runPromise` inside service logic.
-
-| Runner | Use | Seen in |
-| --- | --- | --- |
-| `Effect.runFork` | Fire-and-forget on a fiber; used for the long-running server | `index.ts` |
-| `Effect.runPromise` | Await a success, reject on failure | tests |
-| `Effect.runPromiseExit` | Await an `Exit` so you can assert on failures | tests (`speedtest/service.test.ts`) |
-| `Effect.runSync` | Synchronous effects only | — |
-
-```typescript
-// index.ts
-const runnable = program.pipe(
-  Effect.provide(MainLive),
-  Effect.tapErrorCause(Effect.logError)
+```ts
+// apps/server/src/core/monitoring/network-monitor.ts
+yield* executePingCycle.pipe(
+  Effect.catch((error) => Effect.logError(`Ping cycle error: ${error}`).pipe(Effect.flatMap(() => Effect.void))),
+  Effect.repeat(schedule),
+  Effect.forkChild
 );
-Effect.runFork(runnable);
 ```
+
+Note the point-free form above (`Effect.forkChild` passed bare at the end of a `.pipe()` chain, not
+called as `Effect.forkChild(...)`) — both call shapes exist; a mechanical rename script matching only
+`Effect.fork(` misses this one, since there's no `(` to match.
+
+## Running an effect
+
+- **`Effect.runFork(effect)`** — starts the effect as a fiber and returns immediately; used at the
+  program's entry point (`apps/server/src/index.ts`) and for fire-and-forget error recovery
+  (`connection.ts`'s `Effect.runFork(markDisconnected(error.message))` inside a synchronous callback).
+- **`Effect.runPromise(effect)`** / **`Effect.runPromiseExit(effect)`** — used at the boundary between
+  Effect and a non-Effect caller that wants a `Promise` (`apps/web/src/api/effect-bridge.ts`; test
+  files that `await` an Effect program).
+- **`Effect.runSync(effect)`** / **`Effect.runSyncExit(effect)`** — only for effects known to complete
+  synchronously with no async gap; rare in this codebase since almost everything touches I/O.
+
+`Effect<A, E, never>` (`R = never`, no remaining requirements) is what every runner above actually
+requires — if you're trying to run an effect and the type error says a service is still required,
+that's the compiler telling you a `Layer.provide` is missing, not a runner-API mismatch.
 
 ## Anti-patterns
 
-- ❌ Mixing `async/await` with Effect. Wrap Promises with `Effect.tryPromise` and stay in the effect
-  world (see [error-handling](./error-handling.md)).
-- ❌ `Effect.runPromise` inside a service method — return the `Effect` and let the caller run it.
-- ❌ Deeply nested `flatMap` chains where `Effect.gen` would be clearer. Default to `gen`.
+- ❌ `async`/`await` and bare `Promise` chains for anything that should compose with the rest of an
+  Effect program — wrap it at the boundary with `Effect.tryPromise`/`Effect.promise` and stay in
+  `Effect` from there on.
+- ❌ `Effect.forkDetach` reached for by default "to be safe" — it's the one fork variant whose
+  lifetime genuinely outlives its caller; using it where `forkChild` was intended leaks fibers instead
+  of preventing leaks.
+- ❌ Calling `Effect.runSync` on something that might actually suspend (a promise-backed effect, a
+  `Effect.sleep`) — it throws at runtime instead of failing to compile, so get this right by matching
+  the runner to what the effect actually does, not by trial and error.

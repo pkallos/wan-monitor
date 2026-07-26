@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
-import { HttpApiBuilder, HttpMiddleware } from "@effect/platform";
 import { NodeHttpServer } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
+import { HttpRouter } from "effect/unstable/http";
 
+import { ApiServiceLayer } from "@/core/api/service";
 import { ConfigService } from "@/infrastructure/config/config";
 
-export const NodeHttpServerLayer = Layer.unwrapEffect(
+export const NodeHttpServerLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ConfigService;
     yield* Effect.log(
@@ -17,4 +18,6 @@ export const NodeHttpServerLayer = Layer.unwrapEffect(
   })
 );
 
-export const ApiServerLive = HttpApiBuilder.serve(HttpMiddleware.logger);
+// v4's HttpRouter.serve logs requests by default (disableLogger defaults to
+// false), replacing v3's explicit HttpApiBuilder.serve(HttpMiddleware.logger).
+export const ApiServerLive = HttpRouter.serve(ApiServiceLayer);

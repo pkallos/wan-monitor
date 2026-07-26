@@ -1,5 +1,5 @@
-import { HttpApiMiddleware, HttpApiSchema } from "@effect/platform";
 import { Context, Schema } from "effect";
+import { HttpApiMiddleware } from "effect/unstable/httpapi";
 
 export interface AuthenticatedUserValue {
   readonly username: string;
@@ -7,21 +7,18 @@ export interface AuthenticatedUserValue {
   readonly exp: number;
 }
 
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
+export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()(
   "Unauthorized",
-  {},
-  HttpApiSchema.annotations({ status: 401 })
+  { message: Schema.String },
+  { httpApiStatus: 401 }
 ) {}
 
-export class AuthenticatedUser extends Context.Tag("AuthenticatedUser")<
+export class AuthenticatedUser extends Context.Service<
   AuthenticatedUser,
   AuthenticatedUserValue
->() {}
+>()("AuthenticatedUser") {}
 
-export class Authorization extends HttpApiMiddleware.Tag<Authorization>()(
-  "Http/Authorization",
-  {
-    failure: Unauthorized,
-    provides: AuthenticatedUser,
-  }
-) {}
+export class Authorization extends HttpApiMiddleware.Service<
+  Authorization,
+  { provides: AuthenticatedUser }
+>()("Http/Authorization", { error: Unauthorized }) {}

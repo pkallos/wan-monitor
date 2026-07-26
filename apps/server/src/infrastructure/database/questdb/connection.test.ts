@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "@effect/vitest";
 import { Sender } from "@questdb/nodejs-client";
-import { Duration, Effect, Either, Layer, Option } from "effect";
+import { Duration, Effect, Layer, Option, Result } from "effect";
 import { Pool } from "pg";
 import { vi } from "vitest";
 import {
@@ -26,41 +26,38 @@ describe("QuestDBConnection integration tests", () => {
   });
 
   describe("connection creation", () => {
-    it.scopedLive(
-      "should create connection successfully with http protocol",
-      () => {
-        const mockSender = {
-          flush: vi.fn().mockResolvedValue(undefined),
-          close: vi.fn().mockResolvedValue(undefined),
-        };
-        const mockPgClient = {
-          connect: vi.fn().mockResolvedValue(undefined),
-          query: vi.fn().mockResolvedValue({ rows: [] }),
-          end: vi.fn().mockResolvedValue(undefined),
-          on: vi.fn(),
-        };
+    it.live("should create connection successfully with http protocol", () => {
+      const mockSender = {
+        flush: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockPgClient = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        query: vi.fn().mockResolvedValue({ rows: [] }),
+        end: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+      };
 
-        vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-        vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
 
-        return Effect.gen(function* () {
-          const connection = yield* QuestDBConnection;
-          yield* Effect.sleep(Duration.millis(200));
-          const conn = yield* connection.getConnection;
-          expect(conn.sender).toBe(mockSender);
-          expect(conn.pgClient).toBe(mockPgClient);
+      return Effect.gen(function* () {
+        const connection = yield* QuestDBConnection;
+        yield* Effect.sleep(Duration.millis(200));
+        const conn = yield* connection.getConnection;
+        expect(conn.sender).toBe(mockSender);
+        expect(conn.pgClient).toBe(mockPgClient);
 
-          expect(Sender.fromConfig).toHaveBeenCalledWith(
-            expect.stringContaining("http::addr=localhost:9000")
-          );
-          expect(mockPgClient.query).toHaveBeenCalledWith("SELECT 1");
-        }).pipe(
-          Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
+        expect(Sender.fromConfig).toHaveBeenCalledWith(
+          expect.stringContaining("http::addr=localhost:9000")
         );
-      }
-    );
+        expect(mockPgClient.query).toHaveBeenCalledWith("SELECT 1");
+      }).pipe(
+        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
+      );
+    });
 
-    it.scopedLive(
+    it.live(
       "should create connection with tcp protocol and call connect",
       () => {
         const TestConfigTcpLayer = makeTestConfigLayer({
@@ -103,7 +100,7 @@ describe("QuestDBConnection integration tests", () => {
       }
     );
 
-    it.scopedLive("should handle sender connection failure", () => {
+    it.live("should handle sender connection failure", () => {
       vi.mocked(Sender.fromConfig).mockRejectedValue(
         new Error("Sender connection failed")
       );
@@ -111,14 +108,14 @@ describe("QuestDBConnection integration tests", () => {
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
         yield* Effect.sleep(Duration.millis(200));
-        const result = yield* Effect.either(connection.getConnection);
-        expect(Either.isLeft(result)).toBe(true);
+        const result = yield* Effect.result(connection.getConnection);
+        expect(Result.isFailure(result)).toBe(true);
       }).pipe(
         Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
       );
     });
 
-    it.scopedLive(
+    it.live(
       "should handle pgClient connection failure and cleanup sender",
       () => {
         const mockSender = {
@@ -136,8 +133,8 @@ describe("QuestDBConnection integration tests", () => {
         return Effect.gen(function* () {
           const connection = yield* QuestDBConnection;
           yield* Effect.sleep(Duration.millis(200));
-          const result = yield* Effect.either(connection.getConnection);
-          expect(Either.isLeft(result)).toBe(true);
+          const result = yield* Effect.result(connection.getConnection);
+          expect(Result.isFailure(result)).toBe(true);
 
           expect(mockSender.close).toHaveBeenCalled();
           expect(mockPgClient.end).toHaveBeenCalled();
@@ -147,39 +144,36 @@ describe("QuestDBConnection integration tests", () => {
       }
     );
 
-    it.scopedLive(
-      "should handle connection verification failure and cleanup",
-      () => {
-        const mockSender = {
-          close: vi.fn().mockResolvedValue(undefined),
-        };
-        const mockPgClient = {
-          connect: vi.fn().mockResolvedValue(undefined),
-          query: vi.fn().mockRejectedValue(new Error("Verification failed")),
-          end: vi.fn().mockResolvedValue(undefined),
-          on: vi.fn(),
-        };
+    it.live("should handle connection verification failure and cleanup", () => {
+      const mockSender = {
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockPgClient = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        query: vi.fn().mockRejectedValue(new Error("Verification failed")),
+        end: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+      };
 
-        vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-        vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
 
-        return Effect.gen(function* () {
-          const connection = yield* QuestDBConnection;
-          yield* Effect.sleep(Duration.millis(200));
-          const result = yield* Effect.either(connection.getConnection);
-          expect(Either.isLeft(result)).toBe(true);
+      return Effect.gen(function* () {
+        const connection = yield* QuestDBConnection;
+        yield* Effect.sleep(Duration.millis(200));
+        const result = yield* Effect.result(connection.getConnection);
+        expect(Result.isFailure(result)).toBe(true);
 
-          expect(mockSender.close).toHaveBeenCalled();
-          expect(mockPgClient.end).toHaveBeenCalled();
-        }).pipe(
-          Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-        );
-      }
-    );
+        expect(mockSender.close).toHaveBeenCalled();
+        expect(mockPgClient.end).toHaveBeenCalled();
+      }).pipe(
+        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
+      );
+    });
   });
 
   describe("connection lifecycle", () => {
-    it.scopedLive("should return DbUnavailable when not connected", () => {
+    it.live("should return DbUnavailable when not connected", () => {
       vi.mocked(Sender.fromConfig).mockRejectedValue(
         new Error("Connection failed")
       );
@@ -187,17 +181,17 @@ describe("QuestDBConnection integration tests", () => {
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
         yield* Effect.sleep(Duration.millis(200));
-        const result = yield* Effect.either(connection.getConnection);
+        const result = yield* Effect.result(connection.getConnection);
 
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(DbUnavailable);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(DbUnavailable);
         }
       }).pipe(
         Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
       );
     });
 
-    it.scopedLive("should track connection state correctly", () => {
+    it.live("should track connection state correctly", () => {
       const mockSender = {
         flush: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
@@ -231,7 +225,7 @@ describe("QuestDBConnection integration tests", () => {
       );
     });
 
-    it.scopedLive("should close connection properly", () => {
+    it.live("should close connection properly", () => {
       const mockSender = {
         flush: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
@@ -264,7 +258,7 @@ describe("QuestDBConnection integration tests", () => {
   });
 
   describe("connection retry logic", () => {
-    it.scopedLive("should retry connection on failure", () => {
+    it.live("should retry connection on failure", () => {
       let attemptCount = 0;
       vi.mocked(Sender.fromConfig).mockImplementation(async () => {
         attemptCount++;
@@ -296,7 +290,7 @@ describe("QuestDBConnection integration tests", () => {
       );
     });
 
-    it.scopedLive("should update lastError on connection failure", () => {
+    it.live("should update lastError on connection failure", () => {
       vi.mocked(Sender.fromConfig).mockRejectedValue(
         new Error("Connection failed")
       );
@@ -317,7 +311,7 @@ describe("QuestDBConnection integration tests", () => {
   });
 
   describe("error handling and recovery", () => {
-    it.scopedLive("should mark connection as disconnected on error", () => {
+    it.live("should mark connection as disconnected on error", () => {
       const mockSender = {
         flush: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
@@ -352,7 +346,7 @@ describe("QuestDBConnection integration tests", () => {
       );
     });
 
-    it.scopedLive("should handle health check failures and reconnect", () => {
+    it.live("should handle health check failures and reconnect", () => {
       let healthCheckCount = 0;
       const mockSender = {
         flush: vi.fn().mockResolvedValue(undefined),
@@ -385,7 +379,7 @@ describe("QuestDBConnection integration tests", () => {
       );
     });
 
-    it.scopedLive("should handle pg error events", () => {
+    it.live("should handle pg error events", () => {
       let errorHandler: ((error: Error) => void) | undefined;
       const mockSender = {
         flush: vi.fn().mockResolvedValue(undefined),
@@ -425,7 +419,7 @@ describe("QuestDBConnection integration tests", () => {
       );
     });
 
-    it.scopedLive("should handle cleanup errors gracefully", () => {
+    it.live("should handle cleanup errors gracefully", () => {
       const mockSender = {
         flush: vi.fn().mockRejectedValue(new Error("Flush failed")),
         close: vi.fn().mockRejectedValue(new Error("Close failed")),

@@ -70,10 +70,10 @@ export interface JwtServiceInterface {
 // Service Tag
 // ============================================================================
 
-export class JwtService extends Context.Tag("JwtService")<
+export class JwtService extends Context.Service<
   JwtService,
   JwtServiceInterface
->() {}
+>()("JwtService") {}
 
 // ============================================================================
 // Service Implementation

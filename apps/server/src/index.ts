@@ -20,7 +20,6 @@ for (const envPath of envPaths) {
 
 import { Effect, Layer } from "effect";
 import { ApiServerLive, NodeHttpServerLayer } from "@/core/api/server";
-import { ApiServiceLayer } from "@/core/api/service";
 import {
   NetworkMonitor,
   NetworkMonitorLive,
@@ -58,7 +57,6 @@ const NetworkMonitorLayer = NetworkMonitorLive.pipe(
   )
 );
 const ApiServerLayer = ApiServerLive.pipe(
-  Layer.provide(ApiServiceLayer),
   Layer.provide(NodeHttpServerLayer),
   Layer.provide(
     Layer.mergeAll(
@@ -95,7 +93,7 @@ const program = Effect.gen(function* () {
 // Run the program
 const runnable = program.pipe(
   Effect.provide(MainLive),
-  Effect.tapErrorCause(Effect.logError)
+  Effect.tapCause(Effect.logError)
 );
 
 Effect.runFork(runnable);

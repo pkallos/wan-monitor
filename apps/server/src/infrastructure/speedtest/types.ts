@@ -21,7 +21,7 @@ export interface SpeedTestServiceInterface {
   readonly runTest: () => Effect.Effect<SpeedTestResult, SpeedTestError, never>;
 }
 
-export class SpeedTestService extends Context.Tag("SpeedTestService")<
+export class SpeedTestService extends Context.Service<
   SpeedTestService,
   SpeedTestServiceInterface
->() {}
+>()("SpeedTestService") {}

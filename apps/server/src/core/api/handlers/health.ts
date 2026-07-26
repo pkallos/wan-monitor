@@ -1,7 +1,7 @@
-import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import { HealthUnhealthy } from "@shared/api/errors";
 import { DateTime, Effect } from "effect";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
 export const getReadyHandler = () =>
@@ -11,10 +11,10 @@ export const getReadyHandler = () =>
 
     return {
       status: "ok",
-      timestamp: DateTime.unsafeNow(),
+      timestamp: DateTime.nowUnsafe(),
     };
   }).pipe(
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.fail(
         new HealthUnhealthy({ message: `Database unhealthy: ${error}` })
       )
@@ -24,7 +24,7 @@ export const getReadyHandler = () =>
 export const getLiveHandler = () =>
   Effect.succeed({
     status: "ok",
-    timestamp: DateTime.unsafeNow(),
+    timestamp: DateTime.nowUnsafe(),
   });
 
 export const HealthGroupLive = HttpApiBuilder.group(

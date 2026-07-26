@@ -64,10 +64,10 @@ export interface NetworkMonitorInterface {
 // Service Tag
 // ============================================================================
 
-export class NetworkMonitor extends Context.Tag("NetworkMonitor")<
+export class NetworkMonitor extends Context.Service<
   NetworkMonitor,
   NetworkMonitorInterface
->() {}
+>()("NetworkMonitor") {}
 
 // ============================================================================
 // Service Implementation
@@ -161,7 +161,7 @@ export const NetworkMonitorLive = Layer.effect(
         })
         .pipe(
           Effect.as(true as const),
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.logError(
               `Speed test DB write failed: ${error._tag} - ${error.message}`
             ).pipe(Effect.as(false as const))
@@ -198,13 +198,13 @@ export const NetworkMonitorLive = Layer.effect(
         const schedule = Schedule.spaced(`${pingIntervalSeconds} seconds`);
 
         yield* executePingCycle.pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.logError(`Ping cycle error: ${error}`).pipe(
               Effect.flatMap(() => Effect.void)
             )
           ),
           Effect.repeat(schedule),
-          Effect.fork
+          Effect.forkChild
         );
 
         // Schedule periodic speed tests
@@ -216,13 +216,13 @@ export const NetworkMonitorLive = Layer.effect(
         );
 
         yield* executeSpeedTestCycle.pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.logError(`Speed test cycle error: ${error}`).pipe(
               Effect.flatMap(() => Effect.void)
             )
           ),
           Effect.repeat(speedTestSchedule),
-          Effect.fork
+          Effect.forkChild
         );
 
         yield* Effect.logInfo("Network monitor started successfully");

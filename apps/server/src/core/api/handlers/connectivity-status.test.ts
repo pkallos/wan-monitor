@@ -41,7 +41,7 @@ describe("Connectivity Status Handlers", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(mockRows));
 
       return Effect.gen(function* () {
-        const result = yield* getConnectivityStatusHandler({ urlParams: {} });
+        const result = yield* getConnectivityStatusHandler({ query: {} });
 
         expect(result.data).toHaveLength(2);
         expect(result.data[0].status).toBe("up");
@@ -65,7 +65,7 @@ describe("Connectivity Status Handlers", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(mockRows));
 
       return Effect.gen(function* () {
-        const result = yield* getConnectivityStatusHandler({ urlParams: {} });
+        const result = yield* getConnectivityStatusHandler({ query: {} });
 
         expect(result.data[0].status).toBe("degraded");
         expect(result.data[0].degradedPercentage).toBe(30);

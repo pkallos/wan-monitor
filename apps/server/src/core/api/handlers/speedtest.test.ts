@@ -211,7 +211,7 @@ describe("SpeedTest API Handlers", () => {
         return Effect.gen(function* () {
           const isRunningRef = yield* Ref.make(false);
 
-          const fiber = yield* Effect.fork(
+          const fiber = yield* Effect.forkChild(
             triggerSpeedTestHandler(isRunningRef)
           );
 
@@ -252,7 +252,9 @@ describe("SpeedTest API Handlers", () => {
       return Effect.gen(function* () {
         const isRunningRef = yield* Ref.make(false);
 
-        const fiber = yield* Effect.fork(triggerSpeedTestHandler(isRunningRef));
+        const fiber = yield* Effect.forkChild(
+          triggerSpeedTestHandler(isRunningRef)
+        );
 
         yield* Effect.sleep("50 millis");
 
@@ -302,7 +304,7 @@ describe("SpeedTest API Handlers", () => {
       });
 
       return Effect.gen(function* () {
-        const result = yield* getSpeedTestHistoryHandler({ urlParams: {} });
+        const result = yield* getSpeedTestHistoryHandler({ query: {} });
 
         expect(result.data).toHaveLength(2);
         expect(result.data[0].download_speed).toBe(100.5);
@@ -320,7 +322,7 @@ describe("SpeedTest API Handlers", () => {
       });
 
       return Effect.gen(function* () {
-        const result = yield* getSpeedTestHistoryHandler({ urlParams: {} });
+        const result = yield* getSpeedTestHistoryHandler({ query: {} });
 
         expect(result.data).toEqual([]);
         expect(result.meta.count).toBe(0);
@@ -352,7 +354,7 @@ describe("SpeedTest API Handlers", () => {
 
       return Effect.gen(function* () {
         const result = yield* getSpeedTestHistoryHandler({
-          urlParams: {
+          query: {
             startTime: "2024-01-01T00:00:00Z",
             endTime: "2024-01-01T23:59:59Z",
             limit: 100,
@@ -401,7 +403,7 @@ describe("SpeedTest API Handlers", () => {
 
       return Effect.gen(function* () {
         // Call the actual handler logic
-        const result = yield* getSpeedTestHistoryHandler({ urlParams: {} });
+        const result = yield* getSpeedTestHistoryHandler({ query: {} });
 
         // Verify the handler converted null to undefined
         expect(result.data).toHaveLength(1);
@@ -441,7 +443,7 @@ describe("SpeedTest API Handlers", () => {
 
           // Query speedtest history with time range covering the seeded data
           const result = yield* getSpeedTestHistoryHandler({
-            urlParams: {
+            query: {
               startTime: new Date("2024-01-15T15:00:00Z").toISOString(),
               endTime: new Date("2024-01-15T17:00:00Z").toISOString(),
               limit: 10,
@@ -501,7 +503,7 @@ describe("SpeedTest API Handlers", () => {
           const endTime = new Date("2024-01-15T17:00:00Z").toISOString();
 
           const result = yield* getSpeedTestHistoryHandler({
-            urlParams: {
+            query: {
               startTime,
               endTime,
               limit: 10,
@@ -549,7 +551,7 @@ describe("SpeedTest API Handlers", () => {
           expect(limit).toBeLessThan(testMetrics.length);
 
           const result = yield* getSpeedTestHistoryHandler({
-            urlParams: {
+            query: {
               startTime: new Date("2024-01-15T15:00:00Z").toISOString(),
               endTime: new Date("2024-01-15T17:00:00Z").toISOString(),
               limit,

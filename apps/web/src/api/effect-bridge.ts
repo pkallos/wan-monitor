@@ -1,8 +1,8 @@
-import { Effect, Either, ManagedRuntime } from "effect";
+import { Effect, ManagedRuntime, Result } from "effect";
 import { WanMonitorClient } from "@/api/effect-client";
 import { toApiError } from "@/api/errors";
 
-const runtime = ManagedRuntime.make(WanMonitorClient.Default);
+const runtime = ManagedRuntime.make(WanMonitorClient.layer);
 
 export const runEffect = <A, E>(
   effect: Effect.Effect<A, E, WanMonitorClient>
@@ -11,11 +11,11 @@ export const runEffect = <A, E>(
 export const runEffectWithError = async <A, E>(
   effect: Effect.Effect<A, E, WanMonitorClient>
 ): Promise<A> => {
-  const result = await runtime.runPromise(effect.pipe(Effect.either));
+  const result = await runtime.runPromise(effect.pipe(Effect.result));
 
-  if (Either.isLeft(result)) {
-    throw toApiError(result.left);
+  if (Result.isFailure(result)) {
+    throw toApiError(result.failure);
   }
 
-  return result.right;
+  return result.success;
 };

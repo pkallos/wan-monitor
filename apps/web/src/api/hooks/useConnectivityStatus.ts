@@ -35,7 +35,7 @@ export function useConnectivityStatus({
           const client = yield* WanMonitorClient;
           const response =
             yield* client.connectivityStatus.getConnectivityStatus({
-              urlParams: {
+              query: {
                 startTime: startTime?.toISOString(),
                 endTime: endTime?.toISOString(),
                 granularity,
