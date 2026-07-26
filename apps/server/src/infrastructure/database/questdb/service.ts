@@ -274,6 +274,8 @@ const make = Effect.gen(function* () {
   } satisfies QuestDBService;
 });
 
-export const QuestDBLive = Layer.effect(QuestDB, make).pipe(
+export const QuestDBServiceLayer = Layer.effect(QuestDB, make);
+
+export const QuestDBLive = QuestDBServiceLayer.pipe(
   Layer.provide(QuestDBConnectionLive)
 );
