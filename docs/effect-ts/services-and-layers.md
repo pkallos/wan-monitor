@@ -48,8 +48,8 @@ const config = yield* ConfigService;
 ### The two-argument form (bundling a constructor)
 
 `Context.Service<Self>()(id, { make })` lets the class carry its own constructor effect, for services
-whose only implementation is the "normal" one (`apps/web/src/api/effect-client.ts`'s `WanMonitorClient`
-does this). This is the v4 replacement for v3's `Effect.Service<Self>()(id, { effect, dependencies })`
+whose only implementation is the "normal" one. This is the v4 replacement for v3's
+`Effect.Service<Self>()(id, { effect, dependencies })`
 — the shape is similar but the `dependencies` option is gone entirely, and `make` does **not**
 auto-generate a `.Default` layer the way v3's `effect` option did. Build the layer yourself and call it
 `layer` (v4's naming convention, not v3's `Default`/`Live`):

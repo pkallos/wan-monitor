@@ -37,9 +37,9 @@ Write a short, task-specific status sentence after the indicator (never the lite
 ## UI/Styling Standards
 
 - **Tailwind CSS**: Lean on Tailwind CSS styles for all styling (check documentation online if necessary) and keep it coherent
-- **Chakra UI**: Lean on Chakra UI components (check documentation online if necessary); only use `sx={{}}` on components as a last resort
+- **Foldkit UI**: Lean on `@foldkit/ui` components (see `docs/foldkit/ui/`) before hand-rolling a widget
 - **TypeScript everywhere**: All source files are TypeScript. Do not add `.js` or `.mjs` source files.
-- **No native browser dialogs**: Never use `alert()`, `confirm()`, or `prompt()`. Use Chakra UI dialog/modal components instead.
+- **No native browser dialogs**: Never use `alert()`, `confirm()`, or `prompt()`. Use `@foldkit/ui`'s `Dialog` component instead.
 - **Optimistic UI by default**: Update local state/cache and navigate immediately, then roll back on error. Avoid click-blocking spinners except for destructive or irreversible operations.
 
 ## Development Workflow
@@ -186,7 +186,7 @@ Use a **two-tier tagging system**:
 **Area Labels (choose 1-3 that apply):**
 
 - `backend` - Server-side, API, database, Effect services
-- `frontend` - UI, React components, charts, styling
+- `frontend` - UI, Foldkit views, charts, styling
 - `devops` - Docker, CI/CD, deployment, infrastructure
 - `testing` - Test infrastructure, unit tests, E2E tests
 - `monitoring` - Ping, speedtest, metrics collection

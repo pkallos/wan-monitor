@@ -11,7 +11,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
 
     "strict": true,
     "noUnusedLocals": true,
@@ -24,6 +23,6 @@
       "@shared/*": ["../../packages/shared/src/*"]
     }
   },
-  "include": ["src", "src/test/vitest.d.ts"],
+  "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

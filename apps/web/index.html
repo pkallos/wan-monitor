@@ -2,20 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="/src/styles.css" rel="stylesheet" />
     <title>WAN Monitor</title>
   </head>
   <body>
     <script>
       (() => {
-        let mode = localStorage.getItem('chakra-ui-color-mode');
-        if (!mode) mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        let mode = localStorage.getItem('wan_monitor_theme');
+        if (mode !== 'light' && mode !== 'dark') {
+          mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
         document.documentElement.style.colorScheme = mode;
-        document.documentElement.setAttribute('data-theme', mode);
+        if (mode === 'dark') document.documentElement.classList.add('dark');
       })();
     </script>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/entry.ts"></script>
   </body>
 </html>

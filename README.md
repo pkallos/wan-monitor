@@ -129,13 +129,13 @@ All configuration is done via environment variables.
 |       |                 |                      |                 |
 |       v                 v                      |                 |
 |  Static Files      Ping Service ---------------+                 |
-|  (React SPA)       Speedtest Service ----------+                 |
+|  (Foldkit SPA)     Speedtest Service ----------+                 |
 |                                                                  |
 +------------------------------------------------------------------+
 ```
 
 **Tech Stack:**
-- **Frontend**: React 18 + TypeScript + Vite + Chakra UI + Recharts
+- **Frontend**: Foldkit + TypeScript + Vite + Tailwind CSS + ECharts
 - **Backend**: Effect-TS HTTP platform (type-safe API with functional error handling)
 - **Database**: QuestDB (columnar time-series database)
 - **Process Manager**: Supervisord (manages all services in the container)
@@ -199,7 +199,7 @@ pnpm start:dev
 ```
 
 This starts:
-- Frontend at http://localhost:5173
+- Frontend at http://localhost:3000
 - Backend API at http://localhost:3001
 - QuestDB at http://localhost:9000 (web console)
 
@@ -234,12 +234,11 @@ pnpm typecheck      # TypeScript validation
 ```
 wan-monitor/
 ├── apps/
-│   ├── web/                 # React frontend
+│   ├── web/                 # Foldkit frontend
 │   │   ├── src/
-│   │   │   ├── components/  # UI components (Dashboard, charts, etc.)
-│   │   │   ├── api/         # API client and React Query hooks
-│   │   │   ├── context/     # Auth context
-│   │   │   └── hooks/       # Custom hooks
+│   │   │   ├── auth/        # Model/Message/update/view for login + session
+│   │   │   ├── dashboard/    # Model/Message/update/view, charts, summary cards
+│   │   │   └── api/         # Effect HTTP client against packages/shared schemas
 │   │   └── ...
 │   └── server/              # Effect-TS HTTP backend
 │       ├── src/
