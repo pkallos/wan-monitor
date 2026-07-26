@@ -154,6 +154,12 @@ export const getSpeedTestHistoryHandler = ({
     };
   });
 
+export const getSpeedTestStatusHandler = (isRunningRef: Ref.Ref<boolean>) =>
+  Effect.gen(function* () {
+    const isRunning = yield* Ref.get(isRunningRef);
+    return { isRunning };
+  });
+
 export const SpeedTestGroupLive = HttpApiBuilder.group(
   WanMonitorApi,
   "speedtest",
@@ -164,10 +170,7 @@ export const SpeedTestGroupLive = HttpApiBuilder.group(
       return handlers
         .handle("triggerSpeedTest", () => triggerSpeedTestHandler(isRunningRef))
         .handle("getSpeedTestStatus", () =>
-          Effect.gen(function* () {
-            const isRunning = yield* Ref.get(isRunningRef);
-            return { isRunning };
-          })
+          getSpeedTestStatusHandler(isRunningRef)
         )
         .handle("getSpeedTestHistory", getSpeedTestHistoryHandler);
     })

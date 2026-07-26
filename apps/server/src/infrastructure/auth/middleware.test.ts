@@ -166,6 +166,34 @@ describe("AuthService", () => {
       }).pipe(Effect.provide(Layer.merge(JwtServiceTest, AuthServiceTest)));
     });
 
+    it.effect(
+      "treats a header without a Bearer prefix as the raw token",
+      () => {
+        const ConfigServiceTest = Layer.succeed(
+          ConfigService,
+          createTestConfigService("test-password")
+        );
+
+        const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+        const AuthServiceTest = Layer.provide(
+          AuthServiceLive,
+          Layer.merge(ConfigServiceTest, JwtServiceTest)
+        );
+
+        return Effect.gen(function* () {
+          const jwtService = yield* JwtService;
+          const authService = yield* AuthService;
+
+          const { token } = yield* jwtService.sign("testuser");
+          const result = yield* authService.verifyRequest(token);
+
+          expect(result).not.toBeNull();
+          expect(result?.username).toBe("testuser");
+          return result;
+        }).pipe(Effect.provide(Layer.merge(JwtServiceTest, AuthServiceTest)));
+      }
+    );
+
     it.effect("fails with invalid token", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,

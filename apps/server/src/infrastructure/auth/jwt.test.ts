@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Result } from "effect";
+import jsonwebtoken from "jsonwebtoken";
+import { vi } from "vitest";
 import {
+  JwtExpiredError,
   JwtInvalidError,
   JwtService,
   JwtServiceLive,
@@ -55,6 +58,35 @@ describe("JWT Service", () => {
         return decoded;
       }).pipe(Effect.provide(JwtServiceTest));
     });
+
+    it.effect(
+      "falls back to a 24h expiry when the freshly signed token doesn't decode as a payload",
+      () => {
+        const ConfigServiceTest = Layer.succeed(
+          ConfigService,
+          createTestConfigService("test-secret")
+        );
+
+        const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+        const decodeSpy = vi
+          .spyOn(jsonwebtoken, "decode")
+          .mockReturnValueOnce(null);
+
+        return Effect.gen(function* () {
+          const jwtService = yield* JwtService;
+          const before = Date.now();
+          const result = yield* jwtService.sign("testuser");
+          decodeSpy.mockRestore();
+
+          const expiresAt = new Date(result.expiresAt).getTime();
+          expect(expiresAt).toBeGreaterThan(before + 23 * 60 * 60 * 1000);
+          expect(expiresAt).toBeLessThanOrEqual(
+            before + 24 * 60 * 60 * 1000 + 1000
+          );
+          return result;
+        }).pipe(Effect.provide(JwtServiceTest));
+      }
+    );
   });
 
   describe("verify", () => {
@@ -124,6 +156,65 @@ describe("JWT Service", () => {
         return result;
       }).pipe(Effect.provide(JwtServiceTest));
     });
+
+    it.effect(
+      "fails with JwtInvalidError when a validly signed token's payload is missing required fields",
+      () => {
+        const ConfigServiceTest = Layer.succeed(
+          ConfigService,
+          createTestConfigService("test-secret")
+        );
+
+        const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+
+        // Correctly signed with the configured secret, but not shaped like a
+        // JwtPayload (no `username`), so `isJwtPayload` rejects it after a
+        // successful cryptographic verification.
+        const malformedToken = jsonwebtoken.sign({ foo: "bar" }, "test-secret");
+
+        return Effect.gen(function* () {
+          const jwtService = yield* JwtService;
+          const result = yield* Effect.result(
+            jwtService.verify(malformedToken)
+          );
+
+          expect(Result.isFailure(result)).toBe(true);
+          if (Result.isFailure(result)) {
+            expect(result.failure).toBeInstanceOf(JwtInvalidError);
+            expect(result.failure.message).toBe("Invalid token");
+          }
+          return result;
+        }).pipe(Effect.provide(JwtServiceTest));
+      }
+    );
+
+    it.effect("fails with JwtExpiredError for an expired token", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        makeTestAppConfig({
+          auth: {
+            username: "admin",
+            password: "test-password",
+            jwtSecret: "test-secret",
+            jwtExpiresIn: "-10s",
+          },
+        })
+      );
+
+      const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+
+      return Effect.gen(function* () {
+        const jwtService = yield* JwtService;
+        const { token } = yield* jwtService.sign("testuser");
+        const result = yield* Effect.result(jwtService.verify(token));
+
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(JwtExpiredError);
+        }
+        return result;
+      }).pipe(Effect.provide(JwtServiceTest));
+    });
   });
 
   describe("decode", () => {
@@ -157,6 +248,29 @@ describe("JWT Service", () => {
       return Effect.gen(function* () {
         const jwtService = yield* JwtService;
         const decoded = yield* jwtService.decode("not.a.valid.token");
+
+        expect(decoded).toBeNull();
+        return decoded;
+      }).pipe(Effect.provide(JwtServiceTest));
+    });
+
+    it.effect("returns null when jwt.decode throws", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createTestConfigService("test-secret")
+      );
+
+      const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+      const decodeSpy = vi
+        .spyOn(jsonwebtoken, "decode")
+        .mockImplementationOnce(() => {
+          throw new Error("boom");
+        });
+
+      return Effect.gen(function* () {
+        const jwtService = yield* JwtService;
+        const decoded = yield* jwtService.decode("whatever");
+        decodeSpy.mockRestore();
 
         expect(decoded).toBeNull();
         return decoded;
