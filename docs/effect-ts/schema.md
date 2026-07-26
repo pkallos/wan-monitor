@@ -4,9 +4,8 @@
 from a single source of truth. In this repo, Schema defines the **shared API contract** (request
 params, responses, errors) in `packages/shared`, so the server and web client stay in sync.
 
-> **Import from `effect`.** Our code uses `import { Schema } from "effect"`, not
-> `@effect/schema`, even though the latter is a listed dependency. Stay consistent. See
-> `packages/shared/src/api/routes/metrics.ts` and `packages/shared/src/api/errors.ts`.
+> **Import from `effect`.** Use `import { Schema } from "effect"`. There is no separate schema
+> package. See `packages/shared/src/api/routes/metrics.ts` and `packages/shared/src/api/errors.ts`.
 
 ## Understanding `Schema<Type, Encoded, Context>`
 
@@ -19,98 +18,71 @@ query-string `"50"` into `50`. Used for `limit` in `GetMetricsQueryParams`.
 
 ## Defining schemas
 
-Reference: `packages/shared/src/api/routes/metrics.ts`.
-
-```typescript
+```ts
 import { Schema } from "effect";
 
-// Literal unions
-export const GranularitySchema = Schema.Literal("1m", "5m", "15m", "1h", "6h", "1d");
-
-// Structs with optional fields
 export const MetricSchema = Schema.Struct({
   timestamp: Schema.String,
-  source: Schema.Literal("ping", "speedtest"),
+  source: Schema.Literals(["ping", "speedtest"]),
   host: Schema.optional(Schema.String),
   latency: Schema.optional(Schema.Number),
 });
-
-// Query params: NumberFromString decodes "50" -> 50
-export const GetMetricsQueryParams = Schema.Struct({
-  startTime: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.NumberFromString),
-  granularity: Schema.optional(GranularitySchema),
-});
-
-// Arrays / nesting
-const GetMetricsResponse = Schema.Struct({
-  data: Schema.Array(MetricSchema),
-  meta: MetaSchema,
-});
 ```
 
-Common building blocks used here: `Schema.String`, `Schema.Number`, `Schema.Boolean`,
-`Schema.Literal(...)`, `Schema.Struct({...})`, `Schema.Array(...)`, `Schema.optional(...)`,
-`Schema.NumberFromString`.
+`Schema.Literals` takes an **array** of literal values — `Schema.Literals(["http", "tcp"])`, not
+`Schema.Literal("http", "tcp")`. v4's `Schema.Literal(value)` is single-argument (one literal only);
+the multi-value case moved to the separate `Literals` function entirely. Likewise `Schema.Union` takes
+an array: `Schema.Union([SchemaA, SchemaB])`, not `Schema.Union(SchemaA, SchemaB)`. Both are easy to
+get wrong quietly, since the old multi-argument call shape doesn't error until you actually reach for
+more than one argument.
 
-## Deriving TypeScript types
+Derive the TypeScript type from a schema — never redeclare it by hand:
 
-**Always derive the type from the schema** with `Schema.Schema.Type<typeof X>` — never write a
-parallel `interface` that can drift. Reference: `metrics.ts`, `errors.ts`.
-
-```typescript
+```ts
 export type Granularity = Schema.Schema.Type<typeof GranularitySchema>;
-export type Metric = Schema.Schema.Type<typeof MetricSchema>;
-export type DbUnavailableError = Schema.Schema.Type<typeof DbUnavailableErrorSchema>;
 ```
 
-In handlers, type the decoded params off the shared schema so server and contract match:
+## Decoding and encoding
 
-```typescript
-// core/api/handlers/metrics.ts
-export const getMetricsHandler = ({
-  urlParams,
-}: {
-  urlParams: Schema.Schema.Type<typeof GetMetricsQueryParams>;
-}) => Effect.gen(function* () { /* ... */ });
+- `Schema.decodeUnknownEffect(schema)` — effectful decode from `unknown`, fails with a typed
+  `SchemaError` in the `Effect` error channel. This is v4's rename of v3's `Schema.decodeUnknown`
+  (the un-suffixed name in v4 belongs to a different, narrower overload; use the `*Effect` suffix
+  for the common "decode inside an `Effect.gen`" case).
+- `Schema.decodeUnknownSync(schema)` — throws on failure. Reserve for places you've already validated
+  the input is well-formed (e.g. decoding your own just-encoded value back); never use it on
+  unvalidated external input inside service logic.
+- `Schema.encode(schema)` / `Schema.decode(schema)` — for values already known to be schema-shaped
+  (`Type`/`Encoded` respectively), not raw `unknown`.
+
+## Config-validated values
+
+`Config.schema(schema, envVarName)` reads an environment variable through a `Schema` and produces a
+`ConfigError` automatically on a mismatch — see `configuration.md` for the full pattern. Prefer this
+over hand-writing a `Config.mapOrFail` with a manually-constructed `ConfigError`; it already does the
+validation-error wrapping correctly and gives a structured, path-aware error instead of a flat string.
+
+## Typed HTTP errors
+
+`Schema.TaggedErrorClass` (v3's `Schema.TaggedError`, renamed) defines an error that both encodes over
+HTTP and carries a response status, via the `httpApiStatus` annotation:
+
+```ts
+export class MissingCredentials extends Schema.TaggedErrorClass<MissingCredentials>()(
+  "MissingCredentials",
+  { message: Schema.String },
+  { httpApiStatus: 400 }
+) {}
 ```
 
-## Decoding & encoding
-
-The `HttpApi` layer decodes/encodes automatically at the boundary (see [`http-api.md`](./http-api.md)),
-so handlers receive already-decoded values. When you need to decode manually:
-
-- `Schema.decodeUnknown(schema)(input)` → `Effect<Type, ParseError>` — validate untrusted input.
-- `Schema.decodeUnknownSync(schema)(input)` → throws on failure (edges/tests only).
-- `Schema.encode(schema)(value)` → `Effect<Encoded, ParseError>` — back to the wire form.
-- `*Either` / `*Option` variants return `Either`/`Option` instead of an effect.
-
-Prefer the effectful `decodeUnknown` inside Effect code so parse failures live in the error channel.
-
-## Transformations
-
-For values whose in-app form differs from the wire form, use `Schema.transform` (infallible) or
-`Schema.transformOrFail` (can fail during decode/encode). `Schema.NumberFromString` is a built-in
-transform. Reach for custom transforms only when a plain struct field can't express the mapping.
-
-## Serializable errors
-
-API errors are schemas too, so the client can decode them instead of getting an opaque string.
-Reference: `packages/shared/src/api/errors.ts`.
-
-```typescript
-export const DbUnavailableErrorSchema = Schema.Struct({
-  error: Schema.Literal(DB_UNAVAILABLE),
-  message: Schema.String,
-  timestamp: Schema.String,
-});
-```
-
-For tagged, status-annotated errors use `Schema.TaggedError` (see [error-handling](./error-handling.md)).
+See `error-handling.md` for the full error-modeling rules and `http-api.md` for how these attach to
+endpoints.
 
 ## Anti-patterns
 
 - ❌ Declaring a `type`/`interface` next to a schema by hand. Derive with `Schema.Schema.Type`.
-- ❌ Importing `Schema` from `@effect/schema` when the rest of the repo uses `effect`.
-- ❌ `decodeUnknownSync` inside service logic — it throws; use the effectful `decodeUnknown`.
+- ❌ Importing `Schema` from anywhere but the `effect` barrel.
+- ❌ `Schema.Literal("a", "b", "c")` or `Schema.Union(a, b)` — both are single-argument in v4; the
+  multi-value form is `Schema.Literals([...])` / `Schema.Union([...])`.
+- ❌ `decodeUnknownSync` inside service logic on unvalidated input — it throws; use the effectful
+  `decodeUnknownEffect`.
 - ❌ Duplicating the same shape in `packages/shared` and the server. Define once in shared, import it.

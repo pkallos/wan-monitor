@@ -44,10 +44,10 @@ export interface PingExecutorInterface {
 // Service Tag
 // ============================================================================
 
-export class PingExecutor extends Context.Tag("PingExecutor")<
+export class PingExecutor extends Context.Service<
   PingExecutor,
   PingExecutorInterface
->() {}
+>()("PingExecutor") {}
 
 // ============================================================================
 // Helper: Convert PingResult to NetworkMetric
@@ -89,7 +89,7 @@ export const PingExecutorLive = Layer.effect(
                 result,
               })
             ),
-            Effect.catchAll((writeError) =>
+            Effect.catch((writeError) =>
               Effect.succeed({
                 host,
                 success: false,
@@ -101,7 +101,7 @@ export const PingExecutorLive = Layer.effect(
         }),
         // Failure path - write "down" metric with no latency (NULL in DB)
         // Omitting latency ensures avg() aggregations aren't skewed by failures
-        Effect.catchAll((pingError) => {
+        Effect.catch((pingError) => {
           const errorMetric: NetworkMetric = {
             timestamp: new Date(),
             source: "ping",

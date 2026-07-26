@@ -1,4 +1,3 @@
-import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
 import {
   AuthNotConfigured,
   InvalidCredentials,
@@ -6,6 +5,11 @@ import {
 } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
+import {
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiSchema,
+} from "effect/unstable/httpapi";
 
 const LoginRequest = Schema.Struct({
   username: Schema.String,
@@ -34,26 +38,27 @@ const StatusResponse = Schema.Struct({
 
 export const AuthApiGroup = HttpApiGroup.make("auth")
   .add(
-    HttpApiEndpoint.post("login", "/login")
-      .setPayload(LoginRequest)
-      .addSuccess(LoginResponse)
-      .addError(MissingCredentials)
-      .addError(InvalidCredentials)
-      .addError(AuthNotConfigured)
+    HttpApiEndpoint.post("login", "/login", {
+      payload: LoginRequest,
+      success: LoginResponse,
+      error: [MissingCredentials, InvalidCredentials, AuthNotConfigured],
+    })
   )
   .add(
-    HttpApiEndpoint.post("logout", "/logout")
-      .addSuccess(LogoutResponse)
-      .addError(Schema.String)
+    HttpApiEndpoint.post("logout", "/logout", {
+      success: LogoutResponse,
+      error: Schema.String,
+    })
   )
   .add(
-    HttpApiEndpoint.get("me", "/me")
-      .addSuccess(MeResponse)
-      .addError(Schema.String, { status: 401 })
-      .middleware(Authorization)
+    HttpApiEndpoint.get("me", "/me", {
+      success: MeResponse,
+      error: HttpApiSchema.status(401)(Schema.String),
+    }).middleware(Authorization)
   )
   .add(
-    HttpApiEndpoint.get("status", "/status")
-      .addSuccess(StatusResponse)
-      .addError(Schema.String)
+    HttpApiEndpoint.get("status", "/status", {
+      success: StatusResponse,
+      error: Schema.String,
+    })
   );

@@ -39,7 +39,7 @@ export function useMetrics(options: UseMetricsOptions = {}) {
         Effect.gen(function* () {
           const client = yield* WanMonitorClient;
           const response = yield* client.metrics.getMetrics({
-            urlParams: {
+            query: {
               startTime: startTime?.toISOString(),
               endTime: endTime?.toISOString(),
               host,

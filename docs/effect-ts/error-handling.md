@@ -1,180 +1,161 @@
 # Error Handling
 
-Effect tracks **expected errors** in the error channel: `Effect<Success, Error, Requirements>`. This
-means the compiler knows every failure a program can produce, as a union of types. Model failures as
-data, recover with tag-based combinators, and never inspect `_tag` by hand.
+Effect tracks errors in a typed second channel (`Effect<A, E, R>`), not as thrown exceptions. Every
+error this codebase produces is a tagged class so it can be recovered by tag instead of by string
+comparison or `instanceof` on an untyped catch.
 
 ## Defining errors
 
-### In-process errors → `Data.TaggedError`
+**Domain errors (in-process only)** — `Data.TaggedError`:
 
-Use `Data.TaggedError` for failures that only ever travel through the Effect error channel in this
-process. Reference: `apps/server/src/infrastructure/auth/jwt.ts`,
-`apps/server/src/infrastructure/ping/service.ts`.
-
-```typescript
+```ts
 import { Data } from "effect";
 
-export class PingTimeoutError extends Data.TaggedError("PingTimeoutError")<{
-  readonly host: string;
-  readonly timeoutMs: number;
+export class JwtExpiredError extends Data.TaggedError("JwtExpiredError")<{
+  readonly message: string;
 }> {}
-
-// Construction uses a props object:
-new PingTimeoutError({ host, timeoutMs });
 ```
 
-Why this over a hand-rolled class:
+See `apps/server/src/infrastructure/auth/jwt.ts` and `apps/server/src/infrastructure/auth/middleware.ts`
+for the pattern repeated across every domain error in the server. `_tag` is set automatically and
+excluded from the constructor; the class extends `Error` (real stack traces, `instanceof Error` is
+true); construction takes a props object: `new JwtExpiredError({ message: "..." })`.
 
-- `_tag` is set automatically (the discriminant `catchTag` keys off).
-- It extends `Error`, so you get real stack traces and `instanceof Error === true`.
-- Value equality/hashing via `Data`.
-- It is **yieldable**: `return yield* new PingTimeoutError(...)` works without `Effect.fail`.
+**Never hand-roll a plain class with a manual `readonly _tag` field.** It doesn't extend `Error` (no
+stack trace, `instanceof Error` is false), has no value equality, and duplicates what `Data.TaggedError`
+already gives you for free.
 
-Group related errors into a union type for signatures:
+**Serializable / API-boundary errors** — `Schema.TaggedErrorClass` (so they encode/decode across the
+HTTP boundary), as in `packages/shared/src/api/errors.ts`:
 
-```typescript
-export type JwtError = JwtInvalidError | JwtExpiredError | JwtMissingError;
-```
-
-### API-boundary errors → `Schema.TaggedError`
-
-If an error crosses a serialization boundary (HTTP response, worker message) it must encode/decode.
-Use `Schema.TaggedError` with `HttpApiSchema.annotations` for the status code. Reference:
-`packages/shared/src/api/middlewares/authorization.ts`.
-
-```typescript
-import { HttpApiSchema } from "@effect/platform";
+```ts
 import { Schema } from "effect";
 
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
-  "Unauthorized",
-  {},
-  HttpApiSchema.annotations({ status: 401 })
+export class InvalidCredentials extends Schema.TaggedErrorClass<InvalidCredentials>()(
+  "InvalidCredentials",
+  { message: Schema.String },
+  { httpApiStatus: 401 }
 ) {}
 ```
 
-**Rule of thumb:** in-process only → `Data.TaggedError`; crosses a boundary → `Schema.TaggedError`.
+This is v4's `Schema.TaggedErrorClass` (v3's `Schema.TaggedError`, renamed). The third argument is a
+schema annotations object; `httpApiStatus` is the field `effect/unstable/httpapi`'s `HttpApiSchema`
+reads to pick the response status — it's a public, documented annotation key (declared without an
+`@internal` marker in `HttpApiSchema.ts`'s `Schema.Annotations.Augment` interface), not an
+implementation detail to avoid. `HttpApiSchema.status(401)(someSchema)` is the equivalent form for a
+schema that isn't already a tagged-error class (`.pipe(HttpApiSchema.status(401))` on a plain
+`Schema.String`, for example) — see `packages/shared/src/api/routes/auth.ts`'s `me` endpoint.
 
-## Wrapping non-Effect code
-
-Never let a raw `throw` or rejected `Promise` escape into an Effect. Wrap it and map to a typed error.
-
-| Source | Combinator | Example |
-| --- | --- | --- |
-| Sync code that can throw | `Effect.try({ try, catch })` | `jwt.verify` in `jwt.ts` |
-| Async / Promise | `Effect.tryPromise({ try, catch })` | `ping.promise.probe` in `ping/service.ts`, `pgClient.query` in `questdb/service.ts` |
-| Sync code that can't throw | `Effect.sync(() => ...)` | `jwt.sign` |
-| Async that can't reject | `Effect.promise(() => ...)` | — |
-
-```typescript
-const verify = (token: string): Effect.Effect<JwtPayload, JwtError> =>
-  Effect.try({
-    try: () => {
-      const decoded = jwt.verify(token, config.auth.jwtSecret);
-      if (!isJwtPayload(decoded)) throw new Error("Invalid token payload");
-      return decoded;
-    },
-    catch: (error) =>
-      error instanceof Error && error.name === "TokenExpiredError"
-        ? new JwtExpiredError({ message: error.message })
-        : new JwtInvalidError({ message: "Invalid token" }),
-  });
-```
-
-The `catch` function is where you translate opaque unknowns into your typed domain errors. Classify
-by inspecting the caught value (see the QuestDB pattern of mapping connection errors to `DbUnavailable`).
+**Rule of thumb:** if the error only ever flows through the Effect error channel in-process, use
+`Data.TaggedError`. If it crosses a serialization boundary (HTTP response), use
+`Schema.TaggedErrorClass` with an `httpApiStatus` annotation.
 
 ## Recovering from errors
 
-### `catchTag` / `catchTags` — handle specific failures
+Discriminate by tag, never by direct `_tag` comparison:
 
-Prefer these over `catchAll` when you want targeted recovery. They are type-safe: handled tags are
-removed from the error channel, unhandled ones keep propagating. Reference:
-`apps/server/src/infrastructure/database/questdb/service.ts`.
-
-```typescript
-Effect.gen(function* () {
-  // ...db work that may fail with DbUnavailable | DatabaseWriteError
-}).pipe(
-  Effect.catchTag("DbUnavailable", (e) =>
-    connection.markDisconnected(e.message).pipe(Effect.zipRight(Effect.fail(e)))
-  )
-);
-```
-
-```typescript
+```ts
 effect.pipe(
+  Effect.catchTag("JwtExpiredError", (e) => Effect.succeed(fallbackFor(e))),
   Effect.catchTags({
-    NotFoundError: () => Effect.succeed(fallback),
-    ValidationError: (err) => Effect.fail(new ApiError(err.message)),
+    SpeedTestExecutionError: (e) => handleExecutionError(e),
+    SpeedTestTimeoutError: (e) => handleTimeout(e),
   })
 );
 ```
 
-### `catchAll` — collapse everything
+`Effect.catch` recovers from every error the effect can produce, regardless of tag (v4's rename of
+v3's `Effect.catchAll` — same "catch everything recoverable" semantics, just renamed since the source
+declares it internally as `catch_` and re-exports it as `catch`, a reserved-word workaround, not a
+different function). `Effect.catchCause` is the version that can also recover from defects and
+interruption (v3's `Effect.catchAllCause`).
 
-Use when you genuinely want to handle *all* remaining errors, typically at a boundary to map into a
-uniform response. Reference: `apps/server/src/core/api/handlers/metrics.ts` +
-`apps/server/src/core/api/handlers/db-error.ts`.
-
-```typescript
-export const mapQueryError =
-  (label: string) =>
-  (error: unknown): Effect.Effect<never, DbUnavailableError | string> =>
-    error instanceof DbUnavailable
-      ? Effect.fail(makeDbUnavailableError())
-      : Effect.fail(`${label}: ${error}`);
-
-// handler:
-Effect.gen(function* () { /* ... */ }).pipe(
-  Effect.catchAll(mapQueryError("Failed to query metrics"))
+```ts
+executeSpeedTest.pipe(
+  Effect.catch((error) => new SpeedTestExecutionError({ message: error.message }))
 );
 ```
 
-### `mapError` — transform without recovering
+## Single-error extraction: `Effect.result` / `Result`
 
-Re-tag an error while keeping it in the failure channel. Reference:
-`apps/server/src/infrastructure/auth/middleware.ts`.
+To pull an effect's single typed error out as a value instead of catching it, use `Effect.result`
+(v3's `Effect.either`) — it returns `Result<A, E>`, not `Either`. `Either` doesn't exist in v4 at all;
+`Result` replaced it, with new accessor names:
 
-```typescript
-jwtService.verify(token).pipe(
-  Effect.mapError((error) => new UnauthorizedError({ message: `Invalid token: ${error.message}` }))
-);
+```ts
+import { Effect, Result } from "effect";
+
+const result = yield* Effect.result(authService.verifyRequest(undefined));
+
+if (Result.isFailure(result)) {
+  expect(result.failure).toBeInstanceOf(MissingAuthHeaderError);
+}
 ```
 
-## Type guards over `_tag`
+| v3 (`Either`) | v4 (`Result`) |
+| --- | --- |
+| `Either.isLeft(e)` | `Result.isFailure(r)` |
+| `Either.isRight(e)` | `Result.isSuccess(r)` |
+| `e.left` | `r.failure` |
+| `e.right` | `r.success` |
+| `Either.left(x)` | `Result.fail(x)` |
+| `Either.right(x)` | `Result.succeed(x)` |
 
-**Never** compare `_tag` strings directly. Use the module guards / matchers:
+See `apps/server/src/infrastructure/auth/middleware.test.ts` and `apps/server/src/core/api/handlers/auth.test.ts`
+for the full pattern in use.
 
-```typescript
-import { Either, Exit, Option } from "effect";
+## Inspecting a `Cause`
 
-// ❌ if (result._tag === "Left") { ... }
-// ✅
-if (Either.isLeft(result)) { const err = result.left; }
-if (Option.isSome(opt)) { const value = opt.value; }
-if (Exit.isFailure(exit)) { const cause = exit.cause; }
+`Effect.exit`/`Effect.runSyncExit`/`Effect.runPromiseExit` give you an `Exit<A, E>`, whose `Failure`
+case carries a `Cause<E>`. v4 flattened `Cause` from v3's recursive tree (`Fail | Die | Interrupt |
+Sequential | Parallel | Empty`) to a simple wrapper around a flat array: `{ reasons:
+ReadonlyArray<Reason<E>> }`, where `Reason` is just `Fail | Die | Interrupt`. A cause can still hold
+**multiple** independent failures (from concurrent or sequential composition) — they just collapse
+into one flat array instead of a tree.
 
-Either.match(result, {
-  onLeft: (error) => { /* ... */ },
-  onRight: (value) => { /* ... */ },
-});
+**Don't** assume there's exactly one reason and index `cause.reasons[0]` directly — that's not what the
+flattening is for, and it silently drops any reason after the first. Use the module's own search
+helpers instead:
+
+```ts
+import { Cause, Exit, Option } from "effect";
+
+const exit = yield* Effect.exit(service.runTest());
+
+if (Exit.isFailure(exit)) {
+  const error = Cause.findErrorOption(exit.cause); // Option<E>, searches all reasons
+  if (Option.isSome(error)) {
+    expect(error.value).toBeInstanceOf(SpeedTestTimeoutError);
+  }
+}
 ```
 
-`Option.isSome`/`isNone` are used in `questdb/service.ts` (`health()`); `Exit` guards appear across
-`*.test.ts` files.
+`Cause.findErrorOption(cause)` returns the first typed `Fail` error as an `Option<E>`. `Cause.findError`
+does the same but returns a `Result<E, Cause<never>>` (the remaining cause on a miss, not just `None`).
+`cause.reasons.filter(Cause.isFailReason)` gets all of them, if more than one might legitimately be
+present. `Cause.hasFails` / `Cause.hasDies` / `Cause.hasInterrupts` test for presence without
+extracting a value.
 
-## Fail vs defect
+| v3 | v4 |
+| --- | --- |
+| `Cause.isFailType(cause)` | `Cause.isFailReason(reason)` — now narrows a `Reason`, not the whole `Cause` |
+| `Cause.failureOption(cause)` | `Cause.findErrorOption(cause)` |
+| `Cause.isFailure(cause)` | `Cause.hasFails(cause)` |
+| `Cause.isInterrupted(cause)` | `Cause.hasInterrupts(cause)` (also `Exit.hasInterrupts(exit)` on an `Exit` directly) |
+| `Cause.TimeoutException` | `Cause.TimeoutError` (all `*Exception` classes renamed to `*Error`) |
 
-- `Effect.fail(error)` — an **expected** error, tracked in the error channel. This is the default.
-- Throwing / `Effect.die` — a **defect** (unrecoverable bug). Reserve for truly unexpected states.
-- At the top level, log the full cause: `program.pipe(Effect.tapErrorCause(Effect.logError))`
-  (see `apps/server/src/index.ts`).
+See `apps/server/src/index.test.ts`, `apps/server/src/infrastructure/database/questdb/queries.test.ts`,
+and `apps/server/src/infrastructure/speedtest/service.test.ts` for real assertions using
+`Cause.findErrorOption`.
 
 ## Anti-patterns
 
-- ❌ `catch (e) { throw e }` inside `Effect.tryPromise` — return a typed error from `catch` instead.
-- ❌ `Effect.catchAll(() => Effect.succeed(undefined))` swallowing errors silently.
-- ❌ Direct `_tag` comparisons or `instanceof` chains where `catchTag` would do.
-- ❌ Plain `class FooError { readonly _tag = "Foo" }` — use `Data.TaggedError`/`Schema.TaggedError`.
+- ❌ A hand-rolled class with a manual `_tag` field instead of `Data.TaggedError` /
+  `Schema.TaggedErrorClass`.
+- ❌ Discriminating errors with `result._tag === "..."` instead of `Result.isFailure` /
+  `Effect.catchTag`.
+- ❌ Indexing `cause.reasons[0]` directly instead of `Cause.findErrorOption` / `.filter(isFailReason)`.
+- ❌ Throwing a bare `Error` or rejecting a `Promise` across an `Effect` boundary instead of
+  `Effect.fail(new SomeTaggedError(...))`.
+- ❌ Setting a response status by hand-checking the error's `_tag` in a handler instead of annotating
+  the error schema with `httpApiStatus` and letting the framework read it.

@@ -23,7 +23,7 @@ describe("ConfigService", () => {
     // in isolation, independent of any DB_* env vars set by the caller
     // (e.g. the integration test runner exports DB_PORT/DB_PG_PORT).
     const TestConfigLive = ConfigServiceLive.pipe(
-      Layer.provide(Layer.setConfigProvider(ConfigProvider.fromMap(new Map())))
+      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
     );
 
     const result = await Effect.runPromise(

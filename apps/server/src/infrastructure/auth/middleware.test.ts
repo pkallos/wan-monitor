@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 import { JwtService, JwtServiceLive } from "@/infrastructure/auth/jwt";
 import {
   AuthorizationLive,
@@ -97,15 +97,15 @@ describe("AuthService", () => {
 
       return Effect.gen(function* () {
         const authService = yield* AuthService;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           authService.verifyRequest(undefined)
         );
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(MissingAuthHeaderError);
-          if (result.left instanceof MissingAuthHeaderError) {
-            expect(result.left.message).toContain(
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(MissingAuthHeaderError);
+          if (result.failure instanceof MissingAuthHeaderError) {
+            expect(result.failure.message).toContain(
               "Authorization header required"
             );
           }
@@ -128,14 +128,14 @@ describe("AuthService", () => {
 
       return Effect.gen(function* () {
         const authService = yield* AuthService;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           authService.verifyRequest("Bearer ")
         );
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(MissingAuthHeaderError);
-          expect(result.left.message).toContain("Bearer token required");
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(MissingAuthHeaderError);
+          expect(result.failure.message).toContain("Bearer token required");
         }
         return result;
       }).pipe(Effect.provide(AuthServiceTest));
@@ -180,15 +180,15 @@ describe("AuthService", () => {
 
       return Effect.gen(function* () {
         const authService = yield* AuthService;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           authService.verifyRequest("Bearer invalid.token.here")
         );
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(UnauthorizedError);
-          if (result.left instanceof UnauthorizedError) {
-            expect(result.left.message).toContain("Invalid token");
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(UnauthorizedError);
+          if (result.failure instanceof UnauthorizedError) {
+            expect(result.failure.message).toContain("Invalid token");
           }
         }
         return result;

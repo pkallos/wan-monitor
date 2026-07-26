@@ -1,21 +1,25 @@
-import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
 import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
+import {
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiSchema,
+} from "effect/unstable/httpapi";
 
-export const GranularitySchema = Schema.Literal(
+export const GranularitySchema = Schema.Literals([
   "1m",
   "5m",
   "15m",
   "1h",
   "6h",
-  "1d"
-);
+  "1d",
+]);
 export type Granularity = Schema.Schema.Type<typeof GranularitySchema>;
 
 export const MetricSchema = Schema.Struct({
   timestamp: Schema.String,
-  source: Schema.Literal("ping", "speedtest"),
+  source: Schema.Literals(["ping", "speedtest"]),
   host: Schema.optional(Schema.String),
   latency: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),
@@ -57,10 +61,13 @@ export type GetMetricsResponseType = Schema.Schema.Type<
 export const MetricsApiGroup = HttpApiGroup.make("metrics")
   .prefix("/metrics")
   .add(
-    HttpApiEndpoint.get("getMetrics", "/")
-      .setUrlParams(GetMetricsQueryParams)
-      .addSuccess(GetMetricsResponse)
-      .addError(DbUnavailableErrorSchema, { status: 503 })
-      .addError(Schema.String)
+    HttpApiEndpoint.get("getMetrics", "/", {
+      query: GetMetricsQueryParams,
+      success: GetMetricsResponse,
+      error: [
+        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
+        Schema.String,
+      ],
+    })
   )
   .middleware(Authorization);

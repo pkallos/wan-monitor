@@ -1,101 +1,96 @@
 # Configuration
 
-Read runtime configuration through Effect's `Config` module, not `process.env` directly. `Config`
-gives you typed values, defaults, validation, and — crucially — the ability to **inject config in
-tests** via a `ConfigProvider` without mutating global state.
-
-The whole app config is loaded once into a `ConfigService` and provided as a layer. Reference:
-`apps/server/src/infrastructure/config/config.ts`.
+`Config` reads typed values from the environment (or any `ConfigProvider`), with defaults, and fails
+with a structured `ConfigError` instead of returning `undefined` or throwing. `apps/server/src/infrastructure/config/config.ts`
+is the one place environment variables are read; everything else takes `ConfigService` as a
+dependency.
 
 ## Reading values
 
-```typescript
-import { Config, ConfigError, Effect, Either, Layer } from "effect";
+```ts
+import { Config, Effect } from "effect";
 
 const makeConfig = Effect.gen(function* () {
   const serverPort = yield* Config.number("SERVER_PORT").pipe(Config.withDefault(3001));
   const serverHost = yield* Config.string("SERVER_HOST").pipe(Config.withDefault("0.0.0.0"));
-  const pingHostsStr = yield* Config.string("PING_HOSTS").pipe(
-    Config.withDefault("8.8.8.8,1.1.1.1,cloudflare.com")
-  );
-  const pingHosts = pingHostsStr.split(",").map((h) => h.trim());
-  return { server: { port: serverPort, host: serverHost }, ping: { hosts: pingHosts } };
+  // ...
 });
 ```
 
-Primitives: `Config.string`, `Config.number`, `Config.boolean`, `Config.integer`. Always give env
-values a sensible `Config.withDefault(...)` so local/dev runs work without a full `.env`.
+`Config.string`, `Config.number`, `Config.boolean` are shortcuts for `Config.schema(SomeSchema, name)`
+with the obvious schema. `Config.withDefault(value)` supplies a fallback when the variable is unset.
 
-## Validation with `Config.mapOrFail`
+## Schema-validated values
 
-Validate/normalise a value and fail with a `ConfigError` when it's invalid. Reference:
-`config.ts` (`DB_PROTOCOL`).
+For a value that must be one of a fixed set (not just "a string"), use `Config.schema` directly with a
+`Schema` — don't hand-roll validation with `Config.mapOrFail`:
 
-```typescript
-const dbProtocol = yield* Config.string("DB_PROTOCOL").pipe(
-  Config.withDefault("http"),
-  Config.mapOrFail(
-    (value): Either.Either<"http" | "tcp", ConfigError.ConfigError> =>
-      value === "http" || value === "tcp"
-        ? Either.right(value)
-        : Either.left(ConfigError.InvalidData([], `DB_PROTOCOL must be 'http' or 'tcp', got '${value}'`))
-  )
-);
+```ts
+import { Config, Schema } from "effect";
+
+const dbProtocol = yield* Config.schema(
+  Schema.Literals(["http", "tcp"]),
+  "DB_PROTOCOL"
+).pipe(Config.withDefault("http" as const));
 ```
 
-## Secrets
+`Config.schema` decodes the raw value through the schema and wraps any validation failure in a
+`ConfigError` automatically, with a proper `SchemaIssue` (path, expected type) attached. This matters:
+`ConfigError.cause` is typed `SourceError | Schema.SchemaError` — `SourceError` means "the provider
+could not read data" (an I/O failure), `SchemaError` means "the data was found but didn't match the
+schema" (a validation failure). A value like `DB_PROTOCOL=ftp` is the second case, not the first — if
+you ever do need to construct a `ConfigError` by hand (rare; `Config.schema` covers the normal case),
+reach for `new Config.ConfigError(new Schema.SchemaError(...))`, not `SourceError`.
 
-For sensitive values prefer `Config.redacted("JWT_SECRET")`, which yields a `Redacted<string>` that
-won't print in logs; unwrap with `Redacted.value(...)` only where needed. (Today `config.ts` reads
-the secret as a plain string with a default — when touching auth config, migrate toward
-`Config.redacted`. Never commit real secrets; see the "Never hardcode secrets" rule in `AGENTS.md`.)
-
-## Exposing config as a service
-
-Wrap the loaded config behind a `Context.Tag` and a `Layer.effect` so the rest of the app depends on
-`ConfigService`, not on env reads. Reference: `config.ts`.
-
-```typescript
-export class ConfigService extends Context.Tag("ConfigService")<
-  ConfigService,
-  AppConfig
->() {}
-
-export const ConfigServiceLive = Layer.effect(ConfigService, makeConfig);
-```
-
-Consumers `yield* ConfigService` (see `JwtServiceLive`, `PingServiceLive`, `NodeHttpServerLayer`).
+`Config.mapOrFail`'s callback returns an `Effect<A, ConfigError>` in v4 (v3's `Result<A, ConfigError>`)
+— if you do need a manual transform for something `Config.schema` genuinely can't express, match that
+signature.
 
 ## Injecting config in tests
 
-**Never mutate `process.env` in tests** — it leaks across tests. Instead provide a `ConfigProvider`
-built from a map, or a mock `ConfigService` layer.
+Provide a fixed `AppConfig` directly via `Layer.succeed`, bypassing environment reads entirely:
 
-`ConfigProvider.fromMap` (drives real `Config.*` reads). Reference:
-`apps/server/src/core/monitoring/network-monitor.test.ts`.
+```ts
+import { Layer } from "effect";
+import { ConfigService } from "@/infrastructure/config/config";
+import { makeTestAppConfig } from "@/test/config";
 
-```typescript
-import { ConfigProvider, Effect } from "effect";
-
-const withConfigProvider = (entries: Record<string, string>) =>
-  Effect.withConfigProvider(ConfigProvider.fromMap(new Map(Object.entries(entries))));
+const ConfigLayer = Layer.succeed(ConfigService, makeTestAppConfig({ auth: { password: "test" } }));
 ```
 
-Mock `ConfigService` directly (bypasses env entirely). Reference: `network-monitor.test.ts` uses a
-`makeTestConfigLayer(...)` helper; auth tests use `Layer.succeed(ConfigService, createTestConfigService(...))`.
+`makeTestAppConfig` (in `apps/server/src/test/config.ts`) builds a complete `AppConfig` from shared
+defaults plus per-section partial overrides, so a test only spells out the fields it cares about. This
+replaced a config object literal that used to be copy-pasted across the server test suite — reach for
+it instead of constructing an `AppConfig` by hand in a new test.
 
-```typescript
-const MockConfig = makeTestConfigLayer({
-  ping: { hosts: ["8.8.8.8", "1.1.1.1"], timeout: 5000 },
-  auth: { password: "testpassword", jwtExpiresIn: "1h" },
-});
+For a test that needs to exercise `ConfigProvider` itself (integration tests reading real environment
+variables under a scoped override), use `ConfigProvider.fromUnknown({ KEY: "value" })` for the
+override, layered with `.pipe(ConfigProvider.orElse(ConfigProvider.fromEnv()))` as a fallback, and
+provide it with `ConfigProvider.layer(...)`:
+
+```ts
+const testConfigProvider = () =>
+  ConfigProvider.fromUnknown({ DB_TABLE: TEST_TABLE }).pipe(
+    ConfigProvider.orElse(ConfigProvider.fromEnv())
+  );
+
+export const createTestLayer = () =>
+  Layer.provide(QuestDBLive, Layer.provide(ConfigServiceLive, ConfigProvider.layer(testConfigProvider())));
 ```
 
-See [`testing.md`](./testing.md) for the full test-layer picture.
+See `apps/server/src/infrastructure/database/questdb/test-utils/setup.ts`. Two v4 renames baked into
+this: `ConfigProvider.fromMap(new Map([...]))` became `ConfigProvider.fromUnknown({...})` (a plain
+object, not a `Map`), and `Layer.setConfigProvider(provider)` became `ConfigProvider.layer(provider)`
+provided the ordinary way through `Layer.provide`. `ConfigProvider.orElse` also changed from taking a
+thunk (`orElse(() => provider)`) to taking the provider value directly (`orElse(provider)`).
 
 ## Anti-patterns
 
-- ❌ `process.env.FOO` inside service code — read via `Config` into `ConfigService`.
-- ❌ Mutating `process.env` in tests — use `ConfigProvider.fromMap` or a mock `ConfigService` layer.
-- ❌ Config values without defaults, forcing every environment to set every var.
-- ❌ Logging raw secrets — use `Config.redacted`.
+- ❌ Reading `process.env` directly anywhere outside `infrastructure/config/config.ts`. Every other
+  module takes `ConfigService` as a dependency.
+- ❌ Hand-validating a config value with `Config.mapOrFail` plus a manually-built `ConfigError` when
+  `Config.schema` already does exactly this.
+- ❌ Wrapping a value-validation failure in `ConfigProvider.SourceError` — that type means the
+  underlying source (the env, a file) failed to produce data at all, not that the data was wrong.
+- ❌ Copy-pasting a full `AppConfig` object literal into a new test instead of `makeTestAppConfig`
+  with overrides.

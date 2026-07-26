@@ -313,7 +313,7 @@ Effect code, read the topic that matches your task — every pattern there is gr
 this repo:
 
 - [`docs/effect-ts/README.md`](./docs/effect-ts/README.md) — index, library versions, house rules
-- [`services-and-layers.md`](./docs/effect-ts/services-and-layers.md) — `Context.Tag`, `Layer.*`, dependency graph
+- [`services-and-layers.md`](./docs/effect-ts/services-and-layers.md) — `Context.Service`, `Layer.*`, dependency graph
 - [`error-handling.md`](./docs/effect-ts/error-handling.md) — tagged errors, `catchTag`, wrapping Promises
 - [`effect-gen-and-composition.md`](./docs/effect-ts/effect-gen-and-composition.md) — `Effect.gen`, `pipe`, fibers, runners
 - [`schema.md`](./docs/effect-ts/schema.md) — `Schema.Struct`, deriving types, decode/encode
@@ -339,21 +339,21 @@ if (option._tag === 'Some') { ... }
 **✅ DO** use Effect's type guards and pattern matching:
 
 ```typescript
-// Either - use Either.match or type guards
-import { Either } from 'effect';
+// Result - use Result.match or type guards
+import { Result } from 'effect';
 
 // Pattern matching
-Either.match(result, {
-  onLeft: (error) => { /* handle error */ },
-  onRight: (value) => { /* handle success */ },
+Result.match(result, {
+  onFailure: (error) => { /* handle error */ },
+  onSuccess: (value) => { /* handle success */ },
 });
 
 // Type guards
-if (Either.isLeft(result)) {
-  const error = result.left;
+if (Result.isFailure(result)) {
+  const error = result.failure;
 }
-if (Either.isRight(result)) {
-  const value = result.right;
+if (Result.isSuccess(result)) {
+  const value = result.success;
 }
 
 // Exit - use Exit.match or type guards
@@ -397,17 +397,16 @@ new PingTimeoutError({ host, timeoutMs });
 
 Benefits: `_tag` is set automatically, the class extends `Error` (real stack traces + `instanceof Error`), you get value equality/hashing via `Data`, and a typed props constructor.
 
-**Serializable / API-boundary errors** — use `Schema.TaggedError` (so they encode/decode across the HTTP boundary), as in `packages/shared/src/api/middlewares/authorization.ts`:
+**Serializable / API-boundary errors** — use `Schema.TaggedErrorClass` (so they encode/decode across the HTTP boundary), as in `packages/shared/src/api/middlewares/authorization.ts`:
 
 ```typescript
-import { HttpApiSchema } from '@effect/platform';
 import { Schema } from 'effect';
 
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
+export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()(
   'Unauthorized',
-  {},
-  HttpApiSchema.annotations({ status: 401 })
+  { message: Schema.String },
+  { httpApiStatus: 401 }
 ) {}
 ```
 
-Rule of thumb: if the error only ever flows through the Effect error channel in-process, use `Data.TaggedError`. If it crosses a serialization boundary (HTTP response, worker message), use `Schema.TaggedError`. Discriminate either kind with `catchTag` / Effect type guards — never with direct `_tag` comparisons.
+Rule of thumb: if the error only ever flows through the Effect error channel in-process, use `Data.TaggedError`. If it crosses a serialization boundary (HTTP response, worker message), use `Schema.TaggedErrorClass`. Discriminate either kind with `catchTag` / Effect type guards — never with direct `_tag` comparisons.

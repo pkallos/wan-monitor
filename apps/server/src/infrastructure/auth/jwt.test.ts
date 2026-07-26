@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 import {
   JwtInvalidError,
   JwtService,
@@ -88,13 +88,13 @@ describe("JWT Service", () => {
 
       return Effect.gen(function* () {
         const jwtService = yield* JwtService;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           jwtService.verify("invalid.token.here")
         );
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(JwtInvalidError);
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(JwtInvalidError);
         }
         return result;
       }).pipe(Effect.provide(JwtServiceTest));
@@ -115,11 +115,11 @@ describe("JWT Service", () => {
         const fakeToken =
           "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InRlc3R1c2VyIiwiaWF0IjoxNjE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc";
 
-        const result = yield* Effect.either(jwtService.verify(fakeToken));
+        const result = yield* Effect.result(jwtService.verify(fakeToken));
 
-        expect(Either.isLeft(result)).toBe(true);
-        if (Either.isLeft(result)) {
-          expect(result.left).toBeInstanceOf(JwtInvalidError);
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(JwtInvalidError);
         }
         return result;
       }).pipe(Effect.provide(JwtServiceTest));

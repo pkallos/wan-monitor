@@ -1,6 +1,6 @@
-import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import { Layer } from "effect";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { AuthGroupLive } from "@/core/api/handlers/auth";
 import { ConnectivityStatusGroupLive } from "@/core/api/handlers/connectivity-status";
 import { HealthGroupLive } from "@/core/api/handlers/health";
@@ -12,7 +12,7 @@ import {
   AuthServiceLive,
 } from "@/infrastructure/auth/middleware";
 
-export const ApiServiceLayer = HttpApiBuilder.api(WanMonitorApi).pipe(
+export const ApiServiceLayer = HttpApiBuilder.layer(WanMonitorApi).pipe(
   Layer.provide([
     AuthGroupLive,
     ConnectivityStatusGroupLive,

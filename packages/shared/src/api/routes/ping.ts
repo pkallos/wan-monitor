@@ -1,6 +1,6 @@
-import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 
 const PingResult = Schema.Struct({
   host: Schema.String,
@@ -37,14 +37,16 @@ const GetHostsResponse = Schema.Struct({
 export const PingApiGroup = HttpApiGroup.make("ping")
   .prefix("/ping")
   .add(
-    HttpApiEndpoint.post("triggerPing", "/trigger")
-      .setPayload(Schema.NullOr(TriggerPingRequest))
-      .addSuccess(TriggerPingResponse)
-      .addError(Schema.String)
+    HttpApiEndpoint.post("triggerPing", "/trigger", {
+      payload: Schema.NullOr(TriggerPingRequest),
+      success: TriggerPingResponse,
+      error: Schema.String,
+    })
   )
   .add(
-    HttpApiEndpoint.get("getHosts", "/hosts")
-      .addSuccess(GetHostsResponse)
-      .addError(Schema.String)
+    HttpApiEndpoint.get("getHosts", "/hosts", {
+      success: GetHostsResponse,
+      error: Schema.String,
+    })
   )
   .middleware(Authorization);

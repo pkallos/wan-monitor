@@ -39,10 +39,10 @@ export interface QuestDBConnectionService {
   readonly close: Effect.Effect<void>;
 }
 
-export class QuestDBConnection extends Context.Tag("QuestDBConnection")<
+export class QuestDBConnection extends Context.Service<
   QuestDBConnection,
   QuestDBConnectionService
->() {}
+>()("QuestDBConnection") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ConfigService;
@@ -127,7 +127,7 @@ const make = Effect.gen(function* () {
           message: `Connection verification failed: ${errorMessage(error)}`,
         }),
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           yield* Effect.promise(async () => {
             try {
@@ -150,7 +150,7 @@ const make = Effect.gen(function* () {
     // local dev no longer depend on ILP schema-on-write (the source of missing
     // columns and HTTP 500s). Idempotent and non-destructive.
     yield* bootstrapSchema(pgClient, config.database.table).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           yield* Effect.promise(async () => {
             try {
@@ -263,10 +263,10 @@ const make = Effect.gen(function* () {
 
   yield* Effect.forkScoped(
     connectionLoop.pipe(
-      Effect.catchAllCause((cause) =>
+      Effect.catchCause((cause) =>
         Effect.logError("Connection loop crashed", cause).pipe(
-          Effect.zipRight(Effect.sleep(Duration.seconds(5))),
-          Effect.zipRight(connectionLoop)
+          Effect.andThen(Effect.sleep(Duration.seconds(5))),
+          Effect.andThen(connectionLoop)
         )
       )
     )
@@ -313,4 +313,4 @@ const make = Effect.gen(function* () {
   } satisfies QuestDBConnectionService;
 });
 
-export const QuestDBConnectionLive = Layer.scoped(QuestDBConnection, make);
+export const QuestDBConnectionLive = Layer.effect(QuestDBConnection, make);

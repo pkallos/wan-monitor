@@ -116,8 +116,6 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@effect/platform-node"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@effect/schema"
-        update-types: ["version-update:semver-major"]
 
       # React major versions
       - dependency-name: "react"

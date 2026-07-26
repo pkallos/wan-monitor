@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { NetworkMetric } from "@shared/metrics";
-import { Effect, Fiber, Layer, Logger, LogLevel } from "effect";
+import { Effect, Fiber, Layer, References } from "effect";
 import { vi } from "vitest";
 import {
   type MonitorStats,
@@ -79,7 +79,7 @@ describe("NetworkMonitor", () => {
     Layer.provide(MockQuestDB),
     Layer.provide(MockSpeedTestService),
     Layer.provide(MockConfig),
-    Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+    Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
   );
 
   it.effect("should get initial stats", () =>
@@ -102,7 +102,7 @@ describe("NetworkMonitor", () => {
       const monitor = yield* NetworkMonitor;
 
       // Fork the start and interrupt after assertions
-      const fiber = yield* Effect.fork(monitor.start());
+      const fiber = yield* Effect.forkChild(monitor.start());
 
       // Wait briefly for async effects
       yield* Effect.sleep("100 millis");
@@ -136,12 +136,12 @@ describe("NetworkMonitor", () => {
       Layer.provide(MockQuestDB),
       Layer.provide(MockSpeedTestService),
       Layer.provide(CustomPingConfig),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
 
     return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
-      const fiber = yield* Effect.fork(monitor.start());
+      const fiber = yield* Effect.forkChild(monitor.start());
       yield* Effect.sleep("100 millis");
       const stats: MonitorStats = yield* monitor.getStats();
 
@@ -165,12 +165,12 @@ describe("NetworkMonitor", () => {
       Layer.provide(MockQuestDB),
       Layer.provide(MockSpeedTestService),
       Layer.provide(MockConfig),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
 
     return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
-      const fiber = yield* Effect.fork(monitor.start());
+      const fiber = yield* Effect.forkChild(monitor.start());
 
       yield* Effect.sleep("100 millis");
 
@@ -199,12 +199,12 @@ describe("NetworkMonitor", () => {
       Layer.provide(MockQuestDB),
       Layer.provide(MockSpeedTestService),
       Layer.provide(SpeedTestConfig),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
 
     return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
-      const fiber = yield* Effect.fork(monitor.start());
+      const fiber = yield* Effect.forkChild(monitor.start());
 
       yield* Effect.sleep("50 millis");
 
@@ -245,12 +245,12 @@ describe("NetworkMonitor", () => {
       Layer.provide(MockQuestDB),
       Layer.provide(MockSpeedTestService),
       Layer.provide(MockConfig),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
 
     return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
-      const fiber = yield* Effect.fork(monitor.start());
+      const fiber = yield* Effect.forkChild(monitor.start());
 
       yield* Effect.sleep("100 millis");
 
@@ -305,7 +305,7 @@ describe("NetworkMonitor", () => {
             auth: { password: "testpassword", jwtExpiresIn: "1h" },
           })
         ),
-        Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+        Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
       );
 
       return Effect.gen(function* () {
@@ -313,7 +313,7 @@ describe("NetworkMonitor", () => {
 
         // Keep the parent fiber alive (as index.ts does with Effect.never) so the
         // forked monitoring loops are not interrupted when start() returns.
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           Effect.gen(function* () {
             yield* monitor.start();
             return yield* Effect.never;
@@ -382,14 +382,14 @@ describe("NetworkMonitor", () => {
           auth: { password: "testpassword", jwtExpiresIn: "1h" },
         })
       ),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
 
     return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
       // Keep the parent fiber alive so the forked speed-test loop survives.
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           yield* monitor.start();
           return yield* Effect.never;
@@ -432,13 +432,13 @@ describe("NetworkMonitor", () => {
           auth: { password: "testpassword", jwtExpiresIn: "1h" },
         })
       ),
-      Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
 
     return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           yield* monitor.start();
           return yield* Effect.never;
@@ -505,13 +505,13 @@ describe("NetworkMonitor", () => {
         Layer.provide(MockQuestDB),
         Layer.provide(ConcurrentSpeedTestService),
         Layer.provide(ConcurrentConfig),
-        Layer.provide(Logger.minimumLogLevel(LogLevel.None))
+        Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
       );
 
       return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           Effect.gen(function* () {
             yield* monitor.start();
             return yield* Effect.never;

@@ -1,9 +1,9 @@
-import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import type { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
 import { mbpsToBps } from "@shared/metrics";
 import type { SpeedMetric } from "@wan-monitor/shared";
 import { Clock, Effect, Ref, type Schema } from "effect";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import {
@@ -83,7 +83,7 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
                 internalIp: testResult.internalIp,
               })
               .pipe(
-                Effect.catchAll((dbError) =>
+                Effect.catch((dbError) =>
                   Effect.logError(
                     `Speed test DB write failed: ${dbError._tag} - ${dbError.message}`
                   )
@@ -112,27 +112,23 @@ export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
   });
 
 export const getSpeedTestHistoryHandler = ({
-  urlParams,
+  query,
 }: {
-  urlParams: Schema.Schema.Type<typeof SpeedTestHistoryQuery>;
+  query: Schema.Schema.Type<typeof SpeedTestHistoryQuery>;
 }) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
     const now = yield* Clock.currentTimeMillis;
 
     const params = {
-      startTime: urlParams.startTime
-        ? new Date(urlParams.startTime)
-        : undefined,
-      endTime: urlParams.endTime ? new Date(urlParams.endTime) : undefined,
-      limit: urlParams.limit,
+      startTime: query.startTime ? new Date(query.startTime) : undefined,
+      endTime: query.endTime ? new Date(query.endTime) : undefined,
+      limit: query.limit,
     };
 
     const data = yield* db
       .querySpeedtests(params)
-      .pipe(
-        Effect.catchAll(mapQueryError("Failed to query speedtest history"))
-      );
+      .pipe(Effect.catch(mapQueryError("Failed to query speedtest history")));
 
     const speedMetrics: SpeedMetric[] = data.map((m) => ({
       timestamp: m.timestamp,

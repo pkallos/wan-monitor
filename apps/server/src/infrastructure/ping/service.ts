@@ -80,10 +80,10 @@ export interface PingServiceInterface {
 // Service Tag
 // ============================================================================
 
-export class PingService extends Context.Tag("PingService")<
+export class PingService extends Context.Service<
   PingService,
   PingServiceInterface
->() {}
+>()("PingService") {}
 
 // ============================================================================
 // Service Implementation
@@ -172,7 +172,7 @@ export const PingServiceLive = Layer.effect(
     ): Effect.Effect<boolean, PingError, never> =>
       pingHost(host).pipe(
         Effect.map((result) => result.alive),
-        Effect.catchAll(() => Effect.succeed(false))
+        Effect.catch(() => Effect.succeed(false))
       );
 
     return {

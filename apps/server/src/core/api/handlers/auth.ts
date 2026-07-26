@@ -1,4 +1,3 @@
-import { HttpApiBuilder } from "@effect/platform";
 import { WanMonitorApi } from "@shared/api";
 import {
   AuthNotConfigured,
@@ -7,6 +6,7 @@ import {
 } from "@shared/api/errors";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
 import { Effect } from "effect";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { JwtService } from "@/infrastructure/auth/jwt";
 import { ConfigService } from "@/infrastructure/config/config";
 

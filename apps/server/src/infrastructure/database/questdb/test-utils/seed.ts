@@ -196,7 +196,7 @@ const countMetricRows = (): Effect.Effect<number, SeedError> =>
  */
 const waitForRowCount = (
   expectedCount: number,
-  timeout: Duration.DurationInput = "15 seconds"
+  timeout: Duration.Input = "15 seconds"
 ): Effect.Effect<void, SeedError> =>
   Effect.gen(function* () {
     const count = yield* countMetricRows();
@@ -209,7 +209,9 @@ const waitForRowCount = (
       );
     }
   }).pipe(
-    Effect.retry(Schedule.spaced("200 millis").pipe(Schedule.upTo(timeout)))
+    Effect.retry(
+      Schedule.spaced("200 millis").pipe(Schedule.upTo({ duration: timeout }))
+    )
   );
 
 /**

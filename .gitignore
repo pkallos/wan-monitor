@@ -42,6 +42,9 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Local planning scratch
+plans/
+
 # Temporary files
 *.tmp
 *.temp

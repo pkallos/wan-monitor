@@ -53,7 +53,7 @@ export const makeSpeedTestService = (
 
         const result = yield* executeSpeedTest.pipe(
           Effect.timeout(Duration.millis(timeoutMs)),
-          Effect.catchTag("TimeoutException", () =>
+          Effect.catchTag("TimeoutError", () =>
             Effect.gen(function* () {
               yield* Effect.logWarning(
                 `Speed test timed out after ${timeoutSeconds}s`

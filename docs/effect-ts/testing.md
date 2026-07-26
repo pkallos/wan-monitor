@@ -1,146 +1,117 @@
-# Testing Effect Code
+# Testing
 
-Tests run on Vitest. For Effect code we use **`@effect/vitest`**, which adds `it.effect` / `it.scoped`
-so a test *is* an Effect — the runtime, scoped-resource cleanup, and fiber failure reporting are
-handled for you. Dependencies are supplied as **mock layers**, never by mutating globals.
+Effect code is tested with `@effect/vitest`'s `it.effect` / `it.live`, mock `Layer`s standing in for
+real services, and `TestClock` for anything time-based. Plain `vitest` `it`/`describe` is used only
+for non-Effect logic (pure functions, React components).
 
-Two styles coexist in the repo, both valid:
+## `it.effect` vs `it.live`
 
-1. **`it.effect`** (from `@effect/vitest`) — the test body returns an `Effect`; the framework runs it.
-2. **Plain `it`** (from `vitest`) + `Effect.runPromise` / `Effect.runPromiseExit` — run the effect
-   yourself, usually to assert on an `Exit`.
+Both always run the test effect inside a `Scope` (so `Effect.forkScoped`, `Effect.addFinalizer`, etc.
+work without extra ceremony). They differ in what environment they provide:
 
-## Style 1 — `it.effect` with mock layers
+- **`it.effect`** — provides a `TestEnv` (fake `TestClock` + `TestConsole`). Time doesn't pass on its
+  own; you advance it explicitly. Use for anything that shouldn't depend on real wall-clock timing.
+- **`it.live`** — provides the real environment. Time passes normally; `setTimeout`-backed mocks and
+  real async timing behave as they would outside a test. Use when a test's assertions genuinely depend
+  on real elapsed time (a mocked `Promise` that resolves after a real delay, a retry loop being
+  observed across real intervals).
 
-Reference: `apps/server/src/infrastructure/auth/jwt.test.ts`,
-`apps/server/src/infrastructure/auth/middleware.test.ts`.
+v3 had four testers for this: `it.effect` (fake, no scope), `it.scoped` (fake, scope), `it.live` (real,
+no scope), `it.scopedLive` (real, scope). v4 collapsed all four into two, since `Scope` is now always
+provided — `it.scoped`/`it.scopedLive` don't exist anymore; their scope-providing behavior folded into
+`it.effect`/`it.live` respectively. **Getting this rename wrong is easy and silent**: `it.scopedLive` →
+`it.effect` compiles fine (nothing type-checks against which fake-vs-real environment a test runs
+under) but silently switches a real-timing test onto the virtual clock, which can make a test that
+should observe real async behavior pass for the wrong reason or become flaky. The correct mapping is
+`it.scoped` → `it.effect`, `it.scopedLive` → `it.live`.
 
-```typescript
-import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+```ts
+it.effect("returns metrics data with metadata", () => {
+  const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(mockData));
 
-describe("JWT Service", () => {
-  it.effect("generates a valid JWT token", () => {
-    const ConfigServiceTest = Layer.succeed(ConfigService, createTestConfigService("test-secret"));
-    const JwtServiceTest = JwtServiceLive.pipe(Layer.provide(ConfigServiceTest));
-
-    return Effect.gen(function* () {
-      const jwt = yield* JwtService;
-      const { token } = yield* jwt.sign("alice");
-      expect(token).toBeTruthy();
-    }).pipe(Effect.provide(JwtServiceTest));
-  });
+  return Effect.gen(function* () {
+    const result = yield* getMetricsHandler({ query: {} });
+    expect(result.data).toEqual(mockData);
+  }).pipe(Effect.provide(QuestDBTest));
 });
 ```
 
-- Return the effect (`return Effect.gen(...)...`) so `it.effect` runs it and surfaces failures.
-- Build the system under test's real `*Live` layer, then `Layer.provide` **test** dependencies into it.
-- Assertions (`expect`) run inside the generator.
+See `apps/server/src/core/api/handlers/metrics.test.ts`. For a test that needs the real environment
+(mocked `pg`/`Sender` connections resolving asynchronously), see
+`apps/server/src/infrastructure/database/questdb/connection.test.ts`'s use of `it.live`.
 
-## Style 2 — `Effect.runPromiseExit` for failure assertions
+## Mocking a service
 
-Reference: `apps/server/src/infrastructure/speedtest/service.test.ts`.
+`Layer.succeed(ServiceTag, implementation)` provides a fixed implementation without running any
+construction effect — the standard way to mock a `Context.Service` in a test:
 
-```typescript
-import { Effect, Exit, Logger, LogLevel } from "effect";
+```ts
+const mockQuestDB: QuestDBService = {
+  writeMetric: () => Effect.void,
+  queryMetrics: () => Effect.succeed([]),
+  health: () => Effect.succeed({ connected: true, uptime: 1000 }),
+  // ...
+};
 
-const exit = await Effect.runPromiseExit(
-  service.runTest().pipe(Effect.provide(Logger.minimumLogLevel(LogLevel.None)))
-);
-expect(Exit.isFailure(exit)).toBe(true);
+const QuestDBTest = Layer.succeed(QuestDB, mockQuestDB);
 ```
 
-Use `runPromiseExit` when the effect is expected to fail and you want to inspect the `Exit`/`Cause`
-with `Exit.isFailure` / `Exit.isSuccess` (never `exit._tag`). Use `runPromise` for success paths.
+Provide it with `.pipe(Effect.provide(QuestDBTest))` on the test effect, or fold several mocks together
+with `Layer.mergeAll(ConfigLayer, QuestDBTest, JwtLayer, /* ... */)` for a test that assembles a larger
+slice of the app (see `apps/server/src/index.test.ts`, `apps/server/src/core/api/handlers/auth.http.test.ts`).
 
-## Mock layers
+## `TestClock`
 
-Replace a dependency with a fake using `Layer.succeed(Tag, impl)`. The interface-only design of our
-services (see [`services-and-layers.md`](./services-and-layers.md)) makes this a one-liner.
-Reference: `apps/server/src/core/monitoring/network-monitor.test.ts`.
+Import from `effect/testing`, not the `effect` barrel — `TestClock` moved there in v4:
 
-```typescript
-import { vi } from "vitest";
+```ts
+import { TestClock } from "effect/testing";
 
-const MockPingExecutor = Layer.succeed(PingExecutor, {
-  executePing: vi.fn(),
-  executeAll: () => Effect.succeed(mockPingResults), // return canned effects
-  executeHosts: vi.fn(),
-});
-
-const MockQuestDB = Layer.succeed(QuestDB, {
-  writeMetric: vi.fn(() => Effect.void),
-  queryMetrics: vi.fn(),
-  // ...every method on the interface...
-});
-
-const MockSpeedTestService = Layer.succeed(SpeedTestService, {
-  runTest: vi.fn(() => Effect.fail(new SpeedTestExecutionError({ message: "Mock error" }))),
-});
+yield* TestClock.setTime(fixedNow);
+// or
+yield* TestClock.adjust(Duration.seconds(44));
 ```
 
-- Mock methods **return effects** (`Effect.succeed`, `Effect.fail`, `Effect.void`), matching the
-  interface signature.
-- Provide every method the interface declares (`vi.fn()` for ones the test doesn't exercise).
+Only meaningful under `it.effect` (which provides the fake clock `TestEnv` implicitly); using
+`TestClock` under `it.live` has nothing to hook into, since `it.live` doesn't install it.
 
-## Composing the test layer
+## Suppressing log noise
 
-Stack all mocks (plus a silenced logger) into one layer and provide it once.
-Reference: `network-monitor.test.ts`.
+```ts
+import { Layer, References } from "effect";
 
-```typescript
-const TestLayer = NetworkMonitorLive.pipe(
-  Layer.provide(MockPingExecutor),
-  Layer.provide(MockQuestDB),
-  Layer.provide(MockSpeedTestService),
-  Layer.provide(MockConfig),
-  Layer.provide(Logger.minimumLogLevel(LogLevel.None)) // keep test output clean
-);
-
-it("gets initial stats", async () => {
-  const program = Effect.gen(function* () {
-    const monitor = yield* NetworkMonitor;
-    const stats = yield* monitor.getStats();
-    expect(stats.uptime).toBe(0);
-  });
-  await Effect.runPromise(program.pipe(Effect.provide(TestLayer)));
-});
+Effect.provide(Layer.succeed(References.MinimumLogLevel, "None"));
 ```
 
-## Config in tests
+This is v4's replacement for v3's `Logger.minimumLogLevel("None")`, which no longer exists.
+`References.MinimumLogLevel` is a `Context.Reference` with a default; `Layer.succeed` overrides it for
+the scope of whatever it's provided into. See `apps/server/src/core/monitoring/network-monitor.test.ts`
+and `apps/server/src/infrastructure/speedtest/service.test.ts` for the pattern repeated across
+every test that forks a long-running background loop and doesn't want its log output in the test run.
 
-Never mutate `process.env`. Inject config with `ConfigProvider.fromMap` or a mock `ConfigService`
-layer — see [`configuration.md`](./configuration.md).
+## Polling a fiber without waiting
 
-```typescript
-const withConfigProvider = (entries: Record<string, string>) =>
-  Effect.withConfigProvider(ConfigProvider.fromMap(new Map(Object.entries(entries))));
+`Fiber.poll` is gone; the instance method `fiber.pollUnsafe()` replaces it — synchronous, returns
+`Exit<A, E> | undefined` (`undefined` means still running) instead of v3's
+`Effect<Option<Exit<A, E>>>`:
+
+```ts
+const fiber = yield* Effect.forkChild(service.runTest());
+yield* TestClock.adjust(Duration.seconds(44));
+const beforeTimeout = fiber.pollUnsafe();
+expect(beforeTimeout).toBeUndefined(); // still running one second before the timeout fires
 ```
 
-## Testing concurrency
-
-Fork background work, advance/sleep, then assert. Reference: `network-monitor.test.ts`.
-
-```typescript
-const fiber = yield* Effect.fork(monitor.start());
-yield* Effect.sleep("100 millis");
-const stats = yield* monitor.getStats();
-expect(stats.uptime).toBeGreaterThan(0);
-```
-
-For deterministic time-based tests, `@effect/vitest` exposes `TestClock` (advance virtual time
-instead of real `sleep`). Prefer it for schedules/retries when flakiness appears.
-
-## Conventions (from `AGENTS.md`)
-
-- New features need unit tests; bug fixes need a regression test.
-- No `.skip` / `.only`; no assertion-free happy-path tests.
-- Silence logs in tests with `Logger.minimumLogLevel(LogLevel.None)`.
-- Keep tests in sync with code; don't weaken tests to make them pass.
+See `apps/server/src/infrastructure/speedtest/service.test.ts`.
 
 ## Anti-patterns
 
-- ❌ `process.env.X = ...` in a test — inject via `ConfigProvider`/mock layer.
-- ❌ Asserting on `exit._tag` / `option._tag` — use `Exit.isFailure`, `Option.isSome`, etc.
-- ❌ Real network/DB calls in unit tests — provide a `Layer.succeed` mock instead.
-- ❌ Forgetting to `Effect.provide` the test layer, leaving unmet requirements (a type error).
+- ❌ `it.scoped`/`it.scopedLive` — neither exists; use `it.effect`/`it.live`.
+- ❌ Using `it.effect` for a test whose assertions depend on real elapsed time (mocked `setTimeout`
+  behavior, real retry intervals) — the fake clock doesn't advance on its own, so the test either
+  hangs or passes for a reason unrelated to what it claims to verify. Use `it.live`.
+- ❌ Reaching into a service's internals instead of substituting a `Layer.succeed` mock at the
+  boundary the code actually depends on.
+- ❌ Deleting or weakening an assertion to make a migrated test pass instead of finding the correct v4
+  replacement API. If a test genuinely can't be expressed in the new version, that's a finding to
+  surface, not a line to quietly remove.

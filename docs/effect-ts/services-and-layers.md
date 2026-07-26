@@ -1,150 +1,158 @@
-# Services & Layers
+# Services and Layers
 
-A **service** is a reusable capability (JWT signing, DB access, ping execution). In Effect a service
-is an **interface** identified by a **`Context.Tag`**, and its implementation is provided by a
-**`Layer`**. Requirements are tracked in the third type parameter of `Effect<A, E, R>`.
+A **service** is an interface plus a runtime key that lets Effect resolve an implementation from
+context. A **layer** builds a service (or several), possibly with its own dependencies, possibly with
+side effects at construction time. This is how the codebase does dependency injection: every external
+dependency (config, a database connection, a JWT signer) is a service, provided by a layer, requested
+with `yield*`.
 
-## Anatomy of a service (the repo standard)
+## Defining a service: `Context.Service`
 
-Every service in this repo follows the same four-part shape. Reference: `apps/server/src/infrastructure/auth/jwt.ts`.
+v4 has one constructor for services: `Context.Service`. (v3's `Context.Tag`, `Context.GenericTag`,
+`Effect.Tag`, and `Effect.Service` are all gone — this replaced every one of them.)
 
-```typescript
-import { Context, Data, Effect, Layer } from "effect";
+```ts
+import { Context, Effect } from "effect";
 
-// 1. Errors (see error-handling.md)
-export class JwtInvalidError extends Data.TaggedError("JwtInvalidError")<{
-  readonly message: string;
-}> {}
-
-// 2. Interface — describes operations only, never its own dependencies
-export interface JwtServiceInterface {
-  readonly sign: (username: string) => Effect.Effect<TokenResponse, never>;
-  readonly verify: (token: string) => Effect.Effect<JwtPayload, JwtError>;
+export interface AppConfig {
+  readonly server: { readonly port: number; readonly host: string };
+  // ...
 }
 
-// 3. Tag — the unique identifier + the shape the runtime hands back on `yield*`
-export class JwtService extends Context.Tag("JwtService")<
-  JwtService,
-  JwtServiceInterface
->() {}
-
-// 4. Live layer — builds the implementation, pulling deps from context
-export const JwtServiceLive = Layer.effect(
-  JwtService,
-  Effect.gen(function* () {
-    const config = yield* ConfigService; // dependency resolved here, not in the interface
-    const sign = (username: string) => Effect.sync(() => /* ... */);
-    const verify = (token: string) => Effect.try({ /* ... */ });
-    return { sign, verify, decode };
-  })
-);
+export class ConfigService extends Context.Service<ConfigService, AppConfig>()(
+  "ConfigService"
+) {}
 ```
 
-Key rules:
+See `apps/server/src/infrastructure/config/config.ts`, `apps/server/src/infrastructure/database/questdb/service.ts`,
+`apps/server/src/core/monitoring/network-monitor.ts`, `packages/shared/src/api/middlewares/authorization.ts` for
+the same shape repeated across the app: define the interface, extend `Context.Service<Self, Shape>()("Id")`.
 
-- **The interface lists operations, not dependencies.** `JwtServiceInterface` never mentions
-  `ConfigService`. The dependency shows up only inside `JwtServiceLive`, which keeps the interface
-  clean and makes the service trivial to mock (see [`testing.md`](./testing.md)).
-- **Use `Context.Tag("Name")<Self, Shape>()`.** The string id must be unique across the app.
-- **Name the layer `<Service>Live`.** This is the convention throughout `apps/server`.
+Read the class name back as a **type** to get the interface it holds — used as a function parameter
+type this way:
 
-## Choosing a layer constructor
+```ts
+export const cleanupDatabase = (db: QuestDB["Service"]) => Effect.gen(function* () { /* ... */ });
+```
 
-| Constructor | Use when | Example in repo |
-| --- | --- | --- |
-| `Layer.succeed(Tag, impl)` | The implementation is a plain value with no effects/deps | Mock layers in tests (`Layer.succeed(PingExecutor, {...})`) |
-| `Layer.effect(Tag, make)` | Building the service needs effects/other services | `JwtServiceLive`, `ConfigServiceLive`, `PingServiceLive` |
-| `Layer.scoped(Tag, make)` | The service acquires resources that must be released | `QuestDBLive` (holds a DB connection) |
-| `Layer.unwrapEffect(effect)` | You must run an effect to *produce a layer* | `NodeHttpServerLayer` (reads config, then builds the server layer) |
+(`Context.Service`'s class instances aren't the shape themselves; the shape is exposed through the
+class's `["Service"]` property. This replaces v3's `Tag["Type"]`.)
 
-### `Layer.scoped` for resources
+`yield* ConfigService` inside an `Effect.gen` resolves the service from context — the class is itself
+Yieldable, so you never call a separate accessor:
 
-When a service owns a resource (connection, file handle, timer), build it with `Layer.scoped` so the
-resource is released when the layer's scope closes. Reference:
-`apps/server/src/infrastructure/database/questdb/service.ts`.
+```ts
+const config = yield* ConfigService;
+```
 
-```typescript
-export const QuestDBLive = Layer.scoped(QuestDB, make).pipe(
+### The two-argument form (bundling a constructor)
+
+`Context.Service<Self>()(id, { make })` lets the class carry its own constructor effect, for services
+whose only implementation is the "normal" one (`apps/web/src/api/effect-client.ts`'s `WanMonitorClient`
+does this). This is the v4 replacement for v3's `Effect.Service<Self>()(id, { effect, dependencies })`
+— the shape is similar but the `dependencies` option is gone entirely, and `make` does **not**
+auto-generate a `.Default` layer the way v3's `effect` option did. Build the layer yourself and call it
+`layer` (v4's naming convention, not v3's `Default`/`Live`):
+
+```ts
+export class WanMonitorClient extends Context.Service<WanMonitorClient>()(
+  "WanMonitorClient",
+  { make: Effect.gen(function* () { /* ... */ }) }
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(FetchHttpClient.layer)
+  );
+}
+```
+
+Most services in this codebase use the plain zero-option form and build their layer as a separate
+top-level export instead (see below) — reach for the bundled form only when there's exactly one
+implementation and no reason to keep the constructor and the layer visually apart.
+
+### References: services with a default
+
+`Context.Reference` is for a value that has a sensible default but can be overridden — not something
+you'd model as a required service. The codebase's own use of this is `References.MinimumLogLevel`
+(built into `effect`, not something this repo defines its own reference for yet):
+
+```ts
+Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"));
+```
+
+Define your own the same way `LoggerRef` is defined in the source docs — `Context.Reference("Key", {
+defaultValue: () => ... })` — when you actually need an overridable default, not a required
+dependency. Most services in this codebase are required (`Context.Service`), because a monitoring
+server that silently falls back to "no config" or "no database" on a missing dependency is worse than
+a startup-time error.
+
+## Building a layer: `Layer.effect`
+
+`Layer.effect(ServiceKey, effect)` constructs a layer from an `Effect` that produces the service. This
+is the only constructor you need for effectful service construction — v3 split "just run an effect"
+(`Layer.effect`) from "run an effect that needs scoped resource cleanup" (`Layer.scoped`); v4 folded
+them into one. The doc comment is explicit about this: "Use when you need to construct a
+`Layer`-provided service with an Effect, dependencies, **or scoped resource acquisition**... The Effect
+is executed in the scope of the layer, allowing for proper resource management." So a constructor that
+forks a background loop with `Effect.forkScoped` and expects it torn down when the layer's scope closes
+works exactly the same under `Layer.effect` as it did under v3's `Layer.scoped`:
+
+```ts
+// apps/server/src/infrastructure/database/questdb/connection.ts
+const make = Effect.gen(function* () {
+  // ...
+  yield* Effect.forkScoped(connectionLoop.pipe(/* retry on crash */));
+  return { /* ...QuestDBConnectionService */ } satisfies QuestDBConnectionService;
+});
+
+export const QuestDBConnectionLive = Layer.effect(QuestDBConnection, make);
+```
+
+```ts
+// apps/server/src/infrastructure/database/questdb/service.ts
+export const QuestDBLive = Layer.effect(QuestDB, make).pipe(
   Layer.provide(QuestDBConnectionLive)
 );
 ```
 
-### `Layer.unwrapEffect` to compute a layer
+## Composing the dependency graph: `Layer.provide` / `Layer.mergeAll`
 
-Reference: `apps/server/src/core/api/server.ts`.
+`Layer.provide(dependency)` wires a dependency's output into a layer's remaining requirements.
+`Layer.mergeAll(...)` combines several layers into one, requiring the union of what each one still
+needs. `apps/server/src/index.ts` builds the whole app this way, leaf-first:
 
-```typescript
-export const NodeHttpServerLayer = Layer.unwrapEffect(
-  Effect.gen(function* () {
-    const config = yield* ConfigService;
-    yield* Effect.log(`API server on ${config.server.host}:${config.server.port}`);
-    return NodeHttpServer.layer(createServer, { port: config.server.port });
-  })
-);
-```
-
-## Composing the dependency graph
-
-Layers compose with `Layer.provide`, `Layer.merge`, and `Layer.mergeAll`. The rule of thumb:
-**each layer explicitly provides its own dependencies**, then the top-level layers are merged.
-
-- `Layer.provide(deps)` — feed dependencies *into* a layer, satisfying its `RIn`.
-- `Layer.merge(a, b)` — combine two layers into one that provides both services.
-- `Layer.mergeAll(a, b, c, ...)` — merge many at once.
-
-Reference: `apps/server/src/index.ts` builds the graph level by level:
-
-```typescript
-// Base layers (no deps)
+```ts
 const ConfigLayer = ConfigServiceLive;
-
-// Level 1: depend only on Config
 const QuestDBLayer = QuestDBLive.pipe(Layer.provide(ConfigLayer));
 const JwtLayer = JwtServiceLive.pipe(Layer.provide(ConfigLayer));
-
-// Level 2: multiple deps
 const AuthServiceLayer = AuthServiceLive.pipe(
   Layer.provide(Layer.merge(ConfigLayer, JwtLayer))
 );
-const NetworkMonitorLayer = NetworkMonitorLive.pipe(
-  Layer.provide(Layer.mergeAll(ConfigLayer, QuestDBLayer, PingExecutorLayer, SpeedTestLayer))
+// ...
+const ApiServerLayer = ApiServerLive.pipe(
+  Layer.provide(NodeHttpServerLayer),
+  Layer.provide(
+    Layer.mergeAll(ConfigLayer, QuestDBLayer, PingExecutorLayer, JwtLayer, AuthServiceLayer, SpeedTestLayer)
+  )
 );
-
-// Top level: only include layers used directly by the program.
-// Their transitive deps are already satisfied inside them.
-const MainLive = Layer.mergeAll(ConfigLayer, NetworkMonitorLayer, ApiServerLayer);
 ```
 
-Notes:
+Each named `*Layer` constant is fully resolved (requires nothing further) before it's fed into the
+next. Read the graph top-to-bottom in `index.ts` to see the whole app's dependencies at a glance —
+that file is the one place they're all assembled; every other file only knows its own direct
+dependencies.
 
-- **Redundant `Layer.provide` is fine and often necessary for type safety.** If two sibling layers
-  both need `Config`, provide it to each. Effect memoises layer construction, so a shared layer is
-  still built once at runtime.
-- **Only merge top-level layers into `MainLive`.** Anything already provided inside a merged layer
-  should *not* be re-listed, or you leak implementation detail into the top level.
-
-## Accessing a service
-
-Inside `Effect.gen`, `yield*` the tag to get the implementation:
-
-```typescript
-const program = Effect.gen(function* () {
-  const monitor = yield* NetworkMonitor;
-  yield* monitor.start();
-});
-```
-
-## Providing layers to a program
-
-- **Runtime entry point:** `Effect.provide(MainLive)` then `Effect.runFork` — see `apps/server/src/index.ts`.
-- **HTTP API layer:** built via `HttpApiBuilder.api(...)` + `Layer.provide([...groups])` — see
-  `apps/server/src/core/api/service.ts` and [`http-api.md`](./http-api.md).
-- **Tests:** `Effect.provide(TestLayer)` with mock layers — see [`testing.md`](./testing.md).
+`Layer.provide` also takes an array — `Layer.provide([layerA, layerB, layerC])` — when several sibling
+layers need to be provided at once and there's no reason to `mergeAll` them first (used for the six
+route-group layers in `apps/server/src/core/api/service.ts`).
 
 ## Anti-patterns
 
-- ❌ Putting dependencies in the service interface (e.g. `query: (cfg: Config) => ...`). Resolve deps
-  in the `*Live` layer instead.
-- ❌ Calling `Effect.runPromise`/`runSync` deep inside service code. Return an `Effect` and run it
-  once at the edge (`index.ts`, a handler, or a test).
-- ❌ Re-listing already-provided sub-layers at the top level.
+- ❌ A hand-rolled singleton (a module-level `let` plus a getter) instead of a `Context.Service`. You
+  lose testability (no way to substitute a mock layer) and the type-level tracking of what an
+  `Effect` requires.
+- ❌ Reaching for `Context.Reference` for something that's actually a required dependency. A silent
+  default hides a real misconfiguration; use `Context.Service` and let a missing layer fail loudly at
+  layer-build time.
+- ❌ Constructing a layer's dependencies inline at every call site instead of composing named
+  `*Layer` constants once, the way `index.ts` does. Duplication here means the graph has to be
+  re-derived by reading every call site instead of read top-to-bottom in one place.

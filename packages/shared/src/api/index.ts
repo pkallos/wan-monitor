@@ -1,10 +1,10 @@
-import { HttpApi } from "@effect/platform";
 import { AuthApiGroup } from "@shared/api/routes/auth";
 import { ConnectivityStatusApiGroup } from "@shared/api/routes/connectivity-status";
 import { HealthApiGroup } from "@shared/api/routes/health";
 import { MetricsApiGroup } from "@shared/api/routes/metrics";
 import { PingApiGroup } from "@shared/api/routes/ping";
 import { SpeedTestApiGroup } from "@shared/api/routes/speedtest";
+import { HttpApi } from "effect/unstable/httpapi";
 
 export const WanMonitorApi = HttpApi.make("WanMonitorAPI")
   .add(AuthApiGroup.prefix("/auth"))

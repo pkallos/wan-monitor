@@ -1,20 +1,19 @@
+import { WanMonitorApi } from "@shared/api";
+import { Context, Effect, Layer } from "effect";
 import {
   FetchHttpClient,
-  HttpApiClient,
   HttpClient,
   HttpClientRequest,
-} from "@effect/platform";
-import { WanMonitorApi } from "@shared/api";
-import { Effect } from "effect";
+} from "effect/unstable/http";
+import { HttpApiClient } from "effect/unstable/httpapi";
 import { TOKEN_KEY } from "@/constants/auth";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-export class WanMonitorClient extends Effect.Service<WanMonitorClient>()(
+export class WanMonitorClient extends Context.Service<WanMonitorClient>()(
   "WanMonitorClient",
   {
-    dependencies: [FetchHttpClient.layer],
-    effect: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
 
       const clientWithAuth = httpClient.pipe(
@@ -39,6 +38,10 @@ export class WanMonitorClient extends Effect.Service<WanMonitorClient>()(
       return client;
     }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(FetchHttpClient.layer)
+  );
+}
 
 export { WanMonitorApi };

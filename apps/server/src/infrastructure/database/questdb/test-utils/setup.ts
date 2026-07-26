@@ -69,8 +69,8 @@ export const isQuestDBAvailable = (): boolean => {
  * than leaking into the whole worker process.
  */
 const testConfigProvider = (): ConfigProvider.ConfigProvider =>
-  ConfigProvider.fromMap(new Map([["DB_TABLE", TEST_TABLE]])).pipe(
-    ConfigProvider.orElse(() => ConfigProvider.fromEnv())
+  ConfigProvider.fromUnknown({ DB_TABLE: TEST_TABLE }).pipe(
+    ConfigProvider.orElse(ConfigProvider.fromEnv())
   );
 
 /**
@@ -81,10 +81,7 @@ const testConfigProvider = (): ConfigProvider.ConfigProvider =>
 export const createTestLayer = () =>
   Layer.provide(
     QuestDBLive,
-    Layer.provide(
-      ConfigServiceLive,
-      Layer.setConfigProvider(testConfigProvider())
-    )
+    Layer.provide(ConfigServiceLive, ConfigProvider.layer(testConfigProvider()))
   );
 
 /**
@@ -98,7 +95,7 @@ const POLL_INTERVAL = "100 millis";
 const POLL_TIMEOUT = "10 seconds";
 
 const readinessSchedule = Schedule.spaced(POLL_INTERVAL).pipe(
-  Schedule.upTo(POLL_TIMEOUT)
+  Schedule.upTo({ duration: POLL_TIMEOUT })
 );
 
 /**
@@ -198,7 +195,7 @@ const initializeDatabase = () =>
  * Truncates the network_metrics table to remove all data.
  * This is faster and more reliable than DROP/CREATE.
  */
-export const cleanupDatabase = (_db: QuestDB["Type"]) =>
+export const cleanupDatabase = (_db: QuestDB["Service"]) =>
   Effect.gen(function* () {
     // First ensure table exists
     yield* initializeDatabase();
@@ -255,7 +252,7 @@ export const setupIntegrationTest = () =>
  * Teardown function to run after integration tests.
  * Cleans up test data.
  */
-export const teardownIntegrationTest = (db: QuestDB["Type"]) =>
+export const teardownIntegrationTest = (db: QuestDB["Service"]) =>
   Effect.gen(function* () {
     yield* cleanupDatabase(db);
   });

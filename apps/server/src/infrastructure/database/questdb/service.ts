@@ -59,10 +59,9 @@ export interface QuestDBService {
   readonly close: () => Effect.Effect<void>;
 }
 
-export class QuestDB extends Context.Tag("QuestDB")<
-  QuestDB,
-  QuestDBService
->() {}
+export class QuestDB extends Context.Service<QuestDB, QuestDBService>()(
+  "QuestDB"
+) {}
 
 const make = Effect.gen(function* () {
   const connection = yield* QuestDBConnection;
@@ -93,7 +92,7 @@ const make = Effect.gen(function* () {
       Effect.catchTag("DbUnavailable", (e) =>
         connection
           .markDisconnected(e.message)
-          .pipe(Effect.zipRight(Effect.fail(e)))
+          .pipe(Effect.andThen(Effect.fail(e)))
       )
     );
 
@@ -127,7 +126,7 @@ const make = Effect.gen(function* () {
       Effect.catchTag("DbUnavailable", (e) =>
         connection
           .markDisconnected(e.message)
-          .pipe(Effect.zipRight(Effect.fail(e)))
+          .pipe(Effect.andThen(Effect.fail(e)))
       )
     );
 
@@ -161,7 +160,7 @@ const make = Effect.gen(function* () {
       Effect.catchTag("DbUnavailable", (e) =>
         connection
           .markDisconnected(e.message)
-          .pipe(Effect.zipRight(Effect.fail(e)))
+          .pipe(Effect.andThen(Effect.fail(e)))
       )
     );
 
@@ -198,7 +197,7 @@ const make = Effect.gen(function* () {
       Effect.catchTag("DbUnavailable", (e) =>
         connection
           .markDisconnected(e.message)
-          .pipe(Effect.zipRight(Effect.fail(e)))
+          .pipe(Effect.andThen(Effect.fail(e)))
       )
     );
 
@@ -258,7 +257,7 @@ const make = Effect.gen(function* () {
       Effect.catchTag("DbUnavailable", (e) =>
         connection
           .markDisconnected(e.message)
-          .pipe(Effect.zipRight(Effect.fail(e)))
+          .pipe(Effect.andThen(Effect.fail(e)))
       )
     );
 
@@ -275,6 +274,6 @@ const make = Effect.gen(function* () {
   } satisfies QuestDBService;
 });
 
-export const QuestDBLive = Layer.scoped(QuestDB, make).pipe(
+export const QuestDBLive = Layer.effect(QuestDB, make).pipe(
   Layer.provide(QuestDBConnectionLive)
 );

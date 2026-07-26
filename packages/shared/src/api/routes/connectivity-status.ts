@@ -1,13 +1,17 @@
-import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
 import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
+import {
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiSchema,
+} from "effect/unstable/httpapi";
 
-export const ConnectivityStatusSchema = Schema.Literal(
+export const ConnectivityStatusSchema = Schema.Literals([
   "up",
   "down",
-  "degraded"
-);
+  "degraded",
+]);
 export type ConnectivityStatus = Schema.Schema.Type<
   typeof ConnectivityStatusSchema
 >;
@@ -36,7 +40,7 @@ export const GetConnectivityStatusQuery = Schema.Struct({
   startTime: Schema.optional(Schema.String),
   endTime: Schema.optional(Schema.String),
   granularity: Schema.optional(
-    Schema.Literal("1m", "5m", "15m", "1h", "6h", "1d")
+    Schema.Literals(["1m", "5m", "15m", "1h", "6h", "1d"])
   ),
 });
 
@@ -53,10 +57,13 @@ export const ConnectivityStatusApiGroup = HttpApiGroup.make(
 )
   .prefix("/connectivity-status")
   .add(
-    HttpApiEndpoint.get("getConnectivityStatus", "/")
-      .setUrlParams(GetConnectivityStatusQuery)
-      .addSuccess(ConnectivityStatusResponse)
-      .addError(DbUnavailableErrorSchema, { status: 503 })
-      .addError(Schema.String)
+    HttpApiEndpoint.get("getConnectivityStatus", "/", {
+      query: GetConnectivityStatusQuery,
+      success: ConnectivityStatusResponse,
+      error: [
+        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
+        Schema.String,
+      ],
+    })
   )
   .middleware(Authorization);

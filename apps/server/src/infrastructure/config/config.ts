@@ -1,4 +1,4 @@
-import { Config, ConfigError, Context, Effect, Either, Layer } from "effect";
+import { Config, Context, Effect, Layer, Schema } from "effect";
 
 // Application configuration
 export interface AppConfig {
@@ -36,10 +36,9 @@ export interface AppConfig {
 }
 
 // Config service tag
-export class ConfigService extends Context.Tag("ConfigService")<
-  ConfigService,
-  AppConfig
->() {}
+export class ConfigService extends Context.Service<ConfigService, AppConfig>()(
+  "ConfigService"
+) {}
 
 // Load configuration from environment
 const makeConfig = Effect.gen(function* () {
@@ -56,20 +55,10 @@ const makeConfig = Effect.gen(function* () {
   const dbPgPort = yield* Config.number("DB_PG_PORT").pipe(
     Config.withDefault(8812)
   );
-  const dbProtocol = yield* Config.string("DB_PROTOCOL").pipe(
-    Config.withDefault("http"),
-    Config.mapOrFail(
-      (value): Either.Either<"http" | "tcp", ConfigError.ConfigError> =>
-        value === "http" || value === "tcp"
-          ? Either.right(value)
-          : Either.left(
-              ConfigError.InvalidData(
-                [],
-                `DB_PROTOCOL must be 'http' or 'tcp', got '${value}'`
-              )
-            )
-    )
-  );
+  const dbProtocol = yield* Config.schema(
+    Schema.Literals(["http", "tcp"]),
+    "DB_PROTOCOL"
+  ).pipe(Config.withDefault("http" as const));
   const dbTable = yield* Config.string("DB_TABLE").pipe(
     Config.withDefault("network_metrics")
   );

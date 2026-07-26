@@ -6,8 +6,8 @@ import {
   Exit,
   Fiber,
   Layer,
-  Logger,
-  LogLevel,
+  Option,
+  References,
 } from "effect";
 import {
   NetworkMonitor,
@@ -155,7 +155,7 @@ describe("Server Lifecycle Integration Tests", () => {
       SpeedTestServiceTest,
       JwtServiceTest,
       AuthServiceTest
-    ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
+    ).pipe(Layer.provide(Layer.succeed(References.MinimumLogLevel, "None")));
   };
 
   describe("Server Startup", () => {
@@ -172,7 +172,7 @@ describe("Server Lifecycle Integration Tests", () => {
           expect(config.server.port).toBe(0);
 
           // Start monitoring (mimics index.ts behavior)
-          const fiber = yield* Effect.fork(monitor.start());
+          const fiber = yield* Effect.forkChild(monitor.start());
 
           // Wait briefly for async effects
           yield* Effect.sleep("100 millis");
@@ -211,7 +211,7 @@ describe("Server Lifecycle Integration Tests", () => {
         expect(config.ping.hosts).toEqual(["8.8.8.8"]);
 
         // Start and verify it works
-        const fiber = yield* Effect.fork(monitor.start());
+        const fiber = yield* Effect.forkChild(monitor.start());
         yield* Effect.sleep("100 millis");
 
         const stats = yield* monitor.getStats();
@@ -256,7 +256,7 @@ describe("Server Lifecycle Integration Tests", () => {
         const monitor = yield* NetworkMonitor;
 
         // Start monitoring
-        const fiber = yield* Effect.fork(monitor.start());
+        const fiber = yield* Effect.forkChild(monitor.start());
 
         // Wait for monitoring to run
         yield* Effect.sleep("150 millis");
@@ -276,7 +276,7 @@ describe("Server Lifecycle Integration Tests", () => {
       Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
-        const fiber = yield* Effect.fork(monitor.start());
+        const fiber = yield* Effect.forkChild(monitor.start());
         yield* Effect.sleep("50 millis");
 
         // Gracefully interrupt
@@ -291,7 +291,7 @@ describe("Server Lifecycle Integration Tests", () => {
       Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
-        const fiber = yield* Effect.fork(monitor.start());
+        const fiber = yield* Effect.forkChild(monitor.start());
 
         // Check stats multiple times
         yield* Effect.sleep("50 millis");
@@ -352,7 +352,9 @@ describe("Server Lifecycle Integration Tests", () => {
           SpeedTestServiceTest,
           JwtServiceTest,
           AuthServiceTest
-        ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
+        ).pipe(
+          Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
+        );
 
         return Effect.gen(function* () {
           const questdb = yield* QuestDB;
@@ -363,11 +365,11 @@ describe("Server Lifecycle Integration Tests", () => {
           // Should fail with database error
           expect(Exit.isFailure(healthExit)).toBe(true);
           if (Exit.isFailure(healthExit)) {
-            const cause = healthExit.cause;
-            expect(Cause.isFailType(cause)).toBe(true);
-            if (Cause.isFailType(cause)) {
-              expect(cause.error).toBeInstanceOf(DbUnavailable);
-              expect(cause.error._tag).toBe("DbUnavailable");
+            const error = Cause.findErrorOption(healthExit.cause);
+            expect(Option.isSome(error)).toBe(true);
+            if (Option.isSome(error)) {
+              expect(error.value).toBeInstanceOf(DbUnavailable);
+              expect(error.value._tag).toBe("DbUnavailable");
             }
           }
         }).pipe(Effect.provide(TestLayer));
@@ -397,11 +399,11 @@ describe("Server Lifecycle Integration Tests", () => {
         SpeedTestServiceTest,
         JwtServiceTest,
         AuthServiceTest
-      ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
+      ).pipe(Layer.provide(Layer.succeed(References.MinimumLogLevel, "None")));
 
       return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
-        const fiber = yield* Effect.fork(monitor.start());
+        const fiber = yield* Effect.forkChild(monitor.start());
 
         yield* Effect.sleep("100 millis");
 
@@ -450,13 +452,13 @@ describe("Server Lifecycle Integration Tests", () => {
         SpeedTestServiceTest,
         JwtServiceTest,
         AuthServiceTest
-      ).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.None)));
+      ).pipe(Layer.provide(Layer.succeed(References.MinimumLogLevel, "None")));
 
       return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
         const questdb = yield* QuestDB;
 
-        const fiber = yield* Effect.fork(monitor.start());
+        const fiber = yield* Effect.forkChild(monitor.start());
         yield* Effect.sleep("50 millis");
 
         // Verify database is accessible
@@ -475,7 +477,7 @@ describe("Server Lifecycle Integration Tests", () => {
       Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
-        const fiber = yield* Effect.fork(monitor.start());
+        const fiber = yield* Effect.forkChild(monitor.start());
         yield* Effect.sleep("50 millis");
 
         // Multiple interrupt attempts should be safe (idempotent)
@@ -484,8 +486,8 @@ describe("Server Lifecycle Integration Tests", () => {
 
         const [exit1, exit2] = yield* Effect.all([interrupt1, interrupt2]);
 
-        expect(Exit.isSuccess(exit1) || Exit.isInterrupted(exit1)).toBe(true);
-        expect(Exit.isSuccess(exit2) || Exit.isInterrupted(exit2)).toBe(true);
+        expect(Exit.isSuccess(exit1) || Exit.hasInterrupts(exit1)).toBe(true);
+        expect(Exit.isSuccess(exit2) || Exit.hasInterrupts(exit2)).toBe(true);
       }).pipe(Effect.provide(createTestLayer()))
     );
   });

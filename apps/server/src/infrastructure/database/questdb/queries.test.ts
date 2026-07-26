@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Option } from "effect";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
 import type {
   QueryMetricsParams,
@@ -135,11 +135,11 @@ describe("buildQueryMetrics", () => {
 
       expect(Exit.isFailure(result)).toBe(true);
       if (Exit.isFailure(result)) {
-        const cause = result.cause;
-        expect(Cause.isFailType(cause)).toBe(true);
-        if (Cause.isFailType(cause)) {
-          expect(cause.error).toBeInstanceOf(DatabaseQueryError);
-          expect(cause.error.message).toContain("Invalid granularity: invalid");
+        const error = Cause.findErrorOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toBeInstanceOf(DatabaseQueryError);
+          expect(error.value.message).toContain("Invalid granularity: invalid");
         }
       }
     });
@@ -341,11 +341,11 @@ describe("buildQueryConnectivityStatus", () => {
 
       expect(Exit.isFailure(result)).toBe(true);
       if (Exit.isFailure(result)) {
-        const cause = result.cause;
-        expect(Cause.isFailType(cause)).toBe(true);
-        if (Cause.isFailType(cause)) {
-          expect(cause.error).toBeInstanceOf(DatabaseQueryError);
-          expect(cause.error.message).toContain("Invalid granularity: invalid");
+        const error = Cause.findErrorOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toBeInstanceOf(DatabaseQueryError);
+          expect(error.value.message).toContain("Invalid granularity: invalid");
         }
       }
     });

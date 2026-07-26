@@ -99,7 +99,7 @@ export const bootstrapSchema = (
         // between introspection and this ALTER. That is benign and idempotent,
         // so swallow the duplicate-column error and keep going; any other
         // failure is real and propagates to tear down the connection.
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           isDuplicateColumnError(error.message)
             ? Effect.succeed("raced" as const)
             : Effect.fail(error)
