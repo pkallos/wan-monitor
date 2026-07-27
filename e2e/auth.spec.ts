@@ -87,8 +87,8 @@ async function login(
   username: string,
   password: string
 ): Promise<void> {
-  await page.getByPlaceholder("Enter username").fill(username);
-  await page.getByPlaceholder("Enter password").fill(password);
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign In" }).click();
 }
 
@@ -110,7 +110,7 @@ test.describe("Authentication flow (auth enabled)", () => {
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
 
     // The dashboard must not be reachable without authenticating.
-    await expect(page.getByRole("button", { name: "Logout" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Logout/ })).toHaveCount(0);
   });
 
   test("shows an error message for invalid credentials", async ({ page }) => {
@@ -123,7 +123,7 @@ test.describe("Authentication flow (auth enabled)", () => {
 
     // We stay on the login page and never reach the dashboard.
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Logout" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Logout/ })).toHaveCount(0);
   });
 
   test("logs in with valid credentials and shows the dashboard", async ({
@@ -136,25 +136,26 @@ test.describe("Authentication flow (auth enabled)", () => {
 
     // Dashboard renders and the login form is gone.
     await expect(
-      page.getByRole("heading", { name: /wan monitor/i })
+      page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
     await expect(
       page.getByRole("button", { name: "Refresh now" })
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign In" })).toHaveCount(0);
 
-    // The logout control surfaces the authenticated username in its label.
-    const logoutButton = page.getByRole("button", { name: "Logout" });
-    await expect(logoutButton).toBeVisible();
-    await logoutButton.hover();
-    await expect(page.getByText(`Logout (${VALID_USERNAME})`)).toBeVisible();
+    // The logout control's accessible name carries the authenticated username.
+    await expect(
+      page.getByRole("button", { name: `Logout (${VALID_USERNAME})` })
+    ).toBeVisible();
   });
 
   test("logs out and returns to the login page", async ({ page }) => {
     await page.goto("/");
     await login(page, VALID_USERNAME, VALID_PASSWORD);
 
-    const logoutButton = page.getByRole("button", { name: "Logout" });
+    const logoutButton = page.getByRole("button", {
+      name: `Logout (${VALID_USERNAME})`,
+    });
     await expect(logoutButton).toBeVisible({ timeout: 10_000 });
 
     await logoutButton.click();
@@ -163,23 +164,23 @@ test.describe("Authentication flow (auth enabled)", () => {
       page.getByText("Sign in to access the dashboard")
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Logout" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Logout/ })).toHaveCount(0);
   });
 
   test("restores the authenticated session on reload", async ({ page }) => {
     await page.goto("/");
     await login(page, VALID_USERNAME, VALID_PASSWORD);
-    await expect(page.getByRole("button", { name: "Logout" })).toBeVisible({
-      timeout: 10_000,
-    });
+    await expect(
+      page.getByRole("button", { name: `Logout (${VALID_USERNAME})` })
+    ).toBeVisible({ timeout: 10_000 });
 
     // On reload the app re-checks status, finds the stored token, and verifies
     // it via /api/auth/me before restoring the dashboard.
     await page.reload();
 
-    await expect(page.getByRole("button", { name: "Logout" })).toBeVisible({
-      timeout: 10_000,
-    });
+    await expect(
+      page.getByRole("button", { name: `Logout (${VALID_USERNAME})` })
+    ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole("button", { name: "Sign In" })).toHaveCount(0);
   });
 });

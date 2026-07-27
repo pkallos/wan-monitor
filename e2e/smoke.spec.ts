@@ -11,5 +11,8 @@ test.describe("E2E Infrastructure Smoke Tests", () => {
   test("can load dashboard page", async ({ page }) => {
     await page.goto("/");
     await expect(page).toHaveTitle(/WAN Monitor/i, { timeout: 15000 });
+    await expect(
+      page.getByRole("heading", { name: "WAN Monitor" })
+    ).toBeVisible({ timeout: 10000 });
   });
 });

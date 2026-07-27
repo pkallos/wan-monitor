@@ -5,9 +5,8 @@ import { expect, test } from "@playwright/test";
  *
  * These tests intercept the metrics network requests and assert on their query
  * params plus the resulting UI, rather than sniffing rendered pixels, so they
- * stay deterministic. Auto-refresh is driven by react-query's 30s
- * `refetchInterval`; we use Playwright's clock API to advance time
- * instantly instead of waiting on the wall clock.
+ * stay deterministic. Auto-refresh runs on a 30s tick; we use Playwright's
+ * clock API to advance time instantly instead of waiting on the wall clock.
  */
 
 const METRICS_PATH = "/api/metrics";
@@ -49,10 +48,10 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
 
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: /wan monitor/i })
+      page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
 
-    // Fresh browser context => persisted range defaults to "1h". Wait for the
+    // Fresh browser context => the default range is "1h". Wait for the
     // initial metrics request driven by that default range.
     await expect
       .poll(() => metricsRequests.length, { timeout: 10_000 })
@@ -87,10 +86,10 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
     expect(widened.granularity).toBe("5m");
     expect(windowMs(widened)).toBeGreaterThan(12 * 60 * 60 * 1000);
 
-    // Charts re-render with the new data (Recharts renders SVG surfaces).
-    await expect(page.locator("svg.recharts-surface").first()).toBeVisible({
-      timeout: 10_000,
-    });
+    // Charts re-render with the new data.
+    await expect(
+      page.locator('[aria-label="Latency chart"] canvas')
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test("manual refresh fires a new metrics request", async ({ page }) => {
@@ -103,15 +102,15 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
 
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: /wan monitor/i })
+      page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
 
     await expect
       .poll(() => metricsRequests.length, { timeout: 10_000 })
       .toBeGreaterThan(0);
 
-    // Let the initial fetch fully resolve first; otherwise react-query dedupes
-    // the manual refetch into the still-in-flight request and no new call fires.
+    // Let the initial fetch fully resolve first; otherwise the manual refetch
+    // races the still-in-flight request.
     await page.waitForLoadState("networkidle");
     const countBeforeRefresh = metricsRequests.length;
 
@@ -126,8 +125,8 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
   test("pausing stops background auto-refresh and resuming restarts it", async ({
     page,
   }) => {
-    // Fake timers let us advance react-query's 30s refetchInterval instantly
-    // and deterministically, instead of waiting on the real clock.
+    // Fake timers let us advance the 30s auto-refresh tick instantly and
+    // deterministically, instead of waiting on the real clock.
     await page.clock.install();
 
     const metricsRequests: string[] = [];
@@ -139,7 +138,7 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
 
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: /wan monitor/i })
+      page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
 
     await expect
@@ -154,10 +153,8 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
       .toBeGreaterThan(countBeforeAuto);
 
     // Pause auto-refresh; the interval timer must be cleared.
-    await page.getByRole("button", { name: "Pause auto-refresh" }).click();
-    await expect(
-      page.getByRole("button", { name: "Resume auto-refresh" })
-    ).toBeVisible();
+    await page.getByRole("button", { name: "Pause" }).click();
+    await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
 
     // Let any in-flight refetch settle, then snapshot the count.
     await page.waitForTimeout(500);
@@ -169,10 +166,8 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
     expect(metricsRequests.length).toBe(countWhilePaused);
 
     // Resume: the interval restarts and a refetch fires on the next tick.
-    await page.getByRole("button", { name: "Resume auto-refresh" }).click();
-    await expect(
-      page.getByRole("button", { name: "Pause auto-refresh" })
-    ).toBeVisible();
+    await page.getByRole("button", { name: "Resume" }).click();
+    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
 
     await page.clock.fastForward(31_000);
     await expect

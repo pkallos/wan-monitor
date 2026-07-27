@@ -73,8 +73,8 @@ called as `Effect.forkChild(...)`) — both call shapes exist; a mechanical rena
   program's entry point (`apps/server/src/index.ts`) and for fire-and-forget error recovery
   (`connection.ts`'s `Effect.runFork(markDisconnected(error.message))` inside a synchronous callback).
 - **`Effect.runPromise(effect)`** / **`Effect.runPromiseExit(effect)`** — used at the boundary between
-  Effect and a non-Effect caller that wants a `Promise` (`apps/web/src/api/effect-bridge.ts`; test
-  files that `await` an Effect program).
+  Effect and a non-Effect caller that wants a `Promise` (test files that `await` an Effect program;
+  Foldkit's own runtime handles this boundary for `Command`/`flags` Effects in `apps/web`).
 - **`Effect.runSync(effect)`** / **`Effect.runSyncExit(effect)`** — only for effects known to complete
   synchronously with no async gap; rare in this codebase since almost everything touches I/O.
 
