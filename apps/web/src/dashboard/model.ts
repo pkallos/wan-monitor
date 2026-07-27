@@ -41,6 +41,7 @@ export const SpeedtestTriggerAsyncData = AsyncData.Schema(
 export const Model = S.Struct({
   timeRange: TimeRange,
   isPaused: S.Boolean,
+  isIdle: S.Boolean,
   metrics: MetricsAsyncData.schema,
   speedtestHistory: SpeedtestHistoryAsyncData.schema,
   connectivityStatus: ConnectivityStatusAsyncData.schema,
@@ -59,6 +60,7 @@ export type Model = typeof Model.Type;
 export const initModel = (): Model => ({
   timeRange: "1h",
   isPaused: false,
+  isIdle: false,
   metrics: MetricsAsyncData.Idle(),
   speedtestHistory: SpeedtestHistoryAsyncData.Idle(),
   connectivityStatus: ConnectivityStatusAsyncData.Idle(),

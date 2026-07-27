@@ -363,6 +363,9 @@ export const update = (
         [],
       ],
 
+      Interacted: () => [evo(model, { isIdle: () => false }), []],
+      WentIdle: () => [evo(model, { isIdle: () => true }), []],
+
       HoveredConnectivitySegment: ({ index }) => [
         evo(model, { hoveredSegmentIndex: () => Option.some(index) }),
         [],

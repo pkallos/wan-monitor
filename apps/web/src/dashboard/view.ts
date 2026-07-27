@@ -28,6 +28,7 @@ import {
   ClickedTriggerSpeedtest,
   GotToastMessage,
   HoveredConnectivitySegment,
+  Interacted,
   UnhoveredConnectivitySegment,
 } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
@@ -588,16 +589,30 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                     h.button(
                       [
                         h.Type("button"),
-                        h.OnClick(ClickedTogglePause()),
-                        h.AriaLabel(model.isPaused ? "Resume" : "Pause"),
+                        h.OnClick(
+                          model.isIdle ? Interacted() : ClickedTogglePause()
+                        ),
+                        h.AriaLabel(
+                          model.isPaused
+                            ? "Resume"
+                            : model.isIdle
+                              ? "Resume (paused, inactive)"
+                              : "Pause"
+                        ),
                         h.Title(
                           model.isPaused
                             ? "Resume auto-refresh"
-                            : "Pause auto-refresh"
+                            : model.isIdle
+                              ? "Auto-refresh paused after inactivity — resume"
+                              : "Pause auto-refresh"
                         ),
                         h.Class(GHOST_ICON_BUTTON_CLASS),
                       ],
-                      [model.isPaused ? playIcon() : pauseIcon()]
+                      [
+                        model.isPaused || model.isIdle
+                          ? playIcon()
+                          : pauseIcon(),
+                      ]
                     ),
                     h.div(
                       [h.Class("inline-flex")],

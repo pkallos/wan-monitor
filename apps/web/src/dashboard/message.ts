@@ -65,6 +65,8 @@ export const GotToastMessage = m("GotToastMessage", {
 export const EnteredDashboard = m("EnteredDashboard");
 export const TickedRefresh = m("TickedRefresh");
 export const ClickedTogglePause = m("ClickedTogglePause");
+export const Interacted = m("Interacted");
+export const WentIdle = m("WentIdle");
 export const ChangedTimeRange = m("ChangedTimeRange", { timeRange: TimeRange });
 export const ClickedTriggerSpeedtest = m("ClickedTriggerSpeedtest");
 export const ClickedRefreshNow = m("ClickedRefreshNow");
@@ -133,6 +135,8 @@ export const Message = S.Union([
   EnteredDashboard,
   TickedRefresh,
   ClickedTogglePause,
+  Interacted,
+  WentIdle,
   ChangedTimeRange,
   ClickedTriggerSpeedtest,
   ClickedRefreshNow,
