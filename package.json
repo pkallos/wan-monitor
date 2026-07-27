@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",
-    "@effect/vitest": "4.0.0-beta.101",
+    "@effect/vitest": "4.0.0-beta.102",
     "@playwright/test": "^1.62.0",
     "@types/node": "^24.13.3",
     "@wan-monitor/shared": "workspace:*",
