@@ -39,6 +39,7 @@ import {
   FailedSyncPacketLossChart,
   FailedSyncSpeedChart,
   FailedTriggerSpeedtest,
+  Interacted,
   LoadedTheme,
   SucceededFetchConnectivityStatus,
   SucceededFetchMetrics,
@@ -49,6 +50,7 @@ import {
   SucceededMountSpeedChart,
   SucceededTriggerSpeedtest,
   TickedRefresh,
+  WentIdle,
 } from "@/dashboard/message";
 import {
   ConnectivityStatusAsyncData,
@@ -529,6 +531,32 @@ describe("dashboard update — pause toggle", () => {
       Story.with(initModel()),
       Story.message(ClickedTogglePause()),
       Story.model((model) => {
+        expect(model.isPaused).toBe(true);
+      })
+    );
+  });
+});
+
+describe("dashboard update — idle detection", () => {
+  test("going idle sets isIdle without touching isPaused", () => {
+    Story.story(
+      withContext,
+      Story.with(initModel()),
+      Story.message(WentIdle()),
+      Story.model((model) => {
+        expect(model.isIdle).toBe(true);
+        expect(model.isPaused).toBe(false);
+      })
+    );
+  });
+
+  test("interacting clears isIdle without touching isPaused", () => {
+    Story.story(
+      withContext,
+      Story.with({ ...initModel(), isIdle: true, isPaused: true }),
+      Story.message(Interacted()),
+      Story.model((model) => {
+        expect(model.isIdle).toBe(false);
         expect(model.isPaused).toBe(true);
       })
     );

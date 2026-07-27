@@ -513,6 +513,19 @@ describe("dashboard view", () => {
     );
   });
 
+  test("going idle shows a distinct resume label, and clicking it resumes without a manual pause", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.with({ ...initModel(), isIdle: true }),
+      acknowledgeAllChartMounts(),
+      Scene.expect(
+        Scene.role("button", { name: "Resume (paused, inactive)" })
+      ).toExist(),
+      Scene.click(Scene.role("button", { name: "Resume (paused, inactive)" })),
+      Scene.expect(Scene.role("button", { name: "Pause" })).toExist()
+    );
+  });
+
   test("clicking the theme toggle switches to dark mode, applies the dark class, and persists it", () => {
     Scene.scene(
       { update: boundUpdate, view },
