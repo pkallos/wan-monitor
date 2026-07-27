@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.9.0...wan-monitor-v1.0.0) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* release with effect-ts and foldkit
+
+### Features
+
+* release with effect-ts and foldkit ([a6c024a](https://github.com/pkallos/wan-monitor/commit/a6c024a42784545e3edd1d482a89192ec223317a))
+
 ## [0.9.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.8.1...wan-monitor-v0.9.0) (2026-07-06)
 
 
