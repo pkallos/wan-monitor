@@ -2,9 +2,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Fiber, Layer, Ref } from "effect";
 import {
   getSpeedTestHistoryHandler,
+  getSpeedTestStatusHandler,
   triggerSpeedTestHandler,
 } from "@/core/api/handlers/speedtest";
 import {
+  DatabaseWriteError,
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
@@ -184,6 +186,36 @@ describe("SpeedTest API Handlers", () => {
       }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
     });
 
+    it.effect(
+      "still returns success when the DB write for the result fails",
+      () => {
+        const mockResult = {
+          timestamp: new Date("2024-01-01T12:00:00Z"),
+          downloadSpeed: 100.5,
+          uploadSpeed: 50.2,
+          latency: 15.3,
+        };
+
+        const SpeedTestServiceTest = Layer.succeed(
+          SpeedTestService,
+          createTestSpeedTestService(Effect.succeed(mockResult))
+        );
+
+        const QuestDBTest = Layer.succeed(QuestDB, {
+          ...createTestQuestDB(),
+          writeMetric: () =>
+            Effect.fail(new DatabaseWriteError({ message: "disk full" })),
+        });
+
+        return Effect.gen(function* () {
+          const isRunningRef = yield* Ref.make(false);
+          const result = yield* triggerSpeedTestHandler(isRunningRef);
+
+          expect(result.success).toBe(true);
+        }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
+      }
+    );
+
     it.live(
       "concurrent triggerSpeedTest calls: exactly one runs, other returns ALREADY_RUNNING",
       () => {
@@ -267,6 +299,26 @@ describe("SpeedTest API Handlers", () => {
         expect(isRunningAfter).toBe(false);
       }).pipe(Effect.provide(Layer.merge(SpeedTestServiceTest, QuestDBTest)));
     });
+  });
+
+  describe("getSpeedTestStatus handler", () => {
+    it.effect("reports isRunning false when idle", () =>
+      Effect.gen(function* () {
+        const isRunningRef = yield* Ref.make(false);
+        const result = yield* getSpeedTestStatusHandler(isRunningRef);
+
+        expect(result).toEqual({ isRunning: false });
+      })
+    );
+
+    it.effect("reports isRunning true while a test is in flight", () =>
+      Effect.gen(function* () {
+        const isRunningRef = yield* Ref.make(true);
+        const result = yield* getSpeedTestStatusHandler(isRunningRef);
+
+        expect(result).toEqual({ isRunning: true });
+      })
+    );
   });
 
   describe("getSpeedTestHistory handler", () => {

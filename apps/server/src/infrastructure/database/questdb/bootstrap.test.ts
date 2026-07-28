@@ -16,10 +16,16 @@ import { bootstrapSchema } from "@/infrastructure/database/questdb/bootstrap";
  */
 const createMockPgClient = (
   existingColumns: readonly string[],
-  options: { readonly alterError?: string } = {}
+  options: {
+    readonly alterError?: string;
+    readonly introspectError?: string;
+  } = {}
 ) => {
   const query = vi.fn((text: string) => {
     if (text.includes("table_columns")) {
+      if (options.introspectError !== undefined) {
+        return Promise.reject(new Error(options.introspectError));
+      }
       return Promise.resolve({
         rows: existingColumns.map((name) => ({ name })),
       });
@@ -215,6 +221,24 @@ describe("bootstrapSchema", () => {
         if (Exit.isFailure(exit)) {
           const error = exit.cause;
           expect(String(error)).toContain("DatabaseConnectionError");
+        }
+      });
+    }
+  );
+
+  it.effect(
+    "fails with DatabaseConnectionError when column introspection fails",
+    () => {
+      const { client } = createMockPgClient(allColumnNames, {
+        introspectError: "connection reset",
+      });
+
+      return Effect.gen(function* () {
+        const exit = yield* Effect.exit(bootstrapSchema(client));
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          expect(String(exit.cause)).toContain("Schema introspection failed");
         }
       });
     }

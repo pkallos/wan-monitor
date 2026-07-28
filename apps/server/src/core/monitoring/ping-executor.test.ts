@@ -82,6 +82,34 @@ describe("PingExecutor", () => {
       expect(mockWriteMetric).toHaveBeenCalled();
     });
 
+    it("should write a down metric when the ping succeeds but reports unreachable", async () => {
+      const pingResult: PingResult = {
+        host: "8.8.8.8",
+        alive: false,
+        latency: 0,
+        packetLoss: 100,
+        min: 0,
+        max: 0,
+        avg: 0,
+        stddev: 0,
+      };
+
+      mockPing.mockReturnValue(Effect.succeed(pingResult));
+      mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+      const program = Effect.gen(function* () {
+        const executor = yield* PingExecutor;
+        return yield* executor.executePing("8.8.8.8");
+      });
+
+      const result = await Effect.runPromise(Effect.provide(program, TestLive));
+
+      expect(result.success).toBe(true);
+      expect(mockWriteMetric).toHaveBeenCalled();
+      const writtenMetric = mockWriteMetric.mock.calls[0][0];
+      expect(writtenMetric.connectivityStatus).toBe("down");
+    });
+
     it("should handle ping failure and write metric with NULL latency", async () => {
       mockPing.mockReturnValue(
         Effect.fail(
