@@ -18,7 +18,7 @@
     "@foldkit/ui": "0.132.0",
     "clsx": "^2.1.1",
     "echarts": "^6.1.0",
-    "effect": "4.0.0-beta.101",
+    "effect": "4.0.0-beta.102",
     "foldkit": "0.132.0"
   },
   "devDependencies": {
