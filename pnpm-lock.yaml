@@ -15,8 +15,8 @@ importers:
         specifier: ^2.5.5
         version: 2.5.5
       '@effect/vitest':
-        specifier: 4.0.0-beta.101
-        version: 4.0.0-beta.101(effect@4.0.0-beta.101)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.1)(jsdom@23.2.0)(lightningcss@1.33.0))
+        specifier: 4.0.0-beta.102
+        version: 4.0.0-beta.102(effect@4.0.0-beta.101)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.1)(jsdom@23.2.0)(lightningcss@1.33.0))
       '@playwright/test':
         specifier: ^1.62.0
         version: 1.62.0
@@ -79,8 +79,8 @@ importers:
         version: 2.2.0
     devDependencies:
       '@effect/vitest':
-        specifier: 4.0.0-beta.101
-        version: 4.0.0-beta.101(effect@4.0.0-beta.101)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.1)(jsdom@23.2.0)(lightningcss@1.33.0))
+        specifier: 4.0.0-beta.102
+        version: 4.0.0-beta.102(effect@4.0.0-beta.101)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.1)(jsdom@23.2.0)(lightningcss@1.33.0))
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
@@ -300,10 +300,10 @@ packages:
       effect: ^4.0.0-beta.102
       ioredis: ^5.7.0
 
-  '@effect/vitest@4.0.0-beta.101':
-    resolution: {integrity: sha512-F5Ur8pZYti0xkZFyb4hPZt8RrKQ1XBoC28ZkKxc7N1iPbhE9fWOvlWA1NC2XlN2wWG08yb5g5jR53LdOxjlhpQ==}
+  '@effect/vitest@4.0.0-beta.102':
+    resolution: {integrity: sha512-4dipFAYG6imOzrY3zy3BgzCJkbb9xESyzUef0WSx8bsK0/SpITqbJpdwKeOyDWLZ+rimjua8IbTFMAde865pIQ==}
     peerDependencies:
-      effect: ^4.0.0-beta.101
+      effect: ^4.0.0-beta.102
       vitest: ^3.0.0 || ^4.0.0
 
   '@emnapi/core@1.11.1':
@@ -3291,7 +3291,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@effect/vitest@4.0.0-beta.101(effect@4.0.0-beta.101)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.1)(jsdom@23.2.0)(lightningcss@1.33.0))':
+  '@effect/vitest@4.0.0-beta.102(effect@4.0.0-beta.101)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.1)(jsdom@23.2.0)(lightningcss@1.33.0))':
     dependencies:
       effect: 4.0.0-beta.101
       vitest: 3.2.4(@types/node@24.13.3)(happy-dom@20.11.1)(jsdom@23.2.0)(lightningcss@1.33.0)
