@@ -154,9 +154,14 @@ updates:
       - dependency-name: "framer-motion"
         update-types: ["version-update:semver-major"]
 
-      # Testing library major versions (vitest 4, testing-library 16, jsdom 27 need manual migration)
+      # Testing library major versions (testing-library 16, jsdom 27 need manual migration)
+      # vitest itself is fully excluded below: apps/web runs vitest 4 while the
+      # rest of the workspace runs vitest 3, and dependabot resolves "vitest" as
+      # one dependency across the whole pnpm workspace regardless of grouping,
+      # so any automated bump forces both sides onto the same version and
+      # downgrades or upgrades one of them across a major boundary. Bump it
+      # manually, one manifest at a time, instead.
       - dependency-name: "vitest"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "@vitest/*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@testing-library/*"
