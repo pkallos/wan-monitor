@@ -244,8 +244,14 @@ export const makeSpeedChartOption = ({
       getValue(metric),
     ]);
 
+  const base = makeBaseAxes(theme);
+
   return {
-    ...makeBaseAxes(theme),
+    ...base,
+    // Extends the shared bottom margin to also fit the legend row below the
+    // x-axis labels — echarts lays out the legend and grid independently, so
+    // without this the legend's default bottom position overlaps the axis.
+    grid: { ...base.grid, bottom: 52 },
     yAxis: {
       type: "value",
       min: 0,
@@ -257,7 +263,7 @@ export const makeSpeedChartOption = ({
       splitLine: makeSplitLine(THEME_COLORS[theme].grid),
     },
     tooltip: makeTooltip((value) => `${value.toFixed(1)} Mbps`),
-    legend: { textStyle: { color: THEME_COLORS[theme].text } },
+    legend: { bottom: 4, textStyle: { color: THEME_COLORS[theme].text } },
     series: [
       {
         type: "line",

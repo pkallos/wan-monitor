@@ -125,4 +125,17 @@ describe("makeSpeedChartOption", () => {
     ]);
     expect(series[1].name).toBe("Upload");
   });
+
+  test("reserves grid space so the bottom legend doesn't overlap the plot area", () => {
+    const option = makeSpeedChartOption({
+      metrics: [],
+      stats: calculateSpeedStats([]),
+      theme: "light",
+    });
+    const grid = option.grid as { bottom: number };
+    const legend = option.legend as { bottom: number };
+
+    expect(legend.bottom).toBeDefined();
+    expect(grid.bottom).toBeGreaterThan(legend.bottom);
+  });
 });
