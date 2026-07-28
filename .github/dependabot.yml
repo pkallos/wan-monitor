@@ -37,10 +37,13 @@ updates:
           - "patch"
 
       # Testing libraries - ignore major versions
+      # vitest and @vitest/* are excluded from this group: apps/web runs vitest 4
+      # while the rest of the workspace runs vitest 3, so a grouped update would
+      # resolve to one shared version and downgrade or upgrade across a major
+      # boundary in whichever manifest doesn't match. Left ungrouped, each
+      # manifest gets its own PR that respects its own major-version ignore rule.
       testing:
         patterns:
-          - "vitest"
-          - "@vitest/*"
           - "@testing-library/*"
           - "jsdom"
         update-types:
