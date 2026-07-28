@@ -5,8 +5,16 @@
 
 # Only run on branch checkout, not file checkout
 if [ "$3" = "1" ]; then
-  # Check if package.json or pnpm-lock.yaml changed
-  CHANGED=$(git diff --name-only "$1" "$2" -- package.json pnpm-lock.yaml 2>/dev/null)
+  # Seeds .env.local and installs dependencies on a freshly created worktree
+  # (a no-op if both are already present). Covers `git worktree add` from any
+  # tool, including Claude Code's EnterWorktree/--worktree, which shell out to
+  # plain git and land here like any other checkout.
+  sh "$(git rev-parse --show-toplevel)/scripts/bootstrap-worktree.sh"
+
+  # $1 is the all-zero SHA on a brand-new worktree's initial checkout, which
+  # `git diff` rejects (exit 128); husky invokes this script with `sh -e`, so
+  # an unguarded command substitution would abort the whole hook here.
+  CHANGED=$(git diff --name-only "$1" "$2" -- package.json pnpm-lock.yaml 2>/dev/null || true)
   if [ -n "$CHANGED" ]; then
     echo "📦 Dependencies changed, running pnpm install..."
     pnpm install
