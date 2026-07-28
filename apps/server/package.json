@@ -16,7 +16,7 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-beta.101",
+    "@effect/platform-node": "4.0.0-beta.102",
     "@questdb/nodejs-client": "^4.2.0",
     "@types/pg": "^8.20.0",
     "effect": "4.0.0-beta.101",
