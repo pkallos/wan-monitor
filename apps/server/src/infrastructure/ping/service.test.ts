@@ -35,16 +35,18 @@ const TestPingServiceLive = Layer.provide(PingServiceLive, TestConfigLive);
 
 describe("PingService", () => {
   describe("ping", () => {
-    it("should return successful ping result", async () => {
+    it("should return successful ping result using the train average, not the first packet's time", async () => {
       mockProbe.mockResolvedValueOnce({
         inputHost: "8.8.8.8",
         host: "8.8.8.8",
         alive: true,
         output: "PING 8.8.8.8...",
-        time: 25.5,
-        times: [25.5],
-        min: "25.5",
-        max: "25.5",
+        // `time` (first packet) is deliberately worse than `avg` here so the
+        // assertion below actually distinguishes the two.
+        time: 40.1,
+        times: [40.1, 25.5, 20.9],
+        min: "20.9",
+        max: "40.1",
         avg: "25.5",
         stddev: "0.0",
         packetLoss: "0.000",
@@ -63,8 +65,8 @@ describe("PingService", () => {
       expect(result.alive).toBe(true);
       expect(result.latency).toBe(25.5);
       expect(result.packetLoss).toBe(0);
-      expect(result.min).toBe(25.5);
-      expect(result.max).toBe(25.5);
+      expect(result.min).toBe(20.9);
+      expect(result.max).toBe(40.1);
       expect(result.avg).toBe(25.5);
     });
 
@@ -183,8 +185,10 @@ describe("PingService", () => {
 
       await Effect.runPromise(Effect.provide(program, TestPingServiceLive));
 
+      // deadline = ceil(trainCount * 0.25 + timeout) = ceil(5*0.25 + 10) = 12
       expect(mockProbe).toHaveBeenCalledWith("1.1.1.1", {
         timeout: 10,
+        deadline: 12,
         extra: ["-c", "5", "-i", "0.25"],
       });
     });

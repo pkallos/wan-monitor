@@ -144,21 +144,6 @@ describe("buildQueryMetrics", () => {
       }
     });
   });
-
-  it.effect(
-    "should include latency validation in query when using granularity",
-    () => {
-      const params: QueryMetricsParams = {
-        granularity: "1m",
-      };
-
-      return Effect.gen(function* () {
-        const result = yield* buildQueryMetrics(params);
-
-        expect(result.query).toContain("(latency IS NULL OR latency >= 0)");
-      });
-    }
-  );
 });
 
 describe("buildQuerySpeedtests", () => {
@@ -291,8 +276,6 @@ describe("buildQueryConnectivityStatus", () => {
       expect(result.query).toContain("up_count");
       expect(result.query).toContain("total_count");
       expect(result.query).toContain("connectivity_status = 'down'");
-      expect(result.query).toContain("connectivity_status != 'down'");
-      expect(result.query).toContain("packet_loss >= 5");
     });
   });
 
@@ -316,6 +299,22 @@ describe("buildQueryConnectivityStatus", () => {
   );
 
   it.effect(
+    "should classify per-cycle: down requires every host in the cycle to fail",
+    () => {
+      // Regression guard for the quorum fix: a single failing host among
+      // several must not be able to mark a cycle (and therefore a bucket)
+      // down on its own.
+      return Effect.gen(function* () {
+        const result = yield* buildQueryConnectivityStatus({});
+
+        expect(result.query).toContain(
+          "SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) = count()"
+        );
+      });
+    }
+  );
+
+  it.effect(
     "should classify packet loss using the shared PACKET_LOSS_THRESHOLDS",
     () => {
       const params: QueryMetricsParams = {};
@@ -324,11 +323,20 @@ describe("buildQueryConnectivityStatus", () => {
         const result = yield* buildQueryConnectivityStatus(params);
 
         expect(result.query).toContain(
-          `packet_loss >= ${PACKET_LOSS_THRESHOLDS.degradedFloor}`
+          `MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor}`
         );
-        expect(result.query).toContain(
-          `packet_loss < ${PACKET_LOSS_THRESHOLDS.degradedFloor} OR packet_loss IS NULL`
-        );
+      });
+    }
+  );
+
+  it.effect(
+    "should group cycles by exact timestamp before bucketing by granularity",
+    () => {
+      return Effect.gen(function* () {
+        const result = yield* buildQueryConnectivityStatus({});
+
+        expect(result.query).toContain("SAMPLE BY 1s");
+        expect(result.query).toContain("SAMPLE BY 5m");
       });
     }
   );

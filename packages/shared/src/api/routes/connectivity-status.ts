@@ -28,7 +28,10 @@ const ConnectivityStatusMeta = Schema.Struct({
   startTime: Schema.String,
   endTime: Schema.String,
   count: Schema.Number,
+  /** Strictly `up` cycles over all cycles; degraded cycles count against it. */
   uptimePercentage: Schema.Number,
+  /** `up` + `degraded` cycles over all cycles — reachable-but-lossy counts as available. */
+  availabilityPercentage: Schema.Number,
 });
 
 const ConnectivityStatusResponse = Schema.Struct({

@@ -16,11 +16,11 @@ describe("calculateLatencyStats", () => {
     });
   });
 
-  test("computes current/avg/min/max from latency samples, ignoring negatives", () => {
+  test("computes current/avg/min/max from latency samples, ignoring missing values", () => {
     const stats = calculateLatencyStats([
       { latency: 10 },
       { latency: 20 },
-      { latency: -1 },
+      { latency: undefined },
       { latency: 30 },
     ]);
 

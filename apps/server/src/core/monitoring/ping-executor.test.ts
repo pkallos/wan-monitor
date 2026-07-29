@@ -249,5 +249,41 @@ describe("PingExecutor", () => {
       expect(mockPing).toHaveBeenCalledWith("custom.host");
       expect(mockPing).toHaveBeenCalledWith("another.host");
     });
+
+    it("should stamp every host in a cycle with the identical timestamp, even when one fails", async () => {
+      mockPing.mockImplementation((host: string) =>
+        host === "flaky.host"
+          ? Effect.fail(
+              new PingHostUnreachableError({
+                host,
+                message: "Host unreachable",
+              })
+            )
+          : Effect.succeed({
+              host,
+              alive: true,
+              latency: 12.0,
+              packetLoss: 0,
+            } satisfies PingResult)
+      );
+      mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+      const program = Effect.gen(function* () {
+        const executor = yield* PingExecutor;
+        return yield* executor.executeHosts(["stable.host", "flaky.host"]);
+      });
+
+      await Effect.runPromise(Effect.provide(program, TestLive));
+
+      const timestamps = mockWriteMetric.mock.calls.map(
+        ([metric]) => metric.timestamp
+      );
+      expect(timestamps).toHaveLength(2);
+      expect(timestamps[0]).toBeInstanceOf(Date);
+      // A downstream quorum query groups a cycle by exact timestamp equality
+      // (see buildQueryConnectivityStatus), so every host in one executeHosts
+      // call must share the identical Date instance value, not just be close.
+      expect(timestamps[0].getTime()).toBe(timestamps[1].getTime());
+    });
   });
 });

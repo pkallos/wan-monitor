@@ -104,7 +104,7 @@ describe("Connectivity Status Integration Tests", () => {
         host: "8.8.8.8",
         latency: 25.0,
         jitter: 4.0,
-        packetLoss: 8.0, // >= 5% packet loss = degraded
+        packetLoss: 15.0, // >= 10% packet loss = degraded
         connectivityStatus: "degraded",
       });
     }
@@ -113,7 +113,8 @@ describe("Connectivity Status Integration Tests", () => {
         timestamp: new Date(baseMs + 10 * 60000 + (8 + i) * 30000),
         source: "ping",
         host: "8.8.8.8",
-        latency: -1.0,
+        // latency omitted - no measurement available on failure, matching
+        // the ping executor's real down-path write
         jitter: 0.0,
         packetLoss: 100.0,
         connectivityStatus: "down",
@@ -126,7 +127,6 @@ describe("Connectivity Status Integration Tests", () => {
         timestamp: new Date(baseMs + 15 * 60000 + i * 30000),
         source: "ping",
         host: "8.8.8.8",
-        latency: -1.0,
         jitter: 0.0,
         packetLoss: 100.0,
         connectivityStatus: "down",
@@ -151,7 +151,7 @@ describe("Connectivity Status Integration Tests", () => {
       host: "8.8.8.8",
       latency: 22.0,
       jitter: 3.0,
-      packetLoss: 7.0, // >= 5% packet loss = degraded
+      packetLoss: 12.0, // >= 10% packet loss = degraded
       connectivityStatus: "degraded",
     });
 
@@ -172,7 +172,6 @@ describe("Connectivity Status Integration Tests", () => {
         timestamp: new Date(baseMs + 25 * 60000 + (7 + i) * 30000),
         source: "ping",
         host: "8.8.8.8",
-        latency: -1.0,
         jitter: 0.0,
         packetLoss: 100.0,
         connectivityStatus: "down",
@@ -419,10 +418,13 @@ describe("Connectivity Status Integration Tests", () => {
   //   1. Gap: a reachable sample with >= 50% packet loss matched none of the
   //      up/degraded/down branches, so it was dropped from every count while
   //      still inflating total_count.
-  //   2. Overlap: a reachable sample with the -1 "unknown latency" sentinel was
-  //      counted as BOTH up and down.
+  //   2. Overlap: a reachable sample with no latency measurement was counted
+  //      as BOTH up and down.
   // The fixed classification is exhaustive and mutually exclusive, so the three
-  // per-bucket percentages must sum to exactly 100.
+  // per-bucket percentages must sum to exactly 100. Each sample here is its own
+  // host/cycle (distinct timestamps, one host), so quorum degenerates to the
+  // original per-sample classification — see the quorum-specific test below
+  // for the multi-host case.
   it.skipIf(skipTests)(
     "classifies high-loss and unknown-latency alive samples without dropping or double-counting",
     async () => {
@@ -457,13 +459,12 @@ describe("Connectivity Status Integration Tests", () => {
         });
       }
 
-      // 1 reachable sample with the -1 unknown-latency sentinel (the overlap
-      // case). It must be counted as up exactly once, never as down.
+      // 1 reachable sample with no latency measurement (the overlap case).
+      // It must be counted as up exactly once, never as down.
       metrics.push({
         timestamp: new Date(baseMs + 7 * 30000),
         source: "ping",
         host: "8.8.8.8",
-        latency: -1.0,
         jitter: 0.0,
         packetLoss: 0.0,
         connectivityStatus: "up",
@@ -513,6 +514,65 @@ describe("Connectivity Status Integration Tests", () => {
 
         // Strict-up uptime: only the 5 clean-up samples count. 5 / 10 = 50%.
         expect(result.meta.uptimePercentage).toBe(50);
+
+        yield* teardownIntegrationTest(db);
+      });
+
+      await Effect.runPromise(Effect.provide(program, testLayer));
+    }
+  );
+
+  // The ping executor stamps every host in one cycle with the identical
+  // `timestamp` (see PingExecutor.executeHosts), so a cycle is exactly the
+  // set of rows sharing one timestamp. This locks in the quorum fix: a single
+  // failing host among several must not down the whole cycle.
+  it.skipIf(skipTests)(
+    "classifies a cycle as down only when every host in it fails",
+    async () => {
+      const baseTime = new Date("2024-01-20T14:00:00.000Z");
+      const baseMs = baseTime.getTime();
+      const hosts = ["8.8.8.8", "1.1.1.1", "cloudflare.com"];
+
+      const cycle = (
+        offsetMs: number,
+        statuses: readonly ("up" | "down")[]
+      ): NetworkMetric[] =>
+        hosts.map((host, i) => ({
+          timestamp: new Date(baseMs + offsetMs),
+          source: "ping" as const,
+          host,
+          ...(statuses[i] === "up" ? { latency: 15.0 } : {}),
+          jitter: 0.0,
+          packetLoss: statuses[i] === "up" ? 0.0 : 100.0,
+          connectivityStatus: statuses[i],
+        }));
+
+      const metrics: NetworkMetric[] = [
+        ...cycle(0, ["up", "up", "up"]),
+        ...cycle(5 * 60000, ["down", "up", "up"]),
+        ...cycle(10 * 60000, ["down", "down", "down"]),
+      ];
+
+      const program = Effect.gen(function* () {
+        const db = yield* setupIntegrationTest();
+
+        yield* seedDatabase(db, metrics);
+
+        const result = yield* getConnectivityStatusHandler({
+          query: {
+            startTime: baseTime.toISOString(),
+            endTime: new Date(baseMs + 15 * 60000).toISOString(),
+            granularity: "5m",
+          },
+        });
+
+        expect(result.data).toHaveLength(3);
+        // All 3 hosts up.
+        expect(result.data[0].status).toBe("up");
+        // 1 of 3 hosts down: a target/path problem, not a WAN outage.
+        expect(result.data[1].status).toBe("degraded");
+        // All 3 hosts down: a real outage.
+        expect(result.data[2].status).toBe("down");
 
         yield* teardownIntegrationTest(db);
       });

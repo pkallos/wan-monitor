@@ -68,7 +68,6 @@ export const buildQueryMetrics = (
           FROM ${table}
           WHERE timestamp >= $1
             AND timestamp <= $2
-            AND (latency IS NULL OR latency >= 0)
             ${hostFilter}
           SAMPLE BY ${granularity}
           ORDER BY timestamp DESC
@@ -162,43 +161,46 @@ export const buildQueryConnectivityStatus = (
       );
     }
 
-    // Connectivity classification. These three CASE branches are exhaustive and
-    // mutually exclusive, so `up_count + degraded_count + down_count` always
-    // equals `total_count` for every bucket:
-    //   - down:     connectivity_status = 'down' (authoritative — set by the
-    //               ping executor whenever a host is unreachable).
-    //   - degraded: reachable (not down) but with >= 5% packet loss. There is no
-    //               upper packet-loss bound: any reachable-but-lossy sample is
-    //               degraded, including 50-99% loss which previously fell through
-    //               a gap and was silently dropped from all counts.
-    //   - up:       everything else (reachable with < 5% loss, or no packet-loss
-    //               measurement). Emitted via the residual condition so no sample
-    //               is left unclassified.
-    // Latency is intentionally NOT used for classification: a successful ping
-    // with an unknown latency is stored as -1 (a valid, reachable sample), so
-    // keying off latency sign double-counted such rows as both up and down.
+    // Connectivity classification is quorum-based across a ping cycle (all
+    // hosts pinged together — see `pingResultToMetric`'s shared `timestamp`),
+    // not per host-row. A single host blip no longer paints the whole bucket
+    // down: the inner query first reduces each cycle (exact-timestamp group,
+    // since every host in a cycle shares one write-time timestamp) to one of
+    // three states, then the outer query buckets cycles the same way host-rows
+    // were bucketed before. `up_count + degraded_count + down_count` always
+    // equals `total_count` for every output bucket:
+    //   - down:     every host in the cycle failed (connectivity_status='down').
+    //               One host down out of several is a target/path problem, not
+    //               a WAN outage.
+    //   - degraded: not down, but at least one host failed or exceeded the loss
+    //               floor. No upper packet-loss bound: any reachable-but-lossy
+    //               cycle is degraded, including 50-99% loss.
+    //   - up:       every host reachable and under the loss floor.
+    // Latency is intentionally NOT used for classification: a sample can be a
+    // valid reachable measurement with no latency reading.
     const query = `
         SELECT
-          timestamp,
-          SUM(CASE
-            WHEN connectivity_status = 'down' THEN 1
-            ELSE 0
-          END) as down_count,
-          SUM(CASE
-            WHEN connectivity_status != 'down'
-              AND packet_loss >= ${PACKET_LOSS_THRESHOLDS.degradedFloor} THEN 1
-            ELSE 0
-          END) as degraded_count,
-          SUM(CASE
-            WHEN connectivity_status != 'down'
-              AND (packet_loss < ${PACKET_LOSS_THRESHOLDS.degradedFloor} OR packet_loss IS NULL) THEN 1
-            ELSE 0
-          END) as up_count,
-          COUNT(*) as total_count
-        FROM ${table}
-        WHERE timestamp >= $1
-          AND timestamp <= $2
-          AND source = 'ping'
+          bucket_ts as timestamp,
+          SUM(CASE WHEN cycle_status = 'down' THEN 1 ELSE 0 END) as down_count,
+          SUM(CASE WHEN cycle_status = 'degraded' THEN 1 ELSE 0 END) as degraded_count,
+          SUM(CASE WHEN cycle_status = 'up' THEN 1 ELSE 0 END) as up_count,
+          count() as total_count
+        FROM (
+          (SELECT
+            timestamp as bucket_ts,
+            CASE
+              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) = count() THEN 'down'
+              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) > 0
+                OR MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor} THEN 'degraded'
+              ELSE 'up'
+            END as cycle_status
+          FROM ${table}
+          WHERE timestamp >= $1
+            AND timestamp <= $2
+            AND source = 'ping'
+          SAMPLE BY 1s
+          )
+        )
         SAMPLE BY ${granularity}
         ORDER BY timestamp ASC
       `;

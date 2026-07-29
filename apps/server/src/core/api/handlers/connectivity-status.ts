@@ -36,21 +36,31 @@ export const getConnectivityStatusHandler = ({
       };
     });
 
-    // Uptime is deliberately "clean up only": it counts strictly `up` samples
-    // (reachable with < 5% packet loss) over all samples. Degraded samples
-    // (reachable but >= 5% loss) count toward the denominator but NOT the
-    // numerator, so degradation lowers the uptime figure rather than being
-    // treated as full availability. Per-bucket degradedPercentage exposes the
-    // degraded share separately for callers that need an availability view.
+    // uptimePercentage is deliberately "clean up only": it counts strictly
+    // `up` cycles over all cycles. Degraded cycles count toward the
+    // denominator but NOT the numerator, so degradation lowers the uptime
+    // figure rather than being treated as full availability.
+    // availabilityPercentage counts `up` and `degraded` together, so a link
+    // that stayed reachable throughout (even if lossy) doesn't read as a total
+    // outage. Both are shipped so callers can pick which one to headline.
     const totalPoints = rows.reduce((sum, row) => sum + row.total_count, 0);
     const totalUpPoints = rows.reduce((sum, row) => sum + row.up_count, 0);
+    const totalDegradedPoints = rows.reduce(
+      (sum, row) => sum + row.degraded_count,
+      0
+    );
     const uptimePercentage =
       totalPoints > 0 ? (totalUpPoints / totalPoints) * 100 : 0;
+    const availabilityPercentage =
+      totalPoints > 0
+        ? ((totalUpPoints + totalDegradedPoints) / totalPoints) * 100
+        : 0;
 
     return {
       data,
       meta: {
         uptimePercentage,
+        availabilityPercentage,
         startTime:
           query.startTime || new Date(now - 24 * 60 * 60 * 1000).toISOString(),
         endTime: query.endTime || new Date(now).toISOString(),
