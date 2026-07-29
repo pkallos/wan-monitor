@@ -20,7 +20,7 @@ describe("buildSegments", () => {
     ]);
   });
 
-  test("classifies a point as down once downPercentage passes the dominant threshold", () => {
+  test("passes through the server's down status unchanged", () => {
     const result = buildSegments(
       [
         {
@@ -43,7 +43,7 @@ describe("buildSegments", () => {
     });
   });
 
-  test("classifies a point as degraded once degradedPercentage passes the dominant threshold", () => {
+  test("passes through the server's degraded status unchanged", () => {
     const result = buildSegments(
       [
         {
@@ -66,7 +66,7 @@ describe("buildSegments", () => {
     });
   });
 
-  test("classifies a point as up when neither down nor degraded is dominant", () => {
+  test("passes through the server's up status unchanged", () => {
     const result = buildSegments(
       [
         {

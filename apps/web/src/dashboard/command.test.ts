@@ -220,6 +220,7 @@ describe("fetchConnectivityStatus", () => {
             endTime: "2026-07-26T01:00:00.000Z",
             count: 1,
             uptimePercentage: 99.9,
+            availabilityPercentage: 99.9,
           },
         })
       ),
@@ -278,6 +279,7 @@ describe("fetchConnectivityStatus", () => {
             endTime: "2026-07-27T00:00:00.000Z",
             count: 0,
             uptimePercentage: 0,
+            availabilityPercentage: 0,
           },
         })
       ),

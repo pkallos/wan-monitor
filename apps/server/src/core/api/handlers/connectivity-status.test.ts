@@ -58,6 +58,7 @@ describe("Connectivity Status Handlers", () => {
         expect(result.data[1].status).toBe("down");
         expect(result.data[1].downPercentage).toBe(20);
         expect(result.meta.uptimePercentage).toBe(90);
+        expect(result.meta.availabilityPercentage).toBe(90);
       }).pipe(Effect.provide(QuestDBTest));
     });
 
@@ -80,6 +81,29 @@ describe("Connectivity Status Handlers", () => {
         expect(result.data[0].degradedPercentage).toBe(30);
       }).pipe(Effect.provide(QuestDBTest));
     });
+
+    it.effect(
+      "availabilityPercentage counts degraded as available, unlike uptimePercentage",
+      () => {
+        const mockRows = [
+          {
+            timestamp: "2024-01-01T00:00:00Z",
+            up_count: 7,
+            down_count: 0,
+            degraded_count: 3,
+            total_count: 10,
+          },
+        ];
+        const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(mockRows));
+
+        return Effect.gen(function* () {
+          const result = yield* getConnectivityStatusHandler({ query: {} });
+
+          expect(result.meta.uptimePercentage).toBe(70);
+          expect(result.meta.availabilityPercentage).toBe(100);
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
 
     it.effect("converts query start/end times to Dates before querying", () => {
       const onQuery = vi.fn();
@@ -134,6 +158,7 @@ describe("Connectivity Status Handlers", () => {
 
         expect(result.data).toEqual([]);
         expect(result.meta.uptimePercentage).toBe(0);
+        expect(result.meta.availabilityPercentage).toBe(0);
       }).pipe(Effect.provide(QuestDBTest));
     });
   });

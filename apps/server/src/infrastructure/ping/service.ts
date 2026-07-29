@@ -35,7 +35,7 @@ export type PingError =
 export const PingResult = Schema.Struct({
   host: Schema.String,
   alive: Schema.Boolean,
-  latency: Schema.Number,
+  latency: Schema.optional(Schema.Number),
   packetLoss: Schema.Number,
   min: Schema.optional(Schema.Number),
   max: Schema.optional(Schema.Number),
@@ -103,8 +103,15 @@ export const PingServiceLive = Layer.effect(
     ): Effect.Effect<PingResult, PingError, never> =>
       Effect.tryPromise({
         try: async () => {
+          // Bounds total train wall time: `timeout` alone is per-packet (-W), so
+          // without a deadline a lossy host can stall the train far past the
+          // scheduled cycle interval while individual packets each wait it out.
+          const deadline = Math.ceil(
+            pingConfig.trainCount * 0.25 + pingConfig.timeout
+          );
           const result = await ping.promise.probe(host, {
             timeout: pingConfig.timeout,
+            deadline,
             extra: ["-c", String(pingConfig.trainCount), "-i", "0.25"],
           });
 
@@ -126,7 +133,10 @@ export const PingServiceLive = Layer.effect(
           return {
             host: result.host,
             alive: result.alive,
-            latency: parseNumeric(result.time) ?? -1,
+            // Average, not `result.time` (the first packet's RTT) — the first
+            // packet of a train is systematically the worst one (ARP/route-cache
+            // miss), so it biases latency high and hides real average behavior.
+            latency: parseNumeric(result.avg),
             packetLoss: parseNumeric(result.packetLoss) ?? 100,
             min: parseNumeric(result.min),
             max: parseNumeric(result.max),

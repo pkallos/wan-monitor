@@ -5,7 +5,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 const PingResult = Schema.Struct({
   host: Schema.String,
   alive: Schema.Boolean,
-  latency: Schema.Number,
+  latency: Schema.optional(Schema.Number),
   packetLoss: Schema.Number,
   min: Schema.optional(Schema.Number),
   max: Schema.optional(Schema.Number),

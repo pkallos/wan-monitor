@@ -21,8 +21,12 @@ export const isValidGranularity = (value: string): value is Granularity =>
  * backend/frontend classification drift.
  */
 export const PACKET_LOSS_THRESHOLDS = {
-  /** Packet loss % at or above which a sample is considered degraded. */
-  degradedFloor: 5,
+  /**
+   * Packet loss % at or above which a sample is considered degraded. Matches
+   * the ping train's own quantization (`PING_TRAIN_COUNT` default 10 packets,
+   * so loss lands on 10% steps) — anything smaller wouldn't be expressible.
+   */
+  degradedFloor: 10,
   /** Packet loss % below which a sample is still degraded (upper bound). */
   degradedCeiling: 50,
 } as const;

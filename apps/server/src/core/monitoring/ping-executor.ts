@@ -53,8 +53,11 @@ export class PingExecutor extends Context.Service<
 // Helper: Convert PingResult to NetworkMetric
 // ============================================================================
 
-const pingResultToMetric = (result: PingResult): NetworkMetric => ({
-  timestamp: new Date(),
+const pingResultToMetric = (
+  result: PingResult,
+  timestamp: Date
+): NetworkMetric => ({
+  timestamp,
   source: "ping" as const,
   host: result.host,
   latency: result.latency,
@@ -74,13 +77,18 @@ export const PingExecutorLive = Layer.effect(
     const pingService = yield* PingService;
     const db = yield* QuestDB;
 
-    const executePing = (
-      host: string
+    // `timestamp` is shared across every host in one cycle (see `executeHosts`)
+    // rather than stamped per-host at completion, so quorum queries can group
+    // a cycle's rows by exact timestamp equality instead of a fragile
+    // read-time time-window heuristic that a slow DNS lookup could break.
+    const executePingAt = (
+      host: string,
+      timestamp: Date
     ): Effect.Effect<PingExecutionResult, never> =>
       pingService.ping(host).pipe(
         // Success path - write metric to database
         Effect.flatMap((result) => {
-          const metric = pingResultToMetric(result);
+          const metric = pingResultToMetric(result, timestamp);
           return db.writeMetric(metric).pipe(
             Effect.map(
               (): PingExecutionResult => ({
@@ -103,7 +111,7 @@ export const PingExecutorLive = Layer.effect(
         // Omitting latency ensures avg() aggregations aren't skewed by failures
         Effect.catch((pingError) => {
           const errorMetric: NetworkMetric = {
-            timestamp: new Date(),
+            timestamp,
             source: "ping",
             host,
             // latency omitted - no measurement available on failure
@@ -124,10 +132,22 @@ export const PingExecutorLive = Layer.effect(
         })
       );
 
+    const executePing = (
+      host: string
+    ): Effect.Effect<PingExecutionResult, never> =>
+      executePingAt(host, new Date());
+
     const executeHosts = (
       hosts: readonly string[]
     ): Effect.Effect<readonly PingExecutionResult[]> =>
-      Effect.all(hosts.map(executePing), { concurrency: "unbounded" });
+      Effect.sync(() => new Date()).pipe(
+        Effect.flatMap((cycleTimestamp) =>
+          Effect.all(
+            hosts.map((host) => executePingAt(host, cycleTimestamp)),
+            { concurrency: "unbounded" }
+          )
+        )
+      );
 
     const executeAll = (): Effect.Effect<readonly PingExecutionResult[]> =>
       executeHosts(config.ping.hosts);

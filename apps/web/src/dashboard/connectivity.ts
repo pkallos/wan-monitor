@@ -19,14 +19,6 @@ export const CONNECTIVITY_LABELS: Record<ConnectivityStatus, string> = {
   noInfo: "No Data",
 };
 
-const DOMINANT_STATUS_THRESHOLD = 50;
-
-const statusForPoint = (point: ConnectivityStatusPoint): ConnectivityStatus => {
-  if (point.downPercentage > DOMINANT_STATUS_THRESHOLD) return "down";
-  if (point.degradedPercentage > DOMINANT_STATUS_THRESHOLD) return "degraded";
-  return "up";
-};
-
 export interface Segment {
   readonly timestampMs: number;
   readonly status: ConnectivityStatus;
@@ -48,7 +40,7 @@ export const buildSegments = (
       timestampMs: slot.timestamp,
       status: Option.match(slot.point, {
         onNone: () => "noInfo" as const,
-        onSome: statusForPoint,
+        onSome: (point: ConnectivityStatusPoint) => point.status,
       }),
       count: 1,
     })
