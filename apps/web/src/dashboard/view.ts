@@ -466,17 +466,39 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
             )
           );
 
+          const totalCount = Array_.reduce(
+            segments,
+            0,
+            (sum, segment) => sum + segment.count
+          );
+
+          // Positioned as a percentage of the bar's width rather than tied to
+          // the hovered segment's own DOM node, so it can float above the
+          // bar's `overflow-hidden` (needed for the bar's rounded corners)
+          // instead of being clipped by it.
           const tooltip = Option.match(
             Option.flatMap(model.hoveredSegmentIndex, (index) =>
-              Array_.get(segments, index)
+              Option.map(Array_.get(segments, index), (segment) => {
+                const before = Array_.reduce(
+                  Array_.take(segments, index),
+                  0,
+                  (sum, s) => sum + s.count
+                );
+                const centerPercent =
+                  ((before + segment.count / 2) / totalCount) * 100;
+                return { segment, centerPercent };
+              })
             ),
             {
               onNone: () => h.empty,
-              onSome: (segment) =>
-                h.p(
+              onSome: ({ segment, centerPercent }) =>
+                h.div(
                   [
                     h.Role("tooltip"),
-                    h.Class("mt-2 text-xs text-gray-500 dark:text-gray-400"),
+                    h.Style({ left: `${centerPercent}%` }),
+                    h.Class(
+                      "pointer-events-none absolute bottom-full z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white shadow-lg dark:bg-gray-700"
+                    ),
                   ],
                   [formatSegmentLabel(segment, status.granularity)]
                 ),
@@ -491,32 +513,38 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                 [`Uptime: ${status.uptimePercentage.toFixed(1)}%`]
               ),
               h.div(
+                [h.Class("relative")],
                 [
-                  h.Role("img"),
-                  h.AriaLabel("Connectivity status timeline"),
-                  h.Class(
-                    "flex h-6 overflow-hidden rounded-md ring-1 ring-gray-200 dark:ring-gray-700"
-                  ),
-                ],
-                Array_.map(segments, (segment, index) =>
                   h.div(
                     [
-                      h.DataAttribute(
-                        "testid",
-                        `connectivity-segment-${index}`
+                      h.Role("img"),
+                      h.AriaLabel("Connectivity status timeline"),
+                      h.Class(
+                        "flex h-6 overflow-hidden rounded-md ring-1 ring-gray-200 dark:ring-gray-700"
                       ),
-                      h.Style({
-                        flex: `${segment.count} 1 0%`,
-                        backgroundColor: CONNECTIVITY_COLORS[segment.status],
-                      }),
-                      h.OnMouseEnter(HoveredConnectivitySegment({ index })),
-                      h.OnMouseLeave(UnhoveredConnectivitySegment()),
                     ],
-                    []
-                  )
-                )
+                    Array_.map(segments, (segment, index) =>
+                      h.div(
+                        [
+                          h.DataAttribute(
+                            "testid",
+                            `connectivity-segment-${index}`
+                          ),
+                          h.Style({
+                            flex: `${segment.count} 1 0%`,
+                            backgroundColor:
+                              CONNECTIVITY_COLORS[segment.status],
+                          }),
+                          h.OnMouseEnter(HoveredConnectivitySegment({ index })),
+                          h.OnMouseLeave(UnhoveredConnectivitySegment()),
+                        ],
+                        []
+                      )
+                    )
+                  ),
+                  tooltip,
+                ]
               ),
-              tooltip,
             ]
           );
         },

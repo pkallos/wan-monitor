@@ -205,6 +205,41 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     expect(uptimePct).toBeGreaterThan(0);
   });
 
+  test("hovering a connectivity segment shows a floating tooltip without shifting the page", async ({
+    page,
+  }) => {
+    await expect(
+      page.getByRole("img", { name: "Connectivity status timeline" })
+    ).toBeVisible({ timeout: 15000 });
+
+    const segments = page.locator('[data-testid^="connectivity-segment-"]');
+    const segmentCount = await segments.count();
+    expect(segmentCount).toBeGreaterThan(0);
+
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+
+    // A heading further down the page: if the tooltip pushed content in
+    // normal document flow (the original bug) rather than floating above the
+    // bar, this would move when the tooltip appears.
+    const belowFold = page.getByRole("heading", {
+      name: "Network Quality",
+      exact: true,
+    });
+    const boxBefore = await belowFold.boundingBox();
+
+    await segments.nth(Math.floor(segmentCount / 2)).hover();
+
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toHaveText(/Up|Down|Degraded|No Data/);
+
+    const boxAfter = await belowFold.boundingBox();
+    expect(boxAfter).toEqual(boxBefore);
+
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+  });
+
   test("network quality charts render onto their canvases", async ({
     page,
   }) => {
