@@ -43,6 +43,7 @@
       "persistent": true,
       "env": [
         "VITE_API_URL",
+        "PORT",
         "SERVER_PORT",
         "SERVER_HOST",
         "LOG_LEVEL",
