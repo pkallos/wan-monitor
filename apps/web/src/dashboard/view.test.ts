@@ -361,6 +361,48 @@ describe("dashboard view", () => {
     );
   });
 
+  test("tapping a connectivity segment shows its tooltip, and tapping it again dismisses it", () => {
+    const startTimeMs = Date.parse("2026-07-26T10:00:00.000Z");
+    const model = {
+      ...initModel(),
+      connectivityStatus: ConnectivityStatusAsyncData.Success({
+        data: {
+          points: [
+            {
+              timestamp: "2026-07-26T10:00:00.000Z",
+              status: "up" as const,
+              upPercentage: 100,
+              downPercentage: 0,
+              degradedPercentage: 0,
+            },
+            {
+              timestamp: "2026-07-26T10:05:00.000Z",
+              status: "down" as const,
+              upPercentage: 0,
+              downPercentage: 80,
+              degradedPercentage: 20,
+            },
+          ],
+          uptimePercentage: 50,
+          startTimeMs,
+          endTimeMs: startTimeMs + 10 * 60 * 1000,
+          granularity: "5m" as const,
+        },
+      }),
+    };
+
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.with(model),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.role("tooltip")).not.toExist(),
+      Scene.click(Scene.testId("connectivity-segment-1")),
+      Scene.expect(Scene.role("tooltip")).toHaveText(/Down/),
+      Scene.click(Scene.testId("connectivity-segment-1")),
+      Scene.expect(Scene.role("tooltip")).not.toExist()
+    );
+  });
+
   test("shows a disabled Running… state while the speed test trigger is pending", () => {
     const model = {
       ...initModel(),
