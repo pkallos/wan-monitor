@@ -59,8 +59,8 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
       .toBeGreaterThan(0);
 
     const initialParams = parseMetricsRequest(metricsRequests[0]);
-    // A 30 day span falls in the "<= 90 days" bucket => 6-hour aggregation.
-    expect(initialParams.granularity).toBe("6h");
+    // A 30 day span falls in the "<= 30 days" bucket => 1-hour aggregation.
+    expect(initialParams.granularity).toBe("1h");
     expect(windowMs(initialParams)).toBeGreaterThan(29 * DAY_MS);
 
     // Narrow to the "Last 7 days" preset through the picker.
@@ -68,24 +68,30 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
     await page.getByRole("button", { name: "Last 7 days" }).click();
     await page.getByRole("button", { name: "Apply" }).click();
 
-    // A new request must fire with the narrowed window + finer granularity.
+    // A new request must fire with the narrowed ~7-day window. The initial
+    // 30-day request also resolves to "1h" granularity, so the narrowed
+    // request has to be identified by its window size, not by granularity
+    // alone. METRICS_PATH also matches /api/metrics/earliest, whose request
+    // carries no startTime/endTime, so the check has to guard for those
+    // before computing a window size.
+    const isNarrowedWindow = (p: MetricsParams): boolean =>
+      Boolean(p.startTime && p.endTime && windowMs(p) < 8 * DAY_MS);
+
     await expect
       .poll(
-        () =>
-          metricsRequests
-            .map(parseMetricsRequest)
-            .some((p) => p.granularity === "1h"),
+        () => metricsRequests.map(parseMetricsRequest).some(isNarrowedWindow),
         { timeout: 10_000 }
       )
       .toBe(true);
 
     const narrowed = metricsRequests
       .map(parseMetricsRequest)
-      .find((p) => p.granularity === "1h");
+      .find(isNarrowedWindow);
     expect(narrowed).toBeDefined();
     if (!narrowed) return;
 
-    // A 7 day span falls in the "<= 14 days" bucket => 1-hour aggregation.
+    // A 7 day span falls in the "<= 30 days" bucket => 1-hour aggregation.
+    expect(narrowed.granularity).toBe("1h");
     expect(windowMs(narrowed)).toBeGreaterThan(6 * DAY_MS);
     expect(windowMs(narrowed)).toBeLessThan(8 * DAY_MS);
 

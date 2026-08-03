@@ -227,7 +227,12 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     });
     const boxBefore = await belowFold.boundingBox();
 
-    await segments.nth(Math.floor(segmentCount / 2)).hover();
+    // The seed only populates the last 24h within the default 30-day range,
+    // so the first segment is always the "No Data" run spanning the rest of
+    // the window - wide and reliably hoverable, unlike an arbitrary middle
+    // segment, which can be a single narrow bucket easily overlapped by its
+    // neighbors.
+    await segments.first().hover();
 
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toBeVisible();

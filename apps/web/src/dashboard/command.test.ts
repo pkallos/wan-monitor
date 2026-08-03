@@ -287,7 +287,7 @@ describe("fetchSpeedtestHistory", () => {
       Effect.runPromise
     );
 
-    expect(capturedParams[0]).toContainEqual(["granularity", "6h"]);
+    expect(capturedParams[0]).toContainEqual(["granularity", "1h"]);
   });
 });
 

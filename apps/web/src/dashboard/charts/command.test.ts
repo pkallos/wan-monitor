@@ -45,7 +45,7 @@ describe("resolveSpeedtestTimelineWindow", () => {
       resolveSpeedtestTimelineWindow(THIRTY_DAY_RANGE)
     );
 
-    expect(result.granularity).toBe("6h");
+    expect(result.granularity).toBe("1h");
   });
 });
 
