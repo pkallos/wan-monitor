@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.1.0...wan-monitor-v1.1.1) (2026-08-03)
+
+
+### Bug Fixes
+
+* **monitoring:** require a minimum share of degraded cycles per bucket ([#266](https://github.com/pkallos/wan-monitor/issues/266)) ([ff09a29](https://github.com/pkallos/wan-monitor/commit/ff09a299ed41d3c4a54542499958559c9279fa08))
+* **web:** plot 0% packet loss as a visible point, not a bare line ([#268](https://github.com/pkallos/wan-monitor/issues/268)) ([78861e8](https://github.com/pkallos/wan-monitor/commit/78861e8296721fc7428668d723325831f208b561))
+* **web:** support tap-to-show on the connectivity segment tooltip ([#267](https://github.com/pkallos/wan-monitor/issues/267)) ([6b5379a](https://github.com/pkallos/wan-monitor/commit/6b5379a2ba27c35251079bd73427ec3f5eb61da1))
+* **web:** use 1h rollup granularity for 30-day windows ([#265](https://github.com/pkallos/wan-monitor/issues/265)) ([c41d5cd](https://github.com/pkallos/wan-monitor/commit/c41d5cd35ca6c7c44109ff6350e676fa61864be0))
+
 ## [1.1.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.0.0...wan-monitor-v1.1.0) (2026-08-03)
 
 
