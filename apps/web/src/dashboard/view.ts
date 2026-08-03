@@ -496,8 +496,12 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                         "flex h-6 overflow-hidden rounded-md ring-1 ring-gray-200 dark:ring-gray-700"
                       ),
                     ],
-                    Array_.map(segments, (segment, index) =>
-                      h.div(
+                    Array_.map(segments, (segment, index) => {
+                      const isShowingThisSegment = Option.contains(
+                        model.hoveredSegmentIndex,
+                        index
+                      );
+                      return h.div(
                         [
                           h.DataAttribute(
                             "testid",
@@ -510,10 +514,19 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                           }),
                           h.OnMouseEnter(HoveredConnectivitySegment({ index })),
                           h.OnMouseLeave(UnhoveredConnectivitySegment()),
+                          // Hover has no equivalent on touch devices, so a tap
+                          // toggles the same tooltip state directly: shows it
+                          // on first tap, dismisses it on a second tap of the
+                          // same segment.
+                          h.OnClick(
+                            isShowingThisSegment
+                              ? UnhoveredConnectivitySegment()
+                              : HoveredConnectivitySegment({ index })
+                          ),
                         ],
                         []
-                      )
-                    )
+                      );
+                    })
                   ),
                   tooltip,
                 ]
