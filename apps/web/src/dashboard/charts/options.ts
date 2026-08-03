@@ -200,7 +200,11 @@ export const makePacketLossChartOption = ({
       type: "line",
       name: "Packet Loss",
       data: toSeriesData(slots, (point) => point.packet_loss ?? null),
-      showSymbol: false,
+      // A flat 0% run sits exactly on the axis baseline, where a bare line
+      // reads as empty space rather than a plotted "no loss" value — a
+      // visible symbol at every point keeps it distinguishable from a gap.
+      showSymbol: true,
+      symbolSize: 4,
       smooth: true,
       lineStyle: { color: COLORS.danger, width: 2 },
       areaStyle: { color: COLORS.danger, opacity: 0.15 },
