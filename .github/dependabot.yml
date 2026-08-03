@@ -36,6 +36,17 @@ updates:
           - "minor"
           - "patch"
 
+      # foldkit core and its component library - these version in lockstep
+      # (@foldkit/vite-plugin is excluded: it's on its own independent
+      # versioning scheme and isn't coupled to the foldkit/@foldkit/ui pair)
+      foldkit:
+        patterns:
+          - "foldkit"
+          - "@foldkit/ui"
+        update-types:
+          - "minor"
+          - "patch"
+
       # Testing libraries - ignore major versions
       # vitest and @vitest/* are excluded from this group: apps/web runs vitest 4
       # while the rest of the workspace runs vitest 3, so a grouped update would
