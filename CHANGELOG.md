@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.0.0...wan-monitor-v1.1.0) (2026-08-03)
+
+
+### Features
+
+* **web:** replace the fixed time-range buttons with a calendar date range picker ([#256](https://github.com/pkallos/wan-monitor/issues/256)) ([76c0c4f](https://github.com/pkallos/wan-monitor/commit/76c0c4f06187d6bccce521854ce14e790ad6ebe3))
+
+
+### Bug Fixes
+
+* bootstrap fresh worktrees in the post-checkout hook ([#252](https://github.com/pkallos/wan-monitor/issues/252)) ([1e7c94d](https://github.com/pkallos/wan-monitor/commit/1e7c94d90d77569f53a7e94835068925148f9954))
+* **deps:** fully ignore vitest in dependabot, ungrouping wasn't enough ([2412d04](https://github.com/pkallos/wan-monitor/commit/2412d0458fc238301df53f69a2b8235288e8281e))
+* **deps:** stop grouping vitest across mismatched workspace majors ([bdde72c](https://github.com/pkallos/wan-monitor/commit/bdde72c29013e0a104e745d773d10c21e4920663))
+* **monitoring:** quorum-based connectivity classification and average latency ([#253](https://github.com/pkallos/wan-monitor/issues/253)) ([d620613](https://github.com/pkallos/wan-monitor/commit/d62061317ebc597e33bd427e186ca443f9977058))
+* **server:** bind the HTTP listener to the configured host, raise test coverage across the monorepo ([#257](https://github.com/pkallos/wan-monitor/issues/257)) ([76b3c9d](https://github.com/pkallos/wan-monitor/commit/76b3c9df3da65dbff0892c8fa9fe5d53226c3357))
+* **web:** float the connectivity segment tooltip instead of pushing content down ([#255](https://github.com/pkallos/wan-monitor/issues/255)) ([ae7e669](https://github.com/pkallos/wan-monitor/commit/ae7e66914220553eec27bb27f5640cf43301d6a3))
+* **web:** honor SERVER_PORT and PORT in the dev server ([#254](https://github.com/pkallos/wan-monitor/issues/254)) ([12ec4f5](https://github.com/pkallos/wan-monitor/commit/12ec4f56ee1953c14b848a6642802f1d300e18e4))
+* **web:** stop the speed chart legend from overlapping the x-axis ([9bbc04a](https://github.com/pkallos/wan-monitor/commit/9bbc04a1c60675bac84ee33e670a3b4dcbfae08c))
+
 ## [1.0.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v0.9.0...wan-monitor-v1.0.0) (2026-07-27)
 
 
