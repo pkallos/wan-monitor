@@ -1,5 +1,6 @@
 import { WanMonitorApi } from "@shared/api";
 import type { GetConnectivityStatusQuery } from "@shared/api/routes/connectivity-status";
+import { DEGRADED_BUCKET_MIN_SHARE } from "@wan-monitor/shared";
 import { Clock, Effect, type Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { mapQueryError } from "@/core/api/handlers/db-error";
@@ -22,12 +23,18 @@ export const getConnectivityStatusHandler = ({
 
     const data = rows.map((row) => {
       const total = row.total_count || 1;
+      // A bucket only reads as "degraded" once a meaningful share of its
+      // cycles were degraded, not the instant a single cycle crosses the
+      // packet-loss floor — otherwise one blip inside a long-window, coarse
+      // rollup bucket (many cycles per bucket) paints the whole bucket
+      // orange.
+      const degradedShare = row.degraded_count / total;
       return {
         timestamp: row.timestamp,
         status:
           row.down_count > 0
             ? ("down" as const)
-            : row.degraded_count > 0
+            : degradedShare >= DEGRADED_BUCKET_MIN_SHARE
               ? ("degraded" as const)
               : ("up" as const),
         upPercentage: (row.up_count / total) * 100,

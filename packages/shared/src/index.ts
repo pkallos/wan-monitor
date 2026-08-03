@@ -17,6 +17,7 @@ export type {
 } from "./api/routes/speedtest";
 export { SpeedMetricSchema } from "./api/routes/speedtest";
 export {
+  DEGRADED_BUCKET_MIN_SHARE,
   isValidGranularity,
   PACKET_LOSS_THRESHOLDS,
   VALID_GRANULARITIES,
