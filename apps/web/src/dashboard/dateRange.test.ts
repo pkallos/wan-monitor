@@ -287,8 +287,12 @@ describe("granularityForRange", () => {
     expect(granularityForRange(windowOfSpan(14 * DAY_MS))).toBe("1h");
   });
 
-  test("just over 14d resolves to 6h", () => {
-    expect(granularityForRange(windowOfSpan(14 * DAY_MS + 1))).toBe("6h");
+  test("exactly 30d resolves to 1h", () => {
+    expect(granularityForRange(windowOfSpan(30 * DAY_MS))).toBe("1h");
+  });
+
+  test("just over 30d resolves to 6h", () => {
+    expect(granularityForRange(windowOfSpan(30 * DAY_MS + 1))).toBe("6h");
   });
 
   test("exactly 90d resolves to 6h", () => {
@@ -341,7 +345,7 @@ describe("granularityForSpeedtestRange", () => {
 
   test("a 30-day span aggregates into the same bucket a 30-day ping range would use", () => {
     const window = windowOfSpan(30 * DAY_MS);
-    expect(granularityForSpeedtestRange(window)).toBe("6h");
+    expect(granularityForSpeedtestRange(window)).toBe("1h");
     expect(granularityForSpeedtestRange(window)).toBe(
       granularityForRange(window)
     );

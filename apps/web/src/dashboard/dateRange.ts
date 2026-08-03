@@ -159,7 +159,7 @@ const GRANULARITY_THRESHOLDS_MS: ReadonlyArray<readonly [number, Granularity]> =
     [6 * 60 * 60 * 1000, "1m"],
     [DAY_MS, "5m"],
     [3 * DAY_MS, "15m"],
-    [14 * DAY_MS, "1h"],
+    [30 * DAY_MS, "1h"],
     [90 * DAY_MS, "6h"],
   ];
 
