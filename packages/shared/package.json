@@ -18,6 +18,9 @@
     }
   },
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
@@ -27,6 +30,8 @@
     "effect": "4.0.0-beta.102"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "@vitest/coverage-v8": "^3.2.7",
+    "typescript": "^5.3.3",
+    "vitest": "^3.2.4"
   }
 }

@@ -5,7 +5,7 @@ import * as echarts from "echarts/core";
 import type { Scope } from "effect";
 import { Clock, Effect, Option, Schema as S } from "effect";
 import { Command, Mount } from "foldkit";
-import { getChart, setChart } from "@/dashboard/charts/chartHost";
+import { getChart, removeChart, setChart } from "@/dashboard/charts/chartHost";
 import {
   makeJitterChartOption,
   makeLatencyChartOption,
@@ -183,6 +183,7 @@ const mountEchartsInstance = (
           resizeObserver.disconnect();
           window.removeEventListener("resize", onWindowResize);
           unlinkAxisPointer?.();
+          removeChart(hostId);
         })
     );
   });

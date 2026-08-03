@@ -13,14 +13,6 @@ import { Schema } from "effect";
  */
 export const mbpsToBps = (mbps: number): number => Math.round(mbps * 1_000_000);
 
-/**
- * Convert bits per second (bps) to Megabits per second (Mbps).
- *
- * @param bps - Speed in bits per second
- * @returns Speed in Megabits per second
- */
-export const bpsToMbps = (bps: number): number => bps / 1_000_000;
-
 // ============================================================================
 // Schemas
 // ============================================================================

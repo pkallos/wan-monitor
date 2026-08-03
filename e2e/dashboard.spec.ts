@@ -46,6 +46,9 @@ test.describe("WAN Monitor Dashboard", () => {
     ).toBeVisible();
   });
 
+  // The only assertion covering the full preset list and the Apply/Cancel
+  // controls: "Last 7 days" is clicked elsewhere (below, and in
+  // range-refresh.spec.ts), but nothing else touches the remaining presets.
   test("should display date range selector", async ({ page }) => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
@@ -100,17 +103,6 @@ test.describe("WAN Monitor Dashboard", () => {
     ).toBeVisible();
   });
 
-  test("should have theme toggle", async ({ page }) => {
-    await expect(
-      page.getByRole("heading", { name: "WAN Monitor" })
-    ).toBeVisible({ timeout: 10000 });
-
-    const themeToggle = page.getByRole("button", {
-      name: /^(Dark mode|Light mode)$/,
-    });
-    await expect(themeToggle).toBeVisible();
-  });
-
   test("should toggle dark mode", async ({ page }) => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
@@ -130,17 +122,6 @@ test.describe("WAN Monitor Dashboard", () => {
     await expect.poll(readMode).not.toBe(initialMode);
   });
 
-  test("should have pause/resume button for auto-refresh", async ({ page }) => {
-    await expect(
-      page.getByRole("heading", { name: "WAN Monitor" })
-    ).toBeVisible({ timeout: 10000 });
-
-    const pauseResumeButton = page.getByRole("button", {
-      name: /^(Pause|Resume)$/,
-    });
-    await expect(pauseResumeButton).toBeVisible();
-  });
-
   test("should display last updated indicator", async ({ page }) => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
@@ -149,16 +130,6 @@ test.describe("WAN Monitor Dashboard", () => {
     await expect(page.getByTestId("last-updated")).toContainText("Updated", {
       timeout: 15000,
     });
-  });
-
-  test("should have manual refresh button", async ({ page }) => {
-    await expect(
-      page.getByRole("heading", { name: "WAN Monitor" })
-    ).toBeVisible({ timeout: 10000 });
-
-    await expect(
-      page.getByRole("button", { name: "Refresh now" })
-    ).toBeVisible();
   });
 
   test("should display resolved ISP information when speedtest data exists", async ({

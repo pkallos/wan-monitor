@@ -237,6 +237,15 @@ describe("Auth HTTP integration (real JWT flow)", () => {
 
         expect(res.status).toBe(401);
       });
+
+      it("surfaces the auth failure reason in the 401 body", async () => {
+        const res = await get(app, "/api/auth/me");
+
+        expect(res.status).toBe(401);
+        const body = (await res.json()) as { _tag: string; message: string };
+        expect(body._tag).toBe("Unauthorized");
+        expect(body.message).toBe("Authorization header required");
+      });
     });
 
     describe("GET /api/auth/status", () => {
@@ -296,6 +305,18 @@ describe("Auth HTTP integration (real JWT flow)", () => {
 
     afterEach(async () => {
       await app.dispose();
+    });
+
+    it("GET /api/auth/me resolves the anonymous user without a token", async () => {
+      const res = await get(app, "/api/auth/me");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        username: string;
+        authenticated: boolean;
+      };
+      expect(body.username).toBe("anonymous");
+      expect(body.authenticated).toBe(false);
     });
 
     it("GET /api/auth/status reports authRequired=false", async () => {
