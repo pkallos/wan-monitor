@@ -84,6 +84,50 @@ describe("Connectivity Status Handlers", () => {
     });
 
     it.effect(
+      "a single degraded cycle out of a large coarse bucket stays up, not degraded",
+      () => {
+        const mockRows = [
+          {
+            timestamp: "2024-01-01T00:00:00Z",
+            up_count: 119,
+            down_count: 0,
+            degraded_count: 1,
+            total_count: 120,
+          },
+        ];
+        const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(mockRows));
+
+        return Effect.gen(function* () {
+          const result = yield* getConnectivityStatusHandler({ query: {} });
+
+          expect(result.data[0].status).toBe("up");
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
+
+    it.effect(
+      "a sustained share of degraded cycles in a coarse bucket still reads as degraded",
+      () => {
+        const mockRows = [
+          {
+            timestamp: "2024-01-01T00:00:00Z",
+            up_count: 108,
+            down_count: 0,
+            degraded_count: 12,
+            total_count: 120,
+          },
+        ];
+        const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(mockRows));
+
+        return Effect.gen(function* () {
+          const result = yield* getConnectivityStatusHandler({ query: {} });
+
+          expect(result.data[0].status).toBe("degraded");
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
+
+    it.effect(
       "availabilityPercentage counts degraded as available, unlike uptimePercentage",
       () => {
         const mockRows = [
