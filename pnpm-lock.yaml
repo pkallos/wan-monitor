@@ -134,8 +134,8 @@ importers:
         version: 0.133.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
     devDependencies:
       '@foldkit/vite-plugin':
-        specifier: 0.11.2
-        version: 0.11.2(effect@4.0.0-beta.102)(foldkit@0.133.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+        specifier: 0.11.3
+        version: 0.11.3(effect@4.0.0-beta.102)(foldkit@0.133.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
@@ -784,8 +784,8 @@ packages:
       effect: 4.0.0-beta.102
       foldkit: ^0
 
-  '@foldkit/vite-plugin@0.11.2':
-    resolution: {integrity: sha512-u0xgCUVOxFk35tulud29nS/Wsdb2hK5C2SA/YxXUWnwipFZvVpkCrqelAGst0g9TcAoGNZ1RAxD9p72ruVQT1Q==}
+  '@foldkit/vite-plugin@0.11.3':
+    resolution: {integrity: sha512-5kf542FTIejzcl3rjY+mxADUxHNd7HyFhipO73srBd/2cQpIRddlrjAlsFo8/3Ahinjzxe1ekzeUX+5GmRM15Q==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       effect: 4.0.0-beta.102
@@ -3565,7 +3565,7 @@ snapshots:
       effect: 4.0.0-beta.102
       foldkit: 0.133.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
 
-  '@foldkit/vite-plugin@0.11.2(effect@4.0.0-beta.102)(foldkit@0.133.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))':
+  '@foldkit/vite-plugin@0.11.3(effect@4.0.0-beta.102)(foldkit@0.133.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))':
     dependencies:
       effect: 4.0.0-beta.102
       foldkit: 0.133.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
