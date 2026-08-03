@@ -16,6 +16,12 @@ const METRICS_ROUTE = "**/api/metrics*";
 const latencyChartCanvas = (page: Page) =>
   page.locator('[aria-label="Latency chart"] canvas');
 
+const applyPreset = async (page: Page, preset: string) => {
+  await page.locator("#date-range-picker-button").click();
+  await page.getByRole("button", { name: preset }).click();
+  await page.getByRole("button", { name: "Apply" }).click();
+};
+
 const DB_UNAVAILABLE_BODY = JSON.stringify({
   error: "DB_UNAVAILABLE",
   message: "Database temporarily unavailable",
@@ -35,8 +41,9 @@ test("shows the DB-unavailable message and recovers", async ({ page }) => {
   const banner = page.getByText(BANNER_TEXT);
   await expect(banner).toBeHidden();
 
-  // Simulate the outage, then switch the time range to force a fresh metrics
-  // request (range buttons stay enabled during refetch, unlike "Refresh now").
+  // Simulate the outage, then apply a different date range to force a fresh
+  // metrics request (the picker stays enabled during refetch, unlike
+  // "Refresh now").
   await page.route(METRICS_ROUTE, (route) =>
     route.fulfill({
       status: 503,
@@ -44,14 +51,14 @@ test("shows the DB-unavailable message and recovers", async ({ page }) => {
       body: DB_UNAVAILABLE_BODY,
     })
   );
-  await page.getByRole("button", { name: "24 Hours" }).click();
+  await applyPreset(page, "Last 7 days");
 
   await expect(banner).toBeVisible({ timeout: 15_000 });
 
   // Restore connectivity and trigger another fresh query; the message clears
   // and the charts repopulate.
   await page.unroute(METRICS_ROUTE);
-  await page.getByRole("button", { name: "7 Days" }).click();
+  await applyPreset(page, "Last 30 days");
 
   await expect(banner).toBeHidden({ timeout: 30_000 });
   await expect(latencyChartCanvas(page)).toBeVisible({ timeout: 10_000 });

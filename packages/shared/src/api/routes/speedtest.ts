@@ -1,5 +1,6 @@
 import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
+import { GranularitySchema } from "@shared/api/routes/metrics";
 import { Schema } from "effect";
 import {
   HttpApiEndpoint,
@@ -63,6 +64,7 @@ export const SpeedTestHistoryQuery = Schema.Struct({
   startTime: Schema.optional(Schema.String),
   endTime: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),
+  granularity: Schema.optional(GranularitySchema),
 });
 
 const SpeedTestHistoryResponse = Schema.Struct({

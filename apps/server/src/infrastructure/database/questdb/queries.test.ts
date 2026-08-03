@@ -8,6 +8,7 @@ import type {
 } from "@/infrastructure/database/questdb/model";
 import {
   buildQueryConnectivityStatus,
+  buildQueryEarliestTimestamp,
   buildQueryMetrics,
   buildQuerySpeedtests,
 } from "@/infrastructure/database/questdb/queries";
@@ -147,43 +148,49 @@ describe("buildQueryMetrics", () => {
 });
 
 describe("buildQuerySpeedtests", () => {
-  it("should build speedtest query with default time range", () => {
+  it.effect("should build speedtest query with default time range", () => {
     const params: QuerySpeedtestsParams = {};
 
-    const result = buildQuerySpeedtests(params);
+    return Effect.gen(function* () {
+      const result = yield* buildQuerySpeedtests(params);
 
-    expect(result.query).toContain("FROM network_metrics");
-    expect(result.query).toContain("WHERE timestamp >= $1");
-    expect(result.query).toContain("AND timestamp <= $2");
-    expect(result.query).toContain("AND source = 'speedtest'");
-    expect(result.query).toContain("ORDER BY timestamp DESC");
-    expect(result.params).toHaveLength(2);
+      expect(result.query).toContain("FROM network_metrics");
+      expect(result.query).toContain("WHERE timestamp >= $1");
+      expect(result.query).toContain("AND timestamp <= $2");
+      expect(result.query).toContain("AND source = 'speedtest'");
+      expect(result.query).toContain("ORDER BY timestamp DESC");
+      expect(result.params).toHaveLength(2);
+    });
   });
 
-  it("should build speedtest query with custom time range", () => {
+  it.effect("should build speedtest query with custom time range", () => {
     const startTime = new Date("2024-01-01T00:00:00Z");
     const endTime = new Date("2024-01-02T00:00:00Z");
     const params: QuerySpeedtestsParams = { startTime, endTime };
 
-    const result = buildQuerySpeedtests(params);
+    return Effect.gen(function* () {
+      const result = yield* buildQuerySpeedtests(params);
 
-    expect(result.params[0]).toBe("2024-01-01T00:00:00.000Z");
-    expect(result.params[1]).toBe("2024-01-02T00:00:00.000Z");
+      expect(result.params[0]).toBe("2024-01-01T00:00:00.000Z");
+      expect(result.params[1]).toBe("2024-01-02T00:00:00.000Z");
+    });
   });
 
-  it("should build speedtest query with limit", () => {
+  it.effect("should build speedtest query with limit", () => {
     const params: QuerySpeedtestsParams = {
       limit: 50,
     };
 
-    const result = buildQuerySpeedtests(params);
+    return Effect.gen(function* () {
+      const result = yield* buildQuerySpeedtests(params);
 
-    expect(result.query).toContain("LIMIT $3");
-    expect(result.params).toHaveLength(3);
-    expect(result.params[2]).toBe(50);
+      expect(result.query).toContain("LIMIT $3");
+      expect(result.params).toHaveLength(3);
+      expect(result.params[2]).toBe(50);
+    });
   });
 
-  it("should build speedtest query with all parameters", () => {
+  it.effect("should build speedtest query with all parameters", () => {
     const startTime = new Date("2024-01-01T00:00:00Z");
     const endTime = new Date("2024-01-02T00:00:00Z");
     const params: QuerySpeedtestsParams = {
@@ -192,26 +199,121 @@ describe("buildQuerySpeedtests", () => {
       limit: 25,
     };
 
-    const result = buildQuerySpeedtests(params);
+    return Effect.gen(function* () {
+      const result = yield* buildQuerySpeedtests(params);
 
-    expect(result.params).toEqual([
-      "2024-01-01T00:00:00.000Z",
-      "2024-01-02T00:00:00.000Z",
-      25,
-    ]);
+      expect(result.params).toEqual([
+        "2024-01-01T00:00:00.000Z",
+        "2024-01-02T00:00:00.000Z",
+        25,
+      ]);
+    });
   });
 
-  it("should select all relevant speedtest columns", () => {
+  it.effect("should select all relevant speedtest columns", () => {
     const params: QuerySpeedtestsParams = {};
 
-    const result = buildQuerySpeedtests(params);
+    return Effect.gen(function* () {
+      const result = yield* buildQuerySpeedtests(params);
 
-    expect(result.query).toContain("download_bandwidth");
-    expect(result.query).toContain("upload_bandwidth");
-    expect(result.query).toContain("server_location");
-    expect(result.query).toContain("isp");
-    expect(result.query).toContain("external_ip");
-    expect(result.query).toContain("internal_ip");
+      expect(result.query).toContain("download_bandwidth");
+      expect(result.query).toContain("upload_bandwidth");
+      expect(result.query).toContain("server_location");
+      expect(result.query).toContain("isp");
+      expect(result.query).toContain("external_ip");
+      expect(result.query).toContain("internal_ip");
+    });
+  });
+
+  it.effect(
+    "should keep the raw SQL unchanged when granularity is omitted",
+    () => {
+      const params: QuerySpeedtestsParams = {};
+
+      return Effect.gen(function* () {
+        const result = yield* buildQuerySpeedtests(params);
+
+        expect(result.query).not.toContain("SAMPLE BY");
+        expect(result.query).not.toContain("avg(");
+        expect(result.query).toContain("host,");
+        expect(result.query).toContain("packet_loss,");
+        expect(result.query).toContain("connectivity_status,");
+      });
+    }
+  );
+
+  it.effect("should build an aggregated query with valid granularity", () => {
+    const params: QuerySpeedtestsParams = {
+      granularity: "1h",
+    };
+
+    return Effect.gen(function* () {
+      const result = yield* buildQuerySpeedtests(params);
+
+      expect(result.query).toContain("SAMPLE BY 1h");
+      expect(result.query).toContain("avg(latency) as latency");
+      expect(result.query).toContain("avg(jitter) as jitter");
+      expect(result.query).toContain(
+        "avg(download_bandwidth) as download_bandwidth"
+      );
+      expect(result.query).toContain(
+        "avg(upload_bandwidth) as upload_bandwidth"
+      );
+      expect(result.query).toContain(
+        "last(server_location) as server_location"
+      );
+      expect(result.query).toContain("last(isp) as isp");
+      expect(result.query).toContain("last(external_ip) as external_ip");
+      expect(result.query).toContain("last(internal_ip) as internal_ip");
+      expect(result.query).toContain("AND source = 'speedtest'");
+      expect(result.query).toContain("WHERE timestamp >= $1");
+      expect(result.query).toContain("AND timestamp <= $2");
+      expect(result.query).toContain("ORDER BY timestamp DESC");
+    });
+  });
+
+  it.effect(
+    "should build an aggregated query with granularity and limit together",
+    () => {
+      const startTime = new Date("2024-01-01T00:00:00Z");
+      const endTime = new Date("2024-01-02T00:00:00Z");
+      const params: QuerySpeedtestsParams = {
+        startTime,
+        endTime,
+        limit: 10,
+        granularity: "6h",
+      };
+
+      return Effect.gen(function* () {
+        const result = yield* buildQuerySpeedtests(params);
+
+        expect(result.query).toContain("SAMPLE BY 6h");
+        expect(result.query).toContain("LIMIT $3");
+        expect(result.params).toEqual([
+          "2024-01-01T00:00:00.000Z",
+          "2024-01-02T00:00:00.000Z",
+          10,
+        ]);
+      });
+    }
+  );
+
+  it.effect("should fail with invalid granularity", () => {
+    const params: QuerySpeedtestsParams = { granularity: "invalid" };
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.exit(buildQuerySpeedtests(params));
+
+      expect(Exit.isFailure(result)).toBe(true);
+      if (Exit.isFailure(result)) {
+        const error = Cause.findErrorOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toBeInstanceOf(DatabaseQueryError);
+          expect(error.value.message).toContain("Invalid granularity: invalid");
+        }
+      }
+    });
   });
 });
 
@@ -370,6 +472,28 @@ describe("buildQueryConnectivityStatus", () => {
   });
 });
 
+describe("buildQueryEarliestTimestamp", () => {
+  it.effect("should build a query for the minimum timestamp", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQueryEarliestTimestamp();
+
+      expect(result.query).toContain("min(timestamp)");
+      expect(result.query).toContain("FROM network_metrics");
+      expect(result.params).toHaveLength(0);
+    });
+  });
+
+  it.effect("targets a custom table when provided", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQueryEarliestTimestamp(
+        "network_metrics_test_2"
+      );
+
+      expect(result.query).toContain("FROM network_metrics_test_2");
+    });
+  });
+});
+
 describe("table name parameterization", () => {
   it.effect("buildQueryMetrics targets a custom table when provided", () => {
     return Effect.gen(function* () {
@@ -394,10 +518,12 @@ describe("table name parameterization", () => {
     }
   );
 
-  it("buildQuerySpeedtests targets a custom table when provided", () => {
-    const result = buildQuerySpeedtests({}, "network_metrics_test_2");
+  it.effect("buildQuerySpeedtests targets a custom table when provided", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQuerySpeedtests({}, "network_metrics_test_2");
 
-    expect(result.query).toContain("FROM network_metrics_test_2");
+      expect(result.query).toContain("FROM network_metrics_test_2");
+    });
   });
 
   it.effect(
@@ -417,7 +543,7 @@ describe("table name parameterization", () => {
   it.effect("defaults to the canonical network_metrics table", () => {
     return Effect.gen(function* () {
       const metrics = yield* buildQueryMetrics({});
-      const speedtests = buildQuerySpeedtests({});
+      const speedtests = yield* buildQuerySpeedtests({});
       const connectivity = yield* buildQueryConnectivityStatus({});
 
       expect(metrics.query).toContain("FROM network_metrics");

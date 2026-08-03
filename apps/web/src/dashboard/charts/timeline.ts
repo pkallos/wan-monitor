@@ -1,6 +1,5 @@
 import type { Granularity } from "@shared/api/routes/metrics";
 import { Array as Array_, Option } from "effect";
-import type { TimeRange } from "@/dashboard/timeRange";
 
 const GRANULARITY_MS: Record<Granularity, number> = {
   "1m": 60 * 1000,
@@ -21,11 +20,6 @@ export const alignTimestampToMs = (
   const intervalMs = granularityToMs(granularity);
   return Math.floor(timestampMs / intervalMs) * intervalMs;
 };
-
-/** Matches the current dashboard: only the 1h range buckets tighter than 5m. */
-export const getGranularityForTimeRange = (
-  timeRange: TimeRange
-): Granularity => (timeRange === "1h" ? "1m" : "5m");
 
 export interface TimelineSlot<A> {
   readonly timestamp: number;

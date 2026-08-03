@@ -3,7 +3,6 @@ import { describe, expect, test } from "vitest";
 import {
   alignTimestampToMs,
   fillTimeline,
-  getGranularityForTimeRange,
   granularityToMs,
 } from "@/dashboard/charts/timeline";
 
@@ -15,18 +14,6 @@ describe("granularityToMs", () => {
     expect(granularityToMs("1h")).toBe(3_600_000);
     expect(granularityToMs("6h")).toBe(21_600_000);
     expect(granularityToMs("1d")).toBe(86_400_000);
-  });
-});
-
-describe("getGranularityForTimeRange", () => {
-  test("uses 1-minute buckets for the 1 hour range", () => {
-    expect(getGranularityForTimeRange("1h")).toBe("1m");
-  });
-
-  test("uses 5-minute buckets for longer ranges", () => {
-    expect(getGranularityForTimeRange("24h")).toBe("5m");
-    expect(getGranularityForTimeRange("7d")).toBe("5m");
-    expect(getGranularityForTimeRange("30d")).toBe("5m");
   });
 });
 

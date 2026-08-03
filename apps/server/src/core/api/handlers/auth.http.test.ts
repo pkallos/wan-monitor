@@ -41,6 +41,7 @@ const mockQuestDB: QuestDBService = {
   queryMetrics: () => Effect.succeed([]),
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),
+  queryEarliestTimestamp: () => Effect.succeed(null),
   health: () => Effect.succeed({ connected: true, uptime: 1000 }),
   close: () => Effect.void,
 };

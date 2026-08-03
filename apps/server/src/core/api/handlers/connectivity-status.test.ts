@@ -25,6 +25,7 @@ const createMockQuestDB = (
     onQuery?.(params);
     return Effect.succeed(mockRows as readonly ConnectivityStatusRow[]);
   },
+  queryEarliestTimestamp: () => Effect.succeed(null),
   close: () => Effect.void,
 });
 

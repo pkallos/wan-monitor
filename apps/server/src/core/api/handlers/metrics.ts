@@ -48,8 +48,18 @@ export const getMetricsHandler = ({
     };
   }).pipe(Effect.catch(mapQueryError("Failed to query metrics")));
 
+export const getEarliestTimestampHandler = () =>
+  Effect.gen(function* () {
+    const db = yield* QuestDB;
+    const timestamp = yield* db.queryEarliestTimestamp();
+    return { timestamp };
+  }).pipe(Effect.catch(mapQueryError("Failed to query earliest timestamp")));
+
 export const MetricsGroupLive = HttpApiBuilder.group(
   WanMonitorApi,
   "metrics",
-  (handlers) => handlers.handle("getMetrics", getMetricsHandler)
+  (handlers) =>
+    handlers
+      .handle("getMetrics", getMetricsHandler)
+      .handle("getEarliestTimestamp", getEarliestTimestampHandler)
 );

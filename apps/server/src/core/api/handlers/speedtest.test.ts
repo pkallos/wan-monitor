@@ -54,6 +54,7 @@ const createTestQuestDB = (): QuestDBService => ({
   queryMetrics: () => Effect.succeed([]),
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),
+  queryEarliestTimestamp: () => Effect.succeed(null),
   health: () =>
     Effect.succeed({ connected: true, version: "test", uptime: 1000 }),
   close: () => Effect.succeed(undefined),
@@ -416,6 +417,58 @@ describe("SpeedTest API Handlers", () => {
         expect(result.data).toHaveLength(1);
         expect(result.meta.startTime).toBe("2024-01-01T00:00:00.000Z");
         expect(result.meta.endTime).toBe("2024-01-01T23:59:59.000Z");
+
+        return result;
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect("threads granularity from the query into the params", () => {
+      const mockData = [
+        {
+          timestamp: "2024-01-01T12:00:00Z",
+          source: "speedtest" as const,
+          download_speed: 100.5,
+          upload_speed: 50.2,
+          latency: 15.3,
+        },
+      ];
+
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createTestQuestDB(),
+        querySpeedtests: ({ granularity }) => {
+          expect(granularity).toBe("1h");
+          return Effect.succeed(mockData);
+        },
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getSpeedTestHistoryHandler({
+          query: {
+            startTime: "2024-01-01T00:00:00Z",
+            endTime: "2024-01-01T23:59:59Z",
+            granularity: "1h",
+          },
+        });
+
+        expect(result.data).toHaveLength(1);
+
+        return result;
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect("leaves granularity undefined when the query omits it", () => {
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createTestQuestDB(),
+        querySpeedtests: ({ granularity }) => {
+          expect(granularity).toBeUndefined();
+          return Effect.succeed([]);
+        },
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getSpeedTestHistoryHandler({ query: {} });
+
+        expect(result.data).toEqual([]);
 
         return result;
       }).pipe(Effect.provide(QuestDBTest));

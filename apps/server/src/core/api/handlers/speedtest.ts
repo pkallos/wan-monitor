@@ -124,6 +124,7 @@ export const getSpeedTestHistoryHandler = ({
       startTime: query.startTime ? new Date(query.startTime) : undefined,
       endTime: query.endTime ? new Date(query.endTime) : undefined,
       limit: query.limit,
+      granularity: query.granularity,
     };
 
     const data = yield* db

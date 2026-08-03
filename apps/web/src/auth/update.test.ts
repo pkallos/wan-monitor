@@ -34,18 +34,23 @@ import {
 import { update } from "@/auth/update";
 import {
   FetchConnectivityStatus,
+  FetchEarliestData,
   FetchMetrics,
   FetchSpeedtestHistory,
   initModel as initDashboardModel,
   LoadedTheme,
   LoadTheme,
+  Preset,
   SpeedtestTriggerAsyncData,
   SucceededFetchConnectivityStatus,
+  SucceededFetchEarliestData,
   SucceededFetchMetrics,
   SucceededFetchSpeedtestHistory,
   SucceededTriggerSpeedtest,
 } from "@/dashboard";
 import { ToastTest } from "@/dashboard/toast";
+
+const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 
 function assertLoggedIn(model: Model): LoggedIn {
   if (model._tag !== "LoggedIn") {
@@ -64,15 +69,27 @@ function assertLoggedOut(model: Model): LoggedOut {
 const resolveDashboardEntry = (token: string) =>
   Story.Command.resolveAll(
     [
-      FetchMetrics({ token, timeRange: "1h" }),
+      FetchMetrics({
+        token,
+        dateRange: DEFAULT_DATE_RANGE,
+        maybeEarliestDataMs: Option.none(),
+      }),
       SucceededFetchMetrics({ metrics: [], nowMs: 0 }),
     ],
     [
-      FetchSpeedtestHistory({ token, timeRange: "1h" }),
+      FetchSpeedtestHistory({
+        token,
+        dateRange: DEFAULT_DATE_RANGE,
+        maybeEarliestDataMs: Option.none(),
+      }),
       SucceededFetchSpeedtestHistory({ history: [] }),
     ],
     [
-      FetchConnectivityStatus({ token, timeRange: "1h" }),
+      FetchConnectivityStatus({
+        token,
+        dateRange: DEFAULT_DATE_RANGE,
+        maybeEarliestDataMs: Option.none(),
+      }),
       SucceededFetchConnectivityStatus({
         points: [],
         uptimePercentage: 100,
@@ -81,7 +98,11 @@ const resolveDashboardEntry = (token: string) =>
         granularity: "1m",
       }),
     ],
-    [LoadTheme, LoadedTheme({ theme: "light" })]
+    [LoadTheme, LoadedTheme({ theme: "light" })],
+    [
+      FetchEarliestData({ token }),
+      SucceededFetchEarliestData({ earliestMs: Option.none() }),
+    ]
   );
 
 describe("auth update", () => {
@@ -312,10 +333,18 @@ describe("auth update", () => {
         })
       ),
       Story.Command.expectHas(
-        FetchMetrics({ token: "abc123", timeRange: "1h" })
+        FetchMetrics({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
       ),
       Story.Command.expectHas(
-        FetchSpeedtestHistory({ token: "abc123", timeRange: "1h" })
+        FetchSpeedtestHistory({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
       ),
       Story.model((model) => {
         expect(assertLoggedIn(model).dashboard.speedtestTrigger).toEqual(
@@ -326,11 +355,19 @@ describe("auth update", () => {
       }),
       Story.Command.resolveAll(
         [
-          FetchMetrics({ token: "abc123", timeRange: "1h" }),
+          FetchMetrics({
+            token: "abc123",
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+          }),
           SucceededFetchMetrics({ metrics: [], nowMs: 0 }),
         ],
         [
-          FetchSpeedtestHistory({ token: "abc123", timeRange: "1h" }),
+          FetchSpeedtestHistory({
+            token: "abc123",
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+          }),
           SucceededFetchSpeedtestHistory({ history: [] }),
         ]
       ),

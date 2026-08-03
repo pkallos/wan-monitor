@@ -25,6 +25,7 @@ import type {
 import { configurePgTypeParsers } from "@/infrastructure/database/questdb/pgwire";
 import {
   buildQueryConnectivityStatus,
+  buildQueryEarliestTimestamp,
   buildQueryMetrics,
   buildQuerySpeedtests,
 } from "@/infrastructure/database/questdb/queries";
@@ -50,6 +51,10 @@ export interface QuestDBService {
     params: QueryMetricsParams
   ) => Effect.Effect<
     readonly ConnectivityStatusRow[],
+    DatabaseQueryError | DbUnavailable
+  >;
+  readonly queryEarliestTimestamp: () => Effect.Effect<
+    string | null,
     DatabaseQueryError | DbUnavailable
   >;
   readonly health: () => Effect.Effect<
@@ -136,7 +141,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const conn = yield* connection.getConnection;
 
-      const spec = buildQuerySpeedtests(params, table);
+      const spec = yield* buildQuerySpeedtests(params, table);
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
@@ -193,6 +198,37 @@ const make = Effect.gen(function* () {
       }
 
       return result.rows.map(mapConnectivityStatusRow);
+    }).pipe(
+      Effect.catchTag("DbUnavailable", (e) =>
+        connection
+          .markDisconnected(e.message)
+          .pipe(Effect.andThen(Effect.fail(e)))
+      )
+    );
+
+  const queryEarliestTimestamp = (): Effect.Effect<
+    string | null,
+    DatabaseQueryError | DbUnavailable
+  > =>
+    Effect.gen(function* () {
+      const conn = yield* connection.getConnection;
+
+      const spec = yield* buildQueryEarliestTimestamp(table);
+
+      const result = yield* Effect.tryPromise({
+        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
+        catch: (error) => {
+          const msg = errorMessage(error);
+          if (isLikelyConnectionError(msg)) {
+            return new DbUnavailable({ message: msg });
+          }
+          return new DatabaseQueryError({
+            message: `Failed to query earliest timestamp: ${msg}`,
+          });
+        },
+      });
+
+      return result.rows[0]?.timestamp ?? null;
     }).pipe(
       Effect.catchTag("DbUnavailable", (e) =>
         connection
@@ -269,6 +305,7 @@ const make = Effect.gen(function* () {
     queryMetrics,
     querySpeedtests,
     queryConnectivityStatus,
+    queryEarliestTimestamp,
     health,
     close,
   } satisfies QuestDBService;

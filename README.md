@@ -160,9 +160,9 @@ Each ping sample is classified into exactly one state:
 
 The **uptime percentage** is deliberately "clean up only": it counts strictly *up* samples over all samples. Degraded samples are still reachable but are **not** counted toward uptime, so packet loss lowers the uptime figure rather than being treated as full availability. The per-interval degraded share is shown separately on the connectivity chart.
 
-**Time Range Options**: 1 hour, 6 hours, 24 hours, 7 days, 30 days
+**Date Range**: a calendar picker with presets — last 7 days, last 30 days, month to date, quarter to date, year to date, last 12 months, all time — plus a two-month calendar for picking an arbitrary start and end day.
 
-Charts support linked cursors (hovering on one chart highlights the same time on others) and automatic data aggregation based on the selected time range.
+Charts support linked cursors (hovering on one chart highlights the same time on others) and automatic data aggregation: the bucket size is derived from the selected range's span, from 1-minute buckets for a range of 6 hours or less up to 1-day buckets beyond 90 days.
 
 ## Limitations
 
