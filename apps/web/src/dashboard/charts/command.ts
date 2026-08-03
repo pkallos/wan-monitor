@@ -274,39 +274,37 @@ export const MountLatencyChart = Mount.define(
       )
 );
 
-export const SyncLatencyChart = Command.define(
-  "SyncLatencyChart",
-  DateRangeArgs,
-  CompletedSyncLatencyChart,
-  FailedSyncLatencyChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.dateRange,
-      args.maybeEarliestDataMs
-    );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncLatencyChart({ reason }),
-      CompletedSyncLatencyChart,
-      (chart) => {
-        const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
-        const stats = calculateLatencyStats(args.metrics);
-        chart.setOption(
-          makeLatencyChartOption({
-            slots,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
-        );
-      }
-    );
-  })
-);
+export const SyncLatencyChart = Command.define("SyncLatencyChart", {
+  args: DateRangeArgs,
+  messages: [CompletedSyncLatencyChart, FailedSyncLatencyChart],
+  execute: (args) =>
+    Effect.gen(function* () {
+      const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
+        args.dateRange,
+        args.maybeEarliestDataMs
+      );
+      return yield* syncChart(
+        args.hostId,
+        (reason) => FailedSyncLatencyChart({ reason }),
+        CompletedSyncLatencyChart,
+        (chart) => {
+          const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
+          const stats = calculateLatencyStats(args.metrics);
+          chart.setOption(
+            makeLatencyChartOption({
+              slots,
+              stats,
+              theme: args.theme,
+              startMs,
+              endMs,
+              granularity,
+            }),
+            true
+          );
+        }
+      );
+    }),
+});
 
 export const PACKET_LOSS_CHART_HOST_ID = "packet-loss-chart";
 
@@ -326,39 +324,37 @@ export const MountPacketLossChart = Mount.define(
       )
 );
 
-export const SyncPacketLossChart = Command.define(
-  "SyncPacketLossChart",
-  DateRangeArgs,
-  CompletedSyncPacketLossChart,
-  FailedSyncPacketLossChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.dateRange,
-      args.maybeEarliestDataMs
-    );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncPacketLossChart({ reason }),
-      CompletedSyncPacketLossChart,
-      (chart) => {
-        const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
-        const stats = calculatePacketLossStats(args.metrics);
-        chart.setOption(
-          makePacketLossChartOption({
-            slots,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
-        );
-      }
-    );
-  })
-);
+export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
+  args: DateRangeArgs,
+  messages: [CompletedSyncPacketLossChart, FailedSyncPacketLossChart],
+  execute: (args) =>
+    Effect.gen(function* () {
+      const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
+        args.dateRange,
+        args.maybeEarliestDataMs
+      );
+      return yield* syncChart(
+        args.hostId,
+        (reason) => FailedSyncPacketLossChart({ reason }),
+        CompletedSyncPacketLossChart,
+        (chart) => {
+          const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
+          const stats = calculatePacketLossStats(args.metrics);
+          chart.setOption(
+            makePacketLossChartOption({
+              slots,
+              stats,
+              theme: args.theme,
+              startMs,
+              endMs,
+              granularity,
+            }),
+            true
+          );
+        }
+      );
+    }),
+});
 
 export const JITTER_CHART_HOST_ID = "jitter-chart";
 
@@ -378,39 +374,37 @@ export const MountJitterChart = Mount.define(
       )
 );
 
-export const SyncJitterChart = Command.define(
-  "SyncJitterChart",
-  DateRangeArgs,
-  CompletedSyncJitterChart,
-  FailedSyncJitterChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.dateRange,
-      args.maybeEarliestDataMs
-    );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncJitterChart({ reason }),
-      CompletedSyncJitterChart,
-      (chart) => {
-        const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
-        const stats = calculateJitterStats(args.metrics);
-        chart.setOption(
-          makeJitterChartOption({
-            slots,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
-        );
-      }
-    );
-  })
-);
+export const SyncJitterChart = Command.define("SyncJitterChart", {
+  args: DateRangeArgs,
+  messages: [CompletedSyncJitterChart, FailedSyncJitterChart],
+  execute: (args) =>
+    Effect.gen(function* () {
+      const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
+        args.dateRange,
+        args.maybeEarliestDataMs
+      );
+      return yield* syncChart(
+        args.hostId,
+        (reason) => FailedSyncJitterChart({ reason }),
+        CompletedSyncJitterChart,
+        (chart) => {
+          const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
+          const stats = calculateJitterStats(args.metrics);
+          chart.setOption(
+            makeJitterChartOption({
+              slots,
+              stats,
+              theme: args.theme,
+              startMs,
+              endMs,
+              granularity,
+            }),
+            true
+          );
+        }
+      );
+    }),
+});
 
 export const SPEED_CHART_HOST_ID = "speed-chart";
 
@@ -430,42 +424,40 @@ export const MountSpeedChart = Mount.define(
       )
 );
 
-export const SyncSpeedChart = Command.define(
-  "SyncSpeedChart",
-  {
+export const SyncSpeedChart = Command.define("SyncSpeedChart", {
+  args: {
     hostId: S.String,
     metrics: S.Array(SpeedMetricSchema),
     dateRange: DateRangeSelection,
     maybeEarliestDataMs: S.optional(S.Option(S.Number)),
     theme: Theme,
   },
-  CompletedSyncSpeedChart,
-  FailedSyncSpeedChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } =
-      yield* resolveSpeedtestTimelineWindow(
-        args.dateRange,
-        args.maybeEarliestDataMs
-      );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncSpeedChart({ reason }),
-      CompletedSyncSpeedChart,
-      (chart) => {
-        const stats = calculateSpeedStats(args.metrics);
-        chart.setOption(
-          makeSpeedChartOption({
-            metrics: args.metrics,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
+  messages: [CompletedSyncSpeedChart, FailedSyncSpeedChart],
+  execute: (args) =>
+    Effect.gen(function* () {
+      const { startMs, endMs, granularity } =
+        yield* resolveSpeedtestTimelineWindow(
+          args.dateRange,
+          args.maybeEarliestDataMs
         );
-      }
-    );
-  })
-);
+      return yield* syncChart(
+        args.hostId,
+        (reason) => FailedSyncSpeedChart({ reason }),
+        CompletedSyncSpeedChart,
+        (chart) => {
+          const stats = calculateSpeedStats(args.metrics);
+          chart.setOption(
+            makeSpeedChartOption({
+              metrics: args.metrics,
+              stats,
+              theme: args.theme,
+              startMs,
+              endMs,
+              granularity,
+            }),
+            true
+          );
+        }
+      );
+    }),
+});

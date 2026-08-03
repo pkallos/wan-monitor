@@ -117,42 +117,40 @@ export const clearSession = Effect.gen(function* () {
   )
 );
 
-export const FetchAuthStatus = Command.define(
-  "FetchAuthStatus",
-  SucceededFetchAuthStatus,
-  FailedFetchAuthStatus
-)(fetchAuthStatus.pipe(Effect.provide(FetchHttpClient.layer)));
+export const FetchAuthStatus = Command.define("FetchAuthStatus", {
+  messages: [SucceededFetchAuthStatus, FailedFetchAuthStatus],
+  execute: fetchAuthStatus.pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const FetchMe = Command.define(
-  "FetchMe",
-  { token: S.String },
-  SucceededFetchMe,
-  FailedFetchMe
-)((args) => fetchMe(args).pipe(Effect.provide(FetchHttpClient.layer)));
+export const FetchMe = Command.define("FetchMe", {
+  args: { token: S.String },
+  messages: [SucceededFetchMe, FailedFetchMe],
+  execute: (args) => fetchMe(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const Login = Command.define(
-  "Login",
-  { username: S.String, password: S.String },
-  SucceededLogin,
-  FailedLogin
-)((args) => login(args).pipe(Effect.provide(FetchHttpClient.layer)));
+export const Login = Command.define("Login", {
+  args: { username: S.String, password: S.String },
+  messages: [SucceededLogin, FailedLogin],
+  execute: (args) => login(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const Logout = Command.define(
-  "Logout",
-  CompletedLogout
-)(logout.pipe(Effect.provide(FetchHttpClient.layer)));
+export const Logout = Command.define("Logout", {
+  messages: [CompletedLogout],
+  execute: logout.pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const SaveSession = Command.define(
-  "SaveSession",
-  { token: S.String, username: S.String },
-  CompletedSaveSession,
-  FailedSaveSession
-)((args) =>
-  saveSession(args).pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage))
-);
+export const SaveSession = Command.define("SaveSession", {
+  args: { token: S.String, username: S.String },
+  messages: [CompletedSaveSession, FailedSaveSession],
+  execute: (args) =>
+    saveSession(args).pipe(
+      Effect.provide(BrowserKeyValueStore.layerLocalStorage)
+    ),
+});
 
-export const ClearSession = Command.define(
-  "ClearSession",
-  CompletedClearSession,
-  FailedClearSession
-)(clearSession.pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage)));
+export const ClearSession = Command.define("ClearSession", {
+  messages: [CompletedClearSession, FailedClearSession],
+  execute: clearSession.pipe(
+    Effect.provide(BrowserKeyValueStore.layerLocalStorage)
+  ),
+});

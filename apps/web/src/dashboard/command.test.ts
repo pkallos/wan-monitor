@@ -125,7 +125,9 @@ describe("fetchMetrics", () => {
       ],
     });
     if (result._tag === "SucceededFetchMetrics") {
-      expect(result.nowMs).toBeCloseTo(Date.now(), -2);
+      // Sanity-check nowMs is a real current timestamp, not a fixed 50ms
+      // tolerance which flakes under CI/coverage-instrumentation overhead.
+      expect(Math.abs(result.nowMs - Date.now())).toBeLessThan(5000);
     }
   });
 

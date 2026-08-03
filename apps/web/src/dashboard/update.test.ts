@@ -114,7 +114,7 @@ describe("dashboard update — metrics", () => {
   test("entering the dashboard with no cached metrics loads them", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(
         FetchMetrics({
@@ -170,7 +170,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(EnteredDashboard()),
       Story.Command.expectNone()
     );
@@ -184,7 +184,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(TickedRefresh()),
       Story.Command.expectHas(
         FetchMetrics({
@@ -220,7 +220,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(TickedRefresh()),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
@@ -262,7 +262,7 @@ describe("dashboard update — metrics", () => {
   test("a refresh tick while metrics are idle never cold-starts a fetch", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(TickedRefresh()),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -276,7 +276,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(TickedRefresh()),
       Story.Command.expectNone()
     );
@@ -287,7 +287,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
       Story.model((model) => {
         expect(model.metrics).toEqual(MetricsAsyncData.Success({ data: [] }));
@@ -303,7 +303,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(FailedFetchMetrics({ error: "network error" })),
       Story.model((model) => {
         expect(model.metrics).toEqual(
@@ -318,7 +318,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(FailedFetchMetrics({ error: "network error" })),
       Story.model((model) => {
         expect(model.metrics).toEqual(
@@ -333,7 +333,7 @@ describe("dashboard update — earliest data", () => {
   test("entering the dashboard fetches the earliest datapoint once", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(FetchEarliestData({ token: "abc123" })),
       Story.Command.resolveAll(
@@ -390,7 +390,7 @@ describe("dashboard update — earliest data", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(EnteredDashboard()),
       Story.Command.expectNone()
     );
@@ -399,7 +399,7 @@ describe("dashboard update — earliest data", () => {
   test("a failed fetch is a no-op acknowledgment, leaving the earliest datapoint unknown", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedFetchEarliestData({ error: "network error" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -413,7 +413,7 @@ describe("dashboard update — speedtest history", () => {
   test("entering the dashboard loads speedtest history when missing", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
@@ -453,7 +453,7 @@ describe("dashboard update — speedtest history", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(FailedFetchSpeedtestHistory({ error: "network error" })),
       Story.model((model) => {
         expect(model.speedtestHistory).toEqual(
@@ -473,7 +473,7 @@ describe("dashboard update — connectivity status", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(
         SucceededFetchConnectivityStatus({
           points: [],
@@ -507,7 +507,7 @@ describe("dashboard update — connectivity status", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(FailedFetchConnectivityStatus({ error: "network error" })),
       Story.model((model) => {
         expect(model.connectivityStatus).toEqual(
@@ -522,7 +522,7 @@ describe("dashboard update — live connectivity", () => {
   test("entering the dashboard fetches the live status with no date range attached", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
       Story.model((model) => {
@@ -559,7 +559,7 @@ describe("dashboard update — live connectivity", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(TickedRefresh()),
       Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
       Story.model((model) => {
@@ -578,7 +578,7 @@ describe("dashboard update — live connectivity", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(
         SucceededFetchLiveConnectivity({
           status: "degraded",
@@ -606,7 +606,7 @@ describe("dashboard update — live connectivity", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(FailedFetchLiveConnectivity({ error: "network error" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -676,7 +676,7 @@ describe("dashboard update — date range", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(
         GotDateRangePickerMessage({
           message: ClickedPreset({ preset: "last7d" }),
@@ -738,7 +738,7 @@ describe("dashboard update — date range with no prior data", () => {
 
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(
         GotDateRangePickerMessage({
           message: ClickedPreset({ preset: "last7d" }),
@@ -810,7 +810,7 @@ describe("dashboard update — manual refresh", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedRefreshNow()),
       Story.model((model) => {
         expect(model.dateRange).toEqual(currentRange);
@@ -867,7 +867,7 @@ describe("dashboard update — pause toggle", () => {
   test("toggling pause flips isPaused", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(ClickedTogglePause()),
       Story.model((model) => {
         expect(model.isPaused).toBe(true);
@@ -880,7 +880,7 @@ describe("dashboard update — idle detection", () => {
   test("going idle sets isIdle without touching isPaused", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(WentIdle()),
       Story.model((model) => {
         expect(model.isIdle).toBe(true);
@@ -892,7 +892,7 @@ describe("dashboard update — idle detection", () => {
   test("interacting clears isIdle without touching isPaused", () => {
     Story.story(
       withContext,
-      Story.with({ ...initModel(), isIdle: true, isPaused: true }),
+      Story.given({ ...initModel(), isIdle: true, isPaused: true }),
       Story.message(Interacted()),
       Story.model((model) => {
         expect(model.isIdle).toBe(false);
@@ -906,7 +906,7 @@ describe("dashboard update — connectivity segment hover", () => {
   test("hovering a segment records which one is hovered", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(HoveredConnectivitySegment({ index: 3 })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -918,7 +918,7 @@ describe("dashboard update — connectivity segment hover", () => {
   test("leaving a segment clears the hover", () => {
     Story.story(
       withContext,
-      Story.with({ ...initModel(), hoveredSegmentIndex: Option.some(3) }),
+      Story.given({ ...initModel(), hoveredSegmentIndex: Option.some(3) }),
       Story.message(UnhoveredConnectivitySegment()),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -940,7 +940,7 @@ describe("dashboard update — toast messages", () => {
   test("a toast message is delegated to the toast submodel", () => {
     Story.story(
       withContext,
-      Story.with(modelWithToast()),
+      Story.given(modelWithToast()),
       Story.message(
         GotToastMessage({
           message: UiToast.HoveredEntry({
@@ -971,7 +971,9 @@ describe("dashboard update — toast messages", () => {
     );
 
     expect(model.toast.entries[0]?.isHovered).toBe(false);
-    expect(commands.map((command) => command.name)).toEqual(["DismissAfter"]);
+    expect(commands.map((command) => command.name)).toEqual([
+      "WaitBeforeDismissal",
+    ]);
   });
 });
 
@@ -989,7 +991,7 @@ describe("dashboard update — theme toggle", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedToggleTheme()),
       Story.model((updatedModel) => {
         expect(Option.getOrNull(updatedModel.maybeTheme)).toBe("dark");
@@ -1046,7 +1048,7 @@ describe("dashboard update — speedtest trigger", () => {
   test("clicking trigger dispatches TriggerSpeedtest and moves to Loading", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(ClickedTriggerSpeedtest()),
       Story.Command.expectExact(TriggerSpeedtest({ token: "abc123" })),
       Story.model((model) => {
@@ -1076,7 +1078,7 @@ describe("dashboard update — speedtest trigger", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(
         SucceededTriggerSpeedtest({
           downloadMbps: 500,
@@ -1121,7 +1123,7 @@ describe("dashboard update — speedtest trigger", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(
         FailedTriggerSpeedtest({
           message: "already running",
@@ -1142,7 +1144,7 @@ describe("dashboard update — latency chart", () => {
   test("mounting with no metrics data yet records the host id but syncs nothing", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(SucceededMountLatencyChart({ hostId: "latency-chart" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -1161,7 +1163,7 @@ describe("dashboard update — latency chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededMountLatencyChart({ hostId: "latency-chart" })),
       Story.Command.expectExact(
         SyncLatencyChart({
@@ -1185,7 +1187,7 @@ describe("dashboard update — latency chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
       Story.Command.expectExact(
         SyncLatencyChart({
@@ -1203,7 +1205,7 @@ describe("dashboard update — latency chart", () => {
   test("a successful metrics fetch dispatches nothing when the chart isn't mounted", () => {
     Story.story(
       withContext,
-      Story.with({ ...initModel(), metrics: MetricsAsyncData.Loading() }),
+      Story.given({ ...initModel(), metrics: MetricsAsyncData.Loading() }),
       Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
       Story.Command.expectNone()
     );
@@ -1212,7 +1214,7 @@ describe("dashboard update — latency chart", () => {
   test("a failed mount is a no-op acknowledgment", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedMountLatencyChart({ reason: "no host element" })),
       Story.Command.expectNone()
     );
@@ -1221,13 +1223,13 @@ describe("dashboard update — latency chart", () => {
   test("CompletedSyncLatencyChart and FailedSyncLatencyChart are no-op acknowledgments", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(CompletedSyncLatencyChart()),
       Story.Command.expectNone()
     );
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedSyncLatencyChart({ reason: "chart disposed" })),
       Story.Command.expectNone()
     );
@@ -1243,7 +1245,7 @@ describe("dashboard update — packet loss chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(
         SucceededMountPacketLossChart({ hostId: "packet-loss-chart" })
       ),
@@ -1269,7 +1271,7 @@ describe("dashboard update — packet loss chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
       Story.Command.expectExact(
         SyncPacketLossChart({
@@ -1287,19 +1289,19 @@ describe("dashboard update — packet loss chart", () => {
   test("a failed mount and failed/completed sync are no-op acknowledgments", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedMountPacketLossChart({ reason: "no host element" })),
       Story.Command.expectNone()
     );
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(CompletedSyncPacketLossChart()),
       Story.Command.expectNone()
     );
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedSyncPacketLossChart({ reason: "chart disposed" })),
       Story.Command.expectNone()
     );
@@ -1315,7 +1317,7 @@ describe("dashboard update — jitter chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededMountJitterChart({ hostId: "jitter-chart" })),
       Story.Command.expectExact(
         SyncJitterChart({
@@ -1339,7 +1341,7 @@ describe("dashboard update — jitter chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
       Story.Command.expectExact(
         SyncJitterChart({
@@ -1357,19 +1359,19 @@ describe("dashboard update — jitter chart", () => {
   test("a failed mount and failed/completed sync are no-op acknowledgments", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedMountJitterChart({ reason: "no host element" })),
       Story.Command.expectNone()
     );
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(CompletedSyncJitterChart()),
       Story.Command.expectNone()
     );
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedSyncJitterChart({ reason: "chart disposed" })),
       Story.Command.expectNone()
     );
@@ -1385,7 +1387,7 @@ describe("dashboard update — speed chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededMountSpeedChart({ hostId: "speed-chart" })),
       Story.Command.expectExact(
         SyncSpeedChart({
@@ -1409,7 +1411,7 @@ describe("dashboard update — speed chart", () => {
 
     Story.story(
       withContext,
-      Story.with(model),
+      Story.given(model),
       Story.message(SucceededFetchSpeedtestHistory({ history: [] })),
       Story.Command.expectExact(
         SyncSpeedChart({
@@ -1427,7 +1429,7 @@ describe("dashboard update — speed chart", () => {
   test("a successful fetch dispatches nothing when the chart isn't mounted", () => {
     Story.story(
       withContext,
-      Story.with({
+      Story.given({
         ...initModel(),
         speedtestHistory: SpeedtestHistoryAsyncData.Loading(),
       }),
@@ -1439,19 +1441,19 @@ describe("dashboard update — speed chart", () => {
   test("a failed mount and failed/completed sync are no-op acknowledgments", () => {
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedMountSpeedChart({ reason: "no host element" })),
       Story.Command.expectNone()
     );
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(CompletedSyncSpeedChart()),
       Story.Command.expectNone()
     );
     Story.story(
       withContext,
-      Story.with(initModel()),
+      Story.given(initModel()),
       Story.message(FailedSyncSpeedChart({ reason: "chart disposed" })),
       Story.Command.expectNone()
     );

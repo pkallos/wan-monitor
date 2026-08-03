@@ -1,7 +1,6 @@
 import { Array as Array_, Option } from "effect";
 import { AsyncData, Submodel } from "foldkit";
-import type { Html } from "foldkit/html";
-import { html } from "foldkit/html";
+import type { Html, HtmlBuilder } from "foldkit/html";
 import {
   JITTER_CHART_HOST_ID,
   LATENCY_CHART_HOST_ID,
@@ -56,8 +55,7 @@ const SECTION_HEADING_CLASS = "mb-4 text-xl font-bold";
 const CHART_LABEL_CLASS =
   "mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400";
 
-const warningIcon = (): Html => {
-  const h = html<Message>();
+const warningIcon = (h: HtmlBuilder<Message>): Html => {
   return h.svg(
     [
       h.Attribute("viewBox", "0 0 20 20"),
@@ -100,9 +98,9 @@ const warningIcon = (): Html => {
 };
 
 const iconSvg = (
-  children: (h: ReturnType<typeof html<Message>>) => ReadonlyArray<Html>
+  h: HtmlBuilder<Message>,
+  children: (h: HtmlBuilder<Message>) => ReadonlyArray<Html>
 ): Html => {
-  const h = html<Message>();
   return h.svg(
     [
       h.Attribute("viewBox", "0 0 24 24"),
@@ -113,8 +111,8 @@ const iconSvg = (
   );
 };
 
-const refreshIcon = (): Html =>
-  iconSvg((h) => [
+const refreshIcon = (h: HtmlBuilder<Message>): Html =>
+  iconSvg(h, (h) => [
     h.circle(
       [
         h.Attribute("cx", "12"),
@@ -136,8 +134,8 @@ const refreshIcon = (): Html =>
     ),
   ]);
 
-const pauseIcon = (): Html =>
-  iconSvg((h) => [
+const pauseIcon = (h: HtmlBuilder<Message>): Html =>
+  iconSvg(h, (h) => [
     h.rect(
       [
         h.Attribute("x", "8"),
@@ -162,8 +160,8 @@ const pauseIcon = (): Html =>
     ),
   ]);
 
-const playIcon = (): Html =>
-  iconSvg((h) => [
+const playIcon = (h: HtmlBuilder<Message>): Html =>
+  iconSvg(h, (h) => [
     h.polygon(
       [
         h.Attribute("points", "8,5 8,19 19,12"),
@@ -173,8 +171,8 @@ const playIcon = (): Html =>
     ),
   ]);
 
-const sunIcon = (): Html =>
-  iconSvg((h) => [
+const sunIcon = (h: HtmlBuilder<Message>): Html =>
+  iconSvg(h, (h) => [
     h.circle(
       [
         h.Attribute("cx", "12"),
@@ -212,8 +210,8 @@ const sunIcon = (): Html =>
 
 // A true crescent (not a plain filled dot): masks a second, offset circle
 // out of the main disc rather than approximating with a path.
-const moonIcon = (): Html =>
-  iconSvg((h) => [
+const moonIcon = (h: HtmlBuilder<Message>): Html =>
+  iconSvg(h, (h) => [
     h.defs(
       [],
       [
@@ -258,9 +256,7 @@ const moonIcon = (): Html =>
 export type ViewInputs = Readonly<{ renderLogoutButton: () => Html }>;
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>(
-  (model, viewInputs) => {
-    const h = html<Message>();
-
+  (model, viewInputs, h) => {
     const chartHost = (
       label: string,
       mountAction: Parameters<typeof h.OnMount>[0],
@@ -371,7 +367,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                 "mb-4 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200"
               ),
             ],
-            [warningIcon(), `${prefix}: ${error}`]
+            [warningIcon(h), `${prefix}: ${error}`]
           ),
       });
 
@@ -616,7 +612,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                         h.Title("Refresh now"),
                         h.Class(GHOST_ICON_BUTTON_CLASS),
                       ],
-                      [refreshIcon()]
+                      [refreshIcon(h)]
                     ),
                     h.button(
                       [
@@ -642,8 +638,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                       ],
                       [
                         model.isPaused || model.isIdle
-                          ? playIcon()
-                          : pauseIcon(),
+                          ? playIcon(h)
+                          : pauseIcon(h),
                       ]
                     ),
                     h.submodel({
@@ -670,7 +666,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                         ),
                         h.Class(GHOST_ICON_BUTTON_CLASS),
                       ],
-                      [isDark ? sunIcon() : moonIcon()]
+                      [isDark ? sunIcon(h) : moonIcon(h)]
                     ),
                     viewInputs.renderLogoutButton(),
                   ]
