@@ -190,6 +190,27 @@ describe("makePacketLossChartOption", () => {
     expect(xAxis.min).toBe(startMs);
     expect(xAxis.max).toBe(endMs);
   });
+
+  test("plots a visible symbol at 0% loss instead of letting it ride the axis line unmarked", () => {
+    const zeroLossMetrics = [
+      { timestamp: "2026-07-26T10:05:00.000Z", packet_loss: 0 },
+    ];
+    const option = makePacketLossChartOption({
+      slots: fillTimeline(zeroLossMetrics, startMs, endMs, "5m"),
+      stats: calculatePacketLossStats(zeroLossMetrics),
+      theme: "light",
+      startMs,
+      endMs,
+      granularity: "5m",
+    });
+    const series = option.series as Array<{
+      showSymbol: boolean;
+      symbolSize: number;
+    }>;
+
+    expect(series[0].showSymbol).toBe(true);
+    expect(series[0].symbolSize).toBeGreaterThan(0);
+  });
 });
 
 describe("makeJitterChartOption", () => {
