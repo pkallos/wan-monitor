@@ -52,10 +52,17 @@ const GetMetricsResponse = Schema.Struct({
   meta: MetaSchema,
 });
 
+const GetEarliestTimestampResponse = Schema.Struct({
+  timestamp: Schema.NullOr(Schema.String),
+});
+
 // Export TypeScript types derived from schemas
 export type Metric = Schema.Schema.Type<typeof MetricSchema>;
 export type GetMetricsResponseType = Schema.Schema.Type<
   typeof GetMetricsResponse
+>;
+export type GetEarliestTimestampResponseType = Schema.Schema.Type<
+  typeof GetEarliestTimestampResponse
 >;
 
 export const MetricsApiGroup = HttpApiGroup.make("metrics")
@@ -64,6 +71,15 @@ export const MetricsApiGroup = HttpApiGroup.make("metrics")
     HttpApiEndpoint.get("getMetrics", "/", {
       query: GetMetricsQueryParams,
       success: GetMetricsResponse,
+      error: [
+        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
+        Schema.String,
+      ],
+    })
+  )
+  .add(
+    HttpApiEndpoint.get("getEarliestTimestamp", "/earliest", {
+      success: GetEarliestTimestampResponse,
       error: [
         HttpApiSchema.status(503)(DbUnavailableErrorSchema),
         Schema.String,

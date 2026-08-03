@@ -1,6 +1,7 @@
+import { Popover } from "@foldkit/ui";
 import { Option } from "effect";
 import { Scene } from "foldkit";
-import { describe, test } from "vitest";
+import { describe, test, vi } from "vitest";
 import {
   JITTER_CHART_HOST_ID,
   LATENCY_CHART_HOST_ID,
@@ -21,6 +22,11 @@ import {
   FetchSpeedtestHistory,
   SaveTheme,
 } from "@/dashboard/command";
+import {
+  formatDateRangeLabel,
+  getDateRangeWindow,
+  Preset,
+} from "@/dashboard/dateRange";
 import {
   CompletedSaveTheme,
   CompletedSyncJitterChart,
@@ -45,7 +51,10 @@ import {
 import { update } from "@/dashboard/update";
 import { view as dashboardView } from "@/dashboard/view";
 
-const context = { token: "abc123" };
+const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
+const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
+
+const context = { token: "abc123", now: () => NOW_MS };
 const boundUpdate = (
   model: Parameters<typeof update>[0],
   message: Parameters<typeof update>[1]
@@ -473,13 +482,25 @@ describe("dashboard view", () => {
       Scene.expect(Scene.role("button", { name: "Refresh now" })).toExist(),
       Scene.click(Scene.role("button", { name: "Refresh now" })),
       Scene.Command.expectHas(
-        FetchMetrics({ token: "abc123", timeRange: "1h" })
+        FetchMetrics({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
       ),
       Scene.Command.expectHas(
-        FetchSpeedtestHistory({ token: "abc123", timeRange: "1h" })
+        FetchSpeedtestHistory({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
       ),
       Scene.Command.expectHas(
-        FetchConnectivityStatus({ token: "abc123", timeRange: "1h" })
+        FetchConnectivityStatus({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
       ),
       Scene.Command.resolveAll(
         [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
@@ -540,43 +561,103 @@ describe("dashboard view", () => {
     );
   });
 
-  test("clicking a time range button changes the selected range", () => {
-    Scene.scene(
-      { update: boundUpdate, view },
-      Scene.with(initModel()),
-      acknowledgeAllChartMounts(),
-      Scene.click(Scene.role("button", { name: "24 Hours" })),
-      Scene.Command.expectHas(
-        FetchMetrics({ token: "abc123", timeRange: "24h" })
-      ),
-      Scene.Command.expectHas(
-        FetchSpeedtestHistory({ token: "abc123", timeRange: "24h" })
-      ),
-      Scene.Command.expectHas(
-        FetchConnectivityStatus({ token: "abc123", timeRange: "24h" })
-      ),
-      Scene.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
-        [
-          FetchConnectivityStatus,
-          SucceededFetchConnectivityStatus({
-            points: [],
-            uptimePercentage: 100,
-            startTimeMs: 0,
-            endTimeMs: 3_600_000,
-            granularity: "1m",
-          }),
-        ]
-      ),
-      resolveAllChartSyncs(),
-      Scene.expect(Scene.role("button", { name: "24 Hours" })).toHaveAttr(
-        "aria-pressed",
-        "true"
-      )
+  test("opening the date range picker, choosing a preset, and applying it changes the selected range and reloads data", () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
+
+    const appliedRange = Preset({ preset: "last7d" });
+    const initialLabel = formatDateRangeLabel(
+      getDateRangeWindow(DEFAULT_DATE_RANGE, NOW_MS)
     );
+    const appliedLabel = formatDateRangeLabel(
+      getDateRangeWindow(appliedRange, NOW_MS)
+    );
+    const model = {
+      ...initModel(),
+      metrics: MetricsAsyncData.Success({ data: [] }),
+      speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+      connectivityStatus: ConnectivityStatusAsyncData.Success({
+        data: {
+          points: [],
+          uptimePercentage: 100,
+          startTimeMs: 0,
+          endTimeMs: 3_600_000,
+          granularity: "1m" as const,
+        },
+      }),
+    };
+
+    try {
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.with(model),
+        acknowledgeAllChartMounts(),
+        resolveAllChartSyncs(),
+        Scene.expect(Scene.role("button", { name: initialLabel })).toExist(),
+        Scene.click(Scene.role("button", { name: initialLabel })),
+        Scene.Mount.resolveAll(
+          [Popover.AnchorPopover, Popover.CompletedAnchorPopover()],
+          [
+            Popover.PortalPopoverBackdrop,
+            Popover.CompletedPortalPopoverBackdrop(),
+          ]
+        ),
+        Scene.click(Scene.role("button", { name: "Last 7 days" })),
+        Scene.expect(Scene.role("button", { name: "Last 7 days" })).toHaveAttr(
+          "aria-pressed",
+          "true"
+        ),
+        Scene.click(Scene.role("button", { name: "Apply" })),
+        Scene.Command.expectHas(
+          FetchMetrics({
+            token: "abc123",
+            dateRange: appliedRange,
+            maybeEarliestDataMs: Option.none(),
+          })
+        ),
+        Scene.Command.expectHas(
+          FetchSpeedtestHistory({
+            token: "abc123",
+            dateRange: appliedRange,
+            maybeEarliestDataMs: Option.none(),
+          })
+        ),
+        Scene.Command.expectHas(
+          FetchConnectivityStatus({
+            token: "abc123",
+            dateRange: appliedRange,
+            maybeEarliestDataMs: Option.none(),
+          })
+        ),
+        Scene.Command.resolveAll(
+          [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: NOW_MS })],
+          [
+            FetchSpeedtestHistory,
+            SucceededFetchSpeedtestHistory({ history: [] }),
+          ],
+          [
+            FetchConnectivityStatus,
+            SucceededFetchConnectivityStatus({
+              points: [],
+              uptimePercentage: 100,
+              startTimeMs: 0,
+              endTimeMs: 3_600_000,
+              granularity: "1m",
+            }),
+          ]
+        ),
+        resolveAllChartSyncs(),
+        Scene.Command.resolve(
+          Popover.FocusButton,
+          Popover.CompletedFocusButton()
+        ),
+        Scene.Mount.expectEnded(
+          Popover.AnchorPopover,
+          Popover.PortalPopoverBackdrop
+        ),
+        Scene.expect(Scene.role("button", { name: appliedLabel })).toExist()
+      );
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

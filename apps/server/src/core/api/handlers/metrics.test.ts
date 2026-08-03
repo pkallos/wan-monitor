@@ -1,7 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
-import { getMetricsHandler } from "@/core/api/handlers/metrics";
+import {
+  getEarliestTimestampHandler,
+  getMetricsHandler,
+} from "@/core/api/handlers/metrics";
 import {
   QuestDB,
   type QuestDBService,
@@ -16,6 +19,7 @@ const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
   queryMetrics: () => Effect.succeed(mockData),
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),
+  queryEarliestTimestamp: () => Effect.succeed(null),
   close: () => Effect.void,
 });
 
@@ -158,5 +162,31 @@ describe("Metrics Handlers", () => {
         }).pipe(Effect.provide(QuestDBTest));
       }
     );
+  });
+
+  describe("getEarliestTimestamp", () => {
+    it.effect("returns the DB's earliest timestamp when present", () => {
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createMockQuestDB([]),
+        queryEarliestTimestamp: () =>
+          Effect.succeed("2024-01-01T00:00:00.000000Z"),
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getEarliestTimestampHandler();
+
+        expect(result.timestamp).toBe("2024-01-01T00:00:00.000000Z");
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect("returns null when the DB has no data", () => {
+      const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB([]));
+
+      return Effect.gen(function* () {
+        const result = yield* getEarliestTimestampHandler();
+
+        expect(result.timestamp).toBeNull();
+      }).pipe(Effect.provide(QuestDBTest));
+    });
   });
 });

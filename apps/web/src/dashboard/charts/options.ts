@@ -1,4 +1,4 @@
-import type { Metric } from "@shared/api/routes/metrics";
+import type { Granularity, Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import type { EChartsOption } from "echarts/types/dist/shared";
 import { Array as Array_, Option, Order } from "effect";
@@ -24,13 +24,28 @@ const THEME_COLORS: Record<Theme, { grid: string; text: string }> = {
   dark: { grid: "#2d3748", text: "#a0aec0" },
 };
 
-// Always hour:minute, never a day-boundary label, even across multi-day
-// ranges.
-const formatAxisTime = (value: number): string =>
-  new Date(value).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+// "6h"/"1d" ticks span long enough intervals that time-of-day isn't the
+// meaningful label, so those granularities format as a date instead —
+// finer granularities keep the hour:minute label a tick's short interval
+// actually needs.
+const DATE_LABEL_GRANULARITIES: ReadonlySet<Granularity> = new Set([
+  "6h",
+  "1d",
+]);
+
+export const formatAxisLabel = (
+  value: number,
+  granularity: Granularity | undefined
+): string =>
+  granularity !== undefined && DATE_LABEL_GRANULARITIES.has(granularity)
+    ? new Date(value).toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+      })
+    : new Date(value).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 
 // Dotted lines on both axes, faint enough to stay in the background behind
 // the data.
@@ -39,16 +54,23 @@ const makeSplitLine = (color: string) => ({
   lineStyle: { color, type: "dashed" as const, width: 1, opacity: 0.5 },
 });
 
-const makeBaseAxes = (theme: Theme) => {
+const makeBaseAxes = (
+  theme: Theme,
+  startMs: number,
+  endMs: number,
+  granularity: Granularity | undefined
+) => {
   const { grid, text } = THEME_COLORS[theme];
   return {
     grid: { left: 55, right: 16, top: 16, bottom: 28 },
     xAxis: {
       type: "time" as const,
+      min: startMs,
+      max: endMs,
       axisLabel: {
         color: text,
         fontSize: 11,
-        formatter: formatAxisTime,
+        formatter: (value: number) => formatAxisLabel(value, granularity),
       },
       axisPointer: {
         show: true,
@@ -97,12 +119,18 @@ export const makeLatencyChartOption = ({
   slots,
   stats,
   theme,
+  startMs,
+  endMs,
+  granularity,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "latency">>>;
   stats: LatencyStats;
   theme: Theme;
+  startMs: number;
+  endMs: number;
+  granularity: Granularity;
 }): EChartsOption => ({
-  ...makeBaseAxes(theme),
+  ...makeBaseAxes(theme, startMs, endMs, granularity),
   yAxis: {
     type: "value",
     min: 0,
@@ -144,12 +172,18 @@ export const makeLatencyChartOption = ({
 export const makePacketLossChartOption = ({
   slots,
   theme,
+  startMs,
+  endMs,
+  granularity,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "packet_loss">>>;
   stats: PacketLossStats;
   theme: Theme;
+  startMs: number;
+  endMs: number;
+  granularity: Granularity;
 }): EChartsOption => ({
-  ...makeBaseAxes(theme),
+  ...makeBaseAxes(theme, startMs, endMs, granularity),
   yAxis: {
     type: "value",
     min: 0,
@@ -180,12 +214,18 @@ const ACCEPTABLE_JITTER_THRESHOLD_MS = 10;
 export const makeJitterChartOption = ({
   slots,
   theme,
+  startMs,
+  endMs,
+  granularity,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "jitter">>>;
   stats: JitterStats;
   theme: Theme;
+  startMs: number;
+  endMs: number;
+  granularity: Granularity;
 }): EChartsOption => ({
-  ...makeBaseAxes(theme),
+  ...makeBaseAxes(theme, startMs, endMs, granularity),
   yAxis: {
     type: "value",
     min: 0,
@@ -224,12 +264,20 @@ export const makeJitterChartOption = ({
 export const makeSpeedChartOption = ({
   metrics,
   theme,
+  startMs,
+  endMs,
+  granularity,
 }: {
   metrics: ReadonlyArray<
     Pick<SpeedMetric, "timestamp" | "download_speed" | "upload_speed">
   >;
   stats: SpeedStats;
   theme: Theme;
+  startMs: number;
+  endMs: number;
+  // Undefined below the speedtest aggregation threshold, where the fetch
+  // returns raw samples with no fixed bucket size.
+  granularity: Granularity | undefined;
 }): EChartsOption => {
   const sorted = Array_.sortWith(
     metrics,
@@ -244,7 +292,7 @@ export const makeSpeedChartOption = ({
       getValue(metric),
     ]);
 
-  const base = makeBaseAxes(theme);
+  const base = makeBaseAxes(theme, startMs, endMs, granularity);
 
   return {
     ...base,

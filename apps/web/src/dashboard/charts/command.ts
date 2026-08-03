@@ -18,10 +18,13 @@ import {
   calculatePacketLossStats,
   calculateSpeedStats,
 } from "@/dashboard/charts/stats";
+import { fillTimeline } from "@/dashboard/charts/timeline";
 import {
-  fillTimeline,
-  getGranularityForTimeRange,
-} from "@/dashboard/charts/timeline";
+  DateRangeSelection,
+  getDateRangeWindow,
+  granularityForRange,
+  granularityForSpeedtestRange,
+} from "@/dashboard/dateRange";
 import {
   CompletedSyncJitterChart,
   CompletedSyncLatencyChart,
@@ -41,7 +44,6 @@ import {
   SucceededMountSpeedChart,
 } from "@/dashboard/message";
 import { Theme } from "@/dashboard/theme";
-import { getTimeRangeWindow, TimeRange } from "@/dashboard/timeRange";
 
 // The latency/packet-loss/jitter charts share one hover cursor: hovering any
 // one of them shows a synced vertical line on the others. echarts.connect()
@@ -210,24 +212,46 @@ const syncChart = <F, Sc>(
       }).pipe(Effect.match({ onFailure: (f) => f, onSuccess: (s) => s })),
   });
 
-// Shared by every timeline-based chart (all but Speed, which plots raw
-// samples with no gap-filling): resolves "now" through Clock rather than
-// the system clock directly, since only a Command may touch time.
-const resolveTimelineWindow = (timeRange: TimeRange) =>
+// Resolves a chart's x-axis bounds and tick granularity, reading "now"
+// through Clock rather than the system clock directly since only a Command
+// may touch time.
+const resolveTimelineWindow = (
+  dateRange: DateRangeSelection,
+  maybeEarliestDataMs?: Option.Option<number>
+) =>
   Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
-    const window = getTimeRangeWindow(timeRange, nowMs);
+    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
     return {
       startMs: Date.parse(window.startTime),
       endMs: Date.parse(window.endTime),
-      granularity: getGranularityForTimeRange(timeRange),
+      granularity: granularityForRange(window),
     };
   });
 
-const TimeRangeArgs = {
+// Like `resolveTimelineWindow`, but for the speed chart: `fetchSpeedtestHistory`
+// requests raw rows (no granularity) below the speedtest aggregation
+// threshold, so this resolves the same undefined-or-aggregated granularity
+// that fetch actually used, for the axis label formatter to match.
+export const resolveSpeedtestTimelineWindow = (
+  dateRange: DateRangeSelection,
+  maybeEarliestDataMs?: Option.Option<number>
+) =>
+  Effect.gen(function* () {
+    const nowMs = yield* Clock.currentTimeMillis;
+    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
+    return {
+      startMs: Date.parse(window.startTime),
+      endMs: Date.parse(window.endTime),
+      granularity: granularityForSpeedtestRange(window),
+    };
+  });
+
+const DateRangeArgs = {
   hostId: S.String,
   metrics: S.Array(MetricSchema),
-  timeRange: TimeRange,
+  dateRange: DateRangeSelection,
+  maybeEarliestDataMs: S.optional(S.Option(S.Number)),
   theme: Theme,
 };
 
@@ -251,13 +275,14 @@ export const MountLatencyChart = Mount.define(
 
 export const SyncLatencyChart = Command.define(
   "SyncLatencyChart",
-  TimeRangeArgs,
+  DateRangeArgs,
   CompletedSyncLatencyChart,
   FailedSyncLatencyChart
 )((args) =>
   Effect.gen(function* () {
     const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.timeRange
+      args.dateRange,
+      args.maybeEarliestDataMs
     );
     return yield* syncChart(
       args.hostId,
@@ -267,7 +292,14 @@ export const SyncLatencyChart = Command.define(
         const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
         const stats = calculateLatencyStats(args.metrics);
         chart.setOption(
-          makeLatencyChartOption({ slots, stats, theme: args.theme }),
+          makeLatencyChartOption({
+            slots,
+            stats,
+            theme: args.theme,
+            startMs,
+            endMs,
+            granularity,
+          }),
           true
         );
       }
@@ -295,13 +327,14 @@ export const MountPacketLossChart = Mount.define(
 
 export const SyncPacketLossChart = Command.define(
   "SyncPacketLossChart",
-  TimeRangeArgs,
+  DateRangeArgs,
   CompletedSyncPacketLossChart,
   FailedSyncPacketLossChart
 )((args) =>
   Effect.gen(function* () {
     const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.timeRange
+      args.dateRange,
+      args.maybeEarliestDataMs
     );
     return yield* syncChart(
       args.hostId,
@@ -311,7 +344,14 @@ export const SyncPacketLossChart = Command.define(
         const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
         const stats = calculatePacketLossStats(args.metrics);
         chart.setOption(
-          makePacketLossChartOption({ slots, stats, theme: args.theme }),
+          makePacketLossChartOption({
+            slots,
+            stats,
+            theme: args.theme,
+            startMs,
+            endMs,
+            granularity,
+          }),
           true
         );
       }
@@ -339,13 +379,14 @@ export const MountJitterChart = Mount.define(
 
 export const SyncJitterChart = Command.define(
   "SyncJitterChart",
-  TimeRangeArgs,
+  DateRangeArgs,
   CompletedSyncJitterChart,
   FailedSyncJitterChart
 )((args) =>
   Effect.gen(function* () {
     const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.timeRange
+      args.dateRange,
+      args.maybeEarliestDataMs
     );
     return yield* syncChart(
       args.hostId,
@@ -355,7 +396,14 @@ export const SyncJitterChart = Command.define(
         const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
         const stats = calculateJitterStats(args.metrics);
         chart.setOption(
-          makeJitterChartOption({ slots, stats, theme: args.theme }),
+          makeJitterChartOption({
+            slots,
+            stats,
+            theme: args.theme,
+            startMs,
+            endMs,
+            granularity,
+          }),
           true
         );
       }
@@ -386,25 +434,37 @@ export const SyncSpeedChart = Command.define(
   {
     hostId: S.String,
     metrics: S.Array(SpeedMetricSchema),
+    dateRange: DateRangeSelection,
+    maybeEarliestDataMs: S.optional(S.Option(S.Number)),
     theme: Theme,
   },
   CompletedSyncSpeedChart,
   FailedSyncSpeedChart
 )((args) =>
-  syncChart(
-    args.hostId,
-    (reason) => FailedSyncSpeedChart({ reason }),
-    CompletedSyncSpeedChart,
-    (chart) => {
-      const stats = calculateSpeedStats(args.metrics);
-      chart.setOption(
-        makeSpeedChartOption({
-          metrics: args.metrics,
-          stats,
-          theme: args.theme,
-        }),
-        true
+  Effect.gen(function* () {
+    const { startMs, endMs, granularity } =
+      yield* resolveSpeedtestTimelineWindow(
+        args.dateRange,
+        args.maybeEarliestDataMs
       );
-    }
-  )
+    return yield* syncChart(
+      args.hostId,
+      (reason) => FailedSyncSpeedChart({ reason }),
+      CompletedSyncSpeedChart,
+      (chart) => {
+        const stats = calculateSpeedStats(args.metrics);
+        chart.setOption(
+          makeSpeedChartOption({
+            metrics: args.metrics,
+            stats,
+            theme: args.theme,
+            startMs,
+            endMs,
+            granularity,
+          }),
+          true
+        );
+      }
+    );
+  })
 );

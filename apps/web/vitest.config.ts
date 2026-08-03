@@ -14,6 +14,10 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Date labels render through `toLocaleDateString` in the viewer's locale,
+    // so assertions on them are only deterministic once the worker's ICU
+    // default is pinned.
+    env: { LC_ALL: "en-US", LANG: "en-US" },
     environment: "happy-dom",
     setupFiles: "./src/vitest-setup.ts",
     include: ["src/**/*.test.ts"],

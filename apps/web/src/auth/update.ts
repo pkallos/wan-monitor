@@ -27,7 +27,7 @@ const enterLoggedIn = (
   const [dashboardModel, dashboardCommands] = Dashboard.update(
     Dashboard.initModel(),
     Dashboard.EnteredDashboard(),
-    { token }
+    { token, now: Date.now }
   );
 
   return [
@@ -111,7 +111,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         const [dashboardModel, dashboardCommands] = Dashboard.update(
           model.dashboard,
           message,
-          { token }
+          { token, now: Date.now }
         );
         return [
           evo(model, { dashboard: () => dashboardModel }),

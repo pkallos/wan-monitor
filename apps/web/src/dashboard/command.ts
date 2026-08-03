@@ -5,22 +5,28 @@ import { FetchHttpClient } from "effect/unstable/http";
 import { KeyValueStore } from "effect/unstable/persistence";
 import { Command } from "foldkit";
 import { makeClient } from "@/api/client";
-import { getGranularityForTimeRange } from "@/dashboard/charts/timeline";
+import {
+  DateRangeSelection,
+  getDateRangeWindow,
+  granularityForRange,
+  granularityForSpeedtestRange,
+} from "@/dashboard/dateRange";
 import {
   CompletedSaveTheme,
   FailedFetchConnectivityStatus,
+  FailedFetchEarliestData,
   FailedFetchMetrics,
   FailedFetchSpeedtestHistory,
   FailedSaveTheme,
   FailedTriggerSpeedtest,
   LoadedTheme,
   SucceededFetchConnectivityStatus,
+  SucceededFetchEarliestData,
   SucceededFetchMetrics,
   SucceededFetchSpeedtestHistory,
   SucceededTriggerSpeedtest,
 } from "@/dashboard/message";
 import { Theme } from "@/dashboard/theme";
-import { getTimeRangeWindow, TimeRange } from "@/dashboard/timeRange";
 
 const THEME_STORAGE_KEY = "wan_monitor_theme";
 
@@ -36,27 +42,31 @@ const isDbUnavailableError = (error: unknown): boolean =>
 const fetchErrorMessage = (error: unknown): string =>
   isDbUnavailableError(error) ? DB_UNAVAILABLE_MESSAGE : String(error);
 
-const TimeRangeArgs = {
+const DateRangeArgs = {
   token: S.String,
-  timeRange: TimeRange,
+  dateRange: DateRangeSelection,
+  maybeEarliestDataMs: S.optional(S.Option(S.Number)),
 };
 
 export const fetchMetrics = ({
   token,
-  timeRange,
+  dateRange,
+  maybeEarliestDataMs,
 }: {
   token: string;
-  timeRange: TimeRange;
+  dateRange: DateRangeSelection;
+  maybeEarliestDataMs?: Option.Option<number>;
 }) =>
   Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
-    const { startTime, endTime } = getTimeRangeWindow(timeRange, nowMs);
+    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
+    const { startTime, endTime } = window;
     const client = yield* makeClient(Option.some(token));
     const response = yield* client.metrics.getMetrics({
       query: {
         startTime,
         endTime,
-        granularity: getGranularityForTimeRange(timeRange),
+        granularity: granularityForRange(window),
       },
     });
     return SucceededFetchMetrics({ metrics: response.data, nowMs });
@@ -68,17 +78,25 @@ export const fetchMetrics = ({
 
 export const fetchSpeedtestHistory = ({
   token,
-  timeRange,
+  dateRange,
+  maybeEarliestDataMs,
 }: {
   token: string;
-  timeRange: TimeRange;
+  dateRange: DateRangeSelection;
+  maybeEarliestDataMs?: Option.Option<number>;
 }) =>
   Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
-    const { startTime, endTime } = getTimeRangeWindow(timeRange, nowMs);
+    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
+    const { startTime, endTime } = window;
+    const granularity = granularityForSpeedtestRange(window);
     const client = yield* makeClient(Option.some(token));
     const response = yield* client.speedtest.getSpeedTestHistory({
-      query: { startTime, endTime },
+      query: {
+        startTime,
+        endTime,
+        ...(granularity !== undefined ? { granularity } : {}),
+      },
     });
     return SucceededFetchSpeedtestHistory({ history: response.data });
   }).pipe(
@@ -91,20 +109,23 @@ export const fetchSpeedtestHistory = ({
 
 export const fetchConnectivityStatus = ({
   token,
-  timeRange,
+  dateRange,
+  maybeEarliestDataMs,
 }: {
   token: string;
-  timeRange: TimeRange;
+  dateRange: DateRangeSelection;
+  maybeEarliestDataMs?: Option.Option<number>;
 }) =>
   Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
-    const { startTime, endTime } = getTimeRangeWindow(timeRange, nowMs);
+    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
+    const { startTime, endTime } = window;
     const client = yield* makeClient(Option.some(token));
     const response = yield* client.connectivityStatus.getConnectivityStatus({
       query: {
         startTime,
         endTime,
-        granularity: getGranularityForTimeRange(timeRange),
+        granularity: granularityForRange(window),
       },
     });
     return SucceededFetchConnectivityStatus({
@@ -112,12 +133,30 @@ export const fetchConnectivityStatus = ({
       uptimePercentage: response.meta.uptimePercentage,
       startTimeMs: Date.parse(startTime),
       endTimeMs: Date.parse(endTime),
-      granularity: getGranularityForTimeRange(timeRange),
+      granularity: granularityForRange(window),
     });
   }).pipe(
     Effect.catch((error) =>
       Effect.succeed(
         FailedFetchConnectivityStatus({ error: fetchErrorMessage(error) })
+      )
+    )
+  );
+
+export const fetchEarliestData = ({ token }: { token: string }) =>
+  Effect.gen(function* () {
+    const client = yield* makeClient(Option.some(token));
+    const response = yield* client.metrics.getEarliestTimestamp();
+    return SucceededFetchEarliestData({
+      earliestMs:
+        response.timestamp !== null
+          ? Option.some(Date.parse(response.timestamp))
+          : Option.none(),
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        FailedFetchEarliestData({ error: fetchErrorMessage(error) })
       )
     )
   );
@@ -168,14 +207,14 @@ export const saveTheme = ({ theme }: { theme: Theme }) =>
 
 export const FetchMetrics = Command.define(
   "FetchMetrics",
-  TimeRangeArgs,
+  DateRangeArgs,
   SucceededFetchMetrics,
   FailedFetchMetrics
 )((args) => fetchMetrics(args).pipe(Effect.provide(FetchHttpClient.layer)));
 
 export const FetchSpeedtestHistory = Command.define(
   "FetchSpeedtestHistory",
-  TimeRangeArgs,
+  DateRangeArgs,
   SucceededFetchSpeedtestHistory,
   FailedFetchSpeedtestHistory
 )((args) =>
@@ -184,11 +223,20 @@ export const FetchSpeedtestHistory = Command.define(
 
 export const FetchConnectivityStatus = Command.define(
   "FetchConnectivityStatus",
-  TimeRangeArgs,
+  DateRangeArgs,
   SucceededFetchConnectivityStatus,
   FailedFetchConnectivityStatus
 )((args) =>
   fetchConnectivityStatus(args).pipe(Effect.provide(FetchHttpClient.layer))
+);
+
+export const FetchEarliestData = Command.define(
+  "FetchEarliestData",
+  { token: S.String },
+  SucceededFetchEarliestData,
+  FailedFetchEarliestData
+)((args) =>
+  fetchEarliestData(args).pipe(Effect.provide(FetchHttpClient.layer))
 );
 
 export const TriggerSpeedtest = Command.define(

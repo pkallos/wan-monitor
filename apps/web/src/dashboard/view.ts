@@ -19,13 +19,14 @@ import {
   formatSegmentLabel,
   mergeSegments,
 } from "@/dashboard/connectivity";
+import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import type { Message } from "@/dashboard/message";
 import {
-  ChangedTimeRange,
   ClickedRefreshNow,
   ClickedTogglePause,
   ClickedToggleTheme,
   ClickedTriggerSpeedtest,
+  GotDateRangePickerMessage,
   GotToastMessage,
   HoveredConnectivitySegment,
   Interacted,
@@ -41,10 +42,7 @@ import {
   type SummaryCard,
   uploadSpeedCard,
 } from "@/dashboard/summaryCards";
-import { TIME_RANGE_LABELS, type TimeRange } from "@/dashboard/timeRange";
 import { Toast } from "@/dashboard/toast";
-
-const TIME_RANGES: ReadonlyArray<TimeRange> = ["1h", "24h", "7d", "30d"];
 
 const GHOST_ICON_BUTTON_CLASS =
   "cursor-pointer rounded-md p-2 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-700";
@@ -322,31 +320,6 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
           ),
         ]
       );
-
-    const rangeButton = (range: TimeRange, index: number) => {
-      const isActive = model.timeRange === range;
-      const roundingClass =
-        index === 0
-          ? "rounded-l-md"
-          : index === TIME_RANGES.length - 1
-            ? "rounded-r-md"
-            : "";
-      return h.button(
-        [
-          h.Type("button"),
-          h.OnClick(ChangedTimeRange({ timeRange: range })),
-          h.AriaPressed(String(isActive)),
-          h.Class(
-            `-ml-px cursor-pointer border px-3 py-2 text-sm font-semibold first:ml-0 ${roundingClass} ${
-              isActive
-                ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
-                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            }`
-          ),
-        ],
-        [TIME_RANGE_LABELS[range]]
-      );
-    };
 
     const lastUpdatedIndicator = h.div(
       [
@@ -642,12 +615,18 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                           : pauseIcon(),
                       ]
                     ),
-                    h.div(
-                      [h.Class("inline-flex")],
-                      Array_.map(TIME_RANGES, (range, index) =>
-                        rangeButton(range, index)
-                      )
-                    ),
+                    h.submodel({
+                      slotId: "date-range-picker",
+                      model: model.dateRangePicker,
+                      view: DateRangePicker.view,
+                      viewInputs: {
+                        appliedSelection: model.dateRange,
+                        nowMs: Date.now(),
+                        maybeEarliestDataMs: model.maybeEarliestDataMs,
+                      },
+                      toParentMessage: (message) =>
+                        GotDateRangePickerMessage({ message }),
+                    }),
                     h.button(
                       [
                         h.Type("button"),

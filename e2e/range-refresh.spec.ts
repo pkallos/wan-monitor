@@ -10,6 +10,7 @@ import { expect, test } from "@playwright/test";
  */
 
 const METRICS_PATH = "/api/metrics";
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface MetricsParams {
   readonly startTime: string | null;
@@ -51,40 +52,42 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
 
-    // Fresh browser context => the default range is "1h". Wait for the
-    // initial metrics request driven by that default range.
+    // Fresh browser context => the default range is "Last 30 days". Wait for
+    // the initial metrics request driven by that default range.
     await expect
       .poll(() => metricsRequests.length, { timeout: 10_000 })
       .toBeGreaterThan(0);
 
     const initialParams = parseMetricsRequest(metricsRequests[0]);
-    // 1h range => 1-minute buckets and a ~1 hour window.
-    expect(initialParams.granularity).toBe("1m");
-    expect(windowMs(initialParams)).toBeLessThan(2 * 60 * 60 * 1000);
+    // A 30 day span falls in the "<= 90 days" bucket => 6-hour aggregation.
+    expect(initialParams.granularity).toBe("6h");
+    expect(windowMs(initialParams)).toBeGreaterThan(29 * DAY_MS);
 
-    // Switch to the 24 hour range.
-    await page.getByRole("button", { name: "24 Hours" }).click();
+    // Narrow to the "Last 7 days" preset through the picker.
+    await page.locator("#date-range-picker-button").click();
+    await page.getByRole("button", { name: "Last 7 days" }).click();
+    await page.getByRole("button", { name: "Apply" }).click();
 
-    // A new request must fire with the widened window + coarser granularity.
+    // A new request must fire with the narrowed window + finer granularity.
     await expect
       .poll(
         () =>
           metricsRequests
             .map(parseMetricsRequest)
-            .some((p) => p.granularity === "5m"),
+            .some((p) => p.granularity === "1h"),
         { timeout: 10_000 }
       )
       .toBe(true);
 
-    const widened = metricsRequests
+    const narrowed = metricsRequests
       .map(parseMetricsRequest)
-      .find((p) => p.granularity === "5m");
-    expect(widened).toBeDefined();
-    if (!widened) return;
+      .find((p) => p.granularity === "1h");
+    expect(narrowed).toBeDefined();
+    if (!narrowed) return;
 
-    // 24h range => 5-minute buckets and a window larger than a few hours.
-    expect(widened.granularity).toBe("5m");
-    expect(windowMs(widened)).toBeGreaterThan(12 * 60 * 60 * 1000);
+    // A 7 day span falls in the "<= 14 days" bucket => 1-hour aggregation.
+    expect(windowMs(narrowed)).toBeGreaterThan(6 * DAY_MS);
+    expect(windowMs(narrowed)).toBeLessThan(8 * DAY_MS);
 
     // Charts re-render with the new data.
     await expect(

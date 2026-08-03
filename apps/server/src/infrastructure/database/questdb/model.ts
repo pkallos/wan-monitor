@@ -34,4 +34,5 @@ export interface QuerySpeedtestsParams {
   readonly startTime?: Date;
   readonly endTime?: Date;
   readonly limit?: number;
+  readonly granularity?: string;
 }

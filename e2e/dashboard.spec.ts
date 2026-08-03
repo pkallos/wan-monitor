@@ -51,19 +51,48 @@ test.describe("WAN Monitor Dashboard", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByRole("button", { name: "1 Hour" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "24 Hours" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "7 Days" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "30 Days" })).toBeVisible();
+    const trigger = page.locator("#date-range-picker-button");
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+
+    await expect(
+      page.getByRole("button", { name: "Last 7 days" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Last 30 days" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Month to date" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Quarter to date" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Year to date" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Last 12 months" })
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "All time" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Apply" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
   });
 
-  test("should allow changing time range", async ({ page }) => {
+  test("should allow changing the date range", async ({ page }) => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
-    await page.getByRole("button", { name: "7 Days" }).click();
-    await page.waitForTimeout(1000);
+    const trigger = page.locator("#date-range-picker-button");
+    const initialLabel = await trigger.textContent();
+
+    await trigger.click();
+    await page.getByRole("button", { name: "Last 7 days" }).click();
+    await page.getByRole("button", { name: "Apply" }).click();
+
+    // The trigger's label reflects the newly applied range, not the preset
+    // name, so assert it changed rather than matching an exact string.
+    await expect.poll(() => trigger.textContent()).not.toBe(initialLabel);
 
     // Charts re-render on ECharts canvases (data should update).
     await expect(
@@ -139,8 +168,8 @@ test.describe("WAN Monitor Dashboard", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
-    // Widen the range so the latest speedtest (and its ISP) is in view.
-    await page.getByRole("button", { name: "24 Hours" }).click();
+    // The default 30-day range already covers the latest speedtest (and its
+    // ISP).
 
     // With speedtest data present (seeded baseline plus any live monitor
     // results) the header resolves a real ISP instead of the "Unknown ISP"
@@ -168,8 +197,8 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
   test("top metric cards show non-placeholder seeded values", async ({
     page,
   }) => {
-    // The seed anchors the most recent ping and speedtest at "now", so even the
-    // default 1h window has data behind every top card.
+    // The seed anchors the most recent ping and speedtest at "now", so the
+    // default date range has data behind every top card.
 
     // Connectivity resolves to a real status, never a placeholder.
     await expect(metricCard(page, "Connectivity")).toContainText(
@@ -243,10 +272,8 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
   test("network quality charts render onto their canvases", async ({
     page,
   }) => {
-    // Seed writes a ping every 15m across the last 24h. Widen to 7 days so
-    // every chart has settled, seeded data behind it.
-    await page.getByRole("button", { name: "7 Days" }).click();
-
+    // Seed writes a ping every 15m across the last 24h, well within the
+    // default 30-day range, so every chart has settled, seeded data behind it.
     for (const label of [
       "Latency chart",
       "Packet loss chart",
@@ -263,10 +290,8 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
   test("speed test history renders a chart and non-placeholder stats", async ({
     page,
   }) => {
-    // The seeded speedtests span the last 24h; widen to 24h so the stats
-    // resolve from more than a single sample.
-    await page.getByRole("button", { name: "24 Hours" }).click();
-
+    // The seeded speedtests span the last 24h, well within the default
+    // 30-day range, so the stats resolve from more than a single sample.
     await expect(page.locator('[aria-label="Speed chart"] canvas')).toBeVisible(
       { timeout: 15000 }
     );

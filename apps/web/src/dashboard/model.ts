@@ -3,8 +3,9 @@ import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Option, Schema as S } from "effect";
 import { AsyncData } from "foldkit";
+import { DateRangeSelection, Preset } from "@/dashboard/dateRange";
+import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import { Theme } from "@/dashboard/theme";
-import { TimeRange } from "@/dashboard/timeRange";
 import { Toast } from "@/dashboard/toast";
 
 export const MetricsAsyncData = AsyncData.Schema(
@@ -39,7 +40,8 @@ export const SpeedtestTriggerAsyncData = AsyncData.Schema(
 );
 
 export const Model = S.Struct({
-  timeRange: TimeRange,
+  dateRange: DateRangeSelection,
+  dateRangePicker: DateRangePicker.Model,
   isPaused: S.Boolean,
   isIdle: S.Boolean,
   metrics: MetricsAsyncData.schema,
@@ -53,12 +55,14 @@ export const Model = S.Struct({
   hoveredSegmentIndex: S.Option(S.Number),
   maybeTheme: S.Option(Theme),
   maybeLastUpdatedMs: S.Option(S.Number),
+  maybeEarliestDataMs: S.Option(S.Number),
   toast: Toast.Model,
 });
 export type Model = typeof Model.Type;
 
 export const initModel = (): Model => ({
-  timeRange: "1h",
+  dateRange: Preset({ preset: "last30d" }),
+  dateRangePicker: DateRangePicker.init({ id: "date-range-picker" }),
   isPaused: false,
   isIdle: false,
   metrics: MetricsAsyncData.Idle(),
@@ -72,5 +76,6 @@ export const initModel = (): Model => ({
   hoveredSegmentIndex: Option.none(),
   maybeTheme: Option.none(),
   maybeLastUpdatedMs: Option.none(),
+  maybeEarliestDataMs: Option.none(),
   toast: Toast.init({ id: "dashboard-toast" }),
 });

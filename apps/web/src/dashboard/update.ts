@@ -9,18 +9,27 @@ import {
 } from "@/dashboard/charts/command";
 import {
   FetchConnectivityStatus,
+  FetchEarliestData,
   FetchMetrics,
   FetchSpeedtestHistory,
   LoadTheme,
   SaveTheme,
   TriggerSpeedtest,
 } from "@/dashboard/command";
-import { GotToastMessage, type Message } from "@/dashboard/message";
+import * as DateRangePicker from "@/dashboard/dateRangePicker";
+import {
+  GotDateRangePickerMessage,
+  GotToastMessage,
+  type Message,
+} from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
 import type { Theme } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
 
-export type Context = { readonly token: string };
+// `now` is injected (rather than read via `Date.now()` here) so `update`
+// stays pure with respect to its inputs — the app boundary (auth/update.ts)
+// supplies the real clock, and tests can supply a fixed one.
+export type Context = { readonly token: string; readonly now: () => number };
 
 type UpdateReturn = readonly [Model, ReadonlyArray<Command.Command<Message>>];
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
@@ -32,7 +41,13 @@ const enterMetrics =
       onNone: () => [model, []],
       onSome: (next) => [
         evo(model, { metrics: () => next }),
-        [FetchMetrics({ token: context.token, timeRange: model.timeRange })],
+        [
+          FetchMetrics({
+            token: context.token,
+            dateRange: model.dateRange,
+            maybeEarliestDataMs: model.maybeEarliestDataMs,
+          }),
+        ],
       ],
     });
 
@@ -46,7 +61,8 @@ const enterSpeedtestHistory =
         [
           FetchSpeedtestHistory({
             token: context.token,
-            timeRange: model.timeRange,
+            dateRange: model.dateRange,
+            maybeEarliestDataMs: model.maybeEarliestDataMs,
           }),
         ],
       ],
@@ -62,7 +78,8 @@ const enterConnectivityStatus =
         [
           FetchConnectivityStatus({
             token: context.token,
-            timeRange: model.timeRange,
+            dateRange: model.dateRange,
+            maybeEarliestDataMs: model.maybeEarliestDataMs,
           }),
         ],
       ],
@@ -73,6 +90,14 @@ const enterTheme = (model: Model): UpdateReturn =>
     onNone: () => [model, [LoadTheme()]],
     onSome: () => [model, []],
   });
+
+const enterEarliestData =
+  (context: Context) =>
+  (model: Model): UpdateReturn =>
+    Option.match(model.maybeEarliestDataMs, {
+      onNone: () => [model, [FetchEarliestData({ token: context.token })]],
+      onSome: () => [model, []],
+    });
 
 const toggleTheme = (theme: Theme): Theme =>
   theme === "light" ? "dark" : "light";
@@ -87,7 +112,13 @@ const revalidateMetrics =
       onNone: () => [model, []],
       onSome: (next) => [
         evo(model, { metrics: () => next }),
-        [FetchMetrics({ token: context.token, timeRange: model.timeRange })],
+        [
+          FetchMetrics({
+            token: context.token,
+            dateRange: model.dateRange,
+            maybeEarliestDataMs: model.maybeEarliestDataMs,
+          }),
+        ],
       ],
     });
 
@@ -101,7 +132,8 @@ const revalidateSpeedtestHistory =
         [
           FetchSpeedtestHistory({
             token: context.token,
-            timeRange: model.timeRange,
+            dateRange: model.dateRange,
+            maybeEarliestDataMs: model.maybeEarliestDataMs,
           }),
         ],
       ],
@@ -117,7 +149,8 @@ const revalidateConnectivityStatus =
         [
           FetchConnectivityStatus({
             token: context.token,
-            timeRange: model.timeRange,
+            dateRange: model.dateRange,
+            maybeEarliestDataMs: model.maybeEarliestDataMs,
           }),
         ],
       ],
@@ -139,7 +172,13 @@ const reloadMetrics =
   (context: Context) =>
   (model: Model): UpdateReturn => [
     evo(model, { metrics: () => forceReload(model.metrics) }),
-    [FetchMetrics({ token: context.token, timeRange: model.timeRange })],
+    [
+      FetchMetrics({
+        token: context.token,
+        dateRange: model.dateRange,
+        maybeEarliestDataMs: model.maybeEarliestDataMs,
+      }),
+    ],
   ];
 
 const reloadSpeedtestHistory =
@@ -151,7 +190,8 @@ const reloadSpeedtestHistory =
     [
       FetchSpeedtestHistory({
         token: context.token,
-        timeRange: model.timeRange,
+        dateRange: model.dateRange,
+        maybeEarliestDataMs: model.maybeEarliestDataMs,
       }),
     ],
   ];
@@ -165,7 +205,8 @@ const reloadConnectivityStatus =
     [
       FetchConnectivityStatus({
         token: context.token,
-        timeRange: model.timeRange,
+        dateRange: model.dateRange,
+        maybeEarliestDataMs: model.maybeEarliestDataMs,
       }),
     ],
   ];
@@ -186,7 +227,8 @@ const syncLatencyChart = (
         SyncLatencyChart({
           hostId,
           metrics,
-          timeRange: model.timeRange,
+          dateRange: model.dateRange,
+          maybeEarliestDataMs: model.maybeEarliestDataMs,
           theme: currentTheme(model),
         }),
       ],
@@ -207,7 +249,8 @@ const syncPacketLossChart = (
         SyncPacketLossChart({
           hostId,
           metrics,
-          timeRange: model.timeRange,
+          dateRange: model.dateRange,
+          maybeEarliestDataMs: model.maybeEarliestDataMs,
           theme: currentTheme(model),
         }),
       ],
@@ -228,7 +271,8 @@ const syncJitterChart = (
         SyncJitterChart({
           hostId,
           metrics,
-          timeRange: model.timeRange,
+          dateRange: model.dateRange,
+          maybeEarliestDataMs: model.maybeEarliestDataMs,
           theme: currentTheme(model),
         }),
       ],
@@ -246,7 +290,13 @@ const syncSpeedChart = (
     {
       onNone: () => [],
       onSome: ([hostId, metrics]) => [
-        SyncSpeedChart({ hostId, metrics, theme: currentTheme(model) }),
+        SyncSpeedChart({
+          hostId,
+          metrics,
+          dateRange: model.dateRange,
+          maybeEarliestDataMs: model.maybeEarliestDataMs,
+          theme: currentTheme(model),
+        }),
       ],
     }
   );
@@ -272,6 +322,7 @@ export const update = (
           enterMetrics(context),
           enterSpeedtestHistory(context),
           enterConnectivityStatus(context),
+          enterEarliestData(context),
           enterTheme,
         ]),
 
@@ -282,13 +333,43 @@ export const update = (
           revalidateConnectivityStatus(context),
         ]),
 
-      ChangedTimeRange: ({ timeRange }) => {
-        const withNewRange = evo(model, { timeRange: () => timeRange });
-        return Update.combine(withNewRange, [
-          reloadMetrics(context),
-          reloadSpeedtestHistory(context),
-          reloadConnectivityStatus(context),
-        ]);
+      GotDateRangePickerMessage: ({ message: pickerMessage }) => {
+        const [nextPicker, pickerCommands, maybeOutMessage] =
+          DateRangePicker.update(
+            model.dateRangePicker,
+            pickerMessage,
+            model.dateRange,
+            context.now(),
+            model.maybeEarliestDataMs
+          );
+        const mappedCommands = Command.mapMessages(pickerCommands, (message) =>
+          GotDateRangePickerMessage({ message })
+        );
+        const withPicker = evo(model, { dateRangePicker: () => nextPicker });
+
+        return Option.match(maybeOutMessage, {
+          onNone: () => [withPicker, mappedCommands],
+          onSome: (outMessage) =>
+            M.value(outMessage).pipe(
+              withUpdateReturn,
+              M.tag("AppliedRange", ({ selection }) => {
+                const withAppliedRange = evo(withPicker, {
+                  dateRange: () => selection,
+                });
+                const [nextModel, reloadCommands] = Update.combine(
+                  withAppliedRange,
+                  [
+                    reloadMetrics(context),
+                    reloadSpeedtestHistory(context),
+                    reloadConnectivityStatus(context),
+                  ]
+                );
+                return [nextModel, [...mappedCommands, ...reloadCommands]];
+              }),
+              M.tag("Cancelled", () => [withPicker, mappedCommands]),
+              M.exhaustive
+            ),
+        });
       },
 
       ClickedRefreshNow: () =>
@@ -358,6 +439,11 @@ export const update = (
         [],
       ],
 
+      SucceededFetchEarliestData: ({ earliestMs }) => [
+        evo(model, { maybeEarliestDataMs: () => earliestMs }),
+        [],
+      ],
+
       ClickedTogglePause: () => [
         evo(model, { isPaused: (paused) => !paused }),
         [],
@@ -415,10 +501,15 @@ export const update = (
             toast: () => toastModel,
           }),
           [
-            FetchMetrics({ token: context.token, timeRange: model.timeRange }),
+            FetchMetrics({
+              token: context.token,
+              dateRange: model.dateRange,
+              maybeEarliestDataMs: model.maybeEarliestDataMs,
+            }),
             FetchSpeedtestHistory({
               token: context.token,
-              timeRange: model.timeRange,
+              dateRange: model.dateRange,
+              maybeEarliestDataMs: model.maybeEarliestDataMs,
             }),
             ...Command.mapMessages(toastCommands, (message) =>
               GotToastMessage({ message })
@@ -500,6 +591,7 @@ export const update = (
       "FailedSyncSpeedChart",
       "CompletedSaveTheme",
       "FailedSaveTheme",
+      "FailedFetchEarliestData",
       () => [model, []]
     ),
     M.exhaustive

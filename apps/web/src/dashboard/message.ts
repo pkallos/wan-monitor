@@ -3,8 +3,8 @@ import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Schema as S } from "effect";
 import { m } from "foldkit/message";
+import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import { Theme } from "@/dashboard/theme";
-import { TimeRange } from "@/dashboard/timeRange";
 import { Toast } from "@/dashboard/toast";
 
 export const SucceededFetchMetrics = m("SucceededFetchMetrics", {
@@ -53,6 +53,13 @@ export const HoveredConnectivitySegment = m("HoveredConnectivitySegment", {
 });
 export const UnhoveredConnectivitySegment = m("UnhoveredConnectivitySegment");
 
+export const SucceededFetchEarliestData = m("SucceededFetchEarliestData", {
+  earliestMs: S.Option(S.Number),
+});
+export const FailedFetchEarliestData = m("FailedFetchEarliestData", {
+  error: S.String,
+});
+
 export const LoadedTheme = m("LoadedTheme", { theme: Theme });
 export const ClickedToggleTheme = m("ClickedToggleTheme");
 export const CompletedSaveTheme = m("CompletedSaveTheme");
@@ -67,7 +74,9 @@ export const TickedRefresh = m("TickedRefresh");
 export const ClickedTogglePause = m("ClickedTogglePause");
 export const Interacted = m("Interacted");
 export const WentIdle = m("WentIdle");
-export const ChangedTimeRange = m("ChangedTimeRange", { timeRange: TimeRange });
+export const GotDateRangePickerMessage = m("GotDateRangePickerMessage", {
+  message: DateRangePicker.Message,
+});
 export const ClickedTriggerSpeedtest = m("ClickedTriggerSpeedtest");
 export const ClickedRefreshNow = m("ClickedRefreshNow");
 
@@ -125,6 +134,8 @@ export const Message = S.Union([
   FailedFetchConnectivityStatus,
   SucceededTriggerSpeedtest,
   FailedTriggerSpeedtest,
+  SucceededFetchEarliestData,
+  FailedFetchEarliestData,
   HoveredConnectivitySegment,
   UnhoveredConnectivitySegment,
   LoadedTheme,
@@ -137,7 +148,7 @@ export const Message = S.Union([
   ClickedTogglePause,
   Interacted,
   WentIdle,
-  ChangedTimeRange,
+  GotDateRangePickerMessage,
   ClickedTriggerSpeedtest,
   ClickedRefreshNow,
   SucceededMountLatencyChart,

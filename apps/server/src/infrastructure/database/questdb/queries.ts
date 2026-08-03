@@ -102,45 +102,84 @@ export const buildQueryMetrics = (
 export const buildQuerySpeedtests = (
   params: QuerySpeedtestsParams,
   table = "network_metrics"
-): SqlQuerySpec => {
-  const startTime =
-    params.startTime?.toISOString() ??
-    new Date(Date.now() - 3600000).toISOString();
-  const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
+): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
+  Effect.gen(function* () {
+    const startTime =
+      params.startTime?.toISOString() ??
+      new Date(Date.now() - 3600000).toISOString();
+    const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
 
-  const queryParams: (string | number)[] = [startTime, endTime];
+    const queryParams: (string | number)[] = [startTime, endTime];
 
-  let limitClause = "";
-  if (params.limit) {
-    limitClause = "LIMIT $3";
-    queryParams.push(params.limit);
-  }
+    let limitClause = "";
+    if (params.limit) {
+      limitClause = "LIMIT $3";
+      queryParams.push(params.limit);
+    }
 
-  const query = `
-        SELECT
-          timestamp,
-          source,
-          host,
-          latency,
-          jitter,
-          packet_loss,
-          connectivity_status,
-          download_bandwidth,
-          upload_bandwidth,
-          server_location,
-          isp,
-          external_ip,
-          internal_ip
-        FROM ${table}
-        WHERE timestamp >= $1
-          AND timestamp <= $2
-          AND source = 'speedtest'
-        ORDER BY timestamp DESC
-        ${limitClause}
-      `;
+    const granularity = params.granularity;
+    if (granularity && !isValidGranularity(granularity)) {
+      return yield* Effect.fail(
+        new DatabaseQueryError({
+          message: `Invalid granularity: ${granularity}`,
+        })
+      );
+    }
 
-  return { query, params: queryParams } satisfies SqlQuerySpec;
-};
+    const query = granularity
+      ? `
+          SELECT
+            timestamp,
+            source,
+            avg(latency) as latency,
+            avg(jitter) as jitter,
+            avg(download_bandwidth) as download_bandwidth,
+            avg(upload_bandwidth) as upload_bandwidth,
+            last(server_location) as server_location,
+            last(isp) as isp,
+            last(external_ip) as external_ip,
+            last(internal_ip) as internal_ip
+          FROM ${table}
+          WHERE timestamp >= $1
+            AND timestamp <= $2
+            AND source = 'speedtest'
+          SAMPLE BY ${granularity}
+          ORDER BY timestamp DESC
+          ${limitClause}
+        `
+      : `
+          SELECT
+            timestamp,
+            source,
+            host,
+            latency,
+            jitter,
+            packet_loss,
+            connectivity_status,
+            download_bandwidth,
+            upload_bandwidth,
+            server_location,
+            isp,
+            external_ip,
+            internal_ip
+          FROM ${table}
+          WHERE timestamp >= $1
+            AND timestamp <= $2
+            AND source = 'speedtest'
+          ORDER BY timestamp DESC
+          ${limitClause}
+        `;
+
+    return { query, params: queryParams } satisfies SqlQuerySpec;
+  });
+
+export const buildQueryEarliestTimestamp = (
+  table = "network_metrics"
+): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
+  Effect.succeed({
+    query: `SELECT min(timestamp) as timestamp FROM ${table}`,
+    params: [],
+  });
 
 export const buildQueryConnectivityStatus = (
   params: QueryMetricsParams,
