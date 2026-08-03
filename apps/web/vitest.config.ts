@@ -26,5 +26,17 @@ export default defineConfig({
         inline: ["foldkit", "@foldkit/ui", "echarts"],
       },
     },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html", "lcov"],
+      exclude: [
+        "node_modules/",
+        "**/*.d.ts",
+        "**/*.config.*",
+        "src/entry.ts",
+        "src/vite-env.d.ts",
+        "src/vitest-setup.ts",
+      ],
+    },
   },
 });

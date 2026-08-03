@@ -21,4 +21,4 @@ export {
   PACKET_LOSS_THRESHOLDS,
   VALID_GRANULARITIES,
 } from "./constants";
-export { bpsToMbps, mbpsToBps } from "./metrics";
+export { mbpsToBps } from "./metrics";

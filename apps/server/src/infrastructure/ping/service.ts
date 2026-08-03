@@ -89,9 +89,6 @@ export class PingService extends Context.Service<
 // Service Implementation
 // ============================================================================
 
-const DEFAULT_TIMEOUT = 5; // seconds
-const DEFAULT_TRAIN_COUNT = 10; // packets per train
-
 export const PingServiceLive = Layer.effect(
   PingService,
   Effect.gen(function* () {
@@ -159,22 +156,14 @@ export const PingServiceLive = Layer.effect(
             message: error instanceof Error ? error.message : String(error),
           });
         },
-      }).pipe(
-        Effect.flatMap((result) => {
-          // If the result is an error (from the catch block), fail with it
-          if (result instanceof PingHostUnreachableError) {
-            return Effect.fail(result);
-          }
-          return Effect.succeed(result);
-        })
-      );
+      });
 
     const pingHost = (
       host: string
     ): Effect.Effect<PingResult, PingError, never> =>
       pingWithConfig(host, {
-        timeout: config.ping?.timeout ?? DEFAULT_TIMEOUT,
-        trainCount: config.ping?.trainCount ?? DEFAULT_TRAIN_COUNT,
+        timeout: config.ping.timeout,
+        trainCount: config.ping.trainCount,
       });
 
     const isReachable = (

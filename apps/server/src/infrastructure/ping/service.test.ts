@@ -70,6 +70,131 @@ describe("PingService", () => {
       expect(result.avg).toBe(25.5);
     });
 
+    it("should accept numeric probe fields as well as strings", async () => {
+      mockProbe.mockResolvedValueOnce({
+        inputHost: "1.1.1.1",
+        host: "1.1.1.1",
+        alive: true,
+        output: "PING 1.1.1.1...",
+        time: 12,
+        times: [12],
+        min: 11,
+        max: 13,
+        avg: 12,
+        stddev: 1,
+        packetLoss: 0,
+      });
+
+      const program = Effect.gen(function* () {
+        const pingService = yield* PingService;
+        return yield* pingService.ping("1.1.1.1");
+      });
+
+      const result = await Effect.runPromise(
+        Effect.provide(program, TestPingServiceLive)
+      );
+
+      expect(result).toMatchObject({
+        latency: 12,
+        packetLoss: 0,
+        min: 11,
+        max: 13,
+        stddev: 1,
+      });
+    });
+
+    it("should use a default message when an unreachable host has no output", async () => {
+      mockProbe.mockResolvedValueOnce({
+        inputHost: "192.168.255.255",
+        host: "unknown",
+        alive: false,
+        output: "",
+        time: "unknown",
+        times: [],
+        min: "unknown",
+        max: "unknown",
+        avg: "unknown",
+        stddev: "unknown",
+        packetLoss: "unknown",
+      });
+
+      const program = Effect.gen(function* () {
+        const pingService = yield* PingService;
+        return yield* pingService.ping("192.168.255.255");
+      });
+
+      const result = await Effect.runPromiseExit(
+        Effect.provide(program, TestPingServiceLive)
+      );
+
+      expect(Exit.isFailure(result)).toBe(true);
+      if (Exit.isFailure(result)) {
+        const error = Cause.findErrorOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toMatchObject({
+            _tag: "PingHostUnreachableError",
+            message: "Host unreachable",
+          });
+        }
+      }
+    });
+
+    it("should treat an unparseable packetLoss as total loss", async () => {
+      mockProbe.mockResolvedValueOnce({
+        inputHost: "8.8.8.8",
+        host: "8.8.8.8",
+        alive: true,
+        output: "PING 8.8.8.8...",
+        time: "unknown",
+        times: [],
+        min: "unknown",
+        max: "unknown",
+        avg: "unknown",
+        stddev: "unknown",
+        packetLoss: "unknown",
+      });
+
+      const program = Effect.gen(function* () {
+        const pingService = yield* PingService;
+        return yield* pingService.ping("8.8.8.8");
+      });
+
+      const result = await Effect.runPromise(
+        Effect.provide(program, TestPingServiceLive)
+      );
+
+      expect(result.packetLoss).toBe(100);
+      expect(result.latency).toBeUndefined();
+    });
+
+    it("should wrap a non-Error rejection in PingNetworkError", async () => {
+      mockProbe.mockRejectedValueOnce("spawn ping ENOENT");
+
+      const program = Effect.gen(function* () {
+        const pingService = yield* PingService;
+        return yield* pingService.ping("8.8.8.8");
+      });
+
+      const result = await Effect.runPromiseExit(
+        Effect.provide(program, TestPingServiceLive)
+      );
+
+      expect(Exit.isFailure(result)).toBe(true);
+      if (Exit.isFailure(result)) {
+        const error = Cause.findErrorOption(result.cause);
+        expect(Option.isSome(error)).toBe(true);
+        if (Option.isSome(error)) {
+          expect(error.value).toBeInstanceOf(PingNetworkError);
+          expect(error.value).toMatchObject({
+            _tag: "PingNetworkError",
+            host: "8.8.8.8",
+            message: "spawn ping ENOENT",
+          });
+        }
+      }
+    });
+
     it("should fail with PingHostUnreachableError when host is unreachable", async () => {
       mockProbe.mockResolvedValueOnce({
         inputHost: "192.168.255.255",

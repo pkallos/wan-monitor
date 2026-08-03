@@ -1,4 +1,4 @@
-import { Popover } from "@foldkit/ui";
+import { Popover, Toast as UiToast } from "@foldkit/ui";
 import { Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
@@ -44,6 +44,8 @@ import {
   FailedSyncSpeedChart,
   FailedTriggerSpeedtest,
   GotDateRangePickerMessage,
+  GotToastMessage,
+  HoveredConnectivitySegment,
   Interacted,
   LoadedTheme,
   SucceededFetchConnectivityStatus,
@@ -56,6 +58,7 @@ import {
   SucceededMountSpeedChart,
   SucceededTriggerSpeedtest,
   TickedRefresh,
+  UnhoveredConnectivitySegment,
   WentIdle,
 } from "@/dashboard/message";
 import {
@@ -65,7 +68,7 @@ import {
   SpeedtestHistoryAsyncData,
   SpeedtestTriggerAsyncData,
 } from "@/dashboard/model";
-import { ToastTest } from "@/dashboard/toast";
+import { Toast, ToastTest } from "@/dashboard/toast";
 import { update } from "@/dashboard/update";
 
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
@@ -731,6 +734,79 @@ describe("dashboard update — idle detection", () => {
         expect(model.isPaused).toBe(true);
       })
     );
+  });
+});
+
+describe("dashboard update — connectivity segment hover", () => {
+  test("hovering a segment records which one is hovered", () => {
+    Story.story(
+      withContext,
+      Story.with(initModel()),
+      Story.message(HoveredConnectivitySegment({ index: 3 })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model.hoveredSegmentIndex).toEqual(Option.some(3));
+      })
+    );
+  });
+
+  test("leaving a segment clears the hover", () => {
+    Story.story(
+      withContext,
+      Story.with({ ...initModel(), hoveredSegmentIndex: Option.some(3) }),
+      Story.message(UnhoveredConnectivitySegment()),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model.hoveredSegmentIndex).toEqual(Option.none());
+      })
+    );
+  });
+});
+
+describe("dashboard update — toast messages", () => {
+  const modelWithToast = () => {
+    const [toast] = Toast.show(initModel().toast, {
+      variant: "Info",
+      payload: { title: "Speed test complete", description: "all good" },
+    });
+    return { ...initModel(), toast };
+  };
+
+  test("a toast message is delegated to the toast submodel", () => {
+    Story.story(
+      withContext,
+      Story.with(modelWithToast()),
+      Story.message(
+        GotToastMessage({
+          message: UiToast.HoveredEntry({
+            entryId: "dashboard-toast-entry-0",
+          }),
+        })
+      ),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model.toast.entries[0]?.isHovered).toBe(true);
+      })
+    );
+  });
+
+  test("leaving a hovered entry clears the hover and reschedules its auto-dismiss", () => {
+    const hovered = withContext(
+      modelWithToast(),
+      GotToastMessage({
+        message: UiToast.HoveredEntry({ entryId: "dashboard-toast-entry-0" }),
+      })
+    )[0];
+
+    const [model, commands] = withContext(
+      hovered,
+      GotToastMessage({
+        message: UiToast.LeftEntry({ entryId: "dashboard-toast-entry-0" }),
+      })
+    );
+
+    expect(model.toast.entries[0]?.isHovered).toBe(false);
+    expect(commands.map((command) => command.name)).toEqual(["DismissAfter"]);
   });
 });
 

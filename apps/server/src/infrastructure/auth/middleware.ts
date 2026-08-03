@@ -111,8 +111,7 @@ export const AuthorizationLive = Layer.effect(
           .verifyRequest(authHeader)
           .pipe(
             Effect.mapError(
-              (error) =>
-                new Unauthorized({ message: error.message ?? "Unauthorized" })
+              (error) => new Unauthorized({ message: error.message })
             )
           );
 

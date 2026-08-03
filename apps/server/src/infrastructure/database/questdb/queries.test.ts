@@ -1,5 +1,4 @@
 import { describe, expect, it } from "@effect/vitest";
-import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
 import { Cause, Effect, Exit, Option } from "effect";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
 import type {
@@ -416,20 +415,15 @@ describe("buildQueryConnectivityStatus", () => {
     }
   );
 
-  it.effect(
-    "should classify packet loss using the shared PACKET_LOSS_THRESHOLDS",
-    () => {
-      const params: QueryMetricsParams = {};
+  it.effect("should classify packet loss at a 10% degraded floor", () => {
+    const params: QueryMetricsParams = {};
 
-      return Effect.gen(function* () {
-        const result = yield* buildQueryConnectivityStatus(params);
+    return Effect.gen(function* () {
+      const result = yield* buildQueryConnectivityStatus(params);
 
-        expect(result.query).toContain(
-          `MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor}`
-        );
-      });
-    }
-  );
+      expect(result.query).toContain("MAX(packet_loss) >= 10");
+    });
+  });
 
   it.effect(
     "should group cycles by exact timestamp before bucketing by granularity",

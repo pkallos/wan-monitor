@@ -13,6 +13,7 @@ export const NodeHttpServerLayer = Layer.unwrap(
       `Effect-TS API server listening on http://${config.server.host}:${config.server.port}`
     );
     return NodeHttpServer.layer(createServer, {
+      host: config.server.host,
       port: config.server.port,
     });
   })

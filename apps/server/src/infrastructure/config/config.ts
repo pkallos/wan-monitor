@@ -87,7 +87,10 @@ const makeConfig = Effect.gen(function* () {
   const pingHostsStr = yield* Config.string("PING_HOSTS").pipe(
     Config.withDefault("8.8.8.8,1.1.1.1,cloudflare.com")
   );
-  const pingHosts = pingHostsStr.split(",").map((h) => h.trim());
+  const pingHosts = pingHostsStr
+    .split(",")
+    .map((h) => h.trim())
+    .filter((h) => h.length > 0);
 
   const speedTestIntervalSeconds = yield* Config.number(
     "SPEEDTEST_INTERVAL_SECONDS"

@@ -15,10 +15,10 @@ export const isValidGranularity = (value: string): value is Granularity =>
 /**
  * Packet-loss classification thresholds (percentages).
  *
- * Single source of truth shared between the backend SQL classification
- * (see `buildQueryConnectivityStatus`) and the frontend status logic
- * (see `CONNECTIVITY_THRESHOLDS`). Keeping these in one place prevents
- * backend/frontend classification drift.
+ * Single source of truth for connectivity classification. The backend SQL in
+ * `buildQueryConnectivityStatus` reads these directly, so the percentages the
+ * API returns already carry this classification and the frontend renders them
+ * as-is.
  */
 export const PACKET_LOSS_THRESHOLDS = {
   /**
