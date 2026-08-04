@@ -31,6 +31,27 @@ export const PACKET_LOSS_THRESHOLDS = {
   degradedCeiling: 50,
 } as const;
 
+/** Floor for the live connectivity window, in seconds. */
+export const LIVE_WINDOW_MIN_SECONDS = 60;
+
+/** Ping cycles that must be missed before the live window reads as stale. */
+export const LIVE_WINDOW_PING_MULTIPLIER = 2;
+
+/**
+ * Trailing window the live connectivity indicator looks back over for the most
+ * recent ping cycle. Two ping intervals so one dropped or delayed cycle can't
+ * flip the indicator to "no data", with a 60s floor so a very fast configured
+ * interval doesn't produce a window the dashboard's own poll cadence could
+ * step over.
+ */
+export const liveConnectivityWindowSeconds = (
+  pingIntervalSeconds: number
+): number =>
+  Math.max(
+    LIVE_WINDOW_MIN_SECONDS,
+    LIVE_WINDOW_PING_MULTIPLIER * pingIntervalSeconds
+  );
+
 /**
  * Minimum share of degraded cycles a rollup bucket needs before the bucket
  * itself reads as "degraded" (see `getConnectivityStatusHandler`). Without

@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   fetchConnectivityStatus,
   fetchEarliestData,
+  fetchLiveConnectivity,
   fetchMetrics,
   fetchSpeedtestHistory,
   loadTheme,
@@ -383,6 +384,96 @@ describe("fetchConnectivityStatus", () => {
     );
 
     expect(capturedParams[0]).toContainEqual(["granularity", "5m"]);
+  });
+});
+
+describe("fetchLiveConnectivity", () => {
+  test("decodes a live status and its sample time", async () => {
+    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          status: "degraded",
+          lastSampleAt: "2026-07-26T00:30:00.000Z",
+          windowSeconds: 60,
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "SucceededFetchLiveConnectivity",
+      status: "degraded",
+      maybeLastSampleAtMs: Option.some(Date.parse("2026-07-26T00:30:00.000Z")),
+    });
+  });
+
+  test("decodes a noInfo status with no recorded sample into None", async () => {
+    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          status: "noInfo",
+          lastSampleAt: null,
+          windowSeconds: 60,
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "SucceededFetchLiveConnectivity",
+      status: "noInfo",
+      maybeLastSampleAtMs: Option.none(),
+    });
+  });
+
+  test("maps a DB_UNAVAILABLE response into a distinguishable, friendly message", async () => {
+    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+      Effect.provide(
+        mockHttpClient(503, {
+          error: "DB_UNAVAILABLE",
+          message: "Database temporarily unavailable",
+          timestamp: "2026-07-26T00:30:00.000Z",
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "FailedFetchLiveConnectivity",
+      error: "Database temporarily unavailable. Retrying automatically.",
+    });
+  });
+
+  test("maps a transport failure into FailedFetchLiveConnectivity", async () => {
+    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+      Effect.provide(mockHttpClient(500, "Internal error")),
+      Effect.runPromise
+    );
+
+    expect(result._tag).toBe("FailedFetchLiveConnectivity");
+  });
+
+  // The whole point of the dedicated endpoint: no range parameters can reach
+  // the wire, so no date range selection can influence the live indicator.
+  test("sends no date-range query parameters at all", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+
+    await fetchLiveConnectivity({ token: "abc" }).pipe(
+      Effect.provide(
+        capturingHttpClient(capturedParams, {
+          status: "up",
+          lastSampleAt: "2026-07-26T00:30:00.000Z",
+          windowSeconds: 60,
+        })
+      ),
+      Effect.runPromise
+    );
+
+    const keys = capturedParams[0].map(([key]) => key);
+    expect(keys).not.toContain("startTime");
+    expect(keys).not.toContain("endTime");
+    expect(keys).not.toContain("granularity");
+    expect(keys).toEqual([]);
   });
 });
 

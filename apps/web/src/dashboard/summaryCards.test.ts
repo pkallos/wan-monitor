@@ -1,53 +1,94 @@
 import { Option } from "effect";
 import { describe, expect, test } from "vitest";
 import {
-  connectivityCard,
+  CHECKING_CONNECTIVITY_CARD,
   downloadSpeedCard,
+  liveConnectivityCard,
   networkInfo,
   uploadSpeedCard,
 } from "@/dashboard/summaryCards";
 
-describe("connectivityCard", () => {
-  test("reports Online/good from the most recent sample's connectivity_status", () => {
-    const card = connectivityCard([
-      { connectivity_status: "up", timestamp: "2026-01-01T00:00:00.000Z" },
-      { connectivity_status: "down", timestamp: "2025-12-31T00:00:00.000Z" },
-    ]);
+const NOW_MS = Date.parse("2026-01-01T12:00:00.000Z");
+const THIRTY_SECONDS_AGO = Option.some(NOW_MS - 30_000);
+
+describe("liveConnectivityCard", () => {
+  test("reports Online/good for a reachable cycle", () => {
+    const card = liveConnectivityCard(
+      { status: "up", maybeLastSampleAtMs: THIRTY_SECONDS_AGO },
+      NOW_MS
+    );
 
     expect(card.title).toBe("Connectivity");
     expect(card.value).toBe("Online");
     expect(card.status).toEqual(Option.some("good"));
+    expect(card.subtitle).toEqual(Option.some("as of 30s ago"));
   });
 
-  test("reports Offline/error when the most recent sample isn't up", () => {
-    const card = connectivityCard([
-      { connectivity_status: "down", timestamp: "2026-01-01T00:00:00.000Z" },
-    ]);
+  test("reports Degraded/warning for a lossy cycle", () => {
+    const card = liveConnectivityCard(
+      { status: "degraded", maybeLastSampleAtMs: THIRTY_SECONDS_AGO },
+      NOW_MS
+    );
 
-    expect(card.title).toBe("Connectivity");
+    expect(card.value).toBe("Degraded");
+    expect(card.status).toEqual(Option.some("warning"));
+  });
+
+  test("reports Offline/error for a fully-down cycle", () => {
+    const card = liveConnectivityCard(
+      { status: "down", maybeLastSampleAtMs: THIRTY_SECONDS_AGO },
+      NOW_MS
+    );
+
     expect(card.value).toBe("Offline");
     expect(card.status).toEqual(Option.some("error"));
   });
 
-  test("falls back to Offline/error with no samples", () => {
-    const card = connectivityCard([]);
+  // A quiet monitor and a down link are different facts, so noInfo must never
+  // borrow the red "error" treatment an outage gets.
+  test("reports No Data as neutral, not error, and says when the monitor last reported", () => {
+    const card = liveConnectivityCard(
+      {
+        status: "noInfo",
+        maybeLastSampleAtMs: Option.some(NOW_MS - 4 * 60 * 60 * 1000),
+      },
+      NOW_MS
+    );
 
-    expect(card).toEqual({
-      title: "Connectivity",
-      value: "Offline",
-      status: Option.some("error"),
-      subtitle: Option.none(),
-    });
+    expect(card.value).toBe("No Data");
+    expect(card.status).toEqual(Option.some("neutral"));
+    expect(card.status).not.toEqual(Option.some("error"));
+    expect(card.subtitle).toEqual(Option.some("last seen 4h ago"));
   });
 
-  test("includes an 'as of' time-ago subtitle from the latest sample's timestamp", () => {
-    const card = connectivityCard([
-      { connectivity_status: "up", timestamp: new Date().toISOString() },
-    ]);
-
-    expect(Option.getOrElse(card.subtitle, () => "")).toMatch(
-      /^as of \d+s ago$/
+  test("says there is no monitoring data when nothing was ever recorded", () => {
+    const card = liveConnectivityCard(
+      { status: "noInfo", maybeLastSampleAtMs: Option.none() },
+      NOW_MS
     );
+
+    expect(card.value).toBe("No Data");
+    expect(card.subtitle).toEqual(Option.some("no monitoring data"));
+  });
+
+  test("omits the subtitle when a reachable cycle carries no sample time", () => {
+    const card = liveConnectivityCard(
+      { status: "up", maybeLastSampleAtMs: Option.none() },
+      NOW_MS
+    );
+
+    expect(card.subtitle).toEqual(Option.none());
+  });
+});
+
+describe("CHECKING_CONNECTIVITY_CARD", () => {
+  test("shows a neutral checking state rather than a false No Data", () => {
+    expect(CHECKING_CONNECTIVITY_CARD).toEqual({
+      title: "Connectivity",
+      value: "Checking…",
+      status: Option.none(),
+      subtitle: Option.none(),
+    });
   });
 });
 

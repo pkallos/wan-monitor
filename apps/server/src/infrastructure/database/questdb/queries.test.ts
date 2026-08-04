@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
 import { Cause, Effect, Exit, Option } from "effect";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
 import type {
@@ -8,8 +9,11 @@ import type {
 import {
   buildQueryConnectivityStatus,
   buildQueryEarliestTimestamp,
+  buildQueryLatestPingTimestamp,
+  buildQueryLiveConnectivity,
   buildQueryMetrics,
   buildQuerySpeedtests,
+  CYCLE_STATUS_CASE,
 } from "@/infrastructure/database/questdb/queries";
 
 describe("buildQueryMetrics", () => {
@@ -484,6 +488,89 @@ describe("buildQueryEarliestTimestamp", () => {
       );
 
       expect(result.query).toContain("FROM network_metrics_test_2");
+    });
+  });
+});
+
+describe("buildQueryLiveConnectivity", () => {
+  const SINCE = "2024-01-01T00:00:00.000Z";
+
+  it.effect("bounds the window from below only", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQueryLiveConnectivity({ sinceIso: SINCE });
+
+      expect(result.query).toContain("WHERE timestamp >= $1");
+      // No upper bound: a row written moments ago must not be excluded by
+      // clock skew between the monitor and the API process.
+      expect(result.query).not.toContain("timestamp <=");
+      expect(result.params).toEqual([SINCE]);
+    });
+  });
+
+  it.effect("reads ping cycles only, newest first, one row", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQueryLiveConnectivity({ sinceIso: SINCE });
+
+      expect(result.query).toContain("AND source = 'ping'");
+      expect(result.query).toContain("SAMPLE BY 1s");
+      expect(result.query).toContain("ORDER BY timestamp DESC");
+      expect(result.query).toContain("LIMIT 1");
+    });
+  });
+
+  it.effect("targets a custom table when provided", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQueryLiveConnectivity(
+        { sinceIso: SINCE },
+        "network_metrics_test_2"
+      );
+
+      expect(result.query).toContain("FROM network_metrics_test_2");
+    });
+  });
+});
+
+describe("buildQueryLatestPingTimestamp", () => {
+  it.effect("builds a query for the newest ping timestamp", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQueryLatestPingTimestamp();
+
+      expect(result.query).toContain("max(timestamp)");
+      expect(result.query).toContain("FROM network_metrics");
+      expect(result.query).toContain("WHERE source = 'ping'");
+      expect(result.params).toHaveLength(0);
+    });
+  });
+
+  it.effect("targets a custom table when provided", () => {
+    return Effect.gen(function* () {
+      const result = yield* buildQueryLatestPingTimestamp(
+        "network_metrics_test_2"
+      );
+
+      expect(result.query).toContain("FROM network_metrics_test_2");
+    });
+  });
+});
+
+describe("CYCLE_STATUS_CASE", () => {
+  it("reads the degraded floor from the shared constant", () => {
+    expect(CYCLE_STATUS_CASE).toContain(
+      `MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor}`
+    );
+  });
+
+  // The live indicator and the historical timeline must classify a cycle
+  // identically, so both embed this one string rather than their own copy.
+  it.effect("is embedded verbatim by both cycle-classifying queries", () => {
+    return Effect.gen(function* () {
+      const historical = yield* buildQueryConnectivityStatus({});
+      const live = yield* buildQueryLiveConnectivity({
+        sinceIso: "2024-01-01T00:00:00.000Z",
+      });
+
+      expect(historical.query).toContain(CYCLE_STATUS_CASE);
+      expect(live.query).toContain(CYCLE_STATUS_CASE);
     });
   });
 });

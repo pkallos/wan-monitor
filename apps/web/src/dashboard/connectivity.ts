@@ -1,9 +1,14 @@
-import type { ConnectivityStatusPoint } from "@shared/api/routes/connectivity-status";
+import type {
+  ConnectivityStatusPoint,
+  LiveConnectivityStatus,
+} from "@shared/api/routes/connectivity-status";
 import type { Granularity } from "@shared/api/routes/metrics";
 import { Array as Array_, Option } from "effect";
 import { fillTimeline, granularityToMs } from "@/dashboard/charts/timeline";
 
-export type ConnectivityStatus = "up" | "degraded" | "down" | "noInfo";
+/** The timeline's gap-filled vocabulary and the live indicator's wire
+ *  vocabulary are the same four states, so no translation layer is needed. */
+export type ConnectivityStatus = LiveConnectivityStatus;
 
 export const CONNECTIVITY_COLORS: Record<ConnectivityStatus, string> = {
   up: "#38a169",

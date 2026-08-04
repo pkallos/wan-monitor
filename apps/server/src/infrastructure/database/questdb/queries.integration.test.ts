@@ -1,3 +1,4 @@
+import type { NetworkMetric } from "@shared/metrics";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -666,6 +667,133 @@ describe("Metrics Aggregation Integration Tests", () => {
           yield* teardownIntegrationTest(db);
 
           return earliest;
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+  });
+
+  describe("live connectivity", () => {
+    const baseTime = new Date("2024-02-01T09:00:00.000Z");
+    const baseMs = baseTime.getTime();
+
+    const cycle = (
+      offsetMs: number,
+      statuses: readonly ("up" | "down")[],
+      packetLoss = 0
+    ): NetworkMetric[] =>
+      ["8.8.8.8", "1.1.1.1"].map((host, i) => ({
+        timestamp: new Date(baseMs + offsetMs),
+        source: "ping" as const,
+        host,
+        ...(statuses[i] === "up" ? { latency: 15.0 } : {}),
+        jitter: 1.0,
+        packetLoss: statuses[i] === "up" ? packetLoss : 100.0,
+        connectivityStatus: statuses[i],
+      }));
+
+    it.skipIf(skipTests)(
+      "returns the newest ping cycle in the window, classified by quorum",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          yield* seedDatabase(db, [
+            ...cycle(0, ["down", "down"]),
+            ...cycle(30_000, ["up", "down"]),
+            ...cycle(60_000, ["up", "up"]),
+          ]);
+
+          const row = yield* db.queryLiveConnectivity(baseTime.toISOString());
+
+          expect(row).not.toBeNull();
+          expect(row?.cycle_status).toBe("up");
+          expect(new Date(row?.timestamp as string).getTime()).toBe(
+            baseMs + 60_000
+          );
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "classifies the newest cycle as degraded when one host fails",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          yield* seedDatabase(db, cycle(0, ["up", "down"]));
+
+          const row = yield* db.queryLiveConnectivity(baseTime.toISOString());
+
+          expect(row?.cycle_status).toBe("degraded");
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "returns null when every ping predates the window",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          yield* seedDatabase(db, cycle(0, ["up", "up"]));
+
+          const row = yield* db.queryLiveConnectivity(
+            new Date(baseMs + 60_000).toISOString()
+          );
+
+          expect(row).toBeNull();
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "reports the newest ping of any age as the fallback timestamp",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          yield* seedDatabase(db, [
+            ...cycle(0, ["up", "up"]),
+            ...cycle(120_000, ["up", "up"]),
+          ]);
+
+          const latest = yield* db.queryLatestPingTimestamp();
+
+          expect(latest).not.toBeNull();
+          expect(new Date(latest as string).getTime()).toBe(baseMs + 120_000);
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "returns a null fallback timestamp when the table is empty",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          const latest = yield* db.queryLatestPingTimestamp();
+
+          expect(latest).toBeNull();
+
+          yield* teardownIntegrationTest(db);
         });
 
         await Effect.runPromise(Effect.provide(program, testLayer));

@@ -1,8 +1,8 @@
-import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import { Array as Array_, Option } from "effect";
+import type { ConnectivityStatus } from "@/dashboard/connectivity";
 
-export type CardStatus = "good" | "warning" | "error";
+export type CardStatus = "good" | "warning" | "error" | "neutral";
 
 export interface SummaryCard {
   readonly title: string;
@@ -22,26 +22,65 @@ export const formatDurationAgo = (elapsedMs: number): string => {
 const formatTimeAgo = (timestamp: string): string =>
   `as of ${formatDurationAgo(Date.now() - new Date(timestamp).getTime())}`;
 
-export const connectivityCard = (
-  metrics: ReadonlyArray<Pick<Metric, "connectivity_status" | "timestamp">>
-): SummaryCard =>
-  Option.match(Array_.head(metrics), {
-    onNone: () => ({
-      title: "Connectivity",
-      value: "Offline",
-      status: Option.some("error" as const),
-      subtitle: Option.none(),
-    }),
-    onSome: (latest) => {
-      const isUp = latest.connectivity_status === "up";
-      return {
-        title: "Connectivity",
-        value: isUp ? "Online" : "Offline",
-        status: Option.some(isUp ? ("good" as const) : ("error" as const)),
-        subtitle: Option.some(formatTimeAgo(latest.timestamp)),
-      };
-    },
-  });
+const CONNECTIVITY_CARD_TITLE = "Connectivity";
+
+// The card speaks in reachability ("Online"), not in the timeline tooltip's
+// per-cycle vocabulary ("Up"), so it keeps its own labels.
+const LIVE_CONNECTIVITY_VALUES: Record<ConnectivityStatus, string> = {
+  up: "Online",
+  degraded: "Degraded",
+  down: "Offline",
+  noInfo: "No Data",
+};
+
+const LIVE_CONNECTIVITY_CARD_STATUS: Record<ConnectivityStatus, CardStatus> = {
+  up: "good",
+  degraded: "warning",
+  down: "error",
+  // Grey, never red: the monitor going quiet says nothing about the WAN.
+  noInfo: "neutral",
+};
+
+/** Shown until the first live response lands, so the card doesn't flash a
+ *  false "No Data" on load. */
+export const CHECKING_CONNECTIVITY_CARD: SummaryCard = {
+  title: CONNECTIVITY_CARD_TITLE,
+  value: "Checking…",
+  status: Option.none(),
+  subtitle: Option.none(),
+};
+
+export interface LiveConnectivity {
+  readonly status: ConnectivityStatus;
+  readonly maybeLastSampleAtMs: Option.Option<number>;
+}
+
+const liveConnectivitySubtitle = (
+  live: LiveConnectivity,
+  nowMs: number
+): Option.Option<string> =>
+  live.status === "noInfo"
+    ? Option.some(
+        Option.match(live.maybeLastSampleAtMs, {
+          onNone: () => "no monitoring data",
+          onSome: (sampleAtMs) =>
+            `last seen ${formatDurationAgo(nowMs - sampleAtMs)}`,
+        })
+      )
+    : Option.map(
+        live.maybeLastSampleAtMs,
+        (sampleAtMs) => `as of ${formatDurationAgo(nowMs - sampleAtMs)}`
+      );
+
+export const liveConnectivityCard = (
+  live: LiveConnectivity,
+  nowMs: number
+): SummaryCard => ({
+  title: CONNECTIVITY_CARD_TITLE,
+  value: LIVE_CONNECTIVITY_VALUES[live.status],
+  status: Option.some(LIVE_CONNECTIVITY_CARD_STATUS[live.status]),
+  subtitle: liveConnectivitySubtitle(live, nowMs),
+});
 
 const speedCard = (
   title: string,

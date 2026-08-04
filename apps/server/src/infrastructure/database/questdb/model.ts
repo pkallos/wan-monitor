@@ -22,6 +22,13 @@ export interface ConnectivityStatusRow {
   readonly total_count: number;
 }
 
+export type CycleStatus = "up" | "down" | "degraded";
+
+export interface LiveConnectivityRow {
+  readonly timestamp: string;
+  readonly cycle_status: CycleStatus;
+}
+
 export interface QueryMetricsParams {
   readonly startTime?: Date;
   readonly endTime?: Date;

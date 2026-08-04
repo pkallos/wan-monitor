@@ -18,6 +18,7 @@ import {
 } from "@/dashboard/charts/command";
 import {
   FetchConnectivityStatus,
+  FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
   SaveTheme,
@@ -34,6 +35,7 @@ import {
   CompletedSyncPacketLossChart,
   CompletedSyncSpeedChart,
   SucceededFetchConnectivityStatus,
+  SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
   SucceededFetchSpeedtestHistory,
   SucceededMountJitterChart,
@@ -44,6 +46,7 @@ import {
 import {
   ConnectivityStatusAsyncData,
   initModel,
+  LiveConnectivityAsyncData,
   MetricsAsyncData,
   SpeedtestHistoryAsyncData,
   SpeedtestTriggerAsyncData,
@@ -83,6 +86,14 @@ const acknowledgeAllChartMounts = () =>
     [MountSpeedChart, SucceededMountSpeedChart({ hostId: SPEED_CHART_HOST_ID })]
   );
 
+const liveConnectivity = (
+  status: "up" | "degraded" | "down" | "noInfo",
+  maybeLastSampleAtMs = Option.some(NOW_MS - 30_000)
+) =>
+  LiveConnectivityAsyncData.Success({
+    data: { status, maybeLastSampleAtMs },
+  });
+
 const resolveAllChartSyncs = () =>
   Scene.Command.resolveAll(
     [SyncLatencyChart, CompletedSyncLatencyChart()],
@@ -121,15 +132,7 @@ describe("dashboard view", () => {
   test("shows the connectivity, download, and upload summary cards", () => {
     const model = {
       ...initModel(),
-      metrics: MetricsAsyncData.Success({
-        data: [
-          {
-            timestamp: "2026-07-26T00:01:00.000Z",
-            source: "ping" as const,
-            connectivity_status: "up",
-          },
-        ],
-      }),
+      liveConnectivity: liveConnectivity("up"),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({
         data: [
           {
@@ -153,6 +156,84 @@ describe("dashboard view", () => {
       Scene.expect(Scene.text("123.4 Mbps")).toExist(),
       Scene.expect(Scene.text("Upload Speed")).toExist(),
       Scene.expect(Scene.text("12.3 Mbps")).toExist()
+    );
+  });
+
+  test.each([
+    ["up", "Online"],
+    ["degraded", "Degraded"],
+    ["down", "Offline"],
+    ["noInfo", "No Data"],
+  ] as const)("renders the %s live status as %s", (status, label) => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.with({
+        ...initModel(),
+        liveConnectivity: liveConnectivity(status),
+      }),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.text(label)).toExist()
+    );
+  });
+
+  test("shows Checking… until the first live response lands", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.with({
+        ...initModel(),
+        liveConnectivity: LiveConnectivityAsyncData.Loading(),
+      }),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.text("Checking…")).toExist(),
+      Scene.expect(Scene.text("No Data")).not.toExist()
+    );
+  });
+
+  test("renders a failed live fetch as No Data, never as an outage", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.with({
+        ...initModel(),
+        liveConnectivity: LiveConnectivityAsyncData.Failure({
+          error: "network error",
+        }),
+      }),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.text("No Data")).toExist(),
+      Scene.expect(Scene.text("Offline")).not.toExist()
+    );
+  });
+
+  // The metrics endpoint can return a speedtest row as the newest row in a
+  // bucket, carrying no connectivity_status at all. The card must not care:
+  // it reads the live endpoint, not model.metrics.
+  test("ignores model.metrics entirely, even when its newest row is a speedtest", () => {
+    const model = {
+      ...initModel(),
+      metrics: MetricsAsyncData.Success({
+        data: [
+          {
+            timestamp: "2026-07-28T11:59:59.000Z",
+            source: "speedtest" as const,
+            download_speed: 123.4,
+          },
+          {
+            timestamp: "2026-07-28T11:59:58.000Z",
+            source: "ping" as const,
+            connectivity_status: "up",
+          },
+        ],
+      }),
+      liveConnectivity: liveConnectivity("up"),
+    };
+
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.with(model),
+      acknowledgeAllChartMounts(),
+      resolveAllChartSyncs(),
+      Scene.expect(Scene.text("Online")).toExist(),
+      Scene.expect(Scene.text("Offline")).not.toExist()
     );
   });
 
@@ -500,7 +581,7 @@ describe("dashboard view", () => {
     );
   });
 
-  test("clicking Refresh now force-reloads all three series", () => {
+  test("clicking Refresh now force-reloads every series", () => {
     const model = {
       ...initModel(),
       metrics: MetricsAsyncData.Success({ data: [] }),
@@ -514,6 +595,7 @@ describe("dashboard view", () => {
           granularity: "1m" as const,
         },
       }),
+      liveConnectivity: liveConnectivity("up"),
     };
 
     Scene.scene(
@@ -544,6 +626,7 @@ describe("dashboard view", () => {
           maybeEarliestDataMs: Option.none(),
         })
       ),
+      Scene.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
       Scene.Command.resolveAll(
         [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
         [
@@ -558,6 +641,13 @@ describe("dashboard view", () => {
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
+          }),
+        ],
+        [
+          FetchLiveConnectivity,
+          SucceededFetchLiveConnectivity({
+            status: "up",
+            maybeLastSampleAtMs: Option.none(),
           }),
         ]
       ),

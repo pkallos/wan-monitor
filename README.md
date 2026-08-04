@@ -90,7 +90,7 @@ All configuration is done via environment variables.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PING_HOSTS` | `8.8.8.8,1.1.1.1,cloudflare.com` | Comma-separated hosts to ping |
-| `PING_INTERVAL_SECONDS` | `60` | How often to run ping tests |
+| `PING_INTERVAL_SECONDS` | `30` | How often to run ping tests |
 | `PING_TIMEOUT` | `5` | Ping timeout in seconds |
 | `PING_TRAIN_COUNT` | `10` | Number of packets per ping (for packet loss calculation) |
 | `SPEEDTEST_INTERVAL_SECONDS` | `3600` | How often to run speed tests (default: 1 hour) |
@@ -152,13 +152,15 @@ All configuration is done via environment variables.
 
 ### How connectivity status is classified
 
-Each ping sample is classified into exactly one state:
+Every host is pinged together in one cycle, and the cycle as a whole is classified into exactly one state:
 
-- **Up**: reachable with less than 5% packet loss.
-- **Degraded**: reachable but with 5% or more packet loss (any amount, including severe loss).
-- **Down**: host unreachable.
+- **Up**: every host reachable and under 10% packet loss.
+- **Degraded**: at least one host failed or exceeded 10% packet loss, but not all of them. There is no upper loss bound, so a reachable-but-lossy cycle is degraded however severe the loss.
+- **Down**: every host in the cycle unreachable. One host failing out of several is a target or path problem, not a WAN outage.
 
-The **uptime percentage** is deliberately "clean up only": it counts strictly *up* samples over all samples. Degraded samples are still reachable but are **not** counted toward uptime, so packet loss lowers the uptime figure rather than being treated as full availability. The per-interval degraded share is shown separately on the connectivity chart.
+The **uptime percentage** is deliberately "clean up only": it counts strictly *up* cycles over all cycles. Degraded cycles are still reachable but are **not** counted toward uptime, so packet loss lowers the uptime figure rather than being treated as full availability. The per-interval degraded share is shown separately on the connectivity chart.
+
+The **Connectivity card** at the top of the dashboard answers "is the link up right now" and is independent of the selected date range. It reports the newest ping cycle inside a trailing window of two ping intervals (60 seconds at the default `PING_INTERVAL_SECONDS`, never shorter than 60 seconds). An empty window reads as grey **No Data** with the time the monitor last reported — that means the monitoring process isn't running, which is a different fact from the internet being down.
 
 **Date Range**: a calendar picker with presets — last 7 days, last 30 days, month to date, quarter to date, year to date, last 12 months, all time — plus a two-month calendar for picking an arbitrary start and end day.
 
@@ -262,6 +264,7 @@ wan-monitor/
 | `/api/auth/login` | POST | Login (returns JWT) |
 | `/api/metrics` | GET | Query ping and speedtest data |
 | `/api/connectivity-status` | GET | Aggregated up/down/degraded status |
+| `/api/connectivity-status/live` | GET | Current status from the newest ping cycle in a trailing window |
 | `/api/ping/trigger` | POST | Manually trigger a ping test |
 | `/api/ping/hosts` | GET | Get configured ping hosts |
 

@@ -1,4 +1,7 @@
-import { ConnectivityStatusPointSchema } from "@shared/api/routes/connectivity-status";
+import {
+  ConnectivityStatusPointSchema,
+  LiveConnectivityStatusSchema,
+} from "@shared/api/routes/connectivity-status";
 import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Option, Schema as S } from "effect";
@@ -29,6 +32,15 @@ export const ConnectivityStatusAsyncData = AsyncData.Schema(
   S.String
 );
 
+const LiveConnectivityData = S.Struct({
+  status: LiveConnectivityStatusSchema,
+  maybeLastSampleAtMs: S.Option(S.Number),
+});
+export const LiveConnectivityAsyncData = AsyncData.Schema(
+  LiveConnectivityData,
+  S.String
+);
+
 const SpeedtestTriggerResult = S.Struct({
   downloadMbps: S.Number,
   uploadMbps: S.Number,
@@ -47,6 +59,7 @@ export const Model = S.Struct({
   metrics: MetricsAsyncData.schema,
   speedtestHistory: SpeedtestHistoryAsyncData.schema,
   connectivityStatus: ConnectivityStatusAsyncData.schema,
+  liveConnectivity: LiveConnectivityAsyncData.schema,
   speedtestTrigger: SpeedtestTriggerAsyncData.schema,
   maybeLatencyChartHostId: S.Option(S.String),
   maybePacketLossChartHostId: S.Option(S.String),
@@ -68,6 +81,7 @@ export const initModel = (): Model => ({
   metrics: MetricsAsyncData.Idle(),
   speedtestHistory: SpeedtestHistoryAsyncData.Idle(),
   connectivityStatus: ConnectivityStatusAsyncData.Idle(),
+  liveConnectivity: LiveConnectivityAsyncData.Idle(),
   speedtestTrigger: SpeedtestTriggerAsyncData.Idle(),
   maybeLatencyChartHostId: Option.none(),
   maybePacketLossChartHostId: Option.none(),

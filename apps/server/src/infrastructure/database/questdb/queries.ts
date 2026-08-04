@@ -181,6 +181,64 @@ export const buildQueryEarliestTimestamp = (
     params: [],
   });
 
+/**
+ * Reduces one ping cycle (the rows sharing a write timestamp, grouped by
+ * `SAMPLE BY 1s`) to a single quorum-based state. Shared by the historical
+ * rollup and the live indicator so the two can never disagree about what
+ * "degraded" means:
+ *   - down:     every host in the cycle failed. One host down out of several is
+ *               a target/path problem, not a WAN outage.
+ *   - degraded: not down, but at least one host failed or exceeded the loss
+ *               floor. No upper packet-loss bound: any reachable-but-lossy
+ *               cycle is degraded, including 50-99% loss.
+ *   - up:       every host reachable and under the loss floor.
+ * Latency is intentionally not used: a sample can be a valid reachable
+ * measurement with no latency reading.
+ */
+export const CYCLE_STATUS_CASE = `CASE
+              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) = count() THEN 'down'
+              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) > 0
+                OR MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor} THEN 'degraded'
+              ELSE 'up'
+            END`;
+
+/**
+ * Most recent ping cycle at or after `sinceIso`, for the live connectivity
+ * indicator. Deliberately unbounded at the top so a row written moments ago
+ * isn't excluded by clock skew between the monitor and the API process.
+ */
+export const buildQueryLiveConnectivity = (
+  { sinceIso }: { readonly sinceIso: string },
+  table = "network_metrics"
+): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
+  Effect.succeed({
+    query: `
+        SELECT
+          timestamp,
+          ${CYCLE_STATUS_CASE} as cycle_status
+        FROM ${table}
+        WHERE timestamp >= $1
+          AND source = 'ping'
+        SAMPLE BY 1s
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `,
+    params: [sinceIso],
+  });
+
+/**
+ * Newest ping timestamp of any age. Lets the live indicator say when the
+ * monitor last reported, so an empty window reads as "no data, last seen 4h
+ * ago" rather than a bare "no data".
+ */
+export const buildQueryLatestPingTimestamp = (
+  table = "network_metrics"
+): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
+  Effect.succeed({
+    query: `SELECT max(timestamp) as timestamp FROM ${table} WHERE source = 'ping'`,
+    params: [],
+  });
+
 export const buildQueryConnectivityStatus = (
   params: QueryMetricsParams,
   table = "network_metrics"
@@ -202,21 +260,10 @@ export const buildQueryConnectivityStatus = (
 
     // Connectivity classification is quorum-based across a ping cycle (all
     // hosts pinged together — see `pingResultToMetric`'s shared `timestamp`),
-    // not per host-row. A single host blip no longer paints the whole bucket
-    // down: the inner query first reduces each cycle (exact-timestamp group,
-    // since every host in a cycle shares one write-time timestamp) to one of
-    // three states, then the outer query buckets cycles the same way host-rows
-    // were bucketed before. `up_count + degraded_count + down_count` always
-    // equals `total_count` for every output bucket:
-    //   - down:     every host in the cycle failed (connectivity_status='down').
-    //               One host down out of several is a target/path problem, not
-    //               a WAN outage.
-    //   - degraded: not down, but at least one host failed or exceeded the loss
-    //               floor. No upper packet-loss bound: any reachable-but-lossy
-    //               cycle is degraded, including 50-99% loss.
-    //   - up:       every host reachable and under the loss floor.
-    // Latency is intentionally NOT used for classification: a sample can be a
-    // valid reachable measurement with no latency reading.
+    // not per host-row: the inner query reduces each cycle to one of three
+    // states via `CYCLE_STATUS_CASE`, then the outer query buckets cycles by
+    // granularity. `up_count + degraded_count + down_count` always equals
+    // `total_count` for every output bucket.
     const query = `
         SELECT
           bucket_ts as timestamp,
@@ -227,12 +274,7 @@ export const buildQueryConnectivityStatus = (
         FROM (
           (SELECT
             timestamp as bucket_ts,
-            CASE
-              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) = count() THEN 'down'
-              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) > 0
-                OR MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor} THEN 'degraded'
-              ELSE 'up'
-            END as cycle_status
+            ${CYCLE_STATUS_CASE} as cycle_status
           FROM ${table}
           WHERE timestamp >= $1
             AND timestamp <= $2

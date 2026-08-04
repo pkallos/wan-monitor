@@ -16,6 +16,22 @@ export type ConnectivityStatus = Schema.Schema.Type<
   typeof ConnectivityStatusSchema
 >;
 
+/**
+ * States the live indicator can report. Extends the historical
+ * `up`/`down`/`degraded` classification with `noInfo`, which means the monitor
+ * itself reported nothing inside the trailing window — silence about the WAN,
+ * not an outage.
+ */
+export const LiveConnectivityStatusSchema = Schema.Literals([
+  "up",
+  "down",
+  "degraded",
+  "noInfo",
+]);
+export type LiveConnectivityStatus = Schema.Schema.Type<
+  typeof LiveConnectivityStatusSchema
+>;
+
 export const ConnectivityStatusPointSchema = Schema.Struct({
   timestamp: Schema.String,
   status: ConnectivityStatusSchema,
@@ -39,6 +55,15 @@ const ConnectivityStatusResponse = Schema.Struct({
   meta: ConnectivityStatusMeta,
 });
 
+const GetLiveConnectivityResponse = Schema.Struct({
+  status: LiveConnectivityStatusSchema,
+  /** Timestamp of the newest ping cycle, or of the last one ever recorded when
+   *  the window is empty. Null only when the monitor has never written a ping. */
+  lastSampleAt: Schema.NullOr(Schema.String),
+  /** Width of the trailing window the status was derived from, in seconds. */
+  windowSeconds: Schema.Number,
+});
+
 export const GetConnectivityStatusQuery = Schema.Struct({
   startTime: Schema.optional(Schema.String),
   endTime: Schema.optional(Schema.String),
@@ -54,6 +79,9 @@ export type ConnectivityStatusPoint = Schema.Schema.Type<
 export type ConnectivityStatusResponseType = Schema.Schema.Type<
   typeof ConnectivityStatusResponse
 >;
+export type GetLiveConnectivityResponseType = Schema.Schema.Type<
+  typeof GetLiveConnectivityResponse
+>;
 
 export const ConnectivityStatusApiGroup = HttpApiGroup.make(
   "connectivityStatus"
@@ -63,6 +91,15 @@ export const ConnectivityStatusApiGroup = HttpApiGroup.make(
     HttpApiEndpoint.get("getConnectivityStatus", "/", {
       query: GetConnectivityStatusQuery,
       success: ConnectivityStatusResponse,
+      error: [
+        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
+        Schema.String,
+      ],
+    })
+  )
+  .add(
+    HttpApiEndpoint.get("getLiveConnectivity", "/live", {
+      success: GetLiveConnectivityResponse,
       error: [
         HttpApiSchema.status(503)(DbUnavailableErrorSchema),
         Schema.String,

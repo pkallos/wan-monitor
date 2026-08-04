@@ -1,9 +1,13 @@
 import { WanMonitorApi } from "@shared/api";
 import type { GetConnectivityStatusQuery } from "@shared/api/routes/connectivity-status";
-import { DEGRADED_BUCKET_MIN_SHARE } from "@wan-monitor/shared";
+import {
+  DEGRADED_BUCKET_MIN_SHARE,
+  liveConnectivityWindowSeconds,
+} from "@wan-monitor/shared";
 import { Clock, Effect, type Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { mapQueryError } from "@/core/api/handlers/db-error";
+import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
 export const getConnectivityStatusHandler = ({
@@ -76,9 +80,43 @@ export const getConnectivityStatusHandler = ({
     };
   }).pipe(Effect.catch(mapQueryError("Failed to query connectivity status")));
 
+/**
+ * Answers "is the link up right now", independent of any date range the
+ * dashboard has selected. The trailing window is sized from the server's own
+ * `PING_INTERVAL_SECONDS`, which the browser has no way to know, so the
+ * freshness decision lives here rather than in the client.
+ */
+export const getLiveConnectivityHandler = () =>
+  Effect.gen(function* () {
+    const db = yield* QuestDB;
+    const config = yield* ConfigService;
+    const now = yield* Clock.currentTimeMillis;
+
+    const windowSeconds = liveConnectivityWindowSeconds(
+      config.ping.intervalSeconds
+    );
+    const sinceIso = new Date(now - windowSeconds * 1000).toISOString();
+
+    const row = yield* db.queryLiveConnectivity(sinceIso);
+    if (row !== null) {
+      return {
+        status: row.cycle_status,
+        lastSampleAt: row.timestamp,
+        windowSeconds,
+      };
+    }
+
+    // Only reached when the window is empty, so the extra round trip stays off
+    // the healthy path: it turns silence into "no data since <timestamp>".
+    const lastSampleAt = yield* db.queryLatestPingTimestamp();
+    return { status: "noInfo" as const, lastSampleAt, windowSeconds };
+  }).pipe(Effect.catch(mapQueryError("Failed to query live connectivity")));
+
 export const ConnectivityStatusGroupLive = HttpApiBuilder.group(
   WanMonitorApi,
   "connectivityStatus",
   (handlers) =>
-    handlers.handle("getConnectivityStatus", getConnectivityStatusHandler)
+    handlers
+      .handle("getConnectivityStatus", getConnectivityStatusHandler)
+      .handle("getLiveConnectivity", getLiveConnectivityHandler)
 );

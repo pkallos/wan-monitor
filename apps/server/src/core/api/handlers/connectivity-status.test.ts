@@ -1,15 +1,22 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { DB_UNAVAILABLE } from "@shared/api/errors";
+import { Cause, Clock, Effect, Exit, Layer, Option } from "effect";
 import { vi } from "vitest";
-import { getConnectivityStatusHandler } from "@/core/api/handlers/connectivity-status";
 import {
+  getConnectivityStatusHandler,
+  getLiveConnectivityHandler,
+} from "@/core/api/handlers/connectivity-status";
+import {
+  DbUnavailable,
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
 import type {
   ConnectivityStatusRow,
+  LiveConnectivityRow,
   QueryMetricsParams,
 } from "@/infrastructure/database/questdb/model";
+import { makeTestConfigLayer } from "@/test/config";
 
 const createMockQuestDB = (
   mockRows: unknown[],
@@ -25,8 +32,30 @@ const createMockQuestDB = (
     onQuery?.(params);
     return Effect.succeed(mockRows as readonly ConnectivityStatusRow[]);
   },
+  queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
+  queryLatestPingTimestamp: () => Effect.succeed(null),
   close: () => Effect.void,
+});
+
+const createMockLiveQuestDB = (options: {
+  readonly liveRow?: LiveConnectivityRow;
+  readonly latestPingTimestamp?: string;
+  readonly onLiveQuery?: (sinceIso: string) => void;
+  readonly onLatestPingQuery?: () => void;
+  readonly liveUnavailable?: boolean;
+}): QuestDBService => ({
+  ...createMockQuestDB([]),
+  queryLiveConnectivity: (sinceIso) => {
+    options.onLiveQuery?.(sinceIso);
+    return options.liveUnavailable
+      ? Effect.fail(new DbUnavailable({ message: "connection refused" }))
+      : Effect.succeed(options.liveRow ?? null);
+  },
+  queryLatestPingTimestamp: () => {
+    options.onLatestPingQuery?.();
+    return Effect.succeed(options.latestPingTimestamp ?? null);
+  },
 });
 
 describe("Connectivity Status Handlers", () => {
@@ -206,5 +235,154 @@ describe("Connectivity Status Handlers", () => {
         expect(result.meta.availabilityPercentage).toBe(0);
       }).pipe(Effect.provide(QuestDBTest));
     });
+  });
+
+  describe("getLiveConnectivity", () => {
+    const liveLayers = (db: QuestDBService, pingIntervalSeconds = 30) =>
+      Layer.mergeAll(
+        Layer.succeed(QuestDB, db),
+        makeTestConfigLayer({ ping: { intervalSeconds: pingIntervalSeconds } })
+      );
+
+    it.effect("passes the newest cycle's status and timestamp through", () => {
+      const db = createMockLiveQuestDB({
+        liveRow: {
+          timestamp: "2024-01-01T00:00:30.000Z",
+          cycle_status: "up",
+        },
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getLiveConnectivityHandler();
+
+        expect(result.status).toBe("up");
+        expect(result.lastSampleAt).toBe("2024-01-01T00:00:30.000Z");
+      }).pipe(Effect.provide(liveLayers(db)));
+    });
+
+    it.effect("reports a fully-down cycle as down, never as noInfo", () => {
+      const db = createMockLiveQuestDB({
+        liveRow: {
+          timestamp: "2024-01-01T00:00:30.000Z",
+          cycle_status: "down",
+        },
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getLiveConnectivityHandler();
+
+        expect(result.status).toBe("down");
+      }).pipe(Effect.provide(liveLayers(db)));
+    });
+
+    it.effect("reports a lossy cycle as degraded", () => {
+      const db = createMockLiveQuestDB({
+        liveRow: {
+          timestamp: "2024-01-01T00:00:30.000Z",
+          cycle_status: "degraded",
+        },
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getLiveConnectivityHandler();
+
+        expect(result.status).toBe("degraded");
+      }).pipe(Effect.provide(liveLayers(db)));
+    });
+
+    it.effect(
+      "reports noInfo with the last recorded ping when the monitor stopped reporting",
+      () => {
+        const db = createMockLiveQuestDB({
+          latestPingTimestamp: "2023-12-31T20:00:00.000Z",
+        });
+
+        return Effect.gen(function* () {
+          const result = yield* getLiveConnectivityHandler();
+
+          expect(result.status).toBe("noInfo");
+          expect(result.lastSampleAt).toBe("2023-12-31T20:00:00.000Z");
+        }).pipe(Effect.provide(liveLayers(db)));
+      }
+    );
+
+    it.effect(
+      "reports noInfo with no timestamp when nothing was ever recorded",
+      () => {
+        const db = createMockLiveQuestDB({});
+
+        return Effect.gen(function* () {
+          const result = yield* getLiveConnectivityHandler();
+
+          expect(result.status).toBe("noInfo");
+          expect(result.lastSampleAt).toBeNull();
+        }).pipe(Effect.provide(liveLayers(db)));
+      }
+    );
+
+    it.effect("skips the fallback query when the window has a cycle", () => {
+      const onLatestPingQuery = vi.fn();
+      const db = createMockLiveQuestDB({
+        liveRow: {
+          timestamp: "2024-01-01T00:00:30.000Z",
+          cycle_status: "up",
+        },
+        onLatestPingQuery,
+      });
+
+      return Effect.gen(function* () {
+        yield* getLiveConnectivityHandler();
+
+        expect(onLatestPingQuery).not.toHaveBeenCalled();
+      }).pipe(Effect.provide(liveLayers(db)));
+    });
+
+    it.effect("sizes the window from the configured ping interval", () => {
+      const onLiveQuery = vi.fn();
+      const db = createMockLiveQuestDB({ onLiveQuery });
+
+      return Effect.gen(function* () {
+        const result = yield* getLiveConnectivityHandler();
+        const now = yield* Clock.currentTimeMillis;
+
+        // 300s interval doubles to a 600s window, well past the 60s floor.
+        expect(result.windowSeconds).toBe(600);
+        const [sinceIso] = onLiveQuery.mock.calls[0];
+        expect(now - Date.parse(sinceIso)).toBe(600_000);
+      }).pipe(Effect.provide(liveLayers(db, 300)));
+    });
+
+    it.effect(
+      "holds the window at its 60s floor for fast ping intervals",
+      () => {
+        const db = createMockLiveQuestDB({});
+
+        return Effect.gen(function* () {
+          const result = yield* getLiveConnectivityHandler();
+
+          expect(result.windowSeconds).toBe(60);
+        }).pipe(Effect.provide(liveLayers(db, 5)));
+      }
+    );
+
+    it.effect(
+      "maps an unreachable database to the shared 503 error body",
+      () => {
+        const db = createMockLiveQuestDB({ liveUnavailable: true });
+
+        return Effect.gen(function* () {
+          const exit = yield* Effect.exit(getLiveConnectivityHandler());
+
+          expect(Exit.isFailure(exit)).toBe(true);
+          if (Exit.isFailure(exit)) {
+            const error = Cause.findErrorOption(exit.cause);
+            expect(Option.isSome(error)).toBe(true);
+            if (Option.isSome(error)) {
+              expect(error.value).toMatchObject({ error: DB_UNAVAILABLE });
+            }
+          }
+        }).pipe(Effect.provide(liveLayers(db)));
+      }
+    );
   });
 });

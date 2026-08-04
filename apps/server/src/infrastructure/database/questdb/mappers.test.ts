@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mapConnectivityStatusRow,
+  mapLiveConnectivityRow,
   mapMetricRow,
 } from "@/infrastructure/database/questdb/mappers";
 
@@ -257,5 +258,31 @@ describe("mapConnectivityStatusRow", () => {
     expect(result.down_count).toBe(10);
     expect(result.degraded_count).toBe(0);
     expect(result.total_count).toBe(40);
+  });
+});
+
+describe("mapLiveConnectivityRow", () => {
+  it.each(["up", "down", "degraded"] as const)(
+    "should map a %s cycle",
+    (status) => {
+      const result = mapLiveConnectivityRow({
+        timestamp: "2024-01-01T12:00:00.000Z",
+        cycle_status: status,
+      });
+
+      expect(result).toEqual({
+        timestamp: "2024-01-01T12:00:00.000Z",
+        cycle_status: status,
+      });
+    }
+  );
+
+  it("should fall back to up for a status the CASE cannot emit", () => {
+    const result = mapLiveConnectivityRow({
+      timestamp: "2024-01-01T12:00:00.000Z",
+      cycle_status: null,
+    });
+
+    expect(result.cycle_status).toBe("up");
   });
 });

@@ -4,7 +4,10 @@ export type {
   ConnectivityStatus,
   ConnectivityStatusPoint,
   ConnectivityStatusResponseType,
+  GetLiveConnectivityResponseType,
+  LiveConnectivityStatus,
 } from "./api/routes/connectivity-status";
+export { LiveConnectivityStatusSchema } from "./api/routes/connectivity-status";
 export type {
   GetMetricsResponseType,
   Granularity,
@@ -19,6 +22,9 @@ export { SpeedMetricSchema } from "./api/routes/speedtest";
 export {
   DEGRADED_BUCKET_MIN_SHARE,
   isValidGranularity,
+  LIVE_WINDOW_MIN_SECONDS,
+  LIVE_WINDOW_PING_MULTIPLIER,
+  liveConnectivityWindowSeconds,
   PACKET_LOSS_THRESHOLDS,
   VALID_GRANULARITIES,
 } from "./constants";
