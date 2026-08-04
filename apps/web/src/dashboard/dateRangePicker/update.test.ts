@@ -52,7 +52,7 @@ describe("dateRangePicker update — opening the popover", () => {
 
     Story.story(
       withContext(),
-      Story.with(dirtyModel),
+      Story.given(dirtyModel),
       Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
       Story.model((model) => {
         expect(model.maybeDraftPreset).toEqual(Option.some("last30d"));
@@ -75,7 +75,7 @@ describe("dateRangePicker update — opening the popover", () => {
 
     Story.story(
       withContext(appliedCustom, NOW_MS),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
       Story.model((model) => {
         expect(model.maybeDraftPreset).toEqual(Option.none());
@@ -96,7 +96,7 @@ describe("dateRangePicker update — opening the popover", () => {
 
     Story.story(
       withContext(appliedCustom, NOW_MS),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
       Story.model((model) => {
         expect(model.maybeDraftRange).toEqual(
@@ -122,7 +122,7 @@ describe("dateRangePicker update — opening the popover", () => {
 
     Story.story(
       withContext(Preset({ preset: "allTime" }), NOW_MS),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
       Story.model((model) => {
         expect(model.visibleMonth).toEqual({
@@ -136,7 +136,7 @@ describe("dateRangePicker update — opening the popover", () => {
   test("keeps a short preset's own start month visible", () => {
     Story.story(
       withContext(Preset({ preset: "last7d" }), NOW_MS),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
       Story.model((model) => {
         expect(model.visibleMonth).toEqual({ year: 2026, month: 6 });
@@ -156,7 +156,7 @@ describe("dateRangePicker update — dismissing the popover", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(GotPopoverMessage({ message: Popover.RequestedClose() })),
       Story.expectNoOutMessage(),
       Story.model((next) => {
@@ -179,7 +179,7 @@ describe("dateRangePicker update — reopening an applied selection", () => {
 
     Story.story(
       withContext(appliedCustom, NOW_MS),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
       Story.message(ClickedApply()),
       Story.expectOutMessage(AppliedRange({ selection: appliedCustom })),
@@ -192,7 +192,7 @@ describe("dateRangePicker update — custom range selection", () => {
   test("picking a start day records it without committing a range", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.model((model) => {
         expect(model.maybeRangeStart).toEqual(Option.some(day(2026, 6, 10)));
@@ -204,7 +204,7 @@ describe("dateRangePicker update — custom range selection", () => {
   test("hovering after a start day previews the range without committing it", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.message(HoveredDay({ dateMs: day(2026, 6, 15) })),
       Story.model((model) => {
@@ -217,7 +217,7 @@ describe("dateRangePicker update — custom range selection", () => {
   test("hovering with no start day selected is a no-op", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(HoveredDay({ dateMs: day(2026, 6, 15) })),
       Story.model((model) => {
         expect(model.maybeHoveredDay).toEqual(Option.none());
@@ -228,7 +228,7 @@ describe("dateRangePicker update — custom range selection", () => {
   test("clicking a later day after the start commits an ordered range", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.message(HoveredDay({ dateMs: day(2026, 6, 15) })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 20) })),
@@ -245,7 +245,7 @@ describe("dateRangePicker update — custom range selection", () => {
   test("clicking the same day twice commits a single-day range", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.message(ClickedApply()),
@@ -264,7 +264,7 @@ describe("dateRangePicker update — custom range selection", () => {
   test("clicking an earlier day second still commits start <= end regardless of click order", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 20) })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.model((model) => {
@@ -280,7 +280,7 @@ describe("dateRangePicker update — preset and custom drafts are mutually exclu
   test("picking a preset clears an in-progress custom selection", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.message(ClickedPreset({ preset: "qtd" })),
       Story.model((model) => {
@@ -302,7 +302,7 @@ describe("dateRangePicker update — preset and custom drafts are mutually exclu
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedPreset({ preset: "ytd" })),
       Story.model((next) => {
         expect(next.maybeDraftPreset).toEqual(Option.some("ytd"));
@@ -319,7 +319,7 @@ describe("dateRangePicker update — preset and custom drafts are mutually exclu
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedDay({ dateMs: day(2026, 6, 10) })),
       Story.model((next) => {
         expect(next.maybeDraftPreset).toEqual(Option.none());
@@ -338,7 +338,7 @@ describe("dateRangePicker update — month navigation", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedPreviousMonth()),
       Story.model((next) => {
         expect(next.visibleMonth).toEqual({ year: 2025, month: 11 });
@@ -354,7 +354,7 @@ describe("dateRangePicker update — month navigation", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedNextMonth()),
       Story.model((next) => {
         expect(next.visibleMonth).toEqual({ year: 2026, month: 0 });
@@ -370,7 +370,7 @@ describe("dateRangePicker update — month navigation", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedNextMonth()),
       Story.model((next) => {
         expect(next.visibleMonth).toEqual({ year: 2026, month: 6 });
@@ -388,7 +388,7 @@ describe("dateRangePicker update — Apply", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedApply()),
       Story.expectOutMessage(
         AppliedRange({ selection: Preset({ preset: "last7d" }) })
@@ -408,7 +408,7 @@ describe("dateRangePicker update — Apply", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedApply()),
       Story.expectOutMessage(
         AppliedRange({
@@ -427,7 +427,7 @@ describe("dateRangePicker update — Apply", () => {
   test("Apply with nothing drafted re-emits the currently-applied selection", () => {
     Story.story(
       withContext(),
-      Story.with(init({ id: "picker" })),
+      Story.given(init({ id: "picker" })),
       Story.message(ClickedApply()),
       Story.expectOutMessage(AppliedRange({ selection: APPLIED_LAST_30D })),
       resolveFocusButton()
@@ -440,7 +440,7 @@ describe("dateRangePicker update — Apply", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedApply()),
       Story.model((next) => {
         expect(next.popover.isOpen).toBe(false);
@@ -460,7 +460,7 @@ describe("dateRangePicker update — Cancel", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedCancel()),
       Story.expectOutMessage(Cancelled()),
       Story.model((next) => {
@@ -479,7 +479,7 @@ describe("dateRangePicker update — Cancel", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedCancel()),
       Story.model((next) => {
         expect(next.popover.isOpen).toBe(false);
@@ -496,7 +496,7 @@ describe("dateRangePicker update — Cancel", () => {
 
     Story.story(
       withContext(),
-      Story.with(model),
+      Story.given(model),
       Story.message(ClickedCancel()),
       Story.expectOutMessage(Cancelled()),
       Story.model((next) => {

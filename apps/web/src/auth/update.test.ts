@@ -118,7 +118,7 @@ describe("auth update", () => {
   test("auth not required transitions Checking to LoggedIn with no session", () => {
     Story.story(
       update,
-      Story.with(Checking({ maybeToken: Option.none() })),
+      Story.given(Checking({ maybeToken: Option.none() })),
       Story.message(SucceededFetchAuthStatus({ authRequired: false })),
       Story.model((model) => {
         expect(Option.isNone(assertLoggedIn(model).maybeSession)).toBe(true);
@@ -130,7 +130,7 @@ describe("auth update", () => {
   test("auth required with no stored token transitions Checking to LoggedOut", () => {
     Story.story(
       update,
-      Story.with(Checking({ maybeToken: Option.none() })),
+      Story.given(Checking({ maybeToken: Option.none() })),
       Story.message(SucceededFetchAuthStatus({ authRequired: true })),
       Story.model((model) => {
         expect(model._tag).toBe("LoggedOut");
@@ -141,7 +141,7 @@ describe("auth update", () => {
   test("auth required with a stored token dispatches FetchMe and stays in Checking", () => {
     Story.story(
       update,
-      Story.with(Checking({ maybeToken: Option.some("stored-token") })),
+      Story.given(Checking({ maybeToken: Option.some("stored-token") })),
       Story.message(SucceededFetchAuthStatus({ authRequired: true })),
       Story.Command.expectExact(FetchMe({ token: "stored-token" })),
       Story.model((model) => {
@@ -158,7 +158,7 @@ describe("auth update", () => {
   test("a validated stored token transitions Checking to LoggedIn", () => {
     Story.story(
       update,
-      Story.with(Checking({ maybeToken: Option.some("stored-token") })),
+      Story.given(Checking({ maybeToken: Option.some("stored-token") })),
       Story.message(SucceededFetchMe({ username: "phil" })),
       Story.model((model) => {
         expect(Option.getOrThrow(assertLoggedIn(model).maybeSession)).toEqual(
@@ -172,7 +172,7 @@ describe("auth update", () => {
   test("a rejected stored token transitions Checking to LoggedOut and clears the session", () => {
     Story.story(
       update,
-      Story.with(Checking({ maybeToken: Option.some("stale-token") })),
+      Story.given(Checking({ maybeToken: Option.some("stale-token") })),
       Story.message(FailedFetchMe({ error: "unauthorized" })),
       Story.Command.expectExact(ClearSession),
       Story.Command.resolve(ClearSession, CompletedClearSession()),
@@ -185,7 +185,7 @@ describe("auth update", () => {
   test("changing the username field updates LoggedOut", () => {
     Story.story(
       update,
-      Story.with(initLoggedOut()),
+      Story.given(initLoggedOut()),
       Story.message(ChangedUsername({ value: "phil" })),
       Story.model((model) => {
         expect(assertLoggedOut(model).username).toBe("phil");
@@ -196,7 +196,7 @@ describe("auth update", () => {
   test("changing the password field updates LoggedOut", () => {
     Story.story(
       update,
-      Story.with(initLoggedOut()),
+      Story.given(initLoggedOut()),
       Story.message(ChangedPassword({ value: "hunter2" })),
       Story.model((model) => {
         expect(assertLoggedOut(model).password).toBe("hunter2");
@@ -207,7 +207,7 @@ describe("auth update", () => {
   test("submitting the login form dispatches Login with the entered credentials", () => {
     Story.story(
       update,
-      Story.with(
+      Story.given(
         LoggedOut({
           username: "phil",
           password: "hunter2",
@@ -237,7 +237,7 @@ describe("auth update", () => {
   test("a successful login transitions LoggedOut to LoggedIn and saves the session", () => {
     Story.story(
       update,
-      Story.with(
+      Story.given(
         LoggedOut({
           username: "phil",
           password: "hunter2",
@@ -262,7 +262,7 @@ describe("auth update", () => {
   test("a failed login stays LoggedOut, surfaces the error, and clears isSubmitting", () => {
     Story.story(
       update,
-      Story.with(
+      Story.given(
         LoggedOut({
           username: "phil",
           password: "wrong",
@@ -288,7 +288,7 @@ describe("auth update", () => {
   test("logging out transitions LoggedIn to LoggedOut and clears the session", () => {
     Story.story(
       update,
-      Story.with(
+      Story.given(
         LoggedIn({
           maybeSession: Option.some(
             Session.make({ token: "abc123", username: "phil" })
@@ -312,7 +312,7 @@ describe("auth update", () => {
   test("CompletedClearSession is a no-op acknowledgment", () => {
     Story.story(
       update,
-      Story.with(initLoggedOut()),
+      Story.given(initLoggedOut()),
       Story.message(CompletedClearSession()),
       Story.Command.expectNone()
     );
@@ -331,7 +331,7 @@ describe("auth update", () => {
 
     Story.story(
       update,
-      Story.with(loggedIn),
+      Story.given(loggedIn),
       Story.message(
         GotDashboardMessage({
           message: SucceededTriggerSpeedtest({
@@ -396,7 +396,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
   test("SucceededFetchAuthStatus is ignored once past Checking", () => {
     Story.story(
       update,
-      Story.with(loggedIn),
+      Story.given(loggedIn),
       Story.message(SucceededFetchAuthStatus({ authRequired: true })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -408,7 +408,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
   test("SucceededFetchMe is ignored once past Checking", () => {
     Story.story(
       update,
-      Story.with(loggedIn),
+      Story.given(loggedIn),
       Story.message(SucceededFetchMe({ username: "phil" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -420,7 +420,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
   test("ChangedUsername is ignored while not on the login form", () => {
     Story.story(
       update,
-      Story.with(loggedIn),
+      Story.given(loggedIn),
       Story.message(ChangedUsername({ value: "someone-else" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -432,7 +432,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
   test("ChangedPassword is ignored while not on the login form", () => {
     Story.story(
       update,
-      Story.with(loggedIn),
+      Story.given(loggedIn),
       Story.message(ChangedPassword({ value: "hunter2" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -444,7 +444,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
   test("SubmittedLogin is ignored while not on the login form", () => {
     Story.story(
       update,
-      Story.with(loggedIn),
+      Story.given(loggedIn),
       Story.message(SubmittedLogin()),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -456,7 +456,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
   test("FailedLogin is ignored while not on the login form", () => {
     Story.story(
       update,
-      Story.with(loggedIn),
+      Story.given(loggedIn),
       Story.message(FailedLogin({ error: "stale" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -468,7 +468,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
   test("a dashboard message is dropped once logged out", () => {
     Story.story(
       update,
-      Story.with(initLoggedOut()),
+      Story.given(initLoggedOut()),
       Story.message(
         GotDashboardMessage({
           message: SucceededFetchMetrics({ metrics: [], nowMs: 0 }),

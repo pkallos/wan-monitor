@@ -45,7 +45,7 @@ describe("auth view", () => {
   test("shows a loading indicator while checking auth status", () => {
     Scene.scene(
       { update, view },
-      Scene.with(Checking({ maybeToken: Option.none() })),
+      Scene.given(Checking({ maybeToken: Option.none() })),
       Scene.expect(Scene.role("status")).toExist()
     );
   });
@@ -53,7 +53,7 @@ describe("auth view", () => {
   test("shows the login form when logged out", () => {
     Scene.scene(
       { update, view },
-      Scene.with(initLoggedOut()),
+      Scene.given(initLoggedOut()),
       Scene.expect(Scene.label("Username")).toExist(),
       Scene.expect(Scene.label("Password")).toExist(),
       Scene.expect(Scene.role("button", { name: "Sign In" })).toExist()
@@ -63,7 +63,7 @@ describe("auth view", () => {
   test("typing into the username field updates its displayed value", () => {
     Scene.scene(
       { update, view },
-      Scene.with(initLoggedOut()),
+      Scene.given(initLoggedOut()),
       Scene.type(Scene.label("Username"), "phil"),
       Scene.expect(Scene.label("Username")).toHaveValue("phil")
     );
@@ -72,7 +72,7 @@ describe("auth view", () => {
   test("shows a disabled submitting state while the login request is in flight", () => {
     Scene.scene(
       { update, view },
-      Scene.with({
+      Scene.given({
         ...initLoggedOut(),
         isSubmitting: true,
       }),
@@ -84,7 +84,7 @@ describe("auth view", () => {
   test("shows the entered credentials error when login fails", () => {
     Scene.scene(
       { update, view },
-      Scene.with(
+      Scene.given(
         initLoggedOut(
           Option.some("Incorrect username or password. Please try again.")
         )
@@ -98,7 +98,7 @@ describe("auth view", () => {
   test("shows the dashboard shell and a logout button when logged in", () => {
     Scene.scene(
       { update, view },
-      Scene.with(
+      Scene.given(
         LoggedIn({
           maybeSession: Option.some(
             Session.make({ token: "abc123", username: "phil" })
@@ -115,7 +115,7 @@ describe("auth view", () => {
   test("shows a plain Logout label when auth is disabled and there is no session", () => {
     Scene.scene(
       { update, view },
-      Scene.with(
+      Scene.given(
         LoggedIn({
           maybeSession: Option.none(),
           dashboard: initDashboardModel(),
@@ -129,7 +129,7 @@ describe("auth view", () => {
   test("clicking logout dispatches ClickedLogout and returns to the login form", () => {
     Scene.scene(
       { update, view },
-      Scene.with(
+      Scene.given(
         LoggedIn({
           maybeSession: Option.some(
             Session.make({ token: "abc123", username: "phil" })

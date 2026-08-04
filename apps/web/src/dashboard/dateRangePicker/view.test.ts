@@ -33,10 +33,14 @@ const boundUpdate =
   (model: Model, message: Parameters<typeof update>[1]) =>
     update(model, message, appliedSelection, nowMs);
 
-const boundView =
-  (appliedSelection: DateRangeSelection = APPLIED_LAST_30D, nowMs = NOW_MS) =>
-  (model: Model) =>
-    dateRangePickerView(model, { appliedSelection, nowMs });
+const boundView = (
+  appliedSelection: DateRangeSelection = APPLIED_LAST_30D,
+  nowMs = NOW_MS
+) =>
+  Scene.withViewInputs(dateRangePickerView, {
+    appliedSelection: APPLIED_LAST_30D,
+    nowMs: NOW_MS,
+  })({ appliedSelection, nowMs });
 
 const openPopoverMounts = () =>
   Scene.Mount.resolveAll(
@@ -59,7 +63,7 @@ describe("dateRangePicker view — trigger", () => {
   test("shows the formatted applied range as the trigger's label", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       Scene.expect(Scene.role("button", { name: TRIGGER_LABEL })).toExist()
     );
   });
@@ -67,7 +71,7 @@ describe("dateRangePicker view — trigger", () => {
   test("the panel is closed until the trigger is clicked", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       Scene.expect(Scene.role("button", { name: "Apply" })).not.toExist(),
       Scene.expect(Scene.role("button", { name: "Cancel" })).not.toExist()
     );
@@ -76,7 +80,7 @@ describe("dateRangePicker view — trigger", () => {
   test("clicking the trigger opens the panel with presets, both month grids, and Apply/Cancel", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.expect(Scene.text("Last 7 days")).toExist(),
       Scene.expect(Scene.text("Last 30 days")).toExist(),
@@ -97,7 +101,7 @@ describe("dateRangePicker view — presets", () => {
   test("highlights the applied preset by default once opened", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.expect(Scene.role("button", { name: "Last 30 days" })).toHaveAttr(
         "aria-pressed",
@@ -109,7 +113,7 @@ describe("dateRangePicker view — presets", () => {
   test("the selector the popover focuses on open resolves to the first preset", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.expect(Scene.selector(initialFocusSelector("picker"))).toHaveText(
         "Last hour"
@@ -120,7 +124,7 @@ describe("dateRangePicker view — presets", () => {
   test("clicking a preset highlights it instead", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.role("button", { name: "Last 7 days" })),
       Scene.expect(Scene.role("button", { name: "Last 7 days" })).toHaveAttr(
@@ -137,7 +141,7 @@ describe("dateRangePicker view — presets", () => {
   test("starting a custom range clears the preset highlight", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.expect(Scene.role("button", { name: "Last 30 days" })).toHaveAttr(
@@ -153,7 +157,7 @@ describe("dateRangePicker view — presets", () => {
   test("Apply with a preset selected closes the picker and emits AppliedRange", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.role("button", { name: "Last 7 days" })),
       Scene.click(Scene.role("button", { name: "Apply" })),
@@ -178,7 +182,7 @@ describe("dateRangePicker view — calendar grids", () => {
 
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.expect(Scene.testId(dayTestId(todayMs))).toHaveClass("ring-1")
     );
@@ -187,7 +191,7 @@ describe("dateRangePicker view — calendar grids", () => {
   test("grays out and disables days outside the visible months", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       // May 31 pads the June grid's leading edge but belongs to a month
       // that isn't rendered as its own grid, so it is never clickable.
@@ -198,7 +202,7 @@ describe("dateRangePicker view — calendar grids", () => {
   test("hovering after a start click previews the range without committing it", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.hover(Scene.testId(dayTestId(day(2026, 6, 15)))),
@@ -211,7 +215,7 @@ describe("dateRangePicker view — calendar grids", () => {
   test("clicking a second day commits a solid highlight across the range", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.hover(Scene.testId(dayTestId(day(2026, 6, 15)))),
@@ -228,7 +232,7 @@ describe("dateRangePicker view — calendar grids", () => {
   test("exposes the committed range through aria-pressed, not colour alone", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 20)))),
@@ -246,7 +250,7 @@ describe("dateRangePicker view — calendar grids", () => {
   test("Apply with a committed custom range closes the picker and emits the full-day window", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 20)))),
@@ -286,7 +290,7 @@ describe("dateRangePicker view — applied custom range", () => {
         update: boundUpdate(APPLIED_CUSTOM),
         view: boundView(APPLIED_CUSTOM),
       },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       Scene.click(Scene.role("button", { name: CUSTOM_TRIGGER_LABEL })),
       openPopoverMounts(),
       Scene.expect(Scene.testId(dayTestId(day(2026, 6, 15)))).toHaveAttr(
@@ -310,7 +314,7 @@ describe("dateRangePicker view — month navigation", () => {
   test("shows exactly one previous chevron (left grid) and one next chevron (right grid)", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.expectAll(
         Scene.all.role("button", { name: "Previous month" })
@@ -324,7 +328,7 @@ describe("dateRangePicker view — month navigation", () => {
   test("Next month advances both grids by one calendar month", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.role("button", { name: "Next month" })),
       Scene.expect(Scene.text("June 2026")).not.toExist(),
@@ -336,7 +340,7 @@ describe("dateRangePicker view — month navigation", () => {
   test("Previous month rewinds both grids by one calendar month", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.role("button", { name: "Previous month" })),
       Scene.expect(Scene.text("May 2026")).toExist(),
@@ -350,7 +354,7 @@ describe("dateRangePicker view — Cancel", () => {
   test("Cancel discards an in-progress selection and closes the picker", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.click(Scene.role("button", { name: "Cancel" })),
@@ -366,7 +370,7 @@ describe("dateRangePicker view — Cancel", () => {
   test("reopening after Cancel shows the applied preset again, not the discarded draft", () => {
     Scene.scene(
       { update: boundUpdate(), view: boundView() },
-      Scene.with(init({ id: "picker" })),
+      Scene.given(init({ id: "picker" })),
       ...openPicker(),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.click(Scene.role("button", { name: "Cancel" })),

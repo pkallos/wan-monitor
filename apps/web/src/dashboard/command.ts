@@ -230,66 +230,63 @@ export const saveTheme = ({ theme }: { theme: Theme }) =>
     )
   );
 
-export const FetchMetrics = Command.define(
-  "FetchMetrics",
-  DateRangeArgs,
-  SucceededFetchMetrics,
-  FailedFetchMetrics
-)((args) => fetchMetrics(args).pipe(Effect.provide(FetchHttpClient.layer)));
+export const FetchMetrics = Command.define("FetchMetrics", {
+  args: DateRangeArgs,
+  messages: [SucceededFetchMetrics, FailedFetchMetrics],
+  execute: (args) =>
+    fetchMetrics(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const FetchSpeedtestHistory = Command.define(
-  "FetchSpeedtestHistory",
-  DateRangeArgs,
-  SucceededFetchSpeedtestHistory,
-  FailedFetchSpeedtestHistory
-)((args) =>
-  fetchSpeedtestHistory(args).pipe(Effect.provide(FetchHttpClient.layer))
-);
+export const FetchSpeedtestHistory = Command.define("FetchSpeedtestHistory", {
+  args: DateRangeArgs,
+  messages: [SucceededFetchSpeedtestHistory, FailedFetchSpeedtestHistory],
+  execute: (args) =>
+    fetchSpeedtestHistory(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
 export const FetchConnectivityStatus = Command.define(
   "FetchConnectivityStatus",
-  DateRangeArgs,
-  SucceededFetchConnectivityStatus,
-  FailedFetchConnectivityStatus
-)((args) =>
-  fetchConnectivityStatus(args).pipe(Effect.provide(FetchHttpClient.layer))
+  {
+    args: DateRangeArgs,
+    messages: [SucceededFetchConnectivityStatus, FailedFetchConnectivityStatus],
+    execute: (args) =>
+      fetchConnectivityStatus(args).pipe(Effect.provide(FetchHttpClient.layer)),
+  }
 );
 
-export const FetchLiveConnectivity = Command.define(
-  "FetchLiveConnectivity",
-  { token: S.String },
-  SucceededFetchLiveConnectivity,
-  FailedFetchLiveConnectivity
-)((args) =>
-  fetchLiveConnectivity(args).pipe(Effect.provide(FetchHttpClient.layer))
-);
+export const FetchLiveConnectivity = Command.define("FetchLiveConnectivity", {
+  args: { token: S.String },
+  messages: [SucceededFetchLiveConnectivity, FailedFetchLiveConnectivity],
+  execute: (args) =>
+    fetchLiveConnectivity(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const FetchEarliestData = Command.define(
-  "FetchEarliestData",
-  { token: S.String },
-  SucceededFetchEarliestData,
-  FailedFetchEarliestData
-)((args) =>
-  fetchEarliestData(args).pipe(Effect.provide(FetchHttpClient.layer))
-);
+export const FetchEarliestData = Command.define("FetchEarliestData", {
+  args: { token: S.String },
+  messages: [SucceededFetchEarliestData, FailedFetchEarliestData],
+  execute: (args) =>
+    fetchEarliestData(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const TriggerSpeedtest = Command.define(
-  "TriggerSpeedtest",
-  { token: S.String },
-  SucceededTriggerSpeedtest,
-  FailedTriggerSpeedtest
-)((args) => triggerSpeedtest(args).pipe(Effect.provide(FetchHttpClient.layer)));
+export const TriggerSpeedtest = Command.define("TriggerSpeedtest", {
+  args: { token: S.String },
+  messages: [SucceededTriggerSpeedtest, FailedTriggerSpeedtest],
+  execute: (args) =>
+    triggerSpeedtest(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
 
-export const LoadTheme = Command.define(
-  "LoadTheme",
-  LoadedTheme
-)(loadTheme.pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage)));
+export const LoadTheme = Command.define("LoadTheme", {
+  messages: [LoadedTheme],
+  execute: loadTheme.pipe(
+    Effect.provide(BrowserKeyValueStore.layerLocalStorage)
+  ),
+});
 
-export const SaveTheme = Command.define(
-  "SaveTheme",
-  { theme: Theme },
-  CompletedSaveTheme,
-  FailedSaveTheme
-)((args) =>
-  saveTheme(args).pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage))
-);
+export const SaveTheme = Command.define("SaveTheme", {
+  args: { theme: Theme },
+  messages: [CompletedSaveTheme, FailedSaveTheme],
+  execute: (args) =>
+    saveTheme(args).pipe(
+      Effect.provide(BrowserKeyValueStore.layerLocalStorage)
+    ),
+});

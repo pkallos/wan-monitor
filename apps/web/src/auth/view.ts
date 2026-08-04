@@ -1,6 +1,5 @@
 import { Match as M, Option } from "effect";
-import type { Document, Html } from "foldkit/html";
-import { html } from "foldkit/html";
+import type { Document, Html, HtmlBuilder } from "foldkit/html";
 import {
   ChangedPassword,
   ChangedUsername,
@@ -18,9 +17,7 @@ const INPUT_CLASS =
 const LABEL_CLASS =
   "mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300";
 
-const loginView = (model: LoggedOut): Html => {
-  const h = html<Message>();
-
+const loginView = (model: LoggedOut, h: HtmlBuilder<Message>): Html => {
   return h.div(
     [
       h.Class(
@@ -102,10 +99,9 @@ const loginView = (model: LoggedOut): Html => {
 };
 
 const dashboardShellView = (
-  model: Extract<Model, { _tag: "LoggedIn" }>
+  model: Extract<Model, { _tag: "LoggedIn" }>,
+  h: HtmlBuilder<Message>
 ): Html => {
-  const h = html<Message>();
-
   // A pre-built Html node can't cross into viewInputs (its embedded OnClick
   // handler is a nested function, and only top-level viewInputs functions
   // get auto-scoped to this boundary), so the button is built lazily by a
@@ -136,13 +132,12 @@ const dashboardShellView = (
   });
 };
 
-export const view = (model: Model): Document => ({
+export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: "WAN Monitor",
   body: M.value(model).pipe(
     M.tagsExhaustive({
-      Checking: () => {
-        const h = html<Message>();
-        return h.div(
+      Checking: () =>
+        h.div(
           [
             h.Role("status"),
             h.Class(
@@ -150,10 +145,9 @@ export const view = (model: Model): Document => ({
             ),
           ],
           ["Loading…"]
-        );
-      },
-      LoggedOut: (loggedOut) => loginView(loggedOut),
-      LoggedIn: (loggedIn) => dashboardShellView(loggedIn),
+        ),
+      LoggedOut: (loggedOut) => loginView(loggedOut, h),
+      LoggedIn: (loggedIn) => dashboardShellView(loggedIn, h),
     })
   ),
 });

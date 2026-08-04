@@ -63,11 +63,11 @@ const boundUpdate = (
   message: Parameters<typeof update>[1]
 ) => update(model, message, context);
 
-// Scene.scene's `view` is a plain (model) => Html function; the dashboard
-// view also takes viewInputs (the Logout button, supplied by its auth
-// parent in production), so tests stand in a no-op placeholder for it.
-const view = (model: Parameters<typeof dashboardView>[0]) =>
-  dashboardView(model, { renderLogoutButton: () => null });
+// The dashboard view takes viewInputs (the Logout button, supplied by its
+// auth parent in production); tests stand in a no-op placeholder for it.
+const view = Scene.withViewInputs(dashboardView, {
+  renderLogoutButton: () => null,
+})();
 
 const acknowledgeAllChartMounts = () =>
   Scene.Mount.resolveAll(
@@ -106,7 +106,7 @@ describe("dashboard view", () => {
   test("shows a loading indicator while metrics are idle", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.text("Loading metrics…")).toExist()
     );
@@ -121,7 +121,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.testId("last-updated")).toContainText(/^Updated/),
@@ -147,7 +147,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.text("Connectivity")).toExist(),
@@ -167,7 +167,7 @@ describe("dashboard view", () => {
   ] as const)("renders the %s live status as %s", (status, label) => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with({
+      Scene.given({
         ...initModel(),
         liveConnectivity: liveConnectivity(status),
       }),
@@ -179,7 +179,7 @@ describe("dashboard view", () => {
   test("shows Checking… until the first live response lands", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with({
+      Scene.given({
         ...initModel(),
         liveConnectivity: LiveConnectivityAsyncData.Loading(),
       }),
@@ -192,7 +192,7 @@ describe("dashboard view", () => {
   test("renders a failed live fetch as No Data, never as an outage", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with({
+      Scene.given({
         ...initModel(),
         liveConnectivity: LiveConnectivityAsyncData.Failure({
           error: "network error",
@@ -229,7 +229,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.text("Online")).toExist(),
@@ -256,7 +256,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.text("Comcast")).toExist(),
@@ -267,7 +267,7 @@ describe("dashboard view", () => {
   test("falls back to Unknown ISP with no speed test data", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.text("Unknown ISP")).toExist()
     );
@@ -281,7 +281,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("alert")).toHaveText(
         "Metrics error: network error"
@@ -299,7 +299,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("alert")).toHaveText(
         "Speed test history error: network error"
@@ -317,7 +317,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("alert")).toHaveText(
         "Connectivity status error: network error"
@@ -338,7 +338,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.role("alert")).toHaveText(
@@ -365,7 +365,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.role("alert")).toHaveText(
@@ -391,7 +391,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.text("Uptime: 100.0%")).toExist(),
       Scene.expect(Scene.role("alert")).toHaveText(
@@ -432,7 +432,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.testId("connectivity-segment-0")).toExist(),
       Scene.expect(Scene.testId("connectivity-segment-1")).toExist(),
@@ -474,7 +474,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("tooltip")).not.toExist(),
       Scene.click(Scene.testId("connectivity-segment-1")),
@@ -492,7 +492,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("button", { name: "Running…" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Running…" })).toBeDisabled()
@@ -502,7 +502,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the latency chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       Scene.expect(Scene.label("Latency chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -511,7 +511,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the packet loss chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       Scene.expect(Scene.label("Packet loss chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -520,7 +520,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the jitter chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       Scene.expect(Scene.label("Jitter chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -529,7 +529,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the speed chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       Scene.expect(Scene.label("Speed chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -558,7 +558,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.text("Avg Download")).toExist(),
@@ -575,7 +575,7 @@ describe("dashboard view", () => {
   test("renders an empty toast region ready to receive notifications", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("region")).toExist()
     );
@@ -600,7 +600,7 @@ describe("dashboard view", () => {
 
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(model),
+      Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
       Scene.expect(Scene.role("button", { name: "Refresh now" })).toExist(),
@@ -658,7 +658,7 @@ describe("dashboard view", () => {
   test("clicking pause toggles the button label to Resume", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("button", { name: "Pause" })).toExist(),
       Scene.click(Scene.role("button", { name: "Pause" })),
@@ -669,7 +669,7 @@ describe("dashboard view", () => {
   test("going idle shows a distinct resume label, and clicking it resumes without a manual pause", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with({ ...initModel(), isIdle: true }),
+      Scene.given({ ...initModel(), isIdle: true }),
       acknowledgeAllChartMounts(),
       Scene.expect(
         Scene.role("button", { name: "Resume (paused, inactive)" })
@@ -682,7 +682,7 @@ describe("dashboard view", () => {
   test("clicking the theme toggle switches to dark mode, applies the dark class, and persists it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.with(initModel()),
+      Scene.given(initModel()),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("button", { name: "Dark mode" })).toExist(),
       Scene.expect(Scene.testId("dashboard-root")).not.toHaveClass("dark"),
@@ -721,7 +721,7 @@ describe("dashboard view", () => {
     try {
       Scene.scene(
         { update: boundUpdate, view },
-        Scene.with(model),
+        Scene.given(model),
         acknowledgeAllChartMounts(),
         resolveAllChartSyncs(),
         Scene.expect(Scene.role("button", { name: initialLabel })).toExist(),

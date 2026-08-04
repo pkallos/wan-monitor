@@ -1,8 +1,7 @@
 import { Popover } from "@foldkit/ui";
 import { Array as Array_, Option } from "effect";
 import { Submodel } from "foldkit";
-import type { Html } from "foldkit/html";
-import { html } from "foldkit/html";
+import type { Html, HtmlBuilder } from "foldkit/html";
 import { buildMonthGrid, type CalendarDay } from "@/dashboard/calendarGrid";
 import {
   type DateRangeSelection,
@@ -132,8 +131,10 @@ const highlightFor = (model: Model, dateMs: number): Highlight =>
       }),
   });
 
-const chevronIcon = (direction: "left" | "right"): Html => {
-  const h = html<Message>();
+const chevronIcon = (
+  h: HtmlBuilder<Message>,
+  direction: "left" | "right"
+): Html => {
   const points = direction === "left" ? "15 18 9 12 15 6" : "9 18 15 12 9 6";
   return h.svg(
     [
@@ -156,8 +157,7 @@ const chevronIcon = (direction: "left" | "right"): Html => {
   );
 };
 
-const calendarIcon = (): Html => {
-  const h = html<Message>();
+const calendarIcon = (h: HtmlBuilder<Message>): Html => {
   return h.svg(
     [
       h.Attribute("viewBox", "0 0 24 24"),
@@ -216,8 +216,10 @@ const calendarIcon = (): Html => {
   );
 };
 
-const navButton = (direction: "previous" | "next"): Html => {
-  const h = html<Message>();
+const navButton = (
+  h: HtmlBuilder<Message>,
+  direction: "previous" | "next"
+): Html => {
   return h.button(
     [
       h.Type("button"),
@@ -227,17 +229,19 @@ const navButton = (direction: "previous" | "next"): Html => {
       h.AriaLabel(direction === "previous" ? "Previous month" : "Next month"),
       h.Class(NAV_BUTTON_CLASS),
     ],
-    [chevronIcon(direction === "previous" ? "left" : "right")]
+    [chevronIcon(h, direction === "previous" ? "left" : "right")]
   );
 };
 
-const navPlaceholder = (): Html => {
-  const h = html<Message>();
+const navPlaceholder = (h: HtmlBuilder<Message>): Html => {
   return h.div([h.Class(NAV_PLACEHOLDER_CLASS)], []);
 };
 
-const dayCell = (model: Model, calendarDay: CalendarDay): Html => {
-  const h = html<Message>();
+const dayCell = (
+  h: HtmlBuilder<Message>,
+  model: Model,
+  calendarDay: CalendarDay
+): Html => {
   const label = String(new Date(calendarDay.dateMs).getDate());
 
   if (!calendarDay.inMonth) {
@@ -271,12 +275,12 @@ const dayCell = (model: Model, calendarDay: CalendarDay): Html => {
 };
 
 const monthGridView = (
+  h: HtmlBuilder<Message>,
   model: Model,
   month: MonthKey,
   todayMs: number,
   edge: "left" | "right"
 ): Html => {
-  const h = html<Message>();
   const weeks = buildMonthGrid(month.year, month.month, todayMs);
 
   return h.div(
@@ -291,9 +295,9 @@ const monthGridView = (
       h.div(
         [h.Class("flex items-center justify-between")],
         [
-          edge === "left" ? navButton("previous") : navPlaceholder(),
+          edge === "left" ? navButton(h, "previous") : navPlaceholder(h),
           h.p([h.Class("text-sm font-semibold")], [monthLabel(month)]),
-          edge === "right" ? navButton("next") : navPlaceholder(),
+          edge === "right" ? navButton(h, "next") : navPlaceholder(h),
         ]
       ),
       h.div(
@@ -309,7 +313,7 @@ const monthGridView = (
         Array_.map(weeks, (week) =>
           h.div(
             [h.Class("grid grid-cols-7 gap-1")],
-            Array_.map(week, (calendarDay) => dayCell(model, calendarDay))
+            Array_.map(week, (calendarDay) => dayCell(h, model, calendarDay))
           )
         )
       ),
@@ -318,8 +322,7 @@ const monthGridView = (
 };
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>(
-  (model, viewInputs) => {
-    const h = html<Message>();
+  (model, viewInputs, h) => {
     const triggerLabel = formatDateRangeLabel(
       getDateRangeWindow(
         viewInputs.appliedSelection,
@@ -363,12 +366,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
             [h.Class("flex flex-col gap-6 lg:flex-row")],
             [
               monthGridView(
+                h,
                 model,
                 model.visibleMonth,
                 viewInputs.nowMs,
                 "left"
               ),
-              monthGridView(model, rightMonth, viewInputs.nowMs, "right"),
+              monthGridView(h, model, rightMonth, viewInputs.nowMs, "right"),
             ]
           ),
           h.div(
@@ -413,7 +417,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
             [
               h.button(
                 [...button, h.Class(TRIGGER_BUTTON_CLASS)],
-                [calendarIcon(), triggerLabel]
+                [calendarIcon(h), triggerLabel]
               ),
               ...(isVisible
                 ? [
