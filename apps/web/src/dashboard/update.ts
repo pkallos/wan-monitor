@@ -10,6 +10,7 @@ import {
 import {
   FetchConnectivityStatus,
   FetchEarliestData,
+  FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
   LoadTheme,
@@ -85,6 +86,17 @@ const enterConnectivityStatus =
       ],
     });
 
+const enterLiveConnectivity =
+  (context: Context) =>
+  (model: Model): UpdateReturn =>
+    Option.match(AsyncData.loadIfMissing(model.liveConnectivity), {
+      onNone: () => [model, []],
+      onSome: (next) => [
+        evo(model, { liveConnectivity: () => next }),
+        [FetchLiveConnectivity({ token: context.token })],
+      ],
+    });
+
 const enterTheme = (model: Model): UpdateReturn =>
   Option.match(model.maybeTheme, {
     onNone: () => [model, [LoadTheme()]],
@@ -156,6 +168,17 @@ const revalidateConnectivityStatus =
       ],
     });
 
+const revalidateLiveConnectivity =
+  (context: Context) =>
+  (model: Model): UpdateReturn =>
+    Option.match(AsyncData.revalidate(model.liveConnectivity), {
+      onNone: () => [model, []],
+      onSome: (next) => [
+        evo(model, { liveConnectivity: () => next }),
+        [FetchLiveConnectivity({ token: context.token })],
+      ],
+    });
+
 // The time range changing means the current window's data (or in-flight
 // fetch) belongs to a query that no longer applies, so this always starts a
 // fresh fetch — unlike revalidateOrLoad, which intentionally leaves an
@@ -209,6 +232,15 @@ const reloadConnectivityStatus =
         maybeEarliestDataMs: model.maybeEarliestDataMs,
       }),
     ],
+  ];
+
+const reloadLiveConnectivity =
+  (context: Context) =>
+  (model: Model): UpdateReturn => [
+    evo(model, {
+      liveConnectivity: () => forceReload(model.liveConnectivity),
+    }),
+    [FetchLiveConnectivity({ token: context.token })],
   ];
 
 // Each chart only needs re-painting when it's actually mounted and there's
@@ -322,6 +354,7 @@ export const update = (
           enterMetrics(context),
           enterSpeedtestHistory(context),
           enterConnectivityStatus(context),
+          enterLiveConnectivity(context),
           enterEarliestData(context),
           enterTheme,
         ]),
@@ -331,6 +364,7 @@ export const update = (
           revalidateMetrics(context),
           revalidateSpeedtestHistory(context),
           revalidateConnectivityStatus(context),
+          revalidateLiveConnectivity(context),
         ]),
 
       GotDateRangePickerMessage: ({ message: pickerMessage }) => {
@@ -356,6 +390,8 @@ export const update = (
                 const withAppliedRange = evo(withPicker, {
                   dateRange: () => selection,
                 });
+                // `liveConnectivity` is deliberately absent: it answers "is
+                // the link up right now", which no range selection can change.
                 const [nextModel, reloadCommands] = Update.combine(
                   withAppliedRange,
                   [
@@ -377,6 +413,7 @@ export const update = (
           reloadMetrics(context),
           reloadSpeedtestHistory(context),
           reloadConnectivityStatus(context),
+          reloadLiveConnectivity(context),
         ]),
 
       SucceededFetchMetrics: ({ metrics, nowMs }) => {
@@ -435,6 +472,24 @@ export const update = (
         evo(model, {
           connectivityStatus: () =>
             AsyncData.settle(model.connectivityStatus, Result.fail(error)),
+        }),
+        [],
+      ],
+
+      SucceededFetchLiveConnectivity: ({ status, maybeLastSampleAtMs }) => [
+        evo(model, {
+          liveConnectivity: () =>
+            AsyncData.settle(
+              model.liveConnectivity,
+              Result.succeed({ status, maybeLastSampleAtMs })
+            ),
+        }),
+        [],
+      ],
+      FailedFetchLiveConnectivity: ({ error }) => [
+        evo(model, {
+          liveConnectivity: () =>
+            AsyncData.settle(model.liveConnectivity, Result.fail(error)),
         }),
         [],
       ],

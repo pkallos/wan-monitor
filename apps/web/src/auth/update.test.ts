@@ -35,6 +35,7 @@ import { update } from "@/auth/update";
 import {
   FetchConnectivityStatus,
   FetchEarliestData,
+  FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
   initModel as initDashboardModel,
@@ -44,6 +45,7 @@ import {
   SpeedtestTriggerAsyncData,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
+  SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
   SucceededFetchSpeedtestHistory,
   SucceededTriggerSpeedtest,
@@ -96,6 +98,13 @@ const resolveDashboardEntry = (token: string) =>
         startTimeMs: 0,
         endTimeMs: 3_600_000,
         granularity: "1m",
+      }),
+    ],
+    [
+      FetchLiveConnectivity({ token }),
+      SucceededFetchLiveConnectivity({
+        status: "up",
+        maybeLastSampleAtMs: Option.none(),
       }),
     ],
     [LoadTheme, LoadedTheme({ theme: "light" })],

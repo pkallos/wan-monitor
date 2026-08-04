@@ -37,7 +37,9 @@ const MockQuestDBLive = Layer.succeed(QuestDB, {
   queryMetrics: vi.fn(),
   querySpeedtests: vi.fn(),
   queryConnectivityStatus: vi.fn(),
+  queryLiveConnectivity: vi.fn(),
   queryEarliestTimestamp: vi.fn(),
+  queryLatestPingTimestamp: vi.fn(),
   health: vi.fn(),
   close: vi.fn(),
 });

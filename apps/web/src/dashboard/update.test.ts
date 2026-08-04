@@ -11,6 +11,7 @@ import {
 import {
   FetchConnectivityStatus,
   FetchEarliestData,
+  FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
   LoadTheme,
@@ -32,6 +33,7 @@ import {
   EnteredDashboard,
   FailedFetchConnectivityStatus,
   FailedFetchEarliestData,
+  FailedFetchLiveConnectivity,
   FailedFetchMetrics,
   FailedFetchSpeedtestHistory,
   FailedMountJitterChart,
@@ -50,6 +52,7 @@ import {
   LoadedTheme,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
+  SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
   SucceededFetchSpeedtestHistory,
   SucceededMountJitterChart,
@@ -64,6 +67,7 @@ import {
 import {
   ConnectivityStatusAsyncData,
   initModel,
+  LiveConnectivityAsyncData,
   MetricsAsyncData,
   SpeedtestHistoryAsyncData,
   SpeedtestTriggerAsyncData,
@@ -91,6 +95,20 @@ const resolveFetchEarliestData = () =>
     FetchEarliestData,
     SucceededFetchEarliestData({ earliestMs: Option.none() })
   );
+
+const resolveFetchLiveConnectivity = () =>
+  Story.Command.resolve(
+    FetchLiveConnectivity,
+    SucceededFetchLiveConnectivity({
+      status: "up",
+      maybeLastSampleAtMs: Option.none(),
+    })
+  );
+
+const loadedLiveConnectivity = () =>
+  LiveConnectivityAsyncData.Success({
+    data: { status: "up" as const, maybeLastSampleAtMs: Option.none() },
+  });
 
 describe("dashboard update — metrics", () => {
   test("entering the dashboard with no cached metrics loads them", () => {
@@ -126,7 +144,8 @@ describe("dashboard update — metrics", () => {
         ]
       ),
       resolveLoadTheme(),
-      resolveFetchEarliestData()
+      resolveFetchEarliestData(),
+      resolveFetchLiveConnectivity()
     );
   });
 
@@ -144,6 +163,7 @@ describe("dashboard update — metrics", () => {
           granularity: "1m",
         },
       }),
+      liveConnectivity: loadedLiveConnectivity(),
       maybeTheme: Option.some("light" as const),
       maybeEarliestDataMs: Option.some(0),
     };
@@ -340,6 +360,7 @@ describe("dashboard update — earliest data", () => {
         ]
       ),
       resolveLoadTheme(),
+      resolveFetchLiveConnectivity(),
       Story.model((model) => {
         expect(model.maybeEarliestDataMs).toEqual(
           Option.some(Date.parse("2025-01-01T00:00:00.000Z"))
@@ -362,6 +383,7 @@ describe("dashboard update — earliest data", () => {
           granularity: "1m",
         },
       }),
+      liveConnectivity: loadedLiveConnectivity(),
       maybeTheme: Option.some("light" as const),
       maybeEarliestDataMs: Option.some(Date.parse("2025-01-01T00:00:00.000Z")),
     };
@@ -418,7 +440,8 @@ describe("dashboard update — speedtest history", () => {
         ]
       ),
       resolveLoadTheme(),
-      resolveFetchEarliestData()
+      resolveFetchEarliestData(),
+      resolveFetchLiveConnectivity()
     );
   });
 
@@ -492,6 +515,144 @@ describe("dashboard update — connectivity status", () => {
         );
       })
     );
+  });
+});
+
+describe("dashboard update — live connectivity", () => {
+  test("entering the dashboard fetches the live status with no date range attached", () => {
+    Story.story(
+      withContext,
+      Story.with(initModel()),
+      Story.message(EnteredDashboard()),
+      Story.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
+      Story.model((model) => {
+        expect(model.liveConnectivity._tag).toBe("Loading");
+      }),
+      Story.Command.resolveAll(
+        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
+        [
+          FetchSpeedtestHistory,
+          SucceededFetchSpeedtestHistory({ history: [] }),
+        ],
+        [
+          FetchConnectivityStatus,
+          SucceededFetchConnectivityStatus({
+            points: [],
+            uptimePercentage: 100,
+            startTimeMs: 0,
+            endTimeMs: 3_600_000,
+            granularity: "1m",
+          }),
+        ]
+      ),
+      resolveLoadTheme(),
+      resolveFetchEarliestData(),
+      resolveFetchLiveConnectivity()
+    );
+  });
+
+  test("a refresh tick revalidates the live status through the existing tick", () => {
+    const model = {
+      ...initModel(),
+      liveConnectivity: loadedLiveConnectivity(),
+    };
+
+    Story.story(
+      withContext,
+      Story.with(model),
+      Story.message(TickedRefresh()),
+      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.model((model) => {
+        expect(model.liveConnectivity._tag).toBe("Refreshing");
+      }),
+      resolveFetchLiveConnectivity()
+    );
+  });
+
+  test("a successful fetch settles the live status into Success", () => {
+    const model = {
+      ...initModel(),
+      liveConnectivity: LiveConnectivityAsyncData.Loading(),
+    };
+    const sampleAtMs = Date.parse("2026-07-28T11:59:30.000Z");
+
+    Story.story(
+      withContext,
+      Story.with(model),
+      Story.message(
+        SucceededFetchLiveConnectivity({
+          status: "degraded",
+          maybeLastSampleAtMs: Option.some(sampleAtMs),
+        })
+      ),
+      Story.model((model) => {
+        expect(model.liveConnectivity).toEqual(
+          LiveConnectivityAsyncData.Success({
+            data: {
+              status: "degraded",
+              maybeLastSampleAtMs: Option.some(sampleAtMs),
+            },
+          })
+        );
+      })
+    );
+  });
+
+  test("a failed cold fetch becomes a bare Failure", () => {
+    const model = {
+      ...initModel(),
+      liveConnectivity: LiveConnectivityAsyncData.Loading(),
+    };
+
+    Story.story(
+      withContext,
+      Story.with(model),
+      Story.message(FailedFetchLiveConnectivity({ error: "network error" })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model.liveConnectivity).toEqual(
+          LiveConnectivityAsyncData.Failure({ error: "network error" })
+        );
+      })
+    );
+  });
+
+  // The live indicator answers "right now", so applying a range must leave it
+  // completely alone — no refetch, not even a new object identity.
+  test("applying a date range neither refetches nor touches the live status", () => {
+    const model = {
+      ...initModel(),
+      metrics: MetricsAsyncData.Success({ data: [] }),
+      speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+      connectivityStatus: ConnectivityStatusAsyncData.Success({
+        data: {
+          points: [],
+          uptimePercentage: 100,
+          startTimeMs: 0,
+          endTimeMs: 3_600_000,
+          granularity: "1m",
+        },
+      }),
+      liveConnectivity: loadedLiveConnectivity(),
+    };
+    const appliedRange = Preset({ preset: "last7d" });
+
+    const [afterPreset] = withContext(
+      model,
+      GotDateRangePickerMessage({
+        message: ClickedPreset({ preset: "last7d" }),
+      })
+    );
+    const [afterApply, commands] = withContext(
+      afterPreset,
+      GotDateRangePickerMessage({ message: ClickedApply() })
+    );
+
+    expect(afterApply.dateRange).toEqual(appliedRange);
+    expect(commands.map((command) => command.name)).not.toContain(
+      "FetchLiveConnectivity"
+    );
+    expect(afterApply.liveConnectivity).toBe(model.liveConnectivity);
   });
 });
 
@@ -628,7 +789,7 @@ describe("dashboard update — date range with no prior data", () => {
 });
 
 describe("dashboard update — manual refresh", () => {
-  test("clicking refresh now force-reloads all three series without changing the date range", () => {
+  test("clicking refresh now force-reloads every series without changing the date range", () => {
     const currentRange = Preset({ preset: "last7d" });
     const model = {
       ...initModel(),
@@ -644,6 +805,7 @@ describe("dashboard update — manual refresh", () => {
           granularity: "1m",
         },
       }),
+      liveConnectivity: loadedLiveConnectivity(),
     };
 
     Story.story(
@@ -655,7 +817,9 @@ describe("dashboard update — manual refresh", () => {
         expect(model.metrics._tag).toBe("Refreshing");
         expect(model.speedtestHistory._tag).toBe("Refreshing");
         expect(model.connectivityStatus._tag).toBe("Refreshing");
+        expect(model.liveConnectivity._tag).toBe("Refreshing");
       }),
+      Story.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
       Story.Command.expectHas(
         FetchMetrics({
           token: "abc123",
@@ -693,7 +857,8 @@ describe("dashboard update — manual refresh", () => {
             granularity: "1m",
           }),
         ]
-      )
+      ),
+      resolveFetchLiveConnectivity()
     );
   });
 });

@@ -15,6 +15,7 @@ import {
   CompletedSaveTheme,
   FailedFetchConnectivityStatus,
   FailedFetchEarliestData,
+  FailedFetchLiveConnectivity,
   FailedFetchMetrics,
   FailedFetchSpeedtestHistory,
   FailedSaveTheme,
@@ -22,6 +23,7 @@ import {
   LoadedTheme,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
+  SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
   SucceededFetchSpeedtestHistory,
   SucceededTriggerSpeedtest,
@@ -143,6 +145,29 @@ export const fetchConnectivityStatus = ({
     )
   );
 
+/**
+ * Takes no date range on purpose: the live indicator answers "right now", and
+ * the absence of a range in this signature is what keeps it that way.
+ */
+export const fetchLiveConnectivity = ({ token }: { token: string }) =>
+  Effect.gen(function* () {
+    const client = yield* makeClient(Option.some(token));
+    const response = yield* client.connectivityStatus.getLiveConnectivity();
+    return SucceededFetchLiveConnectivity({
+      status: response.status,
+      maybeLastSampleAtMs:
+        response.lastSampleAt !== null
+          ? Option.some(Date.parse(response.lastSampleAt))
+          : Option.none(),
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        FailedFetchLiveConnectivity({ error: fetchErrorMessage(error) })
+      )
+    )
+  );
+
 export const fetchEarliestData = ({ token }: { token: string }) =>
   Effect.gen(function* () {
     const client = yield* makeClient(Option.some(token));
@@ -228,6 +253,15 @@ export const FetchConnectivityStatus = Command.define(
   FailedFetchConnectivityStatus
 )((args) =>
   fetchConnectivityStatus(args).pipe(Effect.provide(FetchHttpClient.layer))
+);
+
+export const FetchLiveConnectivity = Command.define(
+  "FetchLiveConnectivity",
+  { token: S.String },
+  SucceededFetchLiveConnectivity,
+  FailedFetchLiveConnectivity
+)((args) =>
+  fetchLiveConnectivity(args).pipe(Effect.provide(FetchHttpClient.layer))
 );
 
 export const FetchEarliestData = Command.define(

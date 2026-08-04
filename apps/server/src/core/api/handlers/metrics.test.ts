@@ -19,7 +19,9 @@ const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
   queryMetrics: () => Effect.succeed(mockData),
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),
+  queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
+  queryLatestPingTimestamp: () => Effect.succeed(null),
   close: () => Effect.void,
 });
 

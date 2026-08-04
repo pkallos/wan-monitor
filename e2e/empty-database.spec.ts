@@ -43,6 +43,13 @@ test.describe("Empty database first run", () => {
     await page.route("**/api/speedtest/history*", (route) =>
       route.fulfill(fulfillJson({ data: [], meta: emptyMeta }))
     );
+    // Same glob caveat as `/api/metrics/earliest` above: `*` never crosses a
+    // `/`, so the live endpoint needs its own route or it falls through.
+    await page.route("**/api/connectivity-status/live*", (route) =>
+      route.fulfill(
+        fulfillJson({ status: "noInfo", lastSampleAt: null, windowSeconds: 60 })
+      )
+    );
     await page.route("**/api/connectivity-status*", (route) =>
       route.fulfill(
         fulfillJson({
@@ -73,6 +80,15 @@ test.describe("Empty database first run", () => {
         .locator("xpath=following-sibling::p[1]");
       await expect(cardValue).toHaveText("- Mbps", { timeout: 15_000 });
     }
+
+    // A monitor that has never reported reads as "No Data", not as an outage.
+    const connectivityValue = page
+      .getByRole("heading", { name: "Connectivity", exact: true })
+      .locator("xpath=following-sibling::p[1]");
+    await expect(connectivityValue).toContainText("No Data", {
+      timeout: 15_000,
+    });
+    await expect(connectivityValue).not.toContainText("Offline");
 
     // Same placeholder for the four Speed Test History stats.
     for (const label of [

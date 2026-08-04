@@ -1,5 +1,7 @@
 import type {
   ConnectivityStatusRow,
+  CycleStatus,
+  LiveConnectivityRow,
   MetricRow,
 } from "@/infrastructure/database/questdb/model";
 
@@ -44,6 +46,18 @@ export const mapMetricRow = (row: Record<string, unknown>): MetricRow =>
         ? (row.internal_ip as string)
         : undefined,
   }) satisfies MetricRow;
+
+// Mirrors `CYCLE_STATUS_CASE`'s own ELSE branch: a cycle that is neither down
+// nor degraded is up.
+const toCycleStatus = (value: unknown): CycleStatus =>
+  value === "down" ? "down" : value === "degraded" ? "degraded" : "up";
+
+export const mapLiveConnectivityRow = (
+  row: Record<string, unknown>
+): LiveConnectivityRow => ({
+  timestamp: row.timestamp as string,
+  cycle_status: toCycleStatus(row.cycle_status),
+});
 
 export const mapConnectivityStatusRow = (
   row: Record<string, unknown>

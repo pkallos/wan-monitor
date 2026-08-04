@@ -80,7 +80,9 @@ describe("Server Lifecycle Integration Tests", () => {
     queryMetrics: vi.fn(),
     querySpeedtests: vi.fn(),
     queryConnectivityStatus: vi.fn(),
+    queryLiveConnectivity: vi.fn(),
     queryEarliestTimestamp: vi.fn(),
+    queryLatestPingTimestamp: vi.fn(),
     health: vi.fn(() =>
       Effect.succeed({
         connected: true,
@@ -331,7 +333,9 @@ describe("Server Lifecycle Integration Tests", () => {
           ),
           querySpeedtests: vi.fn(),
           queryConnectivityStatus: vi.fn(),
+          queryLiveConnectivity: vi.fn(),
           queryEarliestTimestamp: vi.fn(),
+          queryLatestPingTimestamp: vi.fn(),
           health: vi.fn(() =>
             Effect.fail(new DbUnavailable({ message: "Connection refused" }))
           ),
@@ -428,7 +432,9 @@ describe("Server Lifecycle Integration Tests", () => {
         queryMetrics: vi.fn(),
         querySpeedtests: vi.fn(),
         queryConnectivityStatus: vi.fn(),
+        queryLiveConnectivity: vi.fn(),
         queryEarliestTimestamp: vi.fn(),
+        queryLatestPingTimestamp: vi.fn(),
         health: vi.fn(() =>
           Effect.succeed({
             connected: true,

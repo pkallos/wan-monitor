@@ -171,9 +171,9 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     // The seed anchors the most recent ping and speedtest at "now", so the
     // default date range has data behind every top card.
 
-    // Connectivity resolves to a real status, never a placeholder.
+    // Connectivity resolves to a real status, never the "Checking…" placeholder.
     await expect(metricCard(page, "Connectivity")).toContainText(
-      /Online|Offline/,
+      /Online|Degraded|Offline|No Data/,
       { timeout: 15000 }
     );
 

@@ -2,6 +2,7 @@ import { GetConnectivityStatusQuery } from "@shared/api/routes/connectivity-stat
 import { GetMetricsQueryParams } from "@shared/api/routes/metrics";
 import {
   isValidGranularity,
+  liveConnectivityWindowSeconds,
   PACKET_LOSS_THRESHOLDS,
   VALID_GRANULARITIES,
 } from "@shared/constants";
@@ -49,6 +50,20 @@ describe("PACKET_LOSS_THRESHOLDS", () => {
     expect(PACKET_LOSS_THRESHOLDS.degradedFloor).toBeLessThan(
       PACKET_LOSS_THRESHOLDS.degradedCeiling
     );
+  });
+});
+
+describe("liveConnectivityWindowSeconds", () => {
+  it("spans two cycles at the default 30s ping interval", () => {
+    expect(liveConnectivityWindowSeconds(30)).toBe(60);
+  });
+
+  it("holds at the 60s floor for a faster interval", () => {
+    expect(liveConnectivityWindowSeconds(10)).toBe(60);
+  });
+
+  it("follows the interval once two cycles exceed the floor", () => {
+    expect(liveConnectivityWindowSeconds(300)).toBe(600);
   });
 });
 

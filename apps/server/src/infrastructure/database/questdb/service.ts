@@ -14,10 +14,12 @@ import {
 import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
 import {
   mapConnectivityStatusRow,
+  mapLiveConnectivityRow,
   mapMetricRow,
 } from "@/infrastructure/database/questdb/mappers";
 import type {
   ConnectivityStatusRow,
+  LiveConnectivityRow,
   MetricRow,
   QueryMetricsParams,
   QuerySpeedtestsParams,
@@ -26,6 +28,8 @@ import { configurePgTypeParsers } from "@/infrastructure/database/questdb/pgwire
 import {
   buildQueryConnectivityStatus,
   buildQueryEarliestTimestamp,
+  buildQueryLatestPingTimestamp,
+  buildQueryLiveConnectivity,
   buildQueryMetrics,
   buildQuerySpeedtests,
 } from "@/infrastructure/database/questdb/queries";
@@ -53,7 +57,17 @@ export interface QuestDBService {
     readonly ConnectivityStatusRow[],
     DatabaseQueryError | DbUnavailable
   >;
+  readonly queryLiveConnectivity: (
+    sinceIso: string
+  ) => Effect.Effect<
+    LiveConnectivityRow | null,
+    DatabaseQueryError | DbUnavailable
+  >;
   readonly queryEarliestTimestamp: () => Effect.Effect<
+    string | null,
+    DatabaseQueryError | DbUnavailable
+  >;
+  readonly queryLatestPingTimestamp: () => Effect.Effect<
     string | null,
     DatabaseQueryError | DbUnavailable
   >;
@@ -206,6 +220,40 @@ const make = Effect.gen(function* () {
       )
     );
 
+  const queryLiveConnectivity = (
+    sinceIso: string
+  ): Effect.Effect<
+    LiveConnectivityRow | null,
+    DatabaseQueryError | DbUnavailable
+  > =>
+    Effect.gen(function* () {
+      const conn = yield* connection.getConnection;
+
+      const spec = yield* buildQueryLiveConnectivity({ sinceIso }, table);
+
+      const result = yield* Effect.tryPromise({
+        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
+        catch: (error) => {
+          const msg = errorMessage(error);
+          if (isLikelyConnectionError(msg)) {
+            return new DbUnavailable({ message: msg });
+          }
+          return new DatabaseQueryError({
+            message: `Failed to query live connectivity: ${msg}`,
+          });
+        },
+      });
+
+      const row = result.rows?.[0];
+      return row ? mapLiveConnectivityRow(row) : null;
+    }).pipe(
+      Effect.catchTag("DbUnavailable", (e) =>
+        connection
+          .markDisconnected(e.message)
+          .pipe(Effect.andThen(Effect.fail(e)))
+      )
+    );
+
   const queryEarliestTimestamp = (): Effect.Effect<
     string | null,
     DatabaseQueryError | DbUnavailable
@@ -224,6 +272,37 @@ const make = Effect.gen(function* () {
           }
           return new DatabaseQueryError({
             message: `Failed to query earliest timestamp: ${msg}`,
+          });
+        },
+      });
+
+      return result.rows[0]?.timestamp ?? null;
+    }).pipe(
+      Effect.catchTag("DbUnavailable", (e) =>
+        connection
+          .markDisconnected(e.message)
+          .pipe(Effect.andThen(Effect.fail(e)))
+      )
+    );
+
+  const queryLatestPingTimestamp = (): Effect.Effect<
+    string | null,
+    DatabaseQueryError | DbUnavailable
+  > =>
+    Effect.gen(function* () {
+      const conn = yield* connection.getConnection;
+
+      const spec = yield* buildQueryLatestPingTimestamp(table);
+
+      const result = yield* Effect.tryPromise({
+        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
+        catch: (error) => {
+          const msg = errorMessage(error);
+          if (isLikelyConnectionError(msg)) {
+            return new DbUnavailable({ message: msg });
+          }
+          return new DatabaseQueryError({
+            message: `Failed to query latest ping timestamp: ${msg}`,
           });
         },
       });
@@ -305,7 +384,9 @@ const make = Effect.gen(function* () {
     queryMetrics,
     querySpeedtests,
     queryConnectivityStatus,
+    queryLiveConnectivity,
     queryEarliestTimestamp,
+    queryLatestPingTimestamp,
     health,
     close,
   } satisfies QuestDBService;

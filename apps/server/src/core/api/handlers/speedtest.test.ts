@@ -54,7 +54,9 @@ const createTestQuestDB = (): QuestDBService => ({
   queryMetrics: () => Effect.succeed([]),
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: () => Effect.succeed([]),
+  queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
+  queryLatestPingTimestamp: () => Effect.succeed(null),
   health: () =>
     Effect.succeed({ connected: true, version: "test", uptime: 1000 }),
   close: () => Effect.succeed(undefined),

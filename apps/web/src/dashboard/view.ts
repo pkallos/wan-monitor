@@ -35,9 +35,10 @@ import {
 import type { Model } from "@/dashboard/model";
 import {
   type CardStatus,
-  connectivityCard,
+  CHECKING_CONNECTIVITY_CARD,
   downloadSpeedCard,
   formatDurationAgo,
+  liveConnectivityCard,
   networkInfo,
   type SummaryCard,
   uploadSpeedCard,
@@ -278,6 +279,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
       good: "text-green-600 dark:text-green-400",
       warning: "text-amber-600 dark:text-amber-400",
       error: "text-red-600 dark:text-red-400",
+      neutral: "text-gray-500 dark:text-gray-400",
     };
 
     const metricCard = (card: SummaryCard): Html =>
@@ -537,6 +539,22 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
       }
     );
 
+    // A failed fetch says nothing about the WAN, so it renders as the same
+    // grey "No Data" the server reports for a silent monitor — never as an
+    // outage.
+    const liveConnectivityCardForModel = AsyncData.matchData(
+      model.liveConnectivity,
+      {
+        onEmpty: () => CHECKING_CONNECTIVITY_CARD,
+        onFailure: () =>
+          liveConnectivityCard(
+            { status: "noInfo", maybeLastSampleAtMs: Option.none() },
+            Date.now()
+          ),
+        onData: (live) => liveConnectivityCard(live, Date.now()),
+      }
+    );
+
     const network = networkInfo(
       AsyncData.getOrElse(model.speedtestHistory, () => [])
     );
@@ -662,9 +680,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
             h.div(
               [h.Class("mb-6 grid grid-cols-1 gap-4 md:grid-cols-3")],
               [
-                metricCard(
-                  connectivityCard(AsyncData.getOrElse(model.metrics, () => []))
-                ),
+                metricCard(liveConnectivityCardForModel),
                 metricCard(
                   downloadSpeedCard(
                     AsyncData.getOrElse(model.speedtestHistory, () => [])

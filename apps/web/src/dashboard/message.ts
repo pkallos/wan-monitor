@@ -1,4 +1,7 @@
-import { ConnectivityStatusPointSchema } from "@shared/api/routes/connectivity-status";
+import {
+  ConnectivityStatusPointSchema,
+  LiveConnectivityStatusSchema,
+} from "@shared/api/routes/connectivity-status";
 import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Schema as S } from "effect";
@@ -37,6 +40,17 @@ export const FailedFetchConnectivityStatus = m(
   "FailedFetchConnectivityStatus",
   { error: S.String }
 );
+
+export const SucceededFetchLiveConnectivity = m(
+  "SucceededFetchLiveConnectivity",
+  {
+    status: LiveConnectivityStatusSchema,
+    maybeLastSampleAtMs: S.Option(S.Number),
+  }
+);
+export const FailedFetchLiveConnectivity = m("FailedFetchLiveConnectivity", {
+  error: S.String,
+});
 
 export const SucceededTriggerSpeedtest = m("SucceededTriggerSpeedtest", {
   downloadMbps: S.Number,
@@ -132,6 +146,8 @@ export const Message = S.Union([
   FailedFetchSpeedtestHistory,
   SucceededFetchConnectivityStatus,
   FailedFetchConnectivityStatus,
+  SucceededFetchLiveConnectivity,
+  FailedFetchLiveConnectivity,
   SucceededTriggerSpeedtest,
   FailedTriggerSpeedtest,
   SucceededFetchEarliestData,
