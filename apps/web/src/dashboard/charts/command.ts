@@ -7,6 +7,7 @@ import { Clock, Effect, Option, Schema as S } from "effect";
 import { Command, Mount } from "foldkit";
 import { getChart, removeChart, setChart } from "@/dashboard/charts/chartHost";
 import {
+  computeSplitNumberForWidth,
   makeJitterChartOption,
   makeLatencyChartOption,
   makePacketLossChartOption,
@@ -164,7 +165,20 @@ const mountEchartsInstance = (
           const chart = echarts.init(element, undefined, {
             renderer: "canvas",
           });
-          const resizeObserver = new ResizeObserver(() => chart.resize());
+          // Tick count is a pure function of splitNumber, not container
+          // width, so a resize alone never changes label density on its
+          // own — this merge-patches just that one field for responsiveness
+          // between data syncs. The next sync (`syncChart` below) recomputes
+          // splitNumber fresh from the then-current width regardless, so
+          // this is never the source of truth, only a between-syncs nudge.
+          const resizeObserver = new ResizeObserver(() => {
+            chart.resize();
+            chart.setOption({
+              xAxis: {
+                splitNumber: computeSplitNumberForWidth(chart.getWidth()),
+              },
+            });
+          });
           resizeObserver.observe(element);
           const onWindowResize = () => chart.resize();
           window.addEventListener("resize", onWindowResize);
@@ -297,7 +311,7 @@ export const SyncLatencyChart = Command.define("SyncLatencyChart", {
               theme: args.theme,
               startMs,
               endMs,
-              granularity,
+              splitNumber: computeSplitNumberForWidth(chart.getWidth()),
             }),
             true
           );
@@ -347,7 +361,7 @@ export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
               theme: args.theme,
               startMs,
               endMs,
-              granularity,
+              splitNumber: computeSplitNumberForWidth(chart.getWidth()),
             }),
             true
           );
@@ -397,7 +411,7 @@ export const SyncJitterChart = Command.define("SyncJitterChart", {
               theme: args.theme,
               startMs,
               endMs,
-              granularity,
+              splitNumber: computeSplitNumberForWidth(chart.getWidth()),
             }),
             true
           );
@@ -435,11 +449,10 @@ export const SyncSpeedChart = Command.define("SyncSpeedChart", {
   messages: [CompletedSyncSpeedChart, FailedSyncSpeedChart],
   execute: (args) =>
     Effect.gen(function* () {
-      const { startMs, endMs, granularity } =
-        yield* resolveSpeedtestTimelineWindow(
-          args.dateRange,
-          args.maybeEarliestDataMs
-        );
+      const { startMs, endMs } = yield* resolveSpeedtestTimelineWindow(
+        args.dateRange,
+        args.maybeEarliestDataMs
+      );
       return yield* syncChart(
         args.hostId,
         (reason) => FailedSyncSpeedChart({ reason }),
@@ -453,7 +466,7 @@ export const SyncSpeedChart = Command.define("SyncSpeedChart", {
               theme: args.theme,
               startMs,
               endMs,
-              granularity,
+              splitNumber: computeSplitNumberForWidth(chart.getWidth()),
             }),
             true
           );
