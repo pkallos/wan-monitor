@@ -191,7 +191,7 @@ describe("makePacketLossChartOption", () => {
     expect(xAxis.max).toBe(endMs);
   });
 
-  test("plots a visible symbol at 0% loss instead of letting it ride the axis line unmarked", () => {
+  test("plots 0% loss as a real value and a missing slot as a gap, with no point markers", () => {
     const zeroLossMetrics = [
       { timestamp: "2026-07-26T10:05:00.000Z", packet_loss: 0 },
     ];
@@ -204,12 +204,18 @@ describe("makePacketLossChartOption", () => {
       granularity: "5m",
     });
     const series = option.series as Array<{
+      data: Array<[number, number | null]>;
       showSymbol: boolean;
-      symbolSize: number;
+      connectNulls: boolean;
     }>;
 
-    expect(series[0].showSymbol).toBe(true);
-    expect(series[0].symbolSize).toBeGreaterThan(0);
+    expect(series[0].data).toEqual([
+      [startMs, null],
+      [startMs + 5 * 60_000, 0],
+      [startMs + 10 * 60_000, null],
+    ]);
+    expect(series[0].showSymbol).toBe(false);
+    expect(series[0].connectNulls).toBe(false);
   });
 });
 
