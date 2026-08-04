@@ -51,9 +51,10 @@ describe("resolveSpeedtestTimelineWindow", () => {
 
 // A stand-in for a live ECharts instance. The real one can't paint under
 // happy-dom (no canvas 2d context), and `syncChart` only ever calls
-// `setOption` on what it finds in chartHost.
+// `getWidth` (to size the axis label density) and `setOption` on what it
+// finds in chartHost.
 const stubChart = (setOption: (option: unknown, notMerge: boolean) => void) =>
-  ({ setOption }) as unknown as EChartsType;
+  ({ setOption, getWidth: () => 800 }) as unknown as EChartsType;
 
 const syncLatency = (hostId: string) =>
   Effect.runPromise(
