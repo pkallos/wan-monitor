@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.1.1...wan-monitor-v1.2.0) (2026-08-04)
+
+
+### Features
+
+* **web:** add a live connectivity indicator decoupled from the date range ([#275](https://github.com/pkallos/wan-monitor/issues/275)) ([7eaa61c](https://github.com/pkallos/wan-monitor/commit/7eaa61c2a7a362375c6f9745979cc17416ece9bd))
+
+
+### Bug Fixes
+
+* **web:** stop drawing a point marker on every packet loss sample ([#274](https://github.com/pkallos/wan-monitor/issues/274)) ([fee4cef](https://github.com/pkallos/wan-monitor/commit/fee4cefb6daf8a2f2fdedfdc5bfc46df4d5508b3))
+
 ## [1.1.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.1.0...wan-monitor-v1.1.1) (2026-08-03)
 
 
