@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.2.0...wan-monitor-v1.2.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **web:** make chart x-axis labels adapt to window size and tick tier ([#277](https://github.com/pkallos/wan-monitor/issues/277)) ([ec2ae48](https://github.com/pkallos/wan-monitor/commit/ec2ae480b41b0237fa70c2e280bf2a23b4247e46))
+
 ## [1.2.0](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.1.1...wan-monitor-v1.2.0) (2026-08-04)
 
 
