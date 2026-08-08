@@ -20,6 +20,7 @@ export const getMetricsHandler = ({
       host: query.host,
       limit: query.limit,
       granularity: query.granularity,
+      source: query.source,
     });
 
     const data = rawData.map((m) => ({

@@ -56,6 +56,28 @@ describe("fillTimeline", () => {
     expect(result[2].point).toEqual(Option.none());
   });
 
+  // Aggregated metrics arrive filtered to ping rows, so an interval whose
+  // only samples were speedtests reaches here with nothing in it and has to
+  // render as a gap rather than borrowing a speedtest's latency.
+  test("leaves an interval with no ping sample as a gap", () => {
+    const pingBefore = {
+      timestamp: "2026-07-26T10:02:00.000Z",
+      source: "ping" as const,
+      latency: 11.1,
+    };
+    const pingAfter = {
+      timestamp: "2026-07-26T10:11:00.000Z",
+      source: "ping" as const,
+      latency: 9.4,
+    };
+
+    const result = fillTimeline([pingBefore, pingAfter], startMs, endMs, "5m");
+
+    expect(result[0].point).toEqual(Option.some(pingBefore));
+    expect(result[1].point).toEqual(Option.none());
+    expect(result[2].point).toEqual(Option.some(pingAfter));
+  });
+
   test("is empty when the range doesn't span a full interval", () => {
     const result = fillTimeline([], startMs, startMs, "5m");
     expect(result).toEqual([]);

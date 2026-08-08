@@ -273,6 +273,7 @@ Query parameters for `/api/metrics`:
 - `endTime`: ISO timestamp
 - `granularity`: `1m`, `5m`, `15m`, `1h`, `6h`, `1d`
 - `host`: Filter by specific ping host
+- `source`: `ping` or `speedtest`. Filters to one measurement kind; aggregated queries need it to get one row per bucket
 
 ## Contributing
 

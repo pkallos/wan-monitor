@@ -5,49 +5,20 @@ import { getChart, setChart } from "@/dashboard/charts/chartHost";
 import {
   MountJitterChart,
   MountLatencyChart,
-  resolveSpeedtestTimelineWindow,
   SyncLatencyChart,
   SyncSpeedChart,
 } from "@/dashboard/charts/command";
 import { registerEcharts } from "@/dashboard/charts/echartsSetup";
-import { Custom } from "@/dashboard/dateRange";
 
 registerEcharts();
 
-// A 24h span lands under the speedtest aggregation threshold, and Custom
-// resolves to this window regardless of the real clock.
-const ONE_DAY_RANGE = Custom({
-  startTime: "2026-07-26T00:00:00.000Z",
-  endTime: "2026-07-27T00:00:00.000Z",
-});
-// A 30-day span lands at/above the speedtest aggregation threshold, and
-// Custom resolves to this window regardless of the real clock.
-const THIRTY_DAY_RANGE = Custom({
-  startTime: "2026-06-27T00:00:00.000Z",
-  endTime: "2026-07-27T00:00:00.000Z",
-});
-
-describe("resolveSpeedtestTimelineWindow", () => {
-  test("resolves no granularity for a range under the aggregation threshold", async () => {
-    const result = await Effect.runPromise(
-      resolveSpeedtestTimelineWindow(ONE_DAY_RANGE)
-    );
-
-    expect(result).toEqual({
-      startMs: Date.parse("2026-07-26T00:00:00.000Z"),
-      endMs: Date.parse("2026-07-27T00:00:00.000Z"),
-      granularity: undefined,
-    });
-  });
-
-  test("resolves the aggregation granularity for a range at/above the threshold", async () => {
-    const result = await Effect.runPromise(
-      resolveSpeedtestTimelineWindow(THIRTY_DAY_RANGE)
-    );
-
-    expect(result.granularity).toBe("1h");
-  });
-});
+// A 24h window at 5m buckets, matching what `granularityForRange` picks for
+// that span.
+const ONE_DAY_WINDOW = {
+  startTimeMs: Date.parse("2026-07-26T00:00:00.000Z"),
+  endTimeMs: Date.parse("2026-07-27T00:00:00.000Z"),
+  granularity: "5m" as const,
+};
 
 // A stand-in for a live ECharts instance. The real one can't paint under
 // happy-dom (no canvas 2d context), and `syncChart` only ever calls
@@ -61,7 +32,7 @@ const syncLatency = (hostId: string) =>
     SyncLatencyChart({
       hostId,
       metrics: [],
-      dateRange: ONE_DAY_RANGE,
+      ...ONE_DAY_WINDOW,
       theme: "dark",
     }).effect
   );
@@ -88,7 +59,8 @@ describe("syncChart", () => {
       SyncSpeedChart({
         hostId: "never-mounted-speed-chart",
         metrics: [],
-        dateRange: ONE_DAY_RANGE,
+        startTimeMs: ONE_DAY_WINDOW.startTimeMs,
+        endTimeMs: ONE_DAY_WINDOW.endTimeMs,
         theme: "light",
       }).effect
     );
@@ -111,6 +83,52 @@ describe("syncChart", () => {
     const [option, notMerge] = setOption.mock.calls[0] ?? [];
     expect(option).toHaveProperty("series");
     expect(notMerge).toBe(true);
+  });
+
+  // Re-applying an unchanged date range re-runs the paint step. It has to
+  // reproduce the same chart, so the window and granularity it buckets
+  // against come from its arguments and never from the clock.
+  test("painting the same window twice produces an identical option, even weeks later", async () => {
+    // ECharts options carry label-formatter closures, which are fresh
+    // function objects on every paint, so the comparison runs over the
+    // serialized shape: axis bounds, the bucketed slot grid, and the series.
+    const options: string[] = [];
+    setChart(
+      "idempotent-latency-chart",
+      stubChart((option) => options.push(JSON.stringify(option)))
+    );
+    const metrics = [
+      {
+        timestamp: "2026-07-26T06:07:00.000Z",
+        source: "ping" as const,
+        latency: 11.2,
+      },
+    ];
+    const paint = () =>
+      Effect.runPromise(
+        SyncLatencyChart({
+          hostId: "idempotent-latency-chart",
+          metrics,
+          ...ONE_DAY_WINDOW,
+          theme: "dark",
+        }).effect
+      );
+
+    // Only Date is faked: Effect's runtime still needs real timers to settle.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.parse("2026-07-27T00:00:00.000Z"));
+      await paint();
+      // Far enough to shift every relative preset's window and to push a
+      // growing range past a granularity threshold.
+      vi.setSystemTime(Date.parse("2026-09-01T00:00:00.000Z"));
+      await paint();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(options).toHaveLength(2);
+    expect(options[1]).toBe(options[0]);
   });
 
   test("a chart that throws while painting fails with the thrown message", async () => {

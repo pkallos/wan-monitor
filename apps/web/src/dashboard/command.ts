@@ -63,15 +63,27 @@ export const fetchMetrics = ({
     const nowMs = yield* Clock.currentTimeMillis;
     const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
     const { startTime, endTime } = window;
+    const granularity = granularityForRange(window);
     const client = yield* makeClient(Option.some(token));
+    // Everything downstream of this charts ping measurements, and pinning a
+    // source is also what keeps an aggregated bucket to one row (see
+    // `buildQueryMetrics`).
     const response = yield* client.metrics.getMetrics({
       query: {
         startTime,
         endTime,
-        granularity: granularityForRange(window),
+        granularity,
+        source: "ping",
       },
     });
-    return SucceededFetchMetrics({ metrics: response.data, nowMs });
+    // The resolved window rides along so the paint step never re-resolves it.
+    return SucceededFetchMetrics({
+      metrics: response.data,
+      nowMs,
+      startTimeMs: Date.parse(startTime),
+      endTimeMs: Date.parse(endTime),
+      granularity,
+    });
   }).pipe(
     Effect.catch((error) =>
       Effect.succeed(FailedFetchMetrics({ error: fetchErrorMessage(error) }))
@@ -100,7 +112,11 @@ export const fetchSpeedtestHistory = ({
         ...(granularity !== undefined ? { granularity } : {}),
       },
     });
-    return SucceededFetchSpeedtestHistory({ history: response.data });
+    return SucceededFetchSpeedtestHistory({
+      history: response.data,
+      startTimeMs: Date.parse(startTime),
+      endTimeMs: Date.parse(endTime),
+    });
   }).pipe(
     Effect.catch((error) =>
       Effect.succeed(

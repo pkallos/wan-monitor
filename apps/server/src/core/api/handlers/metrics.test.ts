@@ -9,7 +9,10 @@ import {
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
-import type { MetricRow } from "@/infrastructure/database/questdb/model";
+import type {
+  MetricRow,
+  QueryMetricsParams,
+} from "@/infrastructure/database/questdb/model";
 
 const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
   health: () =>
@@ -142,6 +145,25 @@ describe("Metrics Handlers", () => {
         expect(result.meta.count).toBe(2);
 
         return result;
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect("passes the requested source down to the query", () => {
+      const seenParams: QueryMetricsParams[] = [];
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createMockQuestDB([]),
+        queryMetrics: (params: QueryMetricsParams) => {
+          seenParams.push(params);
+          return Effect.succeed([]);
+        },
+      });
+
+      return Effect.gen(function* () {
+        yield* getMetricsHandler({ query: { source: "ping" } });
+        yield* getMetricsHandler({ query: {} });
+
+        expect(seenParams[0].source).toBe("ping");
+        expect(seenParams[1].source).toBeUndefined();
       }).pipe(Effect.provide(QuestDBTest));
     });
 
