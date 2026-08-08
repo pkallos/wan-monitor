@@ -270,6 +270,10 @@ Query parameters for `/api/metrics`:
 - `endTime`: ISO timestamp
 - `granularity`: `1m`, `5m`, `15m`, `1h`, `6h`, `1d`
 - `host`: Filter by specific ping host
+- `source`: `ping` or `speedtest`. Both kinds of row share the table and the
+  `latency` column, so an aggregated query without this returns one row per
+  source per bucket. The dashboard's latency, jitter, and packet-loss charts
+  request `ping`.
 
 ## Contributing
 

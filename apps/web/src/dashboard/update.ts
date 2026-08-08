@@ -211,24 +211,29 @@ const reloadConnectivityStatus =
     ],
   ];
 
-// Each chart only needs re-painting when it's actually mounted and there's
-// data to show it — otherwise there's nothing to sync yet.
+// Each chart only needs re-painting when it's actually mounted, there's data
+// to show it, and the window that data was fetched for is known — otherwise
+// there's nothing to sync yet. The window comes from the model rather than
+// from `model.dateRange`, so re-painting unchanged data always reproduces the
+// same grid instead of re-resolving a relative preset against a later clock.
 const syncLatencyChart = (
   model: Model
 ): ReadonlyArray<Command.Command<Message>> =>
   Option.match(
-    Option.product(
+    Option.all([
       model.maybeLatencyChartHostId,
-      AsyncData.getData(model.metrics)
-    ),
+      AsyncData.getData(model.metrics),
+      model.maybeMetricsWindow,
+    ]),
     {
       onNone: () => [],
-      onSome: ([hostId, metrics]) => [
+      onSome: ([hostId, metrics, window]) => [
         SyncLatencyChart({
           hostId,
           metrics,
-          dateRange: model.dateRange,
-          maybeEarliestDataMs: model.maybeEarliestDataMs,
+          startTimeMs: window.startTimeMs,
+          endTimeMs: window.endTimeMs,
+          granularity: window.granularity,
           theme: currentTheme(model),
         }),
       ],
@@ -239,18 +244,20 @@ const syncPacketLossChart = (
   model: Model
 ): ReadonlyArray<Command.Command<Message>> =>
   Option.match(
-    Option.product(
+    Option.all([
       model.maybePacketLossChartHostId,
-      AsyncData.getData(model.metrics)
-    ),
+      AsyncData.getData(model.metrics),
+      model.maybeMetricsWindow,
+    ]),
     {
       onNone: () => [],
-      onSome: ([hostId, metrics]) => [
+      onSome: ([hostId, metrics, window]) => [
         SyncPacketLossChart({
           hostId,
           metrics,
-          dateRange: model.dateRange,
-          maybeEarliestDataMs: model.maybeEarliestDataMs,
+          startTimeMs: window.startTimeMs,
+          endTimeMs: window.endTimeMs,
+          granularity: window.granularity,
           theme: currentTheme(model),
         }),
       ],
@@ -261,18 +268,20 @@ const syncJitterChart = (
   model: Model
 ): ReadonlyArray<Command.Command<Message>> =>
   Option.match(
-    Option.product(
+    Option.all([
       model.maybeJitterChartHostId,
-      AsyncData.getData(model.metrics)
-    ),
+      AsyncData.getData(model.metrics),
+      model.maybeMetricsWindow,
+    ]),
     {
       onNone: () => [],
-      onSome: ([hostId, metrics]) => [
+      onSome: ([hostId, metrics, window]) => [
         SyncJitterChart({
           hostId,
           metrics,
-          dateRange: model.dateRange,
-          maybeEarliestDataMs: model.maybeEarliestDataMs,
+          startTimeMs: window.startTimeMs,
+          endTimeMs: window.endTimeMs,
+          granularity: window.granularity,
           theme: currentTheme(model),
         }),
       ],
@@ -283,18 +292,20 @@ const syncSpeedChart = (
   model: Model
 ): ReadonlyArray<Command.Command<Message>> =>
   Option.match(
-    Option.product(
+    Option.all([
       model.maybeSpeedChartHostId,
-      AsyncData.getData(model.speedtestHistory)
-    ),
+      AsyncData.getData(model.speedtestHistory),
+      model.maybeSpeedtestWindow,
+    ]),
     {
       onNone: () => [],
-      onSome: ([hostId, metrics]) => [
+      onSome: ([hostId, metrics, window]) => [
         SyncSpeedChart({
           hostId,
           metrics,
-          dateRange: model.dateRange,
-          maybeEarliestDataMs: model.maybeEarliestDataMs,
+          startTimeMs: window.startTimeMs,
+          endTimeMs: window.endTimeMs,
+          maybeGranularity: window.maybeGranularity,
           theme: currentTheme(model),
         }),
       ],
@@ -379,10 +390,18 @@ export const update = (
           reloadConnectivityStatus(context),
         ]),
 
-      SucceededFetchMetrics: ({ metrics, nowMs }) => {
+      SucceededFetchMetrics: ({
+        metrics,
+        nowMs,
+        startTimeMs,
+        endTimeMs,
+        granularity,
+      }) => {
         const nextModel = evo(model, {
           metrics: () =>
             AsyncData.settle(model.metrics, Result.succeed(metrics)),
+          maybeMetricsWindow: () =>
+            Option.some({ startTimeMs, endTimeMs, granularity }),
           maybeLastUpdatedMs: () => Option.some(nowMs),
         });
         return [nextModel, syncQualityCharts(nextModel)];
@@ -394,10 +413,17 @@ export const update = (
         [],
       ],
 
-      SucceededFetchSpeedtestHistory: ({ history }) => {
+      SucceededFetchSpeedtestHistory: ({
+        history,
+        startTimeMs,
+        endTimeMs,
+        maybeGranularity,
+      }) => {
         const nextModel = evo(model, {
           speedtestHistory: () =>
             AsyncData.settle(model.speedtestHistory, Result.succeed(history)),
+          maybeSpeedtestWindow: () =>
+            Option.some({ startTimeMs, endTimeMs, maybeGranularity }),
         });
         return [nextModel, syncSpeedChart(nextModel)];
       },

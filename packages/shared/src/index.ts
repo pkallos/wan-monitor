@@ -9,6 +9,7 @@ export type {
   GetMetricsResponseType,
   Granularity,
   Metric,
+  MetricSource,
 } from "./api/routes/metrics";
 export type {
   SpeedMetric,

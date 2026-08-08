@@ -231,6 +231,51 @@ describe("Metrics Aggregation Integration Tests", () => {
       }
     );
 
+    // `source` is projected un-aggregated beside SAMPLE BY, so QuestDB groups
+    // by it. With both sources in the window every bucket comes back twice,
+    // once per source, on the same timestamp — pinning a source is what keeps
+    // one bucket to one row.
+    it.skipIf(skipTests)(
+      "should return one row per bucket only when a source is pinned",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          const dataset = createSeedDataset();
+          const { window, pingMetrics, speedtestMetrics } =
+            dataset.standardWindow;
+          yield* seedDatabase(db, [...pingMetrics, ...speedtestMetrics]);
+
+          const bothSources = yield* db.queryMetrics({
+            startTime: window.startTime,
+            endTime: window.endTime,
+            granularity: "15m",
+          });
+          const pingOnly = yield* db.queryMetrics({
+            startTime: window.startTime,
+            endTime: window.endTime,
+            granularity: "15m",
+            source: "ping",
+          });
+
+          const distinct = (rows: ReadonlyArray<{ timestamp: string }>) =>
+            new Set(rows.map((row) => row.timestamp)).size;
+
+          expect(bothSources.length).toBeGreaterThan(distinct(bothSources));
+          expect(pingOnly.length).toBe(distinct(pingOnly));
+          for (const result of pingOnly) {
+            expect(result.source).toBe("ping");
+          }
+
+          yield* teardownIntegrationTest(db);
+
+          return pingOnly;
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
     it.skipIf(skipTests)(
       "should aggregate with 15m granularity correctly",
       async () => {

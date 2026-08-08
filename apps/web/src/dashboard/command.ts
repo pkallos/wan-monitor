@@ -61,15 +61,30 @@ export const fetchMetrics = ({
     const nowMs = yield* Clock.currentTimeMillis;
     const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
     const { startTime, endTime } = window;
+    const granularity = granularityForRange(window);
     const client = yield* makeClient(Option.some(token));
+    // Latency, jitter and packet loss are ping measurements. Speedtest rows
+    // share the same table and `latency` column but describe a different
+    // quantity, and carry no packet loss at all, so they're excluded here
+    // rather than averaged into these charts.
     const response = yield* client.metrics.getMetrics({
       query: {
         startTime,
         endTime,
-        granularity: granularityForRange(window),
+        granularity,
+        source: "ping",
       },
     });
-    return SucceededFetchMetrics({ metrics: response.data, nowMs });
+    // The window travels with the data so the paint step buckets against the
+    // exact range that was fetched instead of re-resolving `dateRange`
+    // against a later clock reading.
+    return SucceededFetchMetrics({
+      metrics: response.data,
+      nowMs,
+      startTimeMs: Date.parse(startTime),
+      endTimeMs: Date.parse(endTime),
+      granularity,
+    });
   }).pipe(
     Effect.catch((error) =>
       Effect.succeed(FailedFetchMetrics({ error: fetchErrorMessage(error) }))
@@ -98,7 +113,12 @@ export const fetchSpeedtestHistory = ({
         ...(granularity !== undefined ? { granularity } : {}),
       },
     });
-    return SucceededFetchSpeedtestHistory({ history: response.data });
+    return SucceededFetchSpeedtestHistory({
+      history: response.data,
+      startTimeMs: Date.parse(startTime),
+      endTimeMs: Date.parse(endTime),
+      maybeGranularity: Option.fromNullishOr(granularity),
+    });
   }).pipe(
     Effect.catch((error) =>
       Effect.succeed(

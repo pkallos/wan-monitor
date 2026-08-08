@@ -1,9 +1,9 @@
-import { MetricSchema } from "@shared/api/routes/metrics";
+import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import type { EChartsType } from "echarts/core";
 import * as echarts from "echarts/core";
 import type { Scope } from "effect";
-import { Clock, Effect, Option, Schema as S } from "effect";
+import { Effect, Option, Schema as S } from "effect";
 import { Command, Mount } from "foldkit";
 import { getChart, removeChart, setChart } from "@/dashboard/charts/chartHost";
 import {
@@ -19,12 +19,6 @@ import {
   calculateSpeedStats,
 } from "@/dashboard/charts/stats";
 import { fillTimeline } from "@/dashboard/charts/timeline";
-import {
-  DateRangeSelection,
-  getDateRangeWindow,
-  granularityForRange,
-  granularityForSpeedtestRange,
-} from "@/dashboard/dateRange";
 import {
   CompletedSyncJitterChart,
   CompletedSyncLatencyChart,
@@ -213,46 +207,16 @@ const syncChart = <F, Sc>(
       }).pipe(Effect.match({ onFailure: (f) => f, onSuccess: (s) => s })),
   });
 
-// Resolves a chart's x-axis bounds and tick granularity, reading "now"
-// through Clock rather than the system clock directly since only a Command
-// may touch time.
-const resolveTimelineWindow = (
-  dateRange: DateRangeSelection,
-  maybeEarliestDataMs?: Option.Option<number>
-) =>
-  Effect.gen(function* () {
-    const nowMs = yield* Clock.currentTimeMillis;
-    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
-    return {
-      startMs: Date.parse(window.startTime),
-      endMs: Date.parse(window.endTime),
-      granularity: granularityForRange(window),
-    };
-  });
-
-// Like `resolveTimelineWindow`, but for the speed chart: `fetchSpeedtestHistory`
-// requests raw rows (no granularity) below the speedtest aggregation
-// threshold, so this resolves the same undefined-or-aggregated granularity
-// that fetch actually used, for the axis label formatter to match.
-export const resolveSpeedtestTimelineWindow = (
-  dateRange: DateRangeSelection,
-  maybeEarliestDataMs?: Option.Option<number>
-) =>
-  Effect.gen(function* () {
-    const nowMs = yield* Clock.currentTimeMillis;
-    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
-    return {
-      startMs: Date.parse(window.startTime),
-      endMs: Date.parse(window.endTime),
-      granularity: granularityForSpeedtestRange(window),
-    };
-  });
-
-const DateRangeArgs = {
+// The window a chart paints is supplied by the fetch that produced the data,
+// not resolved here: reading the clock at paint time would land a relative
+// preset on a different absolute range than the one the data was bucketed
+// for, so re-painting unchanged data would move the whole grid.
+const TimelineChartArgs = {
   hostId: S.String,
   metrics: S.Array(MetricSchema),
-  dateRange: DateRangeSelection,
-  maybeEarliestDataMs: S.optional(S.Option(S.Number)),
+  startTimeMs: S.Number,
+  endTimeMs: S.Number,
+  granularity: GranularitySchema,
   theme: Theme,
 };
 
@@ -276,36 +240,29 @@ export const MountLatencyChart = Mount.define(
 
 export const SyncLatencyChart = Command.define(
   "SyncLatencyChart",
-  DateRangeArgs,
+  TimelineChartArgs,
   CompletedSyncLatencyChart,
   FailedSyncLatencyChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.dateRange,
-      args.maybeEarliestDataMs
-    );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncLatencyChart({ reason }),
-      CompletedSyncLatencyChart,
-      (chart) => {
-        const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
-        const stats = calculateLatencyStats(args.metrics);
-        chart.setOption(
-          makeLatencyChartOption({
-            slots,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
-        );
-      }
-    );
-  })
+)(({ hostId, metrics, startTimeMs, endTimeMs, granularity, theme }) =>
+  syncChart(
+    hostId,
+    (reason) => FailedSyncLatencyChart({ reason }),
+    CompletedSyncLatencyChart,
+    (chart) => {
+      const slots = fillTimeline(metrics, startTimeMs, endTimeMs, granularity);
+      chart.setOption(
+        makeLatencyChartOption({
+          slots,
+          stats: calculateLatencyStats(metrics),
+          theme,
+          startMs: startTimeMs,
+          endMs: endTimeMs,
+          granularity,
+        }),
+        true
+      );
+    }
+  )
 );
 
 export const PACKET_LOSS_CHART_HOST_ID = "packet-loss-chart";
@@ -328,36 +285,29 @@ export const MountPacketLossChart = Mount.define(
 
 export const SyncPacketLossChart = Command.define(
   "SyncPacketLossChart",
-  DateRangeArgs,
+  TimelineChartArgs,
   CompletedSyncPacketLossChart,
   FailedSyncPacketLossChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.dateRange,
-      args.maybeEarliestDataMs
-    );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncPacketLossChart({ reason }),
-      CompletedSyncPacketLossChart,
-      (chart) => {
-        const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
-        const stats = calculatePacketLossStats(args.metrics);
-        chart.setOption(
-          makePacketLossChartOption({
-            slots,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
-        );
-      }
-    );
-  })
+)(({ hostId, metrics, startTimeMs, endTimeMs, granularity, theme }) =>
+  syncChart(
+    hostId,
+    (reason) => FailedSyncPacketLossChart({ reason }),
+    CompletedSyncPacketLossChart,
+    (chart) => {
+      const slots = fillTimeline(metrics, startTimeMs, endTimeMs, granularity);
+      chart.setOption(
+        makePacketLossChartOption({
+          slots,
+          stats: calculatePacketLossStats(metrics),
+          theme,
+          startMs: startTimeMs,
+          endMs: endTimeMs,
+          granularity,
+        }),
+        true
+      );
+    }
+  )
 );
 
 export const JITTER_CHART_HOST_ID = "jitter-chart";
@@ -380,36 +330,29 @@ export const MountJitterChart = Mount.define(
 
 export const SyncJitterChart = Command.define(
   "SyncJitterChart",
-  DateRangeArgs,
+  TimelineChartArgs,
   CompletedSyncJitterChart,
   FailedSyncJitterChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } = yield* resolveTimelineWindow(
-      args.dateRange,
-      args.maybeEarliestDataMs
-    );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncJitterChart({ reason }),
-      CompletedSyncJitterChart,
-      (chart) => {
-        const slots = fillTimeline(args.metrics, startMs, endMs, granularity);
-        const stats = calculateJitterStats(args.metrics);
-        chart.setOption(
-          makeJitterChartOption({
-            slots,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
-        );
-      }
-    );
-  })
+)(({ hostId, metrics, startTimeMs, endTimeMs, granularity, theme }) =>
+  syncChart(
+    hostId,
+    (reason) => FailedSyncJitterChart({ reason }),
+    CompletedSyncJitterChart,
+    (chart) => {
+      const slots = fillTimeline(metrics, startTimeMs, endTimeMs, granularity);
+      chart.setOption(
+        makeJitterChartOption({
+          slots,
+          stats: calculateJitterStats(metrics),
+          theme,
+          startMs: startTimeMs,
+          endMs: endTimeMs,
+          granularity,
+        }),
+        true
+      );
+    }
+  )
 );
 
 export const SPEED_CHART_HOST_ID = "speed-chart";
@@ -430,42 +373,38 @@ export const MountSpeedChart = Mount.define(
       )
 );
 
+// The speed chart's fetch requests raw rows below the speedtest aggregation
+// threshold, so `maybeGranularity` is None for those windows and the axis
+// label formatter falls back to a timestamp label.
 export const SyncSpeedChart = Command.define(
   "SyncSpeedChart",
   {
     hostId: S.String,
     metrics: S.Array(SpeedMetricSchema),
-    dateRange: DateRangeSelection,
-    maybeEarliestDataMs: S.optional(S.Option(S.Number)),
+    startTimeMs: S.Number,
+    endTimeMs: S.Number,
+    maybeGranularity: S.Option(GranularitySchema),
     theme: Theme,
   },
   CompletedSyncSpeedChart,
   FailedSyncSpeedChart
-)((args) =>
-  Effect.gen(function* () {
-    const { startMs, endMs, granularity } =
-      yield* resolveSpeedtestTimelineWindow(
-        args.dateRange,
-        args.maybeEarliestDataMs
+)(({ hostId, metrics, startTimeMs, endTimeMs, maybeGranularity, theme }) =>
+  syncChart(
+    hostId,
+    (reason) => FailedSyncSpeedChart({ reason }),
+    CompletedSyncSpeedChart,
+    (chart) => {
+      chart.setOption(
+        makeSpeedChartOption({
+          metrics,
+          stats: calculateSpeedStats(metrics),
+          theme,
+          startMs: startTimeMs,
+          endMs: endTimeMs,
+          granularity: Option.getOrUndefined(maybeGranularity),
+        }),
+        true
       );
-    return yield* syncChart(
-      args.hostId,
-      (reason) => FailedSyncSpeedChart({ reason }),
-      CompletedSyncSpeedChart,
-      (chart) => {
-        const stats = calculateSpeedStats(args.metrics);
-        chart.setOption(
-          makeSpeedChartOption({
-            metrics: args.metrics,
-            stats,
-            theme: args.theme,
-            startMs,
-            endMs,
-            granularity,
-          }),
-          true
-        );
-      }
-    );
-  })
+    }
+  )
 );

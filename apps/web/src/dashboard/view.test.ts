@@ -54,6 +54,19 @@ import { view as dashboardView } from "@/dashboard/view";
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 
+// Each fetch resolves its window once and reports it back on the success
+// message; these stand in for the 30-day default the dashboard opens with.
+const METRICS_WINDOW = {
+  startTimeMs: NOW_MS - 30 * 24 * 60 * 60 * 1000,
+  endTimeMs: NOW_MS,
+  granularity: "1h" as const,
+};
+const SPEEDTEST_WINDOW = {
+  startTimeMs: METRICS_WINDOW.startTimeMs,
+  endTimeMs: METRICS_WINDOW.endTimeMs,
+  maybeGranularity: Option.some("1h" as const),
+};
+
 const context = { token: "abc123", now: () => NOW_MS };
 const boundUpdate = (
   model: Parameters<typeof update>[0],
@@ -545,10 +558,13 @@ describe("dashboard view", () => {
         })
       ),
       Scene.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
+        [
+          FetchMetrics,
+          SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW }),
+        ],
         [
           FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
+          SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW }),
         ],
         [
           FetchConnectivityStatus,
@@ -671,10 +687,20 @@ describe("dashboard view", () => {
           })
         ),
         Scene.Command.resolveAll(
-          [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: NOW_MS })],
+          [
+            FetchMetrics,
+            SucceededFetchMetrics({
+              metrics: [],
+              nowMs: NOW_MS,
+              ...METRICS_WINDOW,
+            }),
+          ],
           [
             FetchSpeedtestHistory,
-            SucceededFetchSpeedtestHistory({ history: [] }),
+            SucceededFetchSpeedtestHistory({
+              history: [],
+              ...SPEEDTEST_WINDOW,
+            }),
           ],
           [
             FetchConnectivityStatus,

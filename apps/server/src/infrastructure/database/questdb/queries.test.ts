@@ -127,6 +127,80 @@ describe("buildQueryMetrics", () => {
     });
   });
 
+  // Ping and speedtest rows share the table, and `source` is projected
+  // un-aggregated beside SAMPLE BY, so QuestDB groups by it and returns one
+  // row per source per bucket unless a single source is pinned.
+  it.effect("should filter an aggregated query to a single source", () => {
+    const params: QueryMetricsParams = { granularity: "1h", source: "ping" };
+
+    return Effect.gen(function* () {
+      const result = yield* buildQueryMetrics(params);
+
+      expect(result.query).toContain("AND source = $3");
+      expect(result.params).toEqual([
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        "ping",
+      ]);
+    });
+  });
+
+  it.effect("should filter a raw query to a single source too", () => {
+    const params: QueryMetricsParams = { source: "speedtest" };
+
+    return Effect.gen(function* () {
+      const result = yield* buildQueryMetrics(params);
+
+      expect(result.query).not.toContain("SAMPLE BY");
+      expect(result.query).toContain("AND source = $3");
+      expect(result.params[2]).toBe("speedtest");
+    });
+  });
+
+  it.effect("should leave the query unfiltered when no source is given", () => {
+    const params: QueryMetricsParams = { granularity: "1h" };
+
+    return Effect.gen(function* () {
+      const result = yield* buildQueryMetrics(params);
+
+      expect(result.query).not.toContain("source = $");
+      expect(result.params).toHaveLength(2);
+    });
+  });
+
+  it.effect(
+    "should number the source placeholder after host, before limit",
+    () => {
+      const params: QueryMetricsParams = {
+        host: "8.8.8.8",
+        source: "ping",
+        limit: 10,
+      };
+
+      return Effect.gen(function* () {
+        const result = yield* buildQueryMetrics(params);
+
+        expect(result.query).toContain("AND host = $3");
+        expect(result.query).toContain("AND source = $4");
+        expect(result.query).toContain("LIMIT $5");
+        expect(result.params.slice(2)).toEqual(["8.8.8.8", "ping", 10]);
+      });
+    }
+  );
+
+  // The frontend buckets returned rows by flooring each timestamp to a
+  // multiple of the interval, which only lines up with calendar-aligned
+  // buckets.
+  it.effect("should align sampled buckets to the calendar", () => {
+    const params: QueryMetricsParams = { granularity: "1h" };
+
+    return Effect.gen(function* () {
+      const result = yield* buildQueryMetrics(params);
+
+      expect(result.query).toContain("SAMPLE BY 1h ALIGN TO CALENDAR");
+    });
+  });
+
   it.effect("should fail with invalid granularity", () => {
     const params: QueryMetricsParams = { granularity: "invalid" };
 

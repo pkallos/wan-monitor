@@ -169,6 +169,80 @@ describe("fetchMetrics", () => {
     expect(capturedParams[0]).toContainEqual(["granularity", "5m"]);
   });
 
+  test("asks for ping rows only, so speedtest rows can't share a bucket", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+
+    await fetchMetrics({ token: "abc", dateRange: ONE_DAY_RANGE }).pipe(
+      Effect.provide(
+        capturingHttpClient(capturedParams, {
+          data: [],
+          meta: {
+            startTime: "2026-07-26T00:00:00.000Z",
+            endTime: "2026-07-27T00:00:00.000Z",
+            count: 0,
+          },
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(capturedParams[0]).toContainEqual(["source", "ping"]);
+  });
+
+  test("reports back the window it actually requested, so the paint step can reuse it", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+
+    const result = await fetchMetrics({
+      token: "abc",
+      dateRange: DEFAULT_DATE_RANGE,
+    }).pipe(
+      Effect.provide(
+        capturingHttpClient(capturedParams, {
+          data: [],
+          meta: { startTime: "", endTime: "", count: 0 },
+        })
+      ),
+      Effect.runPromise
+    );
+
+    const requested = new Map(capturedParams[0]);
+    expect(result._tag).toBe("SucceededFetchMetrics");
+    if (result._tag !== "SucceededFetchMetrics") return;
+    expect(result.startTimeMs).toBe(
+      Date.parse(requested.get("startTime") ?? "")
+    );
+    expect(result.endTimeMs).toBe(Date.parse(requested.get("endTime") ?? ""));
+    expect(result.granularity).toBe(requested.get("granularity"));
+  });
+
+  // `ytd` spans a window that grows with the wall clock, so re-resolving it a
+  // moment later can cross a `granularityForRange` threshold. The reported
+  // granularity has to be the one the request carried, or the paint step would
+  // re-bucket server-aggregated rows at a different interval.
+  test("a growing preset reports the same granularity it requested", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+
+    const result = await fetchMetrics({
+      token: "abc",
+      dateRange: Preset({ preset: "ytd" }),
+    }).pipe(
+      Effect.provide(
+        capturingHttpClient(capturedParams, {
+          data: [],
+          meta: { startTime: "", endTime: "", count: 0 },
+        })
+      ),
+      Effect.runPromise
+    );
+
+    if (result._tag !== "SucceededFetchMetrics") {
+      throw new Error("expected a successful metrics fetch");
+    }
+    expect(new Map(capturedParams[0]).get("granularity")).toBe(
+      result.granularity
+    );
+  });
+
   test("resolves the allTime preset's start from maybeEarliestDataMs, not the epoch", async () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
     const earliestDataMs = Date.parse("2025-01-01T00:00:00.000Z");
@@ -288,6 +362,32 @@ describe("fetchSpeedtestHistory", () => {
     );
 
     expect(capturedParams[0]).toContainEqual(["granularity", "1h"]);
+  });
+
+  test("reports back the window it requested, with no granularity for raw rows", async () => {
+    const result = await fetchSpeedtestHistory({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          data: [],
+          meta: {
+            startTime: "2026-07-26T00:00:00.000Z",
+            endTime: "2026-07-27T00:00:00.000Z",
+            count: 0,
+          },
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toMatchObject({
+      _tag: "SucceededFetchSpeedtestHistory",
+      startTimeMs: Date.parse("2026-07-26T00:00:00.000Z"),
+      endTimeMs: Date.parse("2026-07-27T00:00:00.000Z"),
+      maybeGranularity: Option.none(),
+    });
   });
 });
 

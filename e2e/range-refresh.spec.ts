@@ -16,6 +16,7 @@ interface MetricsParams {
   readonly startTime: string | null;
   readonly endTime: string | null;
   readonly granularity: string | null;
+  readonly source: string | null;
 }
 
 const parseMetricsRequest = (url: string): MetricsParams => {
@@ -24,6 +25,7 @@ const parseMetricsRequest = (url: string): MetricsParams => {
     startTime: params.get("startTime"),
     endTime: params.get("endTime"),
     granularity: params.get("granularity"),
+    source: params.get("source"),
   };
 };
 
@@ -96,6 +98,70 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
     expect(windowMs(narrowed)).toBeLessThan(8 * DAY_MS);
 
     // Charts re-render with the new data.
+    await expect(
+      page.locator('[aria-label="Latency chart"] canvas')
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("re-applying an unchanged range refetches the same window at the same granularity", async ({
+    page,
+  }) => {
+    const metricsRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes(METRICS_PATH)) {
+        metricsRequests.push(request.url());
+      }
+    });
+
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "WAN Monitor" })
+    ).toBeVisible({ timeout: 10_000 });
+
+    await expect
+      .poll(() => metricsRequests.length, { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    await page.waitForLoadState("networkidle");
+
+    // METRICS_PATH also matches /api/metrics/earliest, whose request carries
+    // no window, so only windowed requests are comparable.
+    const windowedRequests = () =>
+      metricsRequests
+        .map(parseMetricsRequest)
+        .filter((params) => params.startTime !== null);
+
+    const applyCurrentRange = async () => {
+      await page.locator("#date-range-picker-button").click();
+      await page.getByRole("button", { name: "Apply" }).click();
+      await page.waitForLoadState("networkidle");
+    };
+
+    await applyCurrentRange();
+    const afterFirstApply = windowedRequests();
+    expect(afterFirstApply.length).toBeGreaterThan(0);
+
+    await applyCurrentRange();
+    const afterSecondApply = windowedRequests();
+    expect(afterSecondApply.length).toBeGreaterThan(afterFirstApply.length);
+
+    const first = afterFirstApply[afterFirstApply.length - 1];
+    const second = afterSecondApply[afterSecondApply.length - 1];
+
+    // "Last 30 days" is relative, so the second Apply slides the window by the
+    // seconds that passed in between. Everything that shapes the chart —
+    // the span, the bucket size, the measurement kind — has to be unchanged.
+    expect(second.granularity).toBe(first.granularity);
+    expect(windowMs(second)).toBe(windowMs(first));
+    expect(
+      new Date(second.endTime ?? "").getTime() -
+        new Date(first.endTime ?? "").getTime()
+    ).toBeLessThan(30_000);
+
+    // Latency, jitter and packet loss are ping measurements; speedtest rows
+    // would otherwise share a bucket with them.
+    expect(first.source).toBe("ping");
+    expect(second.source).toBe("ping");
+
     await expect(
       page.locator('[aria-label="Latency chart"] canvas')
     ).toBeVisible({ timeout: 10_000 });

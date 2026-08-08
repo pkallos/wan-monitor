@@ -17,6 +17,25 @@ export const SpeedtestHistoryAsyncData = AsyncData.Schema(
   S.String
 );
 
+// A chart paints the window its data was fetched for. Relative presets like
+// "last30d" resolve against the wall clock, so resolving one a second time at
+// paint time yields a different absolute window — and, for ranges that grow
+// with wall-clock time, sometimes a different `granularityForRange` bucket —
+// which re-buckets the same rows onto a shifted grid.
+const TimelineWindow = S.Struct({
+  startTimeMs: S.Number,
+  endTimeMs: S.Number,
+  granularity: GranularitySchema,
+});
+
+// The speed chart's fetch requests raw rows below the speedtest aggregation
+// threshold, so its window carries no granularity in that case.
+const SpeedtestTimelineWindow = S.Struct({
+  startTimeMs: S.Number,
+  endTimeMs: S.Number,
+  maybeGranularity: S.Option(GranularitySchema),
+});
+
 const ConnectivityStatusData = S.Struct({
   points: S.Array(ConnectivityStatusPointSchema),
   uptimePercentage: S.Number,
@@ -45,7 +64,9 @@ export const Model = S.Struct({
   isPaused: S.Boolean,
   isIdle: S.Boolean,
   metrics: MetricsAsyncData.schema,
+  maybeMetricsWindow: S.Option(TimelineWindow),
   speedtestHistory: SpeedtestHistoryAsyncData.schema,
+  maybeSpeedtestWindow: S.Option(SpeedtestTimelineWindow),
   connectivityStatus: ConnectivityStatusAsyncData.schema,
   speedtestTrigger: SpeedtestTriggerAsyncData.schema,
   maybeLatencyChartHostId: S.Option(S.String),
@@ -66,7 +87,9 @@ export const initModel = (): Model => ({
   isPaused: false,
   isIdle: false,
   metrics: MetricsAsyncData.Idle(),
+  maybeMetricsWindow: Option.none(),
   speedtestHistory: SpeedtestHistoryAsyncData.Idle(),
+  maybeSpeedtestWindow: Option.none(),
   connectivityStatus: ConnectivityStatusAsyncData.Idle(),
   speedtestTrigger: SpeedtestTriggerAsyncData.Idle(),
   maybeLatencyChartHostId: Option.none(),

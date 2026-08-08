@@ -10,6 +10,9 @@ import { Toast } from "@/dashboard/toast";
 export const SucceededFetchMetrics = m("SucceededFetchMetrics", {
   metrics: S.Array(MetricSchema),
   nowMs: S.Number,
+  startTimeMs: S.Number,
+  endTimeMs: S.Number,
+  granularity: GranularitySchema,
 });
 export const FailedFetchMetrics = m("FailedFetchMetrics", {
   error: S.String,
@@ -17,7 +20,12 @@ export const FailedFetchMetrics = m("FailedFetchMetrics", {
 
 export const SucceededFetchSpeedtestHistory = m(
   "SucceededFetchSpeedtestHistory",
-  { history: S.Array(SpeedMetricSchema) }
+  {
+    history: S.Array(SpeedMetricSchema),
+    startTimeMs: S.Number,
+    endTimeMs: S.Number,
+    maybeGranularity: S.Option(GranularitySchema),
+  }
 );
 export const FailedFetchSpeedtestHistory = m("FailedFetchSpeedtestHistory", {
   error: S.String,

@@ -1,6 +1,8 @@
+import type { MetricSource } from "@wan-monitor/shared";
+
 export interface MetricRow {
   readonly timestamp: string;
-  readonly source: "ping" | "speedtest";
+  readonly source: MetricSource;
   readonly host?: string;
   readonly latency?: number;
   readonly jitter?: number;
@@ -28,6 +30,7 @@ export interface QueryMetricsParams {
   readonly host?: string;
   readonly limit?: number;
   readonly granularity?: string;
+  readonly source?: MetricSource;
 }
 
 export interface QuerySpeedtestsParams {
