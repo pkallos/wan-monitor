@@ -20,6 +20,7 @@ export type {
 } from "./api/routes/speedtest";
 export { SpeedMetricSchema } from "./api/routes/speedtest";
 export {
+  DEFAULT_GRANULARITY,
   DEGRADED_BUCKET_MIN_SHARE,
   isValidGranularity,
   LIVE_WINDOW_MIN_SECONDS,
@@ -29,3 +30,8 @@ export {
   VALID_GRANULARITIES,
 } from "./constants";
 export { mbpsToBps } from "./metrics";
+export {
+  alignTimestampToMs,
+  expectedBucketCount,
+  granularityToMs,
+} from "./timeline";

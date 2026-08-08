@@ -466,10 +466,12 @@ export const makeSpeedChartOption = ({
     (metric) => new Date(metric.timestamp).getTime(),
     Order.Number
   );
+  // Null renders as a gap rather than a plotted zero, matching how the other
+  // charts represent a reading that carries no value for their metric.
   const toPair = (
-    getValue: (metric: (typeof sorted)[number]) => number
-  ): Array<[number, number]> =>
-    Array_.map(sorted, (metric): [number, number] => [
+    getValue: (metric: (typeof sorted)[number]) => number | null
+  ): Array<[number, number | null]> =>
+    Array_.map(sorted, (metric): [number, number | null] => [
       new Date(metric.timestamp).getTime(),
       getValue(metric),
     ]);
@@ -498,7 +500,7 @@ export const makeSpeedChartOption = ({
       {
         type: "line",
         name: "Download",
-        data: toPair((metric) => metric.download_speed),
+        data: toPair((metric) => metric.download_speed ?? null),
         smooth: true,
         lineStyle: { color: COLORS.primary, width: 2 },
         areaStyle: { color: COLORS.primary, opacity: 0.1 },
@@ -506,7 +508,7 @@ export const makeSpeedChartOption = ({
       {
         type: "line",
         name: "Upload",
-        data: toPair((metric) => metric.upload_speed),
+        data: toPair((metric) => metric.upload_speed ?? null),
         smooth: true,
         lineStyle: { color: COLORS.success, width: 2 },
         areaStyle: { color: COLORS.success, opacity: 0.1 },

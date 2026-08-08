@@ -16,6 +16,7 @@ import {
   buildSegments,
   CONNECTIVITY_COLORS,
   formatSegmentLabel,
+  formatUptimeSummary,
   mergeSegments,
 } from "@/dashboard/connectivity";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
@@ -433,7 +434,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
               status.points,
               status.startTimeMs,
               status.endTimeMs,
-              status.granularity
+              status.granularity,
+              model.maybeEarliestDataMs
             )
           );
 
@@ -481,7 +483,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
             [
               h.p(
                 [h.Class("mb-4 text-sm text-gray-500 dark:text-gray-400")],
-                [`Uptime: ${status.uptimePercentage.toFixed(1)}%`]
+                [formatUptimeSummary(status)]
               ),
               h.div(
                 [h.Class("relative")],

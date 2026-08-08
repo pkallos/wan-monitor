@@ -133,9 +133,11 @@ export const getSpeedTestHistoryHandler = ({
 
     const speedMetrics: SpeedMetric[] = data.map((m) => ({
       timestamp: m.timestamp,
-      download_speed: m.download_speed ?? 0,
-      upload_speed: m.upload_speed ?? 0,
-      latency: m.latency ?? 0,
+      // Passed through as-is: a missing measurement stays missing so callers
+      // can exclude it, rather than becoming a 0 that drags averages down.
+      download_speed: m.download_speed,
+      upload_speed: m.upload_speed,
+      latency: m.latency,
       jitter: m.jitter ?? undefined,
       server_location: m.server_location ?? undefined,
       isp: m.isp ?? undefined,

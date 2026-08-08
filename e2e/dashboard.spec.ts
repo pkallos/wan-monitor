@@ -196,12 +196,13 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
       page.getByRole("img", { name: "Connectivity status timeline" })
     ).toBeVisible({ timeout: 15000 });
 
-    // Uptime is always rendered once data resolves, so assert it settled to a
-    // real, non-zero percentage rather than staying at a 0% placeholder.
-    const uptime = page.getByText(/^Uptime: \d+\.\d+%$/);
+    // Uptime is rendered once data resolves. The line may carry a coverage
+    // suffix when the seeded window is shorter than the selected range, so
+    // only the leading uptime figure is anchored.
+    const uptime = page.getByText(/^Uptime: \d+\.\d+%/);
     await expect(uptime).toBeVisible({ timeout: 15000 });
     const uptimeText = (await uptime.textContent()) ?? "";
-    const uptimePct = Number(uptimeText.match(/([\d.]+)%$/)?.[1]);
+    const uptimePct = Number(uptimeText.match(/^Uptime: ([\d.]+)%/)?.[1]);
     expect(uptimePct).toBeGreaterThan(0);
   });
 
@@ -228,15 +229,21 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     const boxBefore = await belowFold.boundingBox();
 
     // The seed only populates the last 24h within the default 30-day range,
-    // so the first segment is always the "No Data" run spanning the rest of
+    // so the first segment is always the unmeasured run spanning the rest of
     // the window - wide and reliably hoverable, unlike an arbitrary middle
     // segment, which can be a single narrow bucket easily overlapped by its
     // neighbors.
     await segments.first().hover();
 
+    // Any of the timeline's labels is acceptable here; this test is about the
+    // tooltip appearing without shifting the page. Which of the two grey
+    // labels the leading run gets depends on whether the earliest-timestamp
+    // fetch has landed, so it isn't pinned to one.
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toHaveText(/Up|Down|Degraded|No Data/);
+    await expect(tooltip).toHaveText(
+      /: (Up|Down|Degraded|No Data \(monitor offline\)|Before monitoring started)$/
+    );
 
     const boxAfter = await belowFold.boundingBox();
     expect(boxAfter).toEqual(boxBefore);

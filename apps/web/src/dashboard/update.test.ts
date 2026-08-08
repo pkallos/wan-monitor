@@ -136,7 +136,8 @@ describe("dashboard update — metrics", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -157,7 +158,8 @@ describe("dashboard update — metrics", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
@@ -210,7 +212,8 @@ describe("dashboard update — metrics", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
@@ -249,7 +252,8 @@ describe("dashboard update — metrics", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -346,7 +350,8 @@ describe("dashboard update — earliest data", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -377,7 +382,8 @@ describe("dashboard update — earliest data", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
@@ -432,7 +438,8 @@ describe("dashboard update — speedtest history", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -477,7 +484,8 @@ describe("dashboard update — connectivity status", () => {
       Story.message(
         SucceededFetchConnectivityStatus({
           points: [],
-          uptimePercentage: 99.9,
+          maybeUptimePercentage: Option.some(99.9),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
@@ -488,7 +496,8 @@ describe("dashboard update — connectivity status", () => {
           ConnectivityStatusAsyncData.Success({
             data: {
               points: [],
-              uptimePercentage: 99.9,
+              maybeUptimePercentage: Option.some(99.9),
+              coveragePercentage: 100,
               startTimeMs: 0,
               endTimeMs: 3_600_000,
               granularity: "1m",
@@ -538,7 +547,8 @@ describe("dashboard update — live connectivity", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -627,7 +637,8 @@ describe("dashboard update — live connectivity", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
@@ -665,7 +676,8 @@ describe("dashboard update — date range", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
@@ -720,7 +732,8 @@ describe("dashboard update — date range", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -776,7 +789,8 @@ describe("dashboard update — date range with no prior data", () => {
           }),
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -799,7 +813,8 @@ describe("dashboard update — manual refresh", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
@@ -851,7 +866,8 @@ describe("dashboard update — manual refresh", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",

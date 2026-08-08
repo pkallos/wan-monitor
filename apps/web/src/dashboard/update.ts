@@ -448,7 +448,8 @@ export const update = (
 
       SucceededFetchConnectivityStatus: ({
         points,
-        uptimePercentage,
+        maybeUptimePercentage,
+        coveragePercentage,
         startTimeMs,
         endTimeMs,
         granularity,
@@ -459,7 +460,8 @@ export const update = (
               model.connectivityStatus,
               Result.succeed({
                 points,
-                uptimePercentage,
+                maybeUptimePercentage,
+                coveragePercentage,
                 startTimeMs,
                 endTimeMs,
                 granularity,

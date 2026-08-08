@@ -476,6 +476,57 @@ describe("SpeedTest API Handlers", () => {
       }).pipe(Effect.provide(QuestDBTest));
     });
 
+    it.effect(
+      "passes a missing measurement through as undefined rather than 0",
+      () => {
+        // A 0 here would be indistinguishable from a measured 0 Mbps and would
+        // drag any average computed downstream toward zero.
+        const partialRow = {
+          timestamp: "2024-01-01T12:00:00Z",
+          source: "speedtest" as const,
+          download_speed: undefined,
+          upload_speed: undefined,
+          latency: undefined,
+        };
+
+        const QuestDBTest = Layer.succeed(QuestDB, {
+          ...createTestQuestDB(),
+          querySpeedtests: () => Effect.succeed([partialRow as MetricRow]),
+        });
+
+        return Effect.gen(function* () {
+          const result = yield* getSpeedTestHistoryHandler({ query: {} });
+
+          expect(result.data[0].download_speed).toBeUndefined();
+          expect(result.data[0].upload_speed).toBeUndefined();
+          expect(result.data[0].latency).toBeUndefined();
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
+
+    it.effect("preserves a measured zero instead of dropping it", () => {
+      const zeroRow = {
+        timestamp: "2024-01-01T12:00:00Z",
+        source: "speedtest" as const,
+        download_speed: 0,
+        upload_speed: 0,
+        latency: 0,
+      };
+
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createTestQuestDB(),
+        querySpeedtests: () => Effect.succeed([zeroRow as MetricRow]),
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* getSpeedTestHistoryHandler({ query: {} });
+
+        expect(result.data[0].download_speed).toBe(0);
+        expect(result.data[0].upload_speed).toBe(0);
+        expect(result.data[0].latency).toBe(0);
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
     it.effect("converts null values to undefined for optional fields", () => {
       // QuestDB returns null for missing values, while our TypeScript types use undefined.
       // This test verifies the handler correctly converts null -> undefined.

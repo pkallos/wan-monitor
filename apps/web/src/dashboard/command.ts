@@ -132,7 +132,10 @@ export const fetchConnectivityStatus = ({
     });
     return SucceededFetchConnectivityStatus({
       points: response.data,
-      uptimePercentage: response.meta.uptimePercentage,
+      maybeUptimePercentage: Option.fromNullishOr(
+        response.meta.uptimePercentage
+      ),
+      coveragePercentage: response.meta.coveragePercentage,
       startTimeMs: Date.parse(startTime),
       endTimeMs: Date.parse(endTime),
       granularity: granularityForRange(window),

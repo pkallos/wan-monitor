@@ -48,11 +48,16 @@ const SpeedTestStatusResponse = Schema.Struct({
   isRunning: Schema.Boolean,
 });
 
+/**
+ * A stored speed test reading. The three measurements are optional because a
+ * partial result is a real thing to record: absent means the value was never
+ * measured, which is distinct from a measured 0.
+ */
 export const SpeedMetricSchema = Schema.Struct({
   timestamp: Schema.String,
-  download_speed: Schema.Number,
-  upload_speed: Schema.Number,
-  latency: Schema.Number,
+  download_speed: Schema.optional(Schema.Number),
+  upload_speed: Schema.optional(Schema.Number),
+  latency: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),
   server_location: Schema.optional(Schema.String),
   isp: Schema.optional(Schema.String),

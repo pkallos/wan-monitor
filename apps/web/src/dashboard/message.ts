@@ -30,7 +30,8 @@ export const SucceededFetchConnectivityStatus = m(
   "SucceededFetchConnectivityStatus",
   {
     points: S.Array(ConnectivityStatusPointSchema),
-    uptimePercentage: S.Number,
+    maybeUptimePercentage: S.Option(S.Number),
+    coveragePercentage: S.Number,
     startTimeMs: S.Number,
     endTimeMs: S.Number,
     granularity: GranularitySchema,
