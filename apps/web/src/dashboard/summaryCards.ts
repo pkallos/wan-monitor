@@ -84,7 +84,10 @@ export const liveConnectivityCard = (
 
 const speedCard = (
   title: string,
-  history: ReadonlyArray<{ readonly value: number; readonly timestamp: string }>
+  history: ReadonlyArray<{
+    readonly value: number | undefined;
+    readonly timestamp: string;
+  }>
 ): SummaryCard =>
   Option.match(Array_.head(history), {
     onNone: () => ({
@@ -93,12 +96,22 @@ const speedCard = (
       status: Option.none(),
       subtitle: Option.none(),
     }),
-    onSome: (latest) => ({
-      title,
-      value: `${latest.value.toFixed(1)} Mbps`,
-      status: Option.some("good" as const),
-      subtitle: Option.some(formatTimeAgo(latest.timestamp)),
-    }),
+    // A reading can exist without this particular measurement, so an absent
+    // value renders as the same placeholder an absent reading does.
+    onSome: (latest) =>
+      latest.value === undefined
+        ? {
+            title,
+            value: "- Mbps",
+            status: Option.none(),
+            subtitle: Option.some(formatTimeAgo(latest.timestamp)),
+          }
+        : {
+            title,
+            value: `${latest.value.toFixed(1)} Mbps`,
+            status: Option.some("good" as const),
+            subtitle: Option.some(formatTimeAgo(latest.timestamp)),
+          },
   });
 
 export const downloadSpeedCard = (
@@ -128,13 +141,22 @@ export interface NetworkInfo {
   readonly maybeExternalIp: Option.Option<string>;
 }
 
+/** Reads from the newest sample that actually carries an ISP, so a failed
+ *  speed test — which records a row with no ISP — doesn't blank the header
+ *  while a good reading from an hour earlier is still on hand. */
 export const networkInfo = (
   history: ReadonlyArray<Pick<SpeedMetric, "isp" | "external_ip">>
 ): NetworkInfo =>
-  Option.match(Array_.head(history), {
-    onNone: () => ({ isp: "Unknown ISP", maybeExternalIp: Option.none() }),
-    onSome: (latest) => ({
-      isp: latest.isp ?? "Unknown ISP",
-      maybeExternalIp: Option.fromNullishOr(latest.external_ip),
-    }),
-  });
+  Option.match(
+    Array_.findFirst(
+      history,
+      (sample) => sample.isp !== undefined && sample.isp.length > 0
+    ),
+    {
+      onNone: () => ({ isp: "Unknown ISP", maybeExternalIp: Option.none() }),
+      onSome: (latest) => ({
+        isp: latest.isp ?? "Unknown ISP",
+        maybeExternalIp: Option.fromNullishOr(latest.external_ip),
+      }),
+    }
+  );

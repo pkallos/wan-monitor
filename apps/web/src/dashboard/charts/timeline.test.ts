@@ -1,3 +1,5 @@
+import type { Granularity } from "@shared/api/routes/metrics";
+import { expectedBucketCount } from "@shared/timeline";
 import { Option } from "effect";
 import { describe, expect, test } from "vitest";
 import {
@@ -81,5 +83,55 @@ describe("fillTimeline", () => {
   test("is empty when the range doesn't span a full interval", () => {
     const result = fillTimeline([], startMs, startMs, "5m");
     expect(result).toEqual([]);
+  });
+});
+
+describe("expectedBucketCount agrees with fillTimeline", () => {
+  // The server reports coverage as observed buckets over `expectedBucketCount`,
+  // while the chart lays out one slot per `fillTimeline` entry. If these two
+  // ever disagreed, coverage could exceed 100% or silently under-report, so
+  // this equivalence is asserted directly rather than assumed.
+  const granularities: ReadonlyArray<Granularity> = [
+    "1m",
+    "5m",
+    "15m",
+    "1h",
+    "6h",
+    "1d",
+  ];
+
+  const base = Date.parse("2026-07-26T10:03:17.500Z");
+  const spansMs = [
+    0,
+    -3_600_000,
+    60_000,
+    12 * 60_000,
+    15 * 60_000,
+    90 * 60_000,
+    24 * 3_600_000,
+    7 * 24 * 3_600_000,
+    30 * 24 * 3_600_000 + 137_000,
+  ];
+
+  for (const granularity of granularities) {
+    for (const spanMs of spansMs) {
+      test(`${granularity} over ${spanMs}ms`, () => {
+        const endMs = base + spanMs;
+        expect(expectedBucketCount(base, endMs, granularity)).toBe(
+          fillTimeline([], base, endMs, granularity).length
+        );
+      });
+    }
+  }
+
+  test("agrees when the range starts exactly on a bucket boundary", () => {
+    const aligned = Date.parse("2026-07-26T00:00:00.000Z");
+
+    for (const granularity of granularities) {
+      const endMs = aligned + 24 * 3_600_000;
+      expect(expectedBucketCount(aligned, endMs, granularity)).toBe(
+        fillTimeline([], aligned, endMs, granularity).length
+      );
+    }
   });
 });

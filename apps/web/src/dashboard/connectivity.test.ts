@@ -1,8 +1,10 @@
+import { Option } from "effect";
 import { describe, expect, test } from "vitest";
 import {
   buildSegments,
   CONNECTIVITY_LABELS,
   formatSegmentLabel,
+  formatUptimeSummary,
   mergeSegments,
 } from "@/dashboard/connectivity";
 
@@ -11,7 +13,7 @@ describe("buildSegments", () => {
   const endMs = Date.parse("2026-07-26T10:15:00.000Z");
 
   test("fills gaps in the window with noInfo segments", () => {
-    const result = buildSegments([], startMs, endMs, "5m");
+    const result = buildSegments([], startMs, endMs, "5m", Option.none());
 
     expect(result).toEqual([
       { timestampMs: startMs, status: "noInfo", count: 1 },
@@ -33,7 +35,8 @@ describe("buildSegments", () => {
       ],
       startMs,
       endMs,
-      "5m"
+      "5m",
+      Option.none()
     );
 
     expect(result[0]).toEqual({
@@ -56,7 +59,8 @@ describe("buildSegments", () => {
       ],
       startMs,
       endMs,
-      "5m"
+      "5m",
+      Option.none()
     );
 
     expect(result[0]).toEqual({
@@ -79,10 +83,125 @@ describe("buildSegments", () => {
       ],
       startMs,
       endMs,
-      "5m"
+      "5m",
+      Option.none()
     );
 
     expect(result[0]).toEqual({ timestampMs: startMs, status: "up", count: 1 });
+  });
+
+  test("marks slots before the first ever sample as notMonitored", () => {
+    // Monitoring began in the third slot, so the two before it describe a
+    // period nobody was watching, not a period the monitor went quiet.
+    const result = buildSegments(
+      [],
+      startMs,
+      endMs,
+      "5m",
+      Option.some(startMs + 600_000)
+    );
+
+    expect(result).toEqual([
+      { timestampMs: startMs, status: "notMonitored", count: 1 },
+      { timestampMs: startMs + 300_000, status: "notMonitored", count: 1 },
+      { timestampMs: startMs + 600_000, status: "noInfo", count: 1 },
+    ]);
+  });
+
+  test("counts the slot holding the first sample as monitored", () => {
+    // The first sample landed mid-slot; that slot was monitored, so it reads
+    // as a gap in monitoring rather than as pre-history.
+    const result = buildSegments(
+      [],
+      startMs,
+      endMs,
+      "5m",
+      Option.some(startMs + 120_000)
+    );
+
+    expect(result[0].status).toBe("noInfo");
+  });
+
+  test("treats gaps after monitoring started as noInfo, not notMonitored", () => {
+    const result = buildSegments(
+      [],
+      startMs,
+      endMs,
+      "5m",
+      Option.some(startMs - 86_400_000)
+    );
+
+    expect(result.map((segment) => segment.status)).toEqual([
+      "noInfo",
+      "noInfo",
+      "noInfo",
+    ]);
+  });
+
+  test("falls back to noInfo for every slot when nothing was ever recorded", () => {
+    const result = buildSegments([], startMs, endMs, "5m", Option.none());
+
+    expect(result.every((segment) => segment.status === "noInfo")).toBe(true);
+  });
+
+  test("never overrides a real reading with notMonitored", () => {
+    const result = buildSegments(
+      [
+        {
+          timestamp: "2026-07-26T10:00:00.000Z",
+          status: "down",
+          upPercentage: 0,
+          downPercentage: 100,
+          degradedPercentage: 0,
+        },
+      ],
+      startMs,
+      endMs,
+      "5m",
+      Option.some(startMs + 600_000)
+    );
+
+    expect(result[0].status).toBe("down");
+  });
+});
+
+describe("formatUptimeSummary", () => {
+  test("says there is no data rather than reporting 0% uptime", () => {
+    expect(
+      formatUptimeSummary({
+        maybeUptimePercentage: Option.none(),
+        coveragePercentage: 0,
+      })
+    ).toBe("Uptime: no data for this period");
+  });
+
+  test("reports uptime alone when the window was fully covered", () => {
+    expect(
+      formatUptimeSummary({
+        maybeUptimePercentage: Option.some(99.94),
+        coveragePercentage: 100,
+      })
+    ).toBe("Uptime: 99.9%");
+  });
+
+  test("qualifies uptime with coverage when the monitor missed part of the window", () => {
+    expect(
+      formatUptimeSummary({
+        maybeUptimePercentage: Option.some(100),
+        coveragePercentage: 4.1666,
+      })
+    ).toBe("Uptime: 100.0% — over 4.2% of the window");
+  });
+
+  test("suppresses the suffix when coverage rounds to a full window", () => {
+    // 99.96% renders as "100.0%", so claiming a shortfall would contradict the
+    // number shown next to it.
+    expect(
+      formatUptimeSummary({
+        maybeUptimePercentage: Option.some(100),
+        coveragePercentage: 99.96,
+      })
+    ).toBe("Uptime: 100.0%");
   });
 });
 

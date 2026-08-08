@@ -1,4 +1,5 @@
 import {
+  DEFAULT_GRANULARITY,
   isValidGranularity,
   PACKET_LOSS_THRESHOLDS,
 } from "@wan-monitor/shared";
@@ -261,7 +262,7 @@ export const buildQueryConnectivityStatus = (
       new Date(Date.now() - 86400000).toISOString();
     const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
 
-    const granularity = params.granularity ?? "5m";
+    const granularity = params.granularity ?? DEFAULT_GRANULARITY;
     if (!isValidGranularity(granularity)) {
       return yield* Effect.fail(
         new DatabaseQueryError({
@@ -276,6 +277,12 @@ export const buildQueryConnectivityStatus = (
     // states via `CYCLE_STATUS_CASE`, then the outer query buckets cycles by
     // granularity. `up_count + degraded_count + down_count` always equals
     // `total_count` for every output bucket.
+    //
+    // `ALIGN TO CALENDAR` pins bucket boundaries to epoch-floored intervals,
+    // matching `expectedBucketCount`'s alignment so the coverage ratio compares
+    // two counts of the same grid. Buckets with no ping cycles are absent from
+    // the result rather than zero-filled, which is what makes a missing bucket
+    // readable as "the collector wasn't running".
     const query = `
         SELECT
           bucket_ts as timestamp,
@@ -294,7 +301,7 @@ export const buildQueryConnectivityStatus = (
           SAMPLE BY 1s
           )
         )
-        SAMPLE BY ${granularity}
+        SAMPLE BY ${granularity} ALIGN TO CALENDAR
         ORDER BY timestamp ASC
       `;
 

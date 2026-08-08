@@ -23,12 +23,14 @@ export const mapMetricRow = (row: Record<string, unknown>): MetricRow =>
         ? (row.packet_loss as number)
         : undefined,
     connectivity_status: row.connectivity_status as string | undefined,
-    download_speed: row.download_bandwidth
-      ? (row.download_bandwidth as number) / 1_000_000
-      : undefined,
-    upload_speed: row.upload_bandwidth
-      ? (row.upload_bandwidth as number) / 1_000_000
-      : undefined,
+    download_speed:
+      row.download_bandwidth !== null && row.download_bandwidth !== undefined
+        ? (row.download_bandwidth as number) / 1_000_000
+        : undefined,
+    upload_speed:
+      row.upload_bandwidth !== null && row.upload_bandwidth !== undefined
+        ? (row.upload_bandwidth as number) / 1_000_000
+        : undefined,
     server_location:
       row.server_location !== null && row.server_location !== undefined
         ? (row.server_location as string)

@@ -11,8 +11,11 @@ import { expect, test } from "@playwright/test";
  *
  * The stubbed bodies match what the server returns for an empty table (see
  * `getConnectivityStatusHandler`: zero rows yields `data: []` with
- * `uptimePercentage` and `availabilityPercentage` both 0), so this drives the
- * same frontend code path a real empty database would. Stubbing also holds the
+ * `uptimePercentage` and `availabilityPercentage` null and zero coverage), so
+ * this drives the same frontend code path a real empty database would. Keep
+ * the stubbed meta in sync with `ConnectivityStatusMeta`; a missing field
+ * fails decoding and the dashboard renders the error branch instead of the
+ * empty state this spec is about. Stubbing also holds the
  * window empty for the whole test: the live monitor writes a ping row every 30s
  * (PING_INTERVAL_SECONDS), which against the real table would drift into the
  * tail of the window mid-assertion.
@@ -56,8 +59,13 @@ test.describe("Empty database first run", () => {
           data: [],
           meta: {
             ...emptyMeta,
-            uptimePercentage: 0,
-            availabilityPercentage: 0,
+            uptimePercentage: null,
+            availabilityPercentage: null,
+            expectedBuckets: 288,
+            observedBuckets: 0,
+            coveragePercentage: 0,
+            observedCycles: 0,
+            expectedSampleIntervalSeconds: 30,
           },
         })
       )
@@ -138,9 +146,12 @@ test.describe("Empty database first run", () => {
       page.getByRole("img", { name: "Connectivity status timeline" })
     ).toBeVisible({ timeout: 15_000 });
 
-    // Uptime renders (rather than staying on the loading placeholder) even
-    // with an empty denominator.
-    await expect(page.getByText("Uptime: 0.0%")).toBeVisible();
+    // An empty database means nothing was ever measured. Reporting that as
+    // 0.0% would claim a total outage over a window nobody was watching.
+    await expect(
+      page.getByText("Uptime: no data for this period")
+    ).toBeVisible();
+    await expect(page.getByText(/^Uptime: \d/)).toHaveCount(0);
 
     // Every slot gap-fills to the same `noInfo` status, so the whole window
     // merges down to exactly one bar.
@@ -151,6 +162,8 @@ test.describe("Empty database first run", () => {
     await page.getByTestId("connectivity-segment-0").hover();
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toHaveText(/No Data$/);
+    // The monitor never ran during this window, which the label distinguishes
+    // from the link having been down.
+    await expect(tooltip).toHaveText(/No Data \(monitor offline\)$/);
   });
 });

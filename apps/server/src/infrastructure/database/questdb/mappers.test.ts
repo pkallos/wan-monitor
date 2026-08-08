@@ -108,6 +108,22 @@ describe("mapMetricRow", () => {
     expect(result.connectivity_status).toBeUndefined();
   });
 
+  it("should keep a genuine zero bandwidth reading as 0, not undefined", () => {
+    const row: Record<string, unknown> = {
+      timestamp: "2024-01-01T12:00:00.000Z",
+      source: "speedtest",
+      download_bandwidth: 0,
+      upload_bandwidth: 0,
+    };
+
+    const result = mapMetricRow(row);
+
+    // A measured 0 Mbps is a real observation (a dead link during a speed
+    // test); collapsing it to undefined would report it as "no data".
+    expect(result.download_speed).toBe(0);
+    expect(result.upload_speed).toBe(0);
+  });
+
   it("should convert bandwidth from bps to mbps", () => {
     const row: Record<string, unknown> = {
       timestamp: "2024-01-01T12:00:00.000Z",
@@ -120,20 +136,6 @@ describe("mapMetricRow", () => {
 
     expect(result.download_speed).toBe(125);
     expect(result.upload_speed).toBe(25);
-  });
-
-  it("should handle zero bandwidth as undefined (falsy check)", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "speedtest",
-      download_bandwidth: 0,
-      upload_bandwidth: 0,
-    };
-
-    const result = mapMetricRow(row);
-
-    expect(result.download_speed).toBeUndefined();
-    expect(result.upload_speed).toBeUndefined();
   });
 
   it("should handle missing bandwidth fields", () => {

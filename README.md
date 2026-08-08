@@ -162,6 +162,14 @@ The **uptime percentage** is deliberately "clean up only": it counts strictly *u
 
 The **Connectivity card** at the top of the dashboard answers "is the link up right now" and is independent of the selected date range. It reports the newest ping cycle inside a trailing window of two ping intervals (60 seconds at the default `PING_INTERVAL_SECONDS`, never shorter than 60 seconds). An empty window reads as grey **No Data** with the time the monitor last reported — that means the monitoring process isn't running, which is a different fact from the internet being down.
 
+### Data gaps vs. outages
+
+A failed ping still records a row, with 100% packet loss and a `down` status. So an outage leaves a trail of data, and a stretch of time with no ping rows at all means something else: the monitor wasn't running. The dashboard keeps those two apart everywhere it can.
+
+Uptime is measured only over the periods that were actually monitored. Alongside it the API reports a **coverage percentage** — how much of the selected window contains ping data — and the dashboard appends it to the uptime line whenever it falls short of the full window. A window with no data at all reports no uptime figure at all, rather than 0%.
+
+On the connectivity timeline the two grey shades mean different things. **No Data (monitor offline)** is a gap after monitoring had already started. **Before monitoring started** is the stretch that predates the first sample in the database.
+
 **Date Range**: a calendar picker with presets — last 7 days, last 30 days, month to date, quarter to date, year to date, last 12 months, all time — plus a two-month calendar for picking an arbitrary start and end day.
 
 Charts support linked cursors (hovering on one chart highlights the same time on others) and automatic data aggregation: the bucket size is derived from the selected range's span, from 1-minute buckets for a range of 6 hours or less up to 1-day buckets beyond 90 days.
@@ -174,6 +182,9 @@ This tool monitors your internet connection **from the device running the contai
 - **Speed tests use bandwidth**: Each hourly speed test consumes actual bandwidth. On metered connections, consider increasing `SPEEDTEST_INTERVAL_SECONDS`.
 - **Single vantage point**: This monitors from one location. It won't detect issues that only affect specific routes or destinations.
 - **Designed for home/small office use**: Not intended for enterprise network monitoring.
+- **Uptime is conditional on coverage**: A monitor that ran for one hour out of twenty-four can honestly report 100% uptime over roughly 4% coverage. Read the two numbers together; uptime alone says nothing about how much of the window it covers.
+- **A stopped monitor leaves a gap, not an outage**: Time when the monitor wasn't running can't be backfilled, and it isn't counted as downtime.
+- **A monitor that can't reach the database looks the same as a stopped one**: Both produce no rows, so the dashboard can't tell them apart.
 
 ## Development Setup
 

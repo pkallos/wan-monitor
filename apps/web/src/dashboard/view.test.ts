@@ -393,7 +393,8 @@ describe("dashboard view", () => {
         error: "network error",
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m" as const,
@@ -434,7 +435,8 @@ describe("dashboard view", () => {
               degradedPercentage: 20,
             },
           ],
-          uptimePercentage: 50,
+          maybeUptimePercentage: Option.some(50),
+          coveragePercentage: 100,
           startTimeMs,
           endTimeMs: startTimeMs + 10 * 60 * 1000,
           granularity: "5m" as const,
@@ -476,7 +478,8 @@ describe("dashboard view", () => {
               degradedPercentage: 20,
             },
           ],
-          uptimePercentage: 50,
+          maybeUptimePercentage: Option.some(50),
+          coveragePercentage: 100,
           startTimeMs,
           endTimeMs: startTimeMs + 10 * 60 * 1000,
           granularity: "5m" as const,
@@ -601,7 +604,8 @@ describe("dashboard view", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m" as const,
@@ -652,7 +656,8 @@ describe("dashboard view", () => {
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
             points: [],
-            uptimePercentage: 100,
+            maybeUptimePercentage: Option.some(100),
+            coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -725,7 +730,8 @@ describe("dashboard view", () => {
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [],
-          uptimePercentage: 100,
+          maybeUptimePercentage: Option.some(100),
+          coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m" as const,
@@ -795,7 +801,8 @@ describe("dashboard view", () => {
             FetchConnectivityStatus,
             SucceededFetchConnectivityStatus({
               points: [],
-              uptimePercentage: 100,
+              maybeUptimePercentage: Option.some(100),
+              coveragePercentage: 100,
               startTimeMs: 0,
               endTimeMs: 3_600_000,
               granularity: "1m",

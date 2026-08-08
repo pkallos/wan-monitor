@@ -416,6 +416,11 @@ describe("fetchConnectivityStatus", () => {
             count: 1,
             uptimePercentage: 99.9,
             availabilityPercentage: 99.9,
+            expectedBuckets: 60,
+            observedBuckets: 60,
+            coveragePercentage: 100,
+            observedCycles: 120,
+            expectedSampleIntervalSeconds: 30,
           },
         })
       ),
@@ -433,12 +438,44 @@ describe("fetchConnectivityStatus", () => {
           degradedPercentage: 0,
         },
       ],
-      uptimePercentage: 99.9,
+      maybeUptimePercentage: Option.some(99.9),
+      coveragePercentage: 100,
       granularity: "1m",
     });
     if (result._tag === "SucceededFetchConnectivityStatus") {
       expect(result.endTimeMs - result.startTimeMs).toBeCloseTo(60 * 60 * 1000);
     }
+  });
+
+  test("decodes a null uptime into None rather than defaulting it to 0", async () => {
+    const result = await fetchConnectivityStatus({
+      token: "abc",
+      dateRange: ONE_HOUR_RANGE,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          data: [],
+          meta: {
+            startTime: "2026-07-26T00:00:00.000Z",
+            endTime: "2026-07-26T01:00:00.000Z",
+            count: 0,
+            uptimePercentage: null,
+            availabilityPercentage: null,
+            expectedBuckets: 60,
+            observedBuckets: 0,
+            coveragePercentage: 0,
+            observedCycles: 0,
+            expectedSampleIntervalSeconds: 30,
+          },
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toMatchObject({
+      maybeUptimePercentage: Option.none(),
+      coveragePercentage: 0,
+    });
   });
 
   test("maps a DB_UNAVAILABLE response into a distinguishable, friendly message", async () => {

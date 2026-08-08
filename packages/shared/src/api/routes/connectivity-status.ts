@@ -44,10 +44,31 @@ const ConnectivityStatusMeta = Schema.Struct({
   startTime: Schema.String,
   endTime: Schema.String,
   count: Schema.Number,
-  /** Strictly `up` cycles over all cycles; degraded cycles count against it. */
-  uptimePercentage: Schema.Number,
-  /** `up` + `degraded` cycles over all cycles — reachable-but-lossy counts as available. */
-  availabilityPercentage: Schema.Number,
+  /**
+   * Strictly `up` cycles over all cycles; degraded cycles count against it.
+   * Null when the window contains no ping cycles at all: nothing was watching,
+   * so the question is unanswerable rather than answered with 0%.
+   */
+  uptimePercentage: Schema.NullOr(Schema.Number),
+  /**
+   * `up` + `degraded` cycles over all cycles — reachable-but-lossy counts as
+   * available. Null under the same no-data condition as `uptimePercentage`.
+   */
+  availabilityPercentage: Schema.NullOr(Schema.Number),
+  /** Buckets the requested window spans at the requested granularity. */
+  expectedBuckets: Schema.Number,
+  /** Buckets that actually contain ping cycles. Never exceeds `expectedBuckets`. */
+  observedBuckets: Schema.Number,
+  /**
+   * `observedBuckets` over `expectedBuckets`, as a percentage. How much of the
+   * window the monitor was running for, which is the denominator the uptime
+   * figure is conditional on.
+   */
+  coveragePercentage: Schema.Number,
+  /** Ping cycles observed across the window — the uptime denominator. */
+  observedCycles: Schema.Number,
+  /** Configured seconds between ping cycles, so callers can judge the gap size. */
+  expectedSampleIntervalSeconds: Schema.Number,
 });
 
 const ConnectivityStatusResponse = Schema.Struct({

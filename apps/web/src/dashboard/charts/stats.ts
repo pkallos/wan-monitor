@@ -1,8 +1,11 @@
 import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
+import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
 import { Array as Array_ } from "effect";
 
-const isPositiveNumber = (value: number | undefined): value is number =>
+// Zero is a valid reading for every metric here (0% packet loss, 0ms-adjacent
+// latency), so the guard admits it.
+const isFiniteNonNegative = (value: number | undefined): value is number =>
   value !== undefined && value >= 0;
 
 const average = (values: Array_.NonEmptyReadonlyArray<number>): number =>
@@ -24,7 +27,7 @@ export const calculateLatencyStats = (
   Array_.match(
     Array_.filter(
       Array_.map(data, (d) => d.latency),
-      isPositiveNumber
+      isFiniteNonNegative
     ),
     {
       onEmpty: () => ({ current: "-", avg: "-", min: "-", max: "-" }),
@@ -44,15 +47,13 @@ export interface PacketLossStats {
   readonly spikes: number;
 }
 
-const PACKET_LOSS_SPIKE_THRESHOLD = 5;
-
 export const calculatePacketLossStats = (
   data: ReadonlyArray<Pick<Metric, "packet_loss">>
 ): PacketLossStats =>
   Array_.match(
     Array_.filter(
       Array_.map(data, (d) => d.packet_loss),
-      isPositiveNumber
+      isFiniteNonNegative
     ),
     {
       onEmpty: () => ({ current: "-", avg: "-", max: "-", spikes: 0 }),
@@ -60,9 +61,12 @@ export const calculatePacketLossStats = (
         current: Array_.lastNonEmpty(losses).toFixed(1),
         avg: average(losses).toFixed(1),
         max: max(losses).toFixed(1),
+        // Same threshold and same comparison as the connectivity SQL's
+        // degraded floor, so a reading the timeline calls degraded is the one
+        // this panel calls a spike.
         spikes: Array_.filter(
           losses,
-          (loss) => loss > PACKET_LOSS_SPIKE_THRESHOLD
+          (loss) => loss >= PACKET_LOSS_THRESHOLDS.degradedFloor
         ).length,
       }),
     }
@@ -80,7 +84,7 @@ export const calculateJitterStats = (
   Array_.match(
     Array_.filter(
       Array_.map(data, (d) => d.jitter),
-      isPositiveNumber
+      isFiniteNonNegative
     ),
     {
       onEmpty: () => ({ current: "-", avg: "-", stability: "-" }),
@@ -113,11 +117,14 @@ export interface SpeedStats {
   readonly maxUpload: string;
 }
 
+// A series with no readings has no average, so it reads as "-" on its own
+// terms — the download and upload series are summarized independently and one
+// having data says nothing about the other.
 const summarize = (
   values: ReadonlyArray<number>
 ): { readonly avg: string; readonly max: string } =>
   Array_.match(values, {
-    onEmpty: () => ({ avg: "0.0", max: "0.0" }),
+    onEmpty: () => ({ avg: "-", max: "-" }),
     onNonEmpty: (nonEmpty) => ({
       avg: average(nonEmpty).toFixed(1),
       max: max(nonEmpty).toFixed(1),
@@ -129,21 +136,12 @@ export const calculateSpeedStats = (
 ): SpeedStats => {
   const downloads = Array_.filter(
     Array_.map(data, (d) => d.download_speed),
-    isPositiveNumber
+    isFiniteNonNegative
   );
   const uploads = Array_.filter(
     Array_.map(data, (d) => d.upload_speed),
-    isPositiveNumber
+    isFiniteNonNegative
   );
-
-  if (downloads.length === 0 && uploads.length === 0) {
-    return {
-      avgDownload: "-",
-      avgUpload: "-",
-      maxDownload: "-",
-      maxUpload: "-",
-    };
-  }
 
   const downloadSummary = summarize(downloads);
   const uploadSummary = summarize(uploads);

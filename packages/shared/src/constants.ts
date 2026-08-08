@@ -13,6 +13,13 @@ export const isValidGranularity = (value: string): value is Granularity =>
   VALID_GRANULARITIES.some((granularity) => granularity === value);
 
 /**
+ * Granularity used when a request doesn't name one. The connectivity handler
+ * and the SQL builder both read it, so the bucket grid coverage is measured
+ * against is the grid the query actually sampled over.
+ */
+export const DEFAULT_GRANULARITY: Granularity = "5m";
+
+/**
  * Packet-loss classification thresholds (percentages).
  *
  * Single source of truth for connectivity classification. The backend SQL in

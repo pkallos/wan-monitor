@@ -106,7 +106,8 @@ const resolveDashboardEntry = (token: string) =>
       }),
       SucceededFetchConnectivityStatus({
         points: [],
-        uptimePercentage: 100,
+        maybeUptimePercentage: Option.some(100),
+        coveragePercentage: 100,
         startTimeMs: 0,
         endTimeMs: 3_600_000,
         granularity: "1m",

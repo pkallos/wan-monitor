@@ -1,5 +1,5 @@
 import type { NetworkMetric } from "@shared/metrics";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { getConnectivityStatusHandler } from "@/core/api/handlers/connectivity-status";
 import { seedDatabase } from "@/infrastructure/database/questdb/test-utils/seed";
@@ -9,6 +9,7 @@ import {
   setupIntegrationTest,
   teardownIntegrationTest,
 } from "@/infrastructure/database/questdb/test-utils/setup";
+import { makeTestConfigLayer } from "@/test/config";
 
 /**
  * Integration tests for /connectivity-status endpoint
@@ -18,7 +19,9 @@ import {
  */
 describe("Connectivity Status Integration Tests", () => {
   const skipTests = !isQuestDBAvailable();
-  const testLayer = createTestLayer();
+  // The handler reads the ping interval to report it alongside coverage, so
+  // the config service is provided next to the live database layer.
+  const testLayer = Layer.mergeAll(createTestLayer(), makeTestConfigLayer());
 
   /**
    * Creates deterministic connectivity status test data for a 30-minute window.

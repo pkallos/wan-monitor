@@ -1,25 +1,8 @@
 import type { Granularity } from "@shared/api/routes/metrics";
+import { alignTimestampToMs, granularityToMs } from "@shared/timeline";
 import { Array as Array_, Option } from "effect";
 
-const GRANULARITY_MS: Record<Granularity, number> = {
-  "1m": 60 * 1000,
-  "5m": 5 * 60 * 1000,
-  "15m": 15 * 60 * 1000,
-  "1h": 60 * 60 * 1000,
-  "6h": 6 * 60 * 60 * 1000,
-  "1d": 24 * 60 * 60 * 1000,
-};
-
-export const granularityToMs = (granularity: Granularity): number =>
-  GRANULARITY_MS[granularity];
-
-export const alignTimestampToMs = (
-  timestampMs: number,
-  granularity: Granularity
-): number => {
-  const intervalMs = granularityToMs(granularity);
-  return Math.floor(timestampMs / intervalMs) * intervalMs;
-};
+export { alignTimestampToMs, granularityToMs };
 
 export interface TimelineSlot<A> {
   readonly timestamp: number;

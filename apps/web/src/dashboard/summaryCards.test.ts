@@ -145,6 +145,46 @@ describe("uploadSpeedCard", () => {
   });
 });
 
+describe("speed cards with missing measurements", () => {
+  test("renders a placeholder when the newest reading has no download speed", () => {
+    const card = downloadSpeedCard([
+      { download_speed: undefined, timestamp: "2026-01-01T00:00:00.000Z" },
+    ]);
+
+    // A reading with no download figure is not a 0 Mbps result.
+    expect(card.value).toBe("- Mbps");
+    expect(card.status).toEqual(Option.none());
+  });
+
+  test("renders a placeholder when the newest reading has no upload speed", () => {
+    const card = uploadSpeedCard([
+      { upload_speed: undefined, timestamp: "2026-01-01T00:00:00.000Z" },
+    ]);
+
+    expect(card.value).toBe("- Mbps");
+    expect(card.status).toEqual(Option.none());
+  });
+
+  test("still reports when the measurement was taken", () => {
+    const card = downloadSpeedCard([
+      { download_speed: undefined, timestamp: new Date().toISOString() },
+    ]);
+
+    expect(Option.getOrElse(card.subtitle, () => "")).toMatch(
+      /^as of \d+s ago$/
+    );
+  });
+
+  test("keeps a genuine zero reading distinct from a missing one", () => {
+    const card = downloadSpeedCard([
+      { download_speed: 0, timestamp: "2026-01-01T00:00:00.000Z" },
+    ]);
+
+    expect(card.value).toBe("0.0 Mbps");
+    expect(card.status).toEqual(Option.some("good"));
+  });
+});
+
 describe("networkInfo", () => {
   test("reports the most recent sample's ISP and external IP", () => {
     expect(
@@ -167,5 +207,34 @@ describe("networkInfo", () => {
       isp: "Unknown ISP",
       maybeExternalIp: Option.none(),
     });
+  });
+
+  test("skips a newer sample that carries no ISP", () => {
+    // A failed speed test records a row without ISP details. The last known
+    // good reading is still the truth about which network this is.
+    expect(
+      networkInfo([
+        { isp: undefined, external_ip: undefined },
+        { isp: "Comcast", external_ip: "1.2.3.4" },
+      ])
+    ).toEqual({ isp: "Comcast", maybeExternalIp: Option.some("1.2.3.4") });
+  });
+
+  test("skips a newer sample whose ISP is blank", () => {
+    expect(
+      networkInfo([
+        { isp: "", external_ip: undefined },
+        { isp: "Comcast", external_ip: "1.2.3.4" },
+      ])
+    ).toEqual({ isp: "Comcast", maybeExternalIp: Option.some("1.2.3.4") });
+  });
+
+  test("falls back to Unknown ISP when no sample has one", () => {
+    expect(
+      networkInfo([
+        { isp: undefined, external_ip: "1.2.3.4" },
+        { isp: undefined, external_ip: "5.6.7.8" },
+      ])
+    ).toEqual({ isp: "Unknown ISP", maybeExternalIp: Option.none() });
   });
 });
