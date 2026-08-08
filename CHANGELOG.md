@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.2.1...wan-monitor-v1.2.2) (2026-08-08)
+
+
+### Bug Fixes
+
+* keep one row per metrics bucket and paint the window that was fetched ([#279](https://github.com/pkallos/wan-monitor/issues/279)) ([d8609e6](https://github.com/pkallos/wan-monitor/commit/d8609e6aeedc311f4850b07a6c4ed05b5a11806b))
+* **server,web:** stop reporting data gaps as internet outages ([#280](https://github.com/pkallos/wan-monitor/issues/280)) ([18eb5d3](https://github.com/pkallos/wan-monitor/commit/18eb5d30671ee56cbc5b6cd5e9810f4ef3f7ff7e))
+
 ## [1.2.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.2.0...wan-monitor-v1.2.1) (2026-08-04)
 
 
