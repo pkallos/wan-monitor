@@ -78,6 +78,32 @@ import { update } from "@/dashboard/update";
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 
+// A fetch resolves its window once and carries the result on its success
+// message, so a chart sync is driven by that stored window rather than by
+// re-resolving `DEFAULT_DATE_RANGE`.
+const METRICS_WINDOW = {
+  startTimeMs: NOW_MS - 30 * 24 * 60 * 60 * 1000,
+  endTimeMs: NOW_MS,
+  granularity: "1h" as const,
+};
+const SPEEDTEST_WINDOW = {
+  startTimeMs: METRICS_WINDOW.startTimeMs,
+  endTimeMs: METRICS_WINDOW.endTimeMs,
+};
+
+const succeededFetchMetrics = () =>
+  SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW });
+const succeededFetchSpeedtestHistory = () =>
+  SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW });
+
+// A model that has already settled a metrics fetch: data plus the window it
+// was fetched for, which is what gates a chart sync.
+const withLoadedWindows = (model: ReturnType<typeof initModel>) => ({
+  ...model,
+  maybeMetricsWindow: Option.some(METRICS_WINDOW),
+  maybeSpeedtestWindow: Option.some(SPEEDTEST_WINDOW),
+});
+
 const context = { token: "abc123", now: () => NOW_MS };
 const withContext = (
   model: ReturnType<typeof initModel>,
@@ -127,11 +153,8 @@ describe("dashboard update — metrics", () => {
         expect(model.metrics._tag).toBe("Loading");
       }),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
@@ -196,10 +219,7 @@ describe("dashboard update — metrics", () => {
       Story.model((model) => {
         expect(model.metrics._tag).toBe("Refreshing");
       }),
-      Story.Command.resolve(
-        FetchMetrics,
-        SucceededFetchMetrics({ metrics: [], nowMs: 0 })
-      )
+      Story.Command.resolve(FetchMetrics, succeededFetchMetrics())
     );
   });
 
@@ -241,10 +261,7 @@ describe("dashboard update — metrics", () => {
         expect(model.connectivityStatus._tag).toBe("Refreshing");
       }),
       Story.Command.resolveAll(
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
@@ -288,7 +305,7 @@ describe("dashboard update — metrics", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
+      Story.message(succeededFetchMetrics()),
       Story.model((model) => {
         expect(model.metrics).toEqual(MetricsAsyncData.Success({ data: [] }));
       })
@@ -337,11 +354,8 @@ describe("dashboard update — earliest data", () => {
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(FetchEarliestData({ token: "abc123" })),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
@@ -423,11 +437,8 @@ describe("dashboard update — speedtest history", () => {
         })
       ),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
@@ -529,11 +540,8 @@ describe("dashboard update — live connectivity", () => {
         expect(model.liveConnectivity._tag).toBe("Loading");
       }),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
@@ -711,11 +719,8 @@ describe("dashboard update — date range", () => {
         })
       ),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
@@ -758,7 +763,7 @@ describe("dashboard update — date range with no prior data", () => {
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           }),
-          SucceededFetchMetrics({ metrics: [], nowMs: 0 }),
+          succeededFetchMetrics(),
         ],
         [
           FetchSpeedtestHistory({
@@ -766,7 +771,7 @@ describe("dashboard update — date range with no prior data", () => {
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           }),
-          SucceededFetchSpeedtestHistory({ history: [] }),
+          succeededFetchSpeedtestHistory(),
         ],
         [
           FetchConnectivityStatus({
@@ -842,11 +847,8 @@ describe("dashboard update — manual refresh", () => {
         })
       ),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [
-          FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [] }),
-        ],
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
@@ -980,7 +982,7 @@ describe("dashboard update — toast messages", () => {
 describe("dashboard update — theme toggle", () => {
   test("toggling theme saves it and re-syncs every mounted chart with the new theme's colors", () => {
     const model = {
-      ...initModel(),
+      ...withLoadedWindows(initModel()),
       metrics: MetricsAsyncData.Success({ data: [] }),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
       maybeLatencyChartHostId: Option.some("latency-chart"),
@@ -1001,8 +1003,7 @@ describe("dashboard update — theme toggle", () => {
         SyncLatencyChart({
           hostId: "latency-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "dark",
         })
       ),
@@ -1010,8 +1011,7 @@ describe("dashboard update — theme toggle", () => {
         SyncPacketLossChart({
           hostId: "packet-loss-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "dark",
         })
       ),
@@ -1019,8 +1019,7 @@ describe("dashboard update — theme toggle", () => {
         SyncJitterChart({
           hostId: "jitter-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "dark",
         })
       ),
@@ -1028,8 +1027,7 @@ describe("dashboard update — theme toggle", () => {
         SyncSpeedChart({
           hostId: "speed-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...SPEEDTEST_WINDOW,
           theme: "dark",
         })
       ),
@@ -1063,8 +1061,8 @@ describe("dashboard update — speedtest trigger", () => {
         })
       ),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [FetchSpeedtestHistory, SucceededFetchSpeedtestHistory({ history: [] })]
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
       ),
       ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
     );
@@ -1108,8 +1106,8 @@ describe("dashboard update — speedtest trigger", () => {
         );
       }),
       Story.Command.resolveAll(
-        [FetchMetrics, SucceededFetchMetrics({ metrics: [], nowMs: 0 })],
-        [FetchSpeedtestHistory, SucceededFetchSpeedtestHistory({ history: [] })]
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
       ),
       ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
     );
@@ -1157,7 +1155,7 @@ describe("dashboard update — latency chart", () => {
 
   test("mounting once metrics are already loaded immediately syncs the chart", () => {
     const model = {
-      ...initModel(),
+      ...withLoadedWindows(initModel()),
       metrics: MetricsAsyncData.Success({ data: [] }),
     };
 
@@ -1169,8 +1167,7 @@ describe("dashboard update — latency chart", () => {
         SyncLatencyChart({
           hostId: "latency-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "light",
         })
       ),
@@ -1188,13 +1185,12 @@ describe("dashboard update — latency chart", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
+      Story.message(succeededFetchMetrics()),
       Story.Command.expectExact(
         SyncLatencyChart({
           hostId: "latency-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "light",
         })
       ),
@@ -1206,7 +1202,7 @@ describe("dashboard update — latency chart", () => {
     Story.story(
       withContext,
       Story.given({ ...initModel(), metrics: MetricsAsyncData.Loading() }),
-      Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
+      Story.message(succeededFetchMetrics()),
       Story.Command.expectNone()
     );
   });
@@ -1239,7 +1235,7 @@ describe("dashboard update — latency chart", () => {
 describe("dashboard update — packet loss chart", () => {
   test("mounting once metrics are already loaded immediately syncs the chart", () => {
     const model = {
-      ...initModel(),
+      ...withLoadedWindows(initModel()),
       metrics: MetricsAsyncData.Success({ data: [] }),
     };
 
@@ -1253,8 +1249,7 @@ describe("dashboard update — packet loss chart", () => {
         SyncPacketLossChart({
           hostId: "packet-loss-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "light",
         })
       ),
@@ -1272,13 +1267,12 @@ describe("dashboard update — packet loss chart", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
+      Story.message(succeededFetchMetrics()),
       Story.Command.expectExact(
         SyncPacketLossChart({
           hostId: "packet-loss-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "light",
         })
       ),
@@ -1311,7 +1305,7 @@ describe("dashboard update — packet loss chart", () => {
 describe("dashboard update — jitter chart", () => {
   test("mounting once metrics are already loaded immediately syncs the chart", () => {
     const model = {
-      ...initModel(),
+      ...withLoadedWindows(initModel()),
       metrics: MetricsAsyncData.Success({ data: [] }),
     };
 
@@ -1323,8 +1317,7 @@ describe("dashboard update — jitter chart", () => {
         SyncJitterChart({
           hostId: "jitter-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "light",
         })
       ),
@@ -1342,13 +1335,12 @@ describe("dashboard update — jitter chart", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(SucceededFetchMetrics({ metrics: [], nowMs: 0 })),
+      Story.message(succeededFetchMetrics()),
       Story.Command.expectExact(
         SyncJitterChart({
           hostId: "jitter-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...METRICS_WINDOW,
           theme: "light",
         })
       ),
@@ -1381,7 +1373,7 @@ describe("dashboard update — jitter chart", () => {
 describe("dashboard update — speed chart", () => {
   test("mounting once speed test history is already loaded immediately syncs the chart", () => {
     const model = {
-      ...initModel(),
+      ...withLoadedWindows(initModel()),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
     };
 
@@ -1393,8 +1385,7 @@ describe("dashboard update — speed chart", () => {
         SyncSpeedChart({
           hostId: "speed-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...SPEEDTEST_WINDOW,
           theme: "light",
         })
       ),
@@ -1412,13 +1403,12 @@ describe("dashboard update — speed chart", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(SucceededFetchSpeedtestHistory({ history: [] })),
+      Story.message(succeededFetchSpeedtestHistory()),
       Story.Command.expectExact(
         SyncSpeedChart({
           hostId: "speed-chart",
           metrics: [],
-          dateRange: DEFAULT_DATE_RANGE,
-          maybeEarliestDataMs: Option.none(),
+          ...SPEEDTEST_WINDOW,
           theme: "light",
         })
       ),
@@ -1433,7 +1423,7 @@ describe("dashboard update — speed chart", () => {
         ...initModel(),
         speedtestHistory: SpeedtestHistoryAsyncData.Loading(),
       }),
-      Story.message(SucceededFetchSpeedtestHistory({ history: [] })),
+      Story.message(succeededFetchSpeedtestHistory()),
       Story.Command.expectNone()
     );
   });

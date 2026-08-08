@@ -17,9 +17,12 @@ export const GranularitySchema = Schema.Literals([
 ]);
 export type Granularity = Schema.Schema.Type<typeof GranularitySchema>;
 
+const MetricSourceSchema = Schema.Literals(["ping", "speedtest"]);
+export type MetricSource = Schema.Schema.Type<typeof MetricSourceSchema>;
+
 export const MetricSchema = Schema.Struct({
   timestamp: Schema.String,
-  source: Schema.Literals(["ping", "speedtest"]),
+  source: MetricSourceSchema,
   host: Schema.optional(Schema.String),
   latency: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),
@@ -45,6 +48,9 @@ export const GetMetricsQueryParams = Schema.Struct({
   host: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),
   granularity: Schema.optional(GranularitySchema),
+  // Aggregated queries need this to get one row per bucket. See
+  // `buildQueryMetrics`.
+  source: Schema.optional(MetricSourceSchema),
 });
 
 const GetMetricsResponse = Schema.Struct({

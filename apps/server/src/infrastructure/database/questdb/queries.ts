@@ -34,6 +34,16 @@ export const buildQueryMetrics = (
       paramIndex++;
     }
 
+    // `source` is projected un-aggregated next to SAMPLE BY, so QuestDB treats
+    // it as a grouping key and emits one row per source per bucket. Pinning a
+    // single source keeps each bucket to one row.
+    let sourceFilter = "";
+    if (params.source) {
+      sourceFilter = `AND source = $${paramIndex}`;
+      queryParams.push(params.source);
+      paramIndex++;
+    }
+
     let limitClause = "";
     if (params.limit) {
       limitClause = `LIMIT $${paramIndex}`;
@@ -69,7 +79,8 @@ export const buildQueryMetrics = (
           WHERE timestamp >= $1
             AND timestamp <= $2
             ${hostFilter}
-          SAMPLE BY ${granularity}
+            ${sourceFilter}
+          SAMPLE BY ${granularity} ALIGN TO CALENDAR
           ORDER BY timestamp DESC
           ${limitClause}
         `
@@ -92,6 +103,7 @@ export const buildQueryMetrics = (
           WHERE timestamp >= $1
             AND timestamp <= $2
             ${hostFilter}
+            ${sourceFilter}
           ORDER BY timestamp DESC
           ${limitClause}
         `;

@@ -54,6 +54,18 @@ import { ToastTest } from "@/dashboard/toast";
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 
+// Each fetch resolves its window once and reports it back, so the dashboard's
+// charts paint the range that was actually requested.
+const METRICS_WINDOW = {
+  startTimeMs: 0,
+  endTimeMs: 30 * 24 * 60 * 60 * 1000,
+  granularity: "1h" as const,
+};
+const SPEEDTEST_WINDOW = {
+  startTimeMs: METRICS_WINDOW.startTimeMs,
+  endTimeMs: METRICS_WINDOW.endTimeMs,
+};
+
 function assertLoggedIn(model: Model): LoggedIn {
   if (model._tag !== "LoggedIn") {
     throw new Error(`expected LoggedIn, got ${model._tag}`);
@@ -76,7 +88,7 @@ const resolveDashboardEntry = (token: string) =>
         dateRange: DEFAULT_DATE_RANGE,
         maybeEarliestDataMs: Option.none(),
       }),
-      SucceededFetchMetrics({ metrics: [], nowMs: 0 }),
+      SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW }),
     ],
     [
       FetchSpeedtestHistory({
@@ -84,7 +96,7 @@ const resolveDashboardEntry = (token: string) =>
         dateRange: DEFAULT_DATE_RANGE,
         maybeEarliestDataMs: Option.none(),
       }),
-      SucceededFetchSpeedtestHistory({ history: [] }),
+      SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW }),
     ],
     [
       FetchConnectivityStatus({
@@ -369,7 +381,7 @@ describe("auth update", () => {
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           }),
-          SucceededFetchMetrics({ metrics: [], nowMs: 0 }),
+          SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW }),
         ],
         [
           FetchSpeedtestHistory({
@@ -377,7 +389,7 @@ describe("auth update", () => {
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           }),
-          SucceededFetchSpeedtestHistory({ history: [] }),
+          SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW }),
         ]
       ),
       ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
@@ -471,7 +483,11 @@ describe("auth update — stale messages arriving in the wrong state", () => {
       Story.given(initLoggedOut()),
       Story.message(
         GotDashboardMessage({
-          message: SucceededFetchMetrics({ metrics: [], nowMs: 0 }),
+          message: SucceededFetchMetrics({
+            metrics: [],
+            nowMs: 0,
+            ...METRICS_WINDOW,
+          }),
         })
       ),
       Story.Command.expectNone(),
