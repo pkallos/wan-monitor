@@ -19,7 +19,7 @@
     "@effect/platform-node": "4.0.0-beta.102",
     "@questdb/nodejs-client": "^4.2.0",
     "@types/pg": "^8.20.4",
-    "effect": "4.0.0-beta.102",
+    "effect": "4.0.0-beta.103",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.22.0",
     "ping": "^1.0.0",
