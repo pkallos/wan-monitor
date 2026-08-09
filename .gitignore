@@ -50,9 +50,6 @@ plans/
 *.temp
 .cache/
 
-# Turborepo
-.turbo
-
 # Docker
 *.pid
 *.seed

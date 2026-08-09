@@ -92,6 +92,9 @@ For each task:
 - `perf`: Performance improvements
 - `ci`: CI/CD configuration changes
 
+This convention governs commit hygiene; it does not drive releases. Release notes come from Changesets
+files (see step 2 of **Pull Request Process** below).
+
 ### 4. Single Commit Per Feature
 
 All changes for a task must land as **ONE commit** before pushing. Squash any intermediate commits (see **Non-Interactive Commands** for how) and write a descriptive message. This single-commit rule applies to every push, including updates to an existing PR.
@@ -129,23 +132,30 @@ When the feature is complete:
 
    **CRITICAL:** If ANY step fails, fix it before pushing. Do NOT push with failing checks.
 
-2. **Push the branch:**
+2. **Add a changeset if the PR should appear in the release notes:**
+   ```bash
+   pnpm changeset
+   ```
+   Skip this only for changes with no user-facing or release-worthy effect (pure chores, docs, CI tweaks);
+   otherwise CI's changeset-check will fail the PR. Commit the generated `.changeset/*.md` file.
+
+3. **Push the branch:**
    ```bash
    git push -u origin feat/your-feature-name
    ```
 
-3. **Open a Pull Request on GitHub:**
+4. **Open a Pull Request on GitHub:**
    - Title should match the commit message
    - Include detailed description of changes
    - Reference the Linear task ID
    - Add `@pkallos` as the reviewer
 
-4. **Review and Iterate:**
+5. **Review and Iterate:**
    - @pkallos reviews and provides feedback; make changes in the same branch.
    - Before every re-push (whether for review feedback or a CI failure): re-run the full verify list from step 1, review the changeset, then **squash into one commit** and force push: `git push -f origin branch-name`.
    - For CI failures, read the logs, reproduce locally, fix, then re-run **all** checks — not just the one that failed. **NEVER push multiple "fix CI" commits.**
 
-5. **After Merge:**
+6. **After Merge:**
    - Delete the feature branch
    - **Update the Linear task status to "Done"** (when user confirms PR is merged)
    - Move on to the next task

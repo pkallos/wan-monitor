@@ -1,0 +1,87 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      released: ${{ steps.tag.outputs.released }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6.0.9
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Manages the "Version Packages" PR: opens/updates it while changesets
+      # are pending, and does nothing once they've all been consumed by a
+      # merge. There is no `publish` input here - see the tag step below for
+      # why: this repo tags releases as vX.Y.Z, and changesets/action's own
+      # publish path can only produce a package-scoped tag like
+      # wan-monitor@X.Y.Z.
+      - name: Version Packages
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm exec changeset version
+          commit: "chore: release wan-monitor"
+          title: "chore: release wan-monitor"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # hasChangesets is false both right after the version PR merges (the
+      # case we want) and on every other changeset-free push to main (the
+      # case we don't) - so gate on the root version actually being new, and
+      # make re-runs a no-op by checking the tag doesn't already exist.
+      - name: Tag release
+        id: tag
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v$VERSION"
+
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists, nothing to release"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "$(node scripts/release/release-notes.mjs "$VERSION")"
+
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  publish-docker:
+    needs: release
+    if: ${{ needs.release.outputs.released == 'true' }}
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: write

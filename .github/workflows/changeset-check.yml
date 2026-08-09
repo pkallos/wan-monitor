@@ -1,0 +1,30 @@
+name: Changeset Check
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+jobs:
+  changeset:
+    runs-on: ubuntu-latest
+    # The version PR itself bumps package versions but carries no changesets
+    # of its own, and would otherwise always fail this check.
+    if: >-
+      github.head_ref != 'changeset-release/main' &&
+      !contains(github.event.pull_request.labels.*.name, 'no-changeset')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6.0.9
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check for a changeset
+        run: pnpm exec changeset status --since=origin/${{ github.base_ref }}

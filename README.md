@@ -298,6 +298,22 @@ Contributions are welcome! Please:
 
 This project uses [Biome](https://biomejs.dev/) for linting and formatting. Pre-commit hooks will automatically check your code.
 
+### Releasing
+
+Releases are managed with [Changesets](https://github.com/changesets/changesets). If your PR should
+appear in the changelog, run:
+
+```bash
+pnpm changeset
+```
+
+and follow the prompts to pick a bump type (patch/minor/major) and write a short release note. Commit the
+generated `.changeset/*.md` file with your PR. CI checks that PRs against `main` carry a changeset, unless
+labeled `no-changeset` (used for chores, docs, and dependency bumps).
+
+Merging to `main` opens or updates a "Version Packages" PR; merging that PR bumps the version, updates
+`CHANGELOG.md`, tags the release (`vX.Y.Z`), and publishes `phibit/wan-monitor` to Docker Hub.
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (GPL-3.0). See the [LICENSE](LICENSE) file for details.
