@@ -13,14 +13,20 @@ updates:
       - "dependencies"
       - "no-changeset"
     groups:
-      # Effect ecosystem - ignore major versions
+      # Effect ecosystem, including foldkit - foldkit, @foldkit/ui, and
+      # @foldkit/vite-plugin each peer-pin an exact effect beta version per
+      # release, so none of these can be bumped independently of effect
+      # without breaking at install time or runtime. No update-types filter:
+      # this ecosystem versions via prerelease bumps (e.g. 4.0.0-beta.102 ->
+      # 4.0.0-beta.103), which dependabot doesn't classify as "minor" or
+      # "patch", so restricting to those update-types silently excludes them
+      # and defeats the grouping. Major versions are still ignored below.
       effect:
         patterns:
           - "effect"
           - "@effect/*"
-        update-types:
-          - "minor"
-          - "patch"
+          - "foldkit"
+          - "@foldkit/*"
 
       # React ecosystem - ignore major versions
       react:
@@ -37,17 +43,6 @@ updates:
           - "@chakra-ui/*"
           - "@emotion/*"
           - "framer-motion"
-        update-types:
-          - "minor"
-          - "patch"
-
-      # foldkit core and its component library - these version in lockstep
-      # (@foldkit/vite-plugin is excluded: it's on its own independent
-      # versioning scheme and isn't coupled to the foldkit/@foldkit/ui pair)
-      foldkit:
-        patterns:
-          - "foldkit"
-          - "@foldkit/ui"
         update-types:
           - "minor"
           - "patch"
@@ -179,6 +174,14 @@ updates:
       - dependency-name: "vitest"
       - dependency-name: "@vitest/*"
         update-types: ["version-update:semver-major"]
+
+      # @effect/vitest beta.103+ requires vitest ^4.1.0, but root and
+      # apps/server still run vitest ^3.2.x - bumping it needs a coordinated
+      # vitest 3->4 migration done manually, same as the vitest/@vitest/*
+      # entries above. Fully excluded (no update-types): the beta-to-beta
+      # bumps here are prerelease bumps, not semver-minor/patch, so an
+      # update-types filter would silently fail to block them.
+      - dependency-name: "@effect/vitest"
       - dependency-name: "@testing-library/*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "jsdom"
