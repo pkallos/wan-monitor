@@ -13,14 +13,10 @@ updates:
       - "dependencies"
       - "no-changeset"
     groups:
-      # Effect ecosystem, including foldkit - foldkit, @foldkit/ui, and
-      # @foldkit/vite-plugin each peer-pin an exact effect beta version per
-      # release, so none of these can be bumped independently of effect
-      # without breaking at install time or runtime. No update-types filter:
-      # this ecosystem versions via prerelease bumps (e.g. 4.0.0-beta.102 ->
-      # 4.0.0-beta.103), which dependabot doesn't classify as "minor" or
-      # "patch", so restricting to those update-types silently excludes them
-      # and defeats the grouping. Major versions are still ignored below.
+      # Effect ecosystem, including foldkit - foldkit and @foldkit/* peer-pin
+      # an exact effect beta version, so they move together. No update-types
+      # filter: prerelease bumps (e.g. beta.102 -> beta.103) aren't "minor" or
+      # "patch", so that filter would silently exclude them from the group.
       effect:
         patterns:
           - "effect"
@@ -176,11 +172,8 @@ updates:
         update-types: ["version-update:semver-major"]
 
       # @effect/vitest beta.103+ requires vitest ^4.1.0, but root and
-      # apps/server still run vitest ^3.2.x - bumping it needs a coordinated
-      # vitest 3->4 migration done manually, same as the vitest/@vitest/*
-      # entries above. Fully excluded (no update-types): the beta-to-beta
-      # bumps here are prerelease bumps, not semver-minor/patch, so an
-      # update-types filter would silently fail to block them.
+      # apps/server still run vitest ^3.2.x. Fully excluded (no update-types):
+      # its beta-to-beta bumps are prerelease, not semver-minor/patch.
       - dependency-name: "@effect/vitest"
       - dependency-name: "@testing-library/*"
         update-types: ["version-update:semver-major"]
