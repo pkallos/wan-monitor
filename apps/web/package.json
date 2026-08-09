@@ -15,15 +15,15 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform-browser": "4.0.0-beta.102",
-    "@foldkit/ui": "0.137.0",
+    "@effect/platform-browser": "4.0.0-beta.105",
+    "@foldkit/ui": "0.141.0",
     "clsx": "^2.1.1",
     "echarts": "^6.1.0",
-    "effect": "4.0.0-beta.102",
-    "foldkit": "0.137.0"
+    "effect": "4.0.0-beta.105",
+    "foldkit": "0.141.0"
   },
   "devDependencies": {
-    "@foldkit/vite-plugin": "0.11.3",
+    "@foldkit/vite-plugin": "0.12.1",
     "@tailwindcss/vite": "^4.3.3",
     "@vitest/coverage-v8": "^4.1.10",
     "@wan-monitor/shared": "workspace:*",
