@@ -13,14 +13,16 @@ updates:
       - "dependencies"
       - "no-changeset"
     groups:
-      # Effect ecosystem - ignore major versions
+      # Effect ecosystem, including foldkit - foldkit and @foldkit/* peer-pin
+      # an exact effect beta version, so they move together. No update-types
+      # filter: prerelease bumps (e.g. beta.102 -> beta.103) aren't "minor" or
+      # "patch", so that filter would silently exclude them from the group.
       effect:
         patterns:
           - "effect"
           - "@effect/*"
-        update-types:
-          - "minor"
-          - "patch"
+          - "foldkit"
+          - "@foldkit/*"
 
       # React ecosystem - ignore major versions
       react:
@@ -37,17 +39,6 @@ updates:
           - "@chakra-ui/*"
           - "@emotion/*"
           - "framer-motion"
-        update-types:
-          - "minor"
-          - "patch"
-
-      # foldkit core and its component library - these version in lockstep
-      # (@foldkit/vite-plugin is excluded: it's on its own independent
-      # versioning scheme and isn't coupled to the foldkit/@foldkit/ui pair)
-      foldkit:
-        patterns:
-          - "foldkit"
-          - "@foldkit/ui"
         update-types:
           - "minor"
           - "patch"
@@ -179,6 +170,11 @@ updates:
       - dependency-name: "vitest"
       - dependency-name: "@vitest/*"
         update-types: ["version-update:semver-major"]
+
+      # @effect/vitest beta.103+ requires vitest ^4.1.0, but root and
+      # apps/server still run vitest ^3.2.x. Fully excluded (no update-types):
+      # its beta-to-beta bumps are prerelease, not semver-minor/patch.
+      - dependency-name: "@effect/vitest"
       - dependency-name: "@testing-library/*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "jsdom"
