@@ -7,7 +7,6 @@ import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Schema as S } from "effect";
 import { m } from "foldkit/message";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
-import { Theme } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
 
 export const SucceededFetchMetrics = m("SucceededFetchMetrics", {
@@ -82,10 +81,10 @@ export const FailedFetchEarliestData = m("FailedFetchEarliestData", {
   error: S.String,
 });
 
-export const LoadedTheme = m("LoadedTheme", { theme: Theme });
 export const ClickedToggleTheme = m("ClickedToggleTheme");
-export const CompletedSaveTheme = m("CompletedSaveTheme");
-export const FailedSaveTheme = m("FailedSaveTheme", { error: S.String });
+export const CompletedApplyTheme = m("CompletedApplyTheme");
+export const CompletedSaveSettings = m("CompletedSaveSettings");
+export const FailedSaveSettings = m("FailedSaveSettings", { error: S.String });
 
 export const GotToastMessage = m("GotToastMessage", {
   message: Toast.Message,
@@ -162,10 +161,10 @@ export const Message = S.Union([
   FailedFetchEarliestData,
   HoveredConnectivitySegment,
   UnhoveredConnectivitySegment,
-  LoadedTheme,
   ClickedToggleTheme,
-  CompletedSaveTheme,
-  FailedSaveTheme,
+  CompletedApplyTheme,
+  CompletedSaveSettings,
+  FailedSaveSettings,
   GotToastMessage,
   EnteredDashboard,
   TickedRefresh,

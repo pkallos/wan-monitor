@@ -5,15 +5,20 @@ import {
   dependenciesToStream,
   modelToDependencies,
 } from "@/dashboard/subscription";
+import { defaultSettings } from "@/storage";
 
 describe("modelToDependencies", () => {
   test("derives isPaused and isIdle from the Model", () => {
-    expect(modelToDependencies(initModel())).toEqual({
+    expect(modelToDependencies(initModel(defaultSettings()))).toEqual({
       isPaused: false,
       isIdle: false,
     });
     expect(
-      modelToDependencies({ ...initModel(), isPaused: true, isIdle: true })
+      modelToDependencies({
+        ...initModel(defaultSettings()),
+        isPaused: true,
+        isIdle: true,
+      })
     ).toEqual({ isPaused: true, isIdle: true });
   });
 });

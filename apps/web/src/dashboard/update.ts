@@ -8,13 +8,13 @@ import {
   SyncSpeedChart,
 } from "@/dashboard/charts/command";
 import {
+  ApplyTheme,
   FetchConnectivityStatus,
   FetchEarliestData,
   FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
-  LoadTheme,
-  SaveTheme,
+  SaveSettings,
   TriggerSpeedtest,
 } from "@/dashboard/command";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
@@ -23,7 +23,7 @@ import {
   GotToastMessage,
   type Message,
 } from "@/dashboard/message";
-import type { Model } from "@/dashboard/model";
+import { type Model, settingsFromModel } from "@/dashboard/model";
 import type { Theme } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
 
@@ -97,11 +97,12 @@ const enterLiveConnectivity =
       ],
     });
 
-const enterTheme = (model: Model): UpdateReturn =>
-  Option.match(model.maybeTheme, {
-    onNone: () => [model, [LoadTheme()]],
-    onSome: () => [model, []],
-  });
+// Re-asserts the model's theme onto `<html>` so it matches even if the boot
+// script's pre-hydration paint (`index.html`) somehow diverged from it.
+const applyThemeOnEnter = (model: Model): UpdateReturn => [
+  model,
+  [ApplyTheme({ theme: model.theme })],
+];
 
 const enterEarliestData =
   (context: Context) =>
@@ -113,9 +114,6 @@ const enterEarliestData =
 
 const toggleTheme = (theme: Theme): Theme =>
   theme === "light" ? "dark" : "light";
-
-const currentTheme = (model: Model): Theme =>
-  Option.getOrElse(model.maybeTheme, () => "light" as const);
 
 const revalidateMetrics =
   (context: Context) =>
@@ -265,7 +263,7 @@ const syncLatencyChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
-          theme: currentTheme(model),
+          theme: model.theme,
         }),
       ],
     }
@@ -289,7 +287,7 @@ const syncPacketLossChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
-          theme: currentTheme(model),
+          theme: model.theme,
         }),
       ],
     }
@@ -313,7 +311,7 @@ const syncJitterChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
-          theme: currentTheme(model),
+          theme: model.theme,
         }),
       ],
     }
@@ -336,7 +334,7 @@ const syncSpeedChart = (
           metrics,
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
-          theme: currentTheme(model),
+          theme: model.theme,
         }),
       ],
     }
@@ -365,7 +363,7 @@ export const update = (
           enterConnectivityStatus(context),
           enterLiveConnectivity(context),
           enterEarliestData(context),
-          enterTheme,
+          applyThemeOnEnter,
         ]),
 
       TickedRefresh: () =>
@@ -409,7 +407,14 @@ export const update = (
                     reloadConnectivityStatus(context),
                   ]
                 );
-                return [nextModel, [...mappedCommands, ...reloadCommands]];
+                return [
+                  nextModel,
+                  [
+                    ...mappedCommands,
+                    ...reloadCommands,
+                    SaveSettings({ settings: settingsFromModel(nextModel) }),
+                  ],
+                ];
               }),
               M.tag("Cancelled", () => [withPicker, mappedCommands]),
               M.exhaustive
@@ -514,15 +519,37 @@ export const update = (
         [],
       ],
 
-      SucceededFetchEarliestData: ({ earliestMs }) => [
-        evo(model, { maybeEarliestDataMs: () => earliestMs }),
-        [],
-      ],
+      // A restored "All time" range resolves its start from
+      // `maybeEarliestDataMs` (see `dateRange.ts`), which is unknown at boot
+      // — so `EnteredDashboard`'s first fetch runs against the Unix epoch
+      // fallback. Once the real earliest timestamp lands, reload rather than
+      // just storing it, or a persisted "All time" + paused reload would
+      // never repaint past that epoch-wide window.
+      SucceededFetchEarliestData: ({ earliestMs }) => {
+        const learnedAnUnresolvedAllTimeStart =
+          model.dateRange._tag === "Preset" &&
+          model.dateRange.preset === "allTime" &&
+          Option.isNone(model.maybeEarliestDataMs) &&
+          Option.isSome(earliestMs);
+        const nextModel = evo(model, {
+          maybeEarliestDataMs: () => earliestMs,
+        });
+        return learnedAnUnresolvedAllTimeStart
+          ? Update.combine(nextModel, [
+              reloadMetrics(context),
+              reloadSpeedtestHistory(context),
+              reloadConnectivityStatus(context),
+            ])
+          : [nextModel, []];
+      },
 
-      ClickedTogglePause: () => [
-        evo(model, { isPaused: (paused) => !paused }),
-        [],
-      ],
+      ClickedTogglePause: () => {
+        const nextModel = evo(model, { isPaused: (paused) => !paused });
+        return [
+          nextModel,
+          [SaveSettings({ settings: settingsFromModel(nextModel) })],
+        ];
+      },
 
       Interacted: () => [evo(model, { isIdle: () => false }), []],
       WentIdle: () => [evo(model, { isIdle: () => true }), []],
@@ -536,19 +563,14 @@ export const update = (
         [],
       ],
 
-      LoadedTheme: ({ theme }) => [
-        evo(model, { maybeTheme: () => Option.some(theme) }),
-        [],
-      ],
       ClickedToggleTheme: () => {
-        const nextTheme = toggleTheme(currentTheme(model));
-        const nextModel = evo(model, {
-          maybeTheme: () => Option.some(nextTheme),
-        });
+        const nextTheme = toggleTheme(model.theme);
+        const nextModel = evo(model, { theme: () => nextTheme });
         return [
           nextModel,
           [
-            SaveTheme({ theme: nextTheme }),
+            ApplyTheme({ theme: nextTheme }),
+            SaveSettings({ settings: settingsFromModel(nextModel) }),
             ...syncQualityCharts(nextModel),
             ...syncSpeedChart(nextModel),
           ],
@@ -664,8 +686,9 @@ export const update = (
       "FailedMountSpeedChart",
       "CompletedSyncSpeedChart",
       "FailedSyncSpeedChart",
-      "CompletedSaveTheme",
-      "FailedSaveTheme",
+      "CompletedApplyTheme",
+      "CompletedSaveSettings",
+      "FailedSaveSettings",
       "FailedFetchEarliestData",
       () => [model, []]
     ),

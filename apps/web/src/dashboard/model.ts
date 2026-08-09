@@ -6,10 +6,11 @@ import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Option, Schema as S } from "effect";
 import { AsyncData } from "foldkit";
-import { DateRangeSelection, Preset } from "@/dashboard/dateRange";
+import { DateRangeSelection } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import { Theme } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
+import type { Settings } from "@/storage";
 
 export const MetricsAsyncData = AsyncData.Schema(
   S.Array(MetricSchema),
@@ -89,17 +90,20 @@ export const Model = S.Struct({
   maybeJitterChartHostId: S.Option(S.String),
   maybeSpeedChartHostId: S.Option(S.String),
   hoveredSegmentIndex: S.Option(S.Number),
-  maybeTheme: S.Option(Theme),
+  theme: Theme,
   maybeLastUpdatedMs: S.Option(S.Number),
   maybeEarliestDataMs: S.Option(S.Number),
   toast: Toast.Model,
 });
 export type Model = typeof Model.Type;
 
-export const initModel = (): Model => ({
-  dateRange: Preset({ preset: "last30d" }),
+// Settings are hydrated at boot (see `@/storage` and `auth/flags.ts`) and
+// passed in already resolved, so the model is never born with a default it
+// has to fetch and can't race the first data fetch.
+export const initModel = (settings: Settings): Model => ({
+  dateRange: settings.dateRange,
   dateRangePicker: DateRangePicker.init({ id: "date-range-picker" }),
-  isPaused: false,
+  isPaused: settings.isPaused,
   isIdle: false,
   metrics: MetricsAsyncData.Idle(),
   maybeMetricsWindow: Option.none(),
@@ -113,8 +117,15 @@ export const initModel = (): Model => ({
   maybeJitterChartHostId: Option.none(),
   maybeSpeedChartHostId: Option.none(),
   hoveredSegmentIndex: Option.none(),
-  maybeTheme: Option.none(),
+  theme: settings.theme,
   maybeLastUpdatedMs: Option.none(),
   maybeEarliestDataMs: Option.none(),
   toast: Toast.init({ id: "dashboard-toast" }),
+});
+
+// The inverse of `initModel` and the single place deciding what persists.
+export const settingsFromModel = (model: Model): Settings => ({
+  theme: model.theme,
+  dateRange: model.dateRange,
+  isPaused: model.isPaused,
 });

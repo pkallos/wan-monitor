@@ -2,7 +2,6 @@ import { BrowserKeyValueStore } from "@effect/platform-browser";
 import { DB_UNAVAILABLE } from "@shared/api/errors";
 import { Clock, Effect, Option, Schema as S } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
-import { KeyValueStore } from "effect/unstable/persistence";
 import { Command } from "foldkit";
 import { makeClient } from "@/api/client";
 import {
@@ -12,15 +11,15 @@ import {
   granularityForSpeedtestRange,
 } from "@/dashboard/dateRange";
 import {
-  CompletedSaveTheme,
+  CompletedApplyTheme,
+  CompletedSaveSettings,
   FailedFetchConnectivityStatus,
   FailedFetchEarliestData,
   FailedFetchLiveConnectivity,
   FailedFetchMetrics,
   FailedFetchSpeedtestHistory,
-  FailedSaveTheme,
+  FailedSaveSettings,
   FailedTriggerSpeedtest,
-  LoadedTheme,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
   SucceededFetchLiveConnectivity,
@@ -29,8 +28,7 @@ import {
   SucceededTriggerSpeedtest,
 } from "@/dashboard/message";
 import { Theme } from "@/dashboard/theme";
-
-const THEME_STORAGE_KEY = "wan_monitor_theme";
+import { Settings, writeSettings } from "@/storage";
 
 const DB_UNAVAILABLE_MESSAGE =
   "Database temporarily unavailable. Retrying automatically.";
@@ -232,20 +230,21 @@ export const triggerSpeedtest = ({ token }: { token: string }) =>
     )
   );
 
-export const loadTheme = Effect.gen(function* () {
-  const store = yield* KeyValueStore.KeyValueStore;
-  const stored = yield* store.get(THEME_STORAGE_KEY);
-  return LoadedTheme({ theme: stored === "dark" ? "dark" : "light" });
-}).pipe(Effect.catch(() => Effect.succeed(LoadedTheme({ theme: "light" }))));
+// The one place that owns `<html>`'s `dark` class at runtime. It has to sit
+// there, not on the dashboard root, because the Tailwind variant is
+// `&:where(.dark, .dark *)` (styles.css) and must also reach the login screen.
+export const applyTheme = ({ theme }: { theme: Theme }) =>
+  Effect.sync(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.style.colorScheme = theme;
+    return CompletedApplyTheme();
+  }).pipe(Effect.catch(() => Effect.succeed(CompletedApplyTheme())));
 
-export const saveTheme = ({ theme }: { theme: Theme }) =>
-  Effect.gen(function* () {
-    const store = yield* KeyValueStore.KeyValueStore;
-    yield* store.set(THEME_STORAGE_KEY, theme);
-    return CompletedSaveTheme();
-  }).pipe(
+export const saveSettings = ({ settings }: { settings: Settings }) =>
+  writeSettings(settings).pipe(
+    Effect.as(CompletedSaveSettings()),
     Effect.catch((error) =>
-      Effect.succeed(FailedSaveTheme({ error: String(error) }))
+      Effect.succeed(FailedSaveSettings({ error: String(error) }))
     )
   );
 
@@ -294,18 +293,23 @@ export const TriggerSpeedtest = Command.define("TriggerSpeedtest", {
     triggerSpeedtest(args).pipe(Effect.provide(FetchHttpClient.layer)),
 });
 
-export const LoadTheme = Command.define("LoadTheme", {
-  messages: [LoadedTheme],
-  execute: loadTheme.pipe(
-    Effect.provide(BrowserKeyValueStore.layerLocalStorage)
-  ),
+export const ApplyTheme = Command.define("ApplyTheme", {
+  args: { theme: Theme },
+  messages: [CompletedApplyTheme],
+  execute: applyTheme,
 });
 
-export const SaveTheme = Command.define("SaveTheme", {
-  args: { theme: Theme },
-  messages: [CompletedSaveTheme, FailedSaveTheme],
+export const SaveSettings = Command.define("SaveSettings", {
+  args: { settings: Settings },
+  messages: [CompletedSaveSettings, FailedSaveSettings],
   execute: (args) =>
-    saveTheme(args).pipe(
-      Effect.provide(BrowserKeyValueStore.layerLocalStorage)
+    saveSettings(args).pipe(
+      Effect.provide(BrowserKeyValueStore.layerLocalStorage),
+      // Guards against a defect building the store itself (e.g. `localStorage`
+      // throwing with site data blocked), which happens outside saveSettings'
+      // own Effect.catch since the layer isn't built yet when that runs.
+      Effect.catchDefect((defect) =>
+        Effect.succeed(FailedSaveSettings({ error: String(defect) }))
+      )
     ),
 });

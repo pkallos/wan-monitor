@@ -1,6 +1,7 @@
 import { Option, Schema as S } from "effect";
 import { ts } from "foldkit/schema";
 import * as Dashboard from "@/dashboard";
+import { Settings } from "@/storage";
 
 export const Session = S.Struct({
   token: S.String,
@@ -10,6 +11,7 @@ export type Session = typeof Session.Type;
 
 export const Checking = ts("Checking", {
   maybeToken: S.Option(S.String),
+  settings: Settings,
 });
 export type Checking = typeof Checking.Type;
 
@@ -18,6 +20,7 @@ export const LoggedOut = ts("LoggedOut", {
   password: S.String,
   isSubmitting: S.Boolean,
   maybeError: S.Option(S.String),
+  settings: Settings,
 });
 export type LoggedOut = typeof LoggedOut.Type;
 
@@ -31,6 +34,7 @@ export const Model = S.Union([Checking, LoggedOut, LoggedIn]);
 export type Model = typeof Model.Type;
 
 export const initLoggedOut = (
+  settings: Settings,
   maybeError: Option.Option<string> = Option.none()
 ): LoggedOut =>
   LoggedOut({
@@ -38,4 +42,5 @@ export const initLoggedOut = (
     password: "",
     isSubmitting: false,
     maybeError,
+    settings,
   });

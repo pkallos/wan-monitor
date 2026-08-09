@@ -7,6 +7,6 @@ import { Checking, type Model } from "@/auth/model";
 export const init = (
   flags: Flags
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => [
-  Checking({ maybeToken: flags.maybeToken }),
+  Checking({ maybeToken: flags.maybeToken, settings: flags.settings }),
   [FetchAuthStatus()],
 ];
