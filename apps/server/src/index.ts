@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 // Load environment variables from .env.local (dev) or .env (prod) using Node's
 // native loader (process.loadEnvFile, stable since v24.10 — see engines.node).
-// Try package root first, then monorepo root (when running via turbo).
+// Try package root first, then monorepo root (when running from the repo root).
 // Node never overrides variables already present in process.env, and across
 // multiple loads the first file to set a key wins, so .env.local takes precedence.
 const envPaths = [

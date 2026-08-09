@@ -7,6 +7,11 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    # no-changeset exempts dependency bumps from the changeset-check gate -
+    # they don't carry release notes of their own.
+    labels:
+      - "dependencies"
+      - "no-changeset"
     groups:
       # Effect ecosystem - ignore major versions
       effect:
@@ -94,7 +99,6 @@ updates:
           - "@biomejs/*"
           - "husky"
           - "lint-staged"
-          - "turbo"
           - "pino"
           - "pino-pretty"
 
@@ -195,6 +199,11 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    # no-changeset exempts dependency bumps from the changeset-check gate -
+    # they don't carry release notes of their own.
+    labels:
+      - "dependencies"
+      - "no-changeset"
     # Group all GitHub Actions bumps into a single PR to avoid the
     # cross-conflict churn of one PR per action touching the same workflow files
     groups:
