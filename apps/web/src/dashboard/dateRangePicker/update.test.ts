@@ -256,8 +256,7 @@ describe("dateRangePicker update — custom range selection", () => {
             endTime: new Date(endOfDay(2026, 6, 10)).toISOString(),
           }),
         })
-      ),
-      resolveFocusButton()
+      )
     );
   });
 
@@ -392,8 +391,7 @@ describe("dateRangePicker update — Apply", () => {
       Story.message(ClickedApply()),
       Story.expectOutMessage(
         AppliedRange({ selection: Preset({ preset: "last7d" }) })
-      ),
-      resolveFocusButton()
+      )
     );
   });
 
@@ -419,8 +417,7 @@ describe("dateRangePicker update — Apply", () => {
             ).toISOString(),
           }),
         })
-      ),
-      resolveFocusButton()
+      )
     );
   });
 
@@ -429,8 +426,7 @@ describe("dateRangePicker update — Apply", () => {
       withContext(),
       Story.given(init({ id: "picker" })),
       Story.message(ClickedApply()),
-      Story.expectOutMessage(AppliedRange({ selection: APPLIED_LAST_30D })),
-      resolveFocusButton()
+      Story.expectOutMessage(AppliedRange({ selection: APPLIED_LAST_30D }))
     );
   });
 
@@ -468,8 +464,7 @@ describe("dateRangePicker update — Cancel", () => {
         expect(next.maybeHoveredDay).toEqual(Option.none());
         expect(next.maybeDraftPreset).toEqual(Option.some("last30d"));
         expect(next.maybeDraftRange).toEqual(Option.none());
-      }),
-      resolveFocusButton()
+      })
     );
   });
 
@@ -501,8 +496,7 @@ describe("dateRangePicker update — Cancel", () => {
       Story.expectOutMessage(Cancelled()),
       Story.model((next) => {
         expect(next.maybeDraftPreset).toEqual(Option.some("last30d"));
-      }),
-      resolveFocusButton()
+      })
     );
   });
 });

@@ -1,4 +1,4 @@
-import { Popover, Toast as UiToast } from "@foldkit/ui";
+import { Toast as UiToast } from "@foldkit/ui";
 import { Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
@@ -110,9 +110,6 @@ const withContext = (
   model: ReturnType<typeof initModel>,
   message: Parameters<typeof update>[1]
 ) => update(model, message, context);
-
-const resolveFocusButton = () =>
-  Story.Command.resolve(Popover.FocusButton, Popover.CompletedFocusButton());
 
 const resolveApplyTheme = () =>
   Story.Command.resolve(ApplyTheme, CompletedApplyTheme());
@@ -884,8 +881,7 @@ describe("dashboard update — date range", () => {
           }),
         ],
         [SaveSettings, CompletedSaveSettings()]
-      ),
-      resolveFocusButton()
+      )
     );
   });
 });
@@ -942,8 +938,7 @@ describe("dashboard update — date range with no prior data", () => {
           }),
         ],
         [SaveSettings, CompletedSaveSettings()]
-      ),
-      resolveFocusButton()
+      )
     );
   });
 });

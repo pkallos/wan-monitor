@@ -7,7 +7,7 @@ export interface AuthenticatedUserValue {
   readonly exp: number;
 }
 
-export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()(
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
   "Unauthorized",
   { message: Schema.String },
   { httpApiStatus: 401 }
