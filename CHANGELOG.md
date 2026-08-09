@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.2
+### Patch Changes
+
+
+
+- [#282](https://github.com/pkallos/wan-monitor/pull/282) [`d5932dd`](https://github.com/pkallos/wan-monitor/commit/d5932dd6fb87401702609d39cf1637a4ce934ae8) Thanks [@pkallos](https://github.com/pkallos)! - Switch release automation from release-please to Changesets, and retire Turborepo in favor of `pnpm -r`. Release tags now use the `vX.Y.Z` format going forward.
+
 ## [1.2.1](https://github.com/pkallos/wan-monitor/compare/wan-monitor-v1.2.0...wan-monitor-v1.2.1) (2026-08-04)
 
 
