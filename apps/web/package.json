@@ -15,7 +15,7 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform-browser": "4.0.0-beta.102",
+    "@effect/platform-browser": "4.0.0-beta.103",
     "@foldkit/ui": "0.137.0",
     "clsx": "^2.1.1",
     "echarts": "^6.1.0",

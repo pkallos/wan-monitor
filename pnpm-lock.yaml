@@ -118,11 +118,11 @@ importers:
   apps/web:
     dependencies:
       '@effect/platform-browser':
-        specifier: 4.0.0-beta.102
-        version: 4.0.0-beta.102(effect@4.0.0-beta.102)
+        specifier: 4.0.0-beta.103
+        version: 4.0.0-beta.103(effect@4.0.0-beta.102)
       '@foldkit/ui':
         specifier: 0.137.0
-        version: 0.137.0(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))
+        version: 0.137.0(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -134,11 +134,11 @@ importers:
         version: 4.0.0-beta.102
       foldkit:
         specifier: 0.137.0
-        version: 0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
+        version: 0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
     devDependencies:
       '@foldkit/vite-plugin':
         specifier: 0.11.3
-        version: 0.11.3(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.8)(yaml@2.9.0))
+        version: 0.11.3(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.8)(yaml@2.9.0))
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.8)(yaml@2.9.0))
@@ -359,10 +359,10 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@effect/platform-browser@4.0.0-beta.102':
-    resolution: {integrity: sha512-DXXVt+oOpukqI3lEaGvvXQxSobzIy3lAsIQvlpVK+MuYBm1o4FHZrHKbrOFItDUvSR1t0kiTncFPRi01YaJUmA==}
+  '@effect/platform-browser@4.0.0-beta.103':
+    resolution: {integrity: sha512-3GXGzjv+dB5E9sCCj/JhPVyNB2NrBquGY2tYQ8VQqGK4uOpME6I5oLqRt+MmB7BWqWYPXUqvXj0wvMJRlQC4fw==}
     peerDependencies:
-      effect: ^4.0.0-beta.102
+      effect: ^4.0.0-beta.103
 
   '@effect/platform-node-shared@4.0.0-beta.102':
     resolution: {integrity: sha512-gVd793I72MrkX4dXo7eYtRKfNj0RW4eMRfVEKEJI16h2+mBDCzQ+gqMrog2hSTHQnaIbvbYShNQ4TVGuRCYZeQ==}
@@ -3783,7 +3783,7 @@ snapshots:
   '@csstools/css-tokenizer@3.0.4':
     optional: true
 
-  '@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102)':
+  '@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102)':
     dependencies:
       effect: 4.0.0-beta.102
       multipasta: 0.2.8
@@ -4051,16 +4051,16 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@foldkit/ui@0.137.0(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))':
+  '@foldkit/ui@0.137.0(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       effect: 4.0.0-beta.102
-      foldkit: 0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
+      foldkit: 0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
 
-  '@foldkit/vite-plugin@0.11.3(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.8)(yaml@2.9.0))':
+  '@foldkit/vite-plugin@0.11.3(effect@4.0.0-beta.102)(foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102))(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.8)(yaml@2.9.0))':
     dependencies:
       effect: 4.0.0-beta.102
-      foldkit: 0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
+      foldkit: 0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102)
       magic-string: 0.30.21
       vite: 8.2.0(@types/node@25.0.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.8)(yaml@2.9.0)
       ws: 8.21.1
@@ -5146,9 +5146,9 @@ snapshots:
       mlly: 1.8.0
       rollup: 4.54.0
 
-  foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.102(effect@4.0.0-beta.102))(effect@4.0.0-beta.102):
+  foldkit@0.137.0(@effect/platform-browser@4.0.0-beta.103(effect@4.0.0-beta.102))(effect@4.0.0-beta.102):
     dependencies:
-      '@effect/platform-browser': 4.0.0-beta.102(effect@4.0.0-beta.102)
+      '@effect/platform-browser': 4.0.0-beta.103(effect@4.0.0-beta.102)
       effect: 4.0.0-beta.102
 
   for-each@0.3.5:
