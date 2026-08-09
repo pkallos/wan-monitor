@@ -3,16 +3,17 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { KeyValueStore } from "effect/unstable/persistence";
 import { describe, expect, test } from "vitest";
 import {
+  applyTheme,
   fetchConnectivityStatus,
   fetchEarliestData,
   fetchLiveConnectivity,
   fetchMetrics,
   fetchSpeedtestHistory,
-  loadTheme,
-  saveTheme,
+  saveSettings,
   triggerSpeedtest,
 } from "@/dashboard/command";
 import { Custom, Preset } from "@/dashboard/dateRange";
+import { defaultSettings, readSettings, type Settings } from "@/storage";
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 // A 1h span lands in the granularity threshold's "<= 6 hours" branch, and
@@ -718,46 +719,52 @@ describe("triggerSpeedtest", () => {
   });
 });
 
-describe("loadTheme", () => {
-  test("decodes a stored theme into LoadedTheme", async () => {
-    const result = await Effect.gen(function* () {
-      const store = yield* KeyValueStore.KeyValueStore;
-      yield* store.set("wan_monitor_theme", "dark");
-      return yield* loadTheme;
-    }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
+describe("applyTheme", () => {
+  test("adds the dark class and colorScheme to <html> for dark", async () => {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.style.colorScheme = "";
 
-    expect(result).toEqual({ _tag: "LoadedTheme", theme: "dark" });
+    const result = await applyTheme({ theme: "dark" }).pipe(Effect.runPromise);
+
+    expect(result).toEqual({ _tag: "CompletedApplyTheme" });
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe("dark");
   });
 
-  test("falls back to light with no stored value", async () => {
-    const result = await loadTheme.pipe(
-      Effect.provide(KeyValueStore.layerMemory),
-      Effect.runPromise
-    );
+  test("removes the dark class and colorScheme from <html> for light", async () => {
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.colorScheme = "dark";
 
-    expect(result).toEqual({ _tag: "LoadedTheme", theme: "light" });
+    const result = await applyTheme({ theme: "light" }).pipe(Effect.runPromise);
+
+    expect(result).toEqual({ _tag: "CompletedApplyTheme" });
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe("light");
   });
 });
 
-describe("saveTheme", () => {
-  test("persists the theme and settles CompletedSaveTheme", async () => {
+describe("saveSettings", () => {
+  test("persists the settings blob and settles CompletedSaveSettings", async () => {
+    const settings: Settings = {
+      theme: "dark",
+      dateRange: Preset({ preset: "last7d" }),
+      isPaused: true,
+    };
+
     const result = await Effect.gen(function* () {
-      const settled = yield* saveTheme({ theme: "dark" });
-      const store = yield* KeyValueStore.KeyValueStore;
-      const stored = yield* store.get("wan_monitor_theme");
-      return { settled, stored };
+      const settled = yield* saveSettings({ settings });
+      return { settled, stored: yield* readSettings };
     }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
 
-    expect(result.settled).toEqual({ _tag: "CompletedSaveTheme" });
-    expect(result.stored).toBe("dark");
+    expect(result.settled).toEqual({ _tag: "CompletedSaveSettings" });
+    expect(result.stored).toEqual(settings);
   });
 
-  test("maps a storage failure into FailedSaveTheme", async () => {
-    const result = await saveTheme({ theme: "dark" }).pipe(
-      Effect.provide(failingKeyValueStore),
-      Effect.runPromise
-    );
+  test("maps a storage failure into FailedSaveSettings", async () => {
+    const result = await saveSettings({
+      settings: defaultSettings(),
+    }).pipe(Effect.provide(failingKeyValueStore), Effect.runPromise);
 
-    expect(result._tag).toBe("FailedSaveTheme");
+    expect(result._tag).toBe("FailedSaveSettings");
   });
 });

@@ -23,6 +23,7 @@ import {
   PACKET_LOSS_CHART_HOST_ID,
   SPEED_CHART_HOST_ID,
 } from "@/dashboard/charts/command";
+import { defaultSettings } from "@/storage";
 
 const acknowledgeAllChartMounts = () =>
   Scene.Mount.resolveAll(
@@ -45,7 +46,9 @@ describe("auth view", () => {
   test("shows a loading indicator while checking auth status", () => {
     Scene.scene(
       { update, view },
-      Scene.given(Checking({ maybeToken: Option.none() })),
+      Scene.given(
+        Checking({ maybeToken: Option.none(), settings: defaultSettings() })
+      ),
       Scene.expect(Scene.role("status")).toExist()
     );
   });
@@ -53,7 +56,7 @@ describe("auth view", () => {
   test("shows the login form when logged out", () => {
     Scene.scene(
       { update, view },
-      Scene.given(initLoggedOut()),
+      Scene.given(initLoggedOut(defaultSettings())),
       Scene.expect(Scene.label("Username")).toExist(),
       Scene.expect(Scene.label("Password")).toExist(),
       Scene.expect(Scene.role("button", { name: "Sign In" })).toExist()
@@ -63,7 +66,7 @@ describe("auth view", () => {
   test("typing into the username field updates its displayed value", () => {
     Scene.scene(
       { update, view },
-      Scene.given(initLoggedOut()),
+      Scene.given(initLoggedOut(defaultSettings())),
       Scene.type(Scene.label("Username"), "phil"),
       Scene.expect(Scene.label("Username")).toHaveValue("phil")
     );
@@ -73,7 +76,7 @@ describe("auth view", () => {
     Scene.scene(
       { update, view },
       Scene.given({
-        ...initLoggedOut(),
+        ...initLoggedOut(defaultSettings()),
         isSubmitting: true,
       }),
       Scene.expect(Scene.role("button", { name: "Signing in…" })).toExist(),
@@ -86,6 +89,7 @@ describe("auth view", () => {
       { update, view },
       Scene.given(
         initLoggedOut(
+          defaultSettings(),
           Option.some("Incorrect username or password. Please try again.")
         )
       ),
@@ -103,7 +107,7 @@ describe("auth view", () => {
           maybeSession: Option.some(
             Session.make({ token: "abc123", username: "phil" })
           ),
-          dashboard: initDashboardModel(),
+          dashboard: initDashboardModel(defaultSettings()),
         })
       ),
       acknowledgeAllChartMounts(),
@@ -118,7 +122,7 @@ describe("auth view", () => {
       Scene.given(
         LoggedIn({
           maybeSession: Option.none(),
-          dashboard: initDashboardModel(),
+          dashboard: initDashboardModel(defaultSettings()),
         })
       ),
       acknowledgeAllChartMounts(),
@@ -134,7 +138,7 @@ describe("auth view", () => {
           maybeSession: Option.some(
             Session.make({ token: "abc123", username: "phil" })
           ),
-          dashboard: initDashboardModel(),
+          dashboard: initDashboardModel(defaultSettings()),
         })
       ),
       acknowledgeAllChartMounts(),

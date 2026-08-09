@@ -557,14 +557,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
       AsyncData.getOrElse(model.speedtestHistory, () => [])
     );
 
-    const isDark =
-      Option.getOrElse(model.maybeTheme, () => "light" as const) === "dark";
+    const isDark = model.theme === "dark";
 
     return h.div(
       [
-        h.Class(
-          `min-h-screen bg-gray-50 dark:bg-gray-900 dark:text-gray-100${isDark ? " dark" : ""}`
-        ),
+        h.Class("min-h-screen bg-gray-50 dark:bg-gray-900 dark:text-gray-100"),
         h.DataAttribute("testid", "dashboard-root"),
       ],
       [

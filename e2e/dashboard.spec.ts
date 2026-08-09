@@ -108,10 +108,14 @@ test.describe("WAN Monitor Dashboard", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
-    // The theme is persisted here; assert the mode flips after clicking the
-    // toggle rather than sniffing computed styles.
+    // The theme is persisted as part of the `wan_monitor_settings` blob;
+    // assert the mode flips after clicking the toggle rather than sniffing
+    // computed styles.
     const readMode = () =>
-      page.evaluate(() => localStorage.getItem("wan_monitor_theme"));
+      page.evaluate(() => {
+        const raw = localStorage.getItem("wan_monitor_settings");
+        return raw === null ? null : JSON.parse(raw).theme;
+      });
     const initialMode = await readMode();
 
     const themeToggle = page.getByRole("button", {

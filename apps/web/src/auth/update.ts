@@ -11,9 +11,24 @@ import {
 import { GotDashboardMessage, type Message } from "@/auth/message";
 import { initLoggedOut, LoggedIn, type Model, Session } from "@/auth/model";
 import * as Dashboard from "@/dashboard";
+import type { Settings } from "@/storage";
 
 type UpdateReturn = readonly [Model, ReadonlyArray<Command.Command<Message>>];
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
+
+// Every state carries (or can derive) the chrome settings that survive a
+// reload, so this is the one place that reads them off whichever state the
+// model happens to be in — `LoggedIn` holds no separate copy, so its
+// settings come from the live dashboard via `settingsFromModel`.
+const currentSettings = (model: Model): Settings =>
+  M.value(model).pipe(
+    M.withReturnType<Settings>(),
+    M.tagsExhaustive({
+      Checking: (checking) => checking.settings,
+      LoggedOut: (loggedOut) => loggedOut.settings,
+      LoggedIn: (loggedIn) => Dashboard.settingsFromModel(loggedIn.dashboard),
+    })
+  );
 
 // A newly LoggedIn Model always starts its dashboard the same way regardless
 // of how it got here (auth disabled, a validated stored token, or a fresh
@@ -22,10 +37,11 @@ const withUpdateReturn = M.withReturnType<UpdateReturn>();
 // round-trip.
 const enterLoggedIn = (
   maybeSession: Option.Option<Session>,
-  token: string
+  token: string,
+  settings: Settings
 ): UpdateReturn => {
   const [dashboardModel, dashboardCommands] = Dashboard.update(
-    Dashboard.initModel(),
+    Dashboard.initModel(settings),
     Dashboard.EnteredDashboard(),
     { token, now: Date.now }
   );
@@ -45,24 +61,28 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       SucceededFetchAuthStatus: ({ authRequired }) => {
         if (model._tag !== "Checking") return [model, []];
         if (!authRequired) {
-          return enterLoggedIn(Option.none(), "");
+          return enterLoggedIn(Option.none(), "", model.settings);
         }
         return Option.match(model.maybeToken, {
-          onNone: () => [initLoggedOut(), []],
+          onNone: () => [initLoggedOut(model.settings), []],
           onSome: (token) => [model, [FetchMe({ token })]],
         });
       },
-      FailedFetchAuthStatus: () => [initLoggedOut(), []],
+      FailedFetchAuthStatus: () => [initLoggedOut(currentSettings(model)), []],
 
       SucceededFetchMe: ({ username }) => {
         if (model._tag !== "Checking") return [model, []];
         const token = Option.getOrThrow(model.maybeToken);
         return enterLoggedIn(
           Option.some(Session.make({ token, username })),
-          token
+          token,
+          model.settings
         );
       },
-      FailedFetchMe: () => [initLoggedOut(), [ClearSession()]],
+      FailedFetchMe: () => [
+        initLoggedOut(currentSettings(model)),
+        [ClearSession()],
+      ],
 
       ChangedUsername: ({ value }) => {
         if (model._tag !== "LoggedOut") return [model, []];
@@ -85,7 +105,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       SucceededLogin: ({ token, username }) => {
         const [loggedInModel, commands] = enterLoggedIn(
           Option.some(Session.make({ token, username })),
-          token
+          token,
+          currentSettings(model)
         );
         return [loggedInModel, [...commands, SaveSession({ token, username })]];
       },
@@ -100,7 +121,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         ];
       },
 
-      ClickedLogout: () => [initLoggedOut(), [ClearSession(), Logout()]],
+      // Settings come from the `LoggedIn` model's dashboard, not a default —
+      // the theme and range the user was looking at survive the logout, so
+      // the login screen stays themed and logging back in restores them.
+      ClickedLogout: () => [
+        initLoggedOut(currentSettings(model)),
+        [ClearSession(), Logout()],
+      ],
 
       GotDashboardMessage: ({ message }) => {
         if (model._tag !== "LoggedIn") return [model, []];

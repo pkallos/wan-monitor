@@ -1,7 +1,6 @@
 import { BrowserKeyValueStore } from "@effect/platform-browser";
 import { Effect, Option, Schema as S } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
-import { KeyValueStore } from "effect/unstable/persistence";
 import { Command } from "foldkit";
 import { makeClient } from "@/api/client";
 import {
@@ -17,8 +16,7 @@ import {
   SucceededFetchMe,
   SucceededLogin,
 } from "@/auth/message";
-
-export const SESSION_STORAGE_KEY = "wan_monitor_token";
+import { clearToken, writeToken } from "@/storage";
 
 const loginErrorMessage = (error: {
   readonly _tag: string;
@@ -97,21 +95,15 @@ export const logout = Effect.gen(function* () {
 }).pipe(Effect.catch(() => Effect.succeed(CompletedLogout())));
 
 export const saveSession = ({ token }: { token: string }) =>
-  Effect.gen(function* () {
-    const store = yield* KeyValueStore.KeyValueStore;
-    yield* store.set(SESSION_STORAGE_KEY, token);
-    return CompletedSaveSession();
-  }).pipe(
+  writeToken(token).pipe(
+    Effect.as(CompletedSaveSession()),
     Effect.catch((error) =>
       Effect.succeed(FailedSaveSession({ error: String(error) }))
     )
   );
 
-export const clearSession = Effect.gen(function* () {
-  const store = yield* KeyValueStore.KeyValueStore;
-  yield* store.remove(SESSION_STORAGE_KEY);
-  return CompletedClearSession();
-}).pipe(
+export const clearSession = clearToken.pipe(
+  Effect.as(CompletedClearSession()),
   Effect.catch((error) =>
     Effect.succeed(FailedClearSession({ error: String(error) }))
   )
@@ -144,13 +136,22 @@ export const SaveSession = Command.define("SaveSession", {
   messages: [CompletedSaveSession, FailedSaveSession],
   execute: (args) =>
     saveSession(args).pipe(
-      Effect.provide(BrowserKeyValueStore.layerLocalStorage)
+      Effect.provide(BrowserKeyValueStore.layerLocalStorage),
+      // Guards against a defect building the store itself (e.g. `localStorage`
+      // throwing with site data blocked), which happens outside saveSession's
+      // own Effect.catch since the layer isn't built yet when that runs.
+      Effect.catchDefect((defect) =>
+        Effect.succeed(FailedSaveSession({ error: String(defect) }))
+      )
     ),
 });
 
 export const ClearSession = Command.define("ClearSession", {
   messages: [CompletedClearSession, FailedClearSession],
   execute: clearSession.pipe(
-    Effect.provide(BrowserKeyValueStore.layerLocalStorage)
+    Effect.provide(BrowserKeyValueStore.layerLocalStorage),
+    Effect.catchDefect((defect) =>
+      Effect.succeed(FailedClearSession({ error: String(defect) }))
+    )
   ),
 });

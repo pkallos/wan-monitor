@@ -8,13 +8,21 @@
   </head>
   <body>
     <script>
+      // Pre-hydration paint only. The runtime owner of `<html>`'s `dark`
+      // class is the ApplyTheme Command (dashboard/command.ts); this exists
+      // solely so the first frame isn't blank. Key and fallback chain must
+      // match @/storage's SETTINGS_STORAGE_KEY and defaultSettings.
       (() => {
-        let mode = localStorage.getItem('wan_monitor_theme');
-        if (mode !== 'light' && mode !== 'dark') {
-          mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        let theme;
+        try {
+          const raw = localStorage.getItem('wan_monitor_settings');
+          if (raw !== null) theme = JSON.parse(raw).theme;
+        } catch {}
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
-        document.documentElement.style.colorScheme = mode;
-        if (mode === 'dark') document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = theme;
+        document.documentElement.classList.toggle('dark', theme === 'dark');
       })();
     </script>
     <div id="root"></div>

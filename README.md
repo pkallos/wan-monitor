@@ -174,6 +174,10 @@ On the connectivity timeline the two grey shades mean different things. **No Dat
 
 Charts support linked cursors (hovering on one chart highlights the same time on others) and automatic data aggregation: the bucket size is derived from the selected range's span, from 1-minute buckets for a range of 6 hours or less up to 1-day buckets beyond 90 days.
 
+### Saved preferences
+
+The theme, the selected date range, and whether auto-refresh is paused are stored in your browser's local storage (key `wan_monitor_settings`) and restored on the next visit. They're per-browser, not per-account — nothing is sent to the server. On a first visit the theme follows your operating system's light/dark preference; after that your explicit choice wins. A paused dashboard stays paused across reloads — the toolbar button reads **Resume** when that's the case. A custom (non-preset) date range is stored as absolute timestamps, so reopening the dashboard days later shows the same fixed window, not a rolling one. Clearing site data resets all three to defaults. Upgrading from an older version that only persisted theme resets it once, to your OS preference — the old `wan_monitor_theme` key is no longer read.
+
 ## Limitations
 
 This tool monitors your internet connection **from the device running the container**. Keep in mind:

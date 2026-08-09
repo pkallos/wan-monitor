@@ -3,13 +3,16 @@ import { describe, expect, test } from "vitest";
 import { Checking, initLoggedOut, LoggedIn } from "@/auth/model";
 import { dependenciesToStream, modelToDependencies } from "@/auth/subscription";
 import { initModel as initDashboardModel } from "@/dashboard";
+import { defaultSettings } from "@/storage";
 
 describe("modelToDependencies", () => {
   test("is never logged in while Checking or LoggedOut", () => {
     expect(
-      modelToDependencies(Checking({ maybeToken: Option.none() }))
+      modelToDependencies(
+        Checking({ maybeToken: Option.none(), settings: defaultSettings() })
+      )
     ).toEqual({ isPaused: true, isIdle: false, isLoggedIn: false });
-    expect(modelToDependencies(initLoggedOut())).toEqual({
+    expect(modelToDependencies(initLoggedOut(defaultSettings()))).toEqual({
       isPaused: true,
       isIdle: false,
       isLoggedIn: false,
@@ -21,7 +24,11 @@ describe("modelToDependencies", () => {
       modelToDependencies(
         LoggedIn({
           maybeSession: Option.none(),
-          dashboard: { ...initDashboardModel(), isPaused: true, isIdle: true },
+          dashboard: {
+            ...initDashboardModel(defaultSettings()),
+            isPaused: true,
+            isIdle: true,
+          },
         })
       )
     ).toEqual({ isPaused: true, isIdle: true, isLoggedIn: true });

@@ -17,11 +17,12 @@ import {
   SyncSpeedChart,
 } from "@/dashboard/charts/command";
 import {
+  ApplyTheme,
   FetchConnectivityStatus,
   FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
-  SaveTheme,
+  SaveSettings,
 } from "@/dashboard/command";
 import {
   formatDateRangeLabel,
@@ -29,7 +30,8 @@ import {
   Preset,
 } from "@/dashboard/dateRange";
 import {
-  CompletedSaveTheme,
+  CompletedApplyTheme,
+  CompletedSaveSettings,
   CompletedSyncJitterChart,
   CompletedSyncLatencyChart,
   CompletedSyncPacketLossChart,
@@ -53,6 +55,7 @@ import {
 } from "@/dashboard/model";
 import { update } from "@/dashboard/update";
 import { view as dashboardView } from "@/dashboard/view";
+import { defaultSettings } from "@/storage";
 
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
@@ -118,7 +121,7 @@ describe("dashboard view", () => {
   test("shows a loading indicator while metrics are idle", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.text("Loading metrics…")).toExist()
     );
@@ -126,7 +129,7 @@ describe("dashboard view", () => {
 
   test("shows when the data was last updated, and a spinner while refreshing", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       metrics: MetricsAsyncData.Refreshing({ data: [] }),
       maybeLastUpdatedMs: Option.some(Date.parse("2026-07-26T00:00:00.000Z")),
     };
@@ -143,7 +146,7 @@ describe("dashboard view", () => {
 
   test("shows the connectivity, download, and upload summary cards", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       liveConnectivity: liveConnectivity("up"),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({
         data: [
@@ -180,7 +183,7 @@ describe("dashboard view", () => {
     Scene.scene(
       { update: boundUpdate, view },
       Scene.given({
-        ...initModel(),
+        ...initModel(defaultSettings()),
         liveConnectivity: liveConnectivity(status),
       }),
       acknowledgeAllChartMounts(),
@@ -192,7 +195,7 @@ describe("dashboard view", () => {
     Scene.scene(
       { update: boundUpdate, view },
       Scene.given({
-        ...initModel(),
+        ...initModel(defaultSettings()),
         liveConnectivity: LiveConnectivityAsyncData.Loading(),
       }),
       acknowledgeAllChartMounts(),
@@ -205,7 +208,7 @@ describe("dashboard view", () => {
     Scene.scene(
       { update: boundUpdate, view },
       Scene.given({
-        ...initModel(),
+        ...initModel(defaultSettings()),
         liveConnectivity: LiveConnectivityAsyncData.Failure({
           error: "network error",
         }),
@@ -221,7 +224,7 @@ describe("dashboard view", () => {
   // it reads the live endpoint, not model.metrics.
   test("ignores model.metrics entirely, even when its newest row is a speedtest", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       metrics: MetricsAsyncData.Success({
         data: [
           {
@@ -251,7 +254,7 @@ describe("dashboard view", () => {
 
   test("shows the resolved ISP and external IP from the latest speed test", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({
         data: [
           {
@@ -279,7 +282,7 @@ describe("dashboard view", () => {
   test("falls back to Unknown ISP with no speed test data", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.text("Unknown ISP")).toExist()
     );
@@ -287,7 +290,7 @@ describe("dashboard view", () => {
 
   test("shows an alert with the error when metrics fail", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       metrics: MetricsAsyncData.Failure({ error: "network error" }),
     };
 
@@ -303,7 +306,7 @@ describe("dashboard view", () => {
 
   test("shows an alert with the error when speed test history fails", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       speedtestHistory: SpeedtestHistoryAsyncData.Failure({
         error: "network error",
       }),
@@ -321,7 +324,7 @@ describe("dashboard view", () => {
 
   test("shows an alert with the error when connectivity status fails", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       connectivityStatus: ConnectivityStatusAsyncData.Failure({
         error: "network error",
       }),
@@ -339,7 +342,7 @@ describe("dashboard view", () => {
 
   test("shows an alert with the error when a metrics refresh fails but stale data still renders", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       metrics: MetricsAsyncData.Stale({
         error: "network error",
         data: [
@@ -361,7 +364,7 @@ describe("dashboard view", () => {
 
   test("shows an alert with the error when a speed test history refresh fails but stale data still renders", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       speedtestHistory: SpeedtestHistoryAsyncData.Stale({
         error: "network error",
         data: [
@@ -388,7 +391,7 @@ describe("dashboard view", () => {
 
   test("shows an alert with the error when a connectivity status refresh fails but stale data still renders", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       connectivityStatus: ConnectivityStatusAsyncData.Stale({
         error: "network error",
         data: {
@@ -416,7 +419,7 @@ describe("dashboard view", () => {
   test("renders one connectivity segment per distinct status and hovering shows its tooltip", () => {
     const startTimeMs = Date.parse("2026-07-26T10:00:00.000Z");
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [
@@ -459,7 +462,7 @@ describe("dashboard view", () => {
   test("tapping a connectivity segment shows its tooltip, and tapping it again dismisses it", () => {
     const startTimeMs = Date.parse("2026-07-26T10:00:00.000Z");
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       connectivityStatus: ConnectivityStatusAsyncData.Success({
         data: {
           points: [
@@ -501,7 +504,7 @@ describe("dashboard view", () => {
 
   test("shows a disabled Running… state while the speed test trigger is pending", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       speedtestTrigger: SpeedtestTriggerAsyncData.Loading(),
     };
 
@@ -517,7 +520,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the latency chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       Scene.expect(Scene.label("Latency chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -526,7 +529,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the packet loss chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       Scene.expect(Scene.label("Packet loss chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -535,7 +538,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the jitter chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       Scene.expect(Scene.label("Jitter chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -544,7 +547,7 @@ describe("dashboard view", () => {
   test("renders a chart host for the speed chart and mounts it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       Scene.expect(Scene.label("Speed chart")).toExist(),
       acknowledgeAllChartMounts()
     );
@@ -552,7 +555,7 @@ describe("dashboard view", () => {
 
   test("shows average/max download and upload speed stats", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({
         data: [
           {
@@ -590,7 +593,7 @@ describe("dashboard view", () => {
   test("renders an empty toast region ready to receive notifications", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("region")).toExist()
     );
@@ -598,7 +601,7 @@ describe("dashboard view", () => {
 
   test("clicking Refresh now force-reloads every series", () => {
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       metrics: MetricsAsyncData.Success({ data: [] }),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
       connectivityStatus: ConnectivityStatusAsyncData.Success({
@@ -675,13 +678,14 @@ describe("dashboard view", () => {
     );
   });
 
-  test("clicking pause toggles the button label to Resume", () => {
+  test("clicking pause toggles the button label to Resume and persists it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("button", { name: "Pause" })).toExist(),
       Scene.click(Scene.role("button", { name: "Pause" })),
+      Scene.Command.resolve(SaveSettings, CompletedSaveSettings()),
       Scene.expect(Scene.role("button", { name: "Resume" })).toExist()
     );
   });
@@ -689,7 +693,7 @@ describe("dashboard view", () => {
   test("going idle shows a distinct resume label, and clicking it resumes without a manual pause", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given({ ...initModel(), isIdle: true }),
+      Scene.given({ ...initModel(defaultSettings()), isIdle: true }),
       acknowledgeAllChartMounts(),
       Scene.expect(
         Scene.role("button", { name: "Resume (paused, inactive)" })
@@ -699,17 +703,21 @@ describe("dashboard view", () => {
     );
   });
 
-  test("clicking the theme toggle switches to dark mode, applies the dark class, and persists it", () => {
+  // Scene never runs a Command's real effect, only injects its resolved
+  // message, so `<html>`'s dark class is covered in command.test.ts and e2e
+  // instead — this only covers the model and view.
+  test("clicking the theme toggle switches to dark mode and persists it", () => {
     Scene.scene(
       { update: boundUpdate, view },
-      Scene.given(initModel()),
+      Scene.given(initModel(defaultSettings())),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.role("button", { name: "Dark mode" })).toExist(),
-      Scene.expect(Scene.testId("dashboard-root")).not.toHaveClass("dark"),
       Scene.click(Scene.role("button", { name: "Dark mode" })),
-      Scene.Command.resolve(SaveTheme, CompletedSaveTheme()),
-      Scene.expect(Scene.role("button", { name: "Light mode" })).toExist(),
-      Scene.expect(Scene.testId("dashboard-root")).toHaveClass("dark")
+      Scene.Command.resolveAll(
+        [ApplyTheme, CompletedApplyTheme()],
+        [SaveSettings, CompletedSaveSettings()]
+      ),
+      Scene.expect(Scene.role("button", { name: "Light mode" })).toExist()
     );
   });
 
@@ -724,7 +732,7 @@ describe("dashboard view", () => {
       getDateRangeWindow(appliedRange, NOW_MS)
     );
     const model = {
-      ...initModel(),
+      ...initModel(defaultSettings()),
       metrics: MetricsAsyncData.Success({ data: [] }),
       speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
       connectivityStatus: ConnectivityStatusAsyncData.Success({
@@ -810,6 +818,7 @@ describe("dashboard view", () => {
           ]
         ),
         resolveAllChartSyncs(),
+        Scene.Command.resolve(SaveSettings, CompletedSaveSettings()),
         Scene.Command.resolve(
           Popover.FocusButton,
           Popover.CompletedFocusButton()
