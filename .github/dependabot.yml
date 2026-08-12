@@ -140,7 +140,9 @@ updates:
       - dependency-name: "fastify"
         update-types: ["version-update:semver-major"]
 
-      # TypeScript major versions (TS 6.0 needs a manual migration)
+      # TypeScript major versions - each major carries breaking tsconfig
+      # default changes and compiler-API compatibility shifts (e.g. TS 7's
+      # native Go compiler shipped without a stable API), so bump manually.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
 
