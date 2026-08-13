@@ -37,7 +37,7 @@
     "@wan-monitor/shared": "workspace:*",
     "tsup": "^8.5.1",
     "tsx": "^4.23.11",
-    "typescript": "^5.3.3",
+    "typescript": "^7.0.2",
     "vitest": "^3.2.4"
   }
 }
