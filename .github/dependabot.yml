@@ -84,6 +84,14 @@ updates:
           - "@types/pg"
           - "@questdb/*"
 
+      # Changesets - the CLI and its changelog plugin are versioned
+      # together upstream and the release workflow pins changesets/action to
+      # a matching major, so they have to move as one PR. No update-types
+      # filter: their majors ship in lockstep too.
+      changesets:
+        patterns:
+          - "@changesets/*"
+
       # Development tools
       dev-tools:
         patterns:
