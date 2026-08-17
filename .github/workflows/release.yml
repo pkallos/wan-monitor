@@ -38,7 +38,7 @@ jobs:
       # wan-monitor@X.Y.Z.
       - name: Version Packages
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           version: pnpm exec changeset version
           commit: "chore: release wan-monitor"
