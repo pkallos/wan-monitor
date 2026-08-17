@@ -32,27 +32,26 @@ jobs:
 
       # Manages the "Version Packages" PR: opens/updates it while changesets
       # are pending, and does nothing once they've all been consumed by a
-      # merge. There is no `publish` input here - see the tag step below for
-      # why: this repo tags releases as vX.Y.Z, and changesets/action's own
-      # publish path can only produce a package-scoped tag like
-      # wan-monitor@X.Y.Z.
+      # merge. There is no `publish-script` input here - see the tag step
+      # below for why: this repo tags releases as vX.Y.Z, and
+      # changesets/action's own publish path can only produce a
+      # package-scoped tag like wan-monitor@X.Y.Z.
       - name: Version Packages
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: pnpm exec changeset version
-          commit: "chore: release wan-monitor"
-          title: "chore: release wan-monitor"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm exec changeset version
+          commit-message: "chore: release wan-monitor"
+          pr-title: "chore: release wan-monitor"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # hasChangesets is false both right after the version PR merges (the
+      # has-changesets is false both right after the version PR merges (the
       # case we want) and on every other changeset-free push to main (the
       # case we don't) - so gate on the root version actually being new, and
       # make re-runs a no-op by checking the tag doesn't already exist.
       - name: Tag release
         id: tag
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.has-changesets == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
