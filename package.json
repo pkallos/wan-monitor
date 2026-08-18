@@ -46,7 +46,7 @@
     "postinstall": "sh scripts/patch-speedtest-net.sh"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.7",
+    "@biomejs/biome": "^2.5.8",
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.0",
     "@effect/vitest": "4.0.0-beta.102",
