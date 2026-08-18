@@ -51,8 +51,8 @@ updates:
       # manifest gets its own PR that respects its own major-version ignore rule.
       testing:
         patterns:
-          - "@testing-library/*"
-          - "jsdom"
+          - "happy-dom"
+          - "@playwright/test"
         update-types:
           - "minor"
           - "patch"
@@ -170,8 +170,7 @@ updates:
       - dependency-name: "framer-motion"
         update-types: ["version-update:semver-major"]
 
-      # Testing library major versions (testing-library 16, jsdom 27 need manual migration)
-      # vitest itself is fully excluded below: apps/web runs vitest 4 while the
+      # vitest is fully excluded below: apps/web runs vitest 4 while the
       # rest of the workspace runs vitest 3, and dependabot resolves "vitest" as
       # one dependency across the whole pnpm workspace regardless of grouping,
       # so any automated bump forces both sides onto the same version and
@@ -185,10 +184,6 @@ updates:
       # apps/server still run vitest ^3.2.x. Fully excluded (no update-types):
       # its beta-to-beta bumps are prerelease, not semver-minor/patch.
       - dependency-name: "@effect/vitest"
-      - dependency-name: "@testing-library/*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "jsdom"
-        update-types: ["version-update:semver-major"]
 
       # Charting library major versions (recharts v3 needs a manual migration)
       - dependency-name: "recharts"
