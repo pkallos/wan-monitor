@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.3
+
+### Patch Changes
+
+- [#298](https://github.com/pkallos/wan-monitor/pull/298) [`fbf7e80`](https://github.com/pkallos/wan-monitor/commit/fbf7e80727b6117e235a2b485659d9fbff3a0fd5) Thanks [@pkallos](https://github.com/pkallos)! - Upgrade TypeScript to 7.0.2 across the workspace, removing the now-deprecated `baseUrl` tsconfig option and adding explicit `@types/node` to apps/web for the new empty-by-default `types` array.
+
 ## 1.2.2
 ### Patch Changes
 
