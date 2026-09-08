@@ -50,7 +50,7 @@
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.0",
     "@effect/vitest": "4.0.0-beta.102",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.13.3",
     "@wan-monitor/shared": "workspace:*",
     "husky": "^9.1.7",
