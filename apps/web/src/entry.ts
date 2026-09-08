@@ -12,7 +12,6 @@ registerEcharts();
 const application = Runtime.makeApplication({
   Model,
   Flags,
-  flags,
   init,
   update,
   view,
@@ -20,4 +19,4 @@ const application = Runtime.makeApplication({
   container: document.getElementById("root"),
 });
 
-Runtime.run(application);
+Runtime.run(application, { flags });

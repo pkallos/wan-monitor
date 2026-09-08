@@ -22,7 +22,7 @@ importers:
         version: 3.0.0
       '@effect/vitest':
         specifier: 4.0.0-beta.102
-        version: 4.0.0-beta.102(effect@4.0.0-rc.109)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.2)(jsdom@23.2.0)(lightningcss@1.33.0))
+        version: 4.0.0-beta.102(effect@4.0.0-rc.111)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.2)(jsdom@23.2.0)(lightningcss@1.33.0))
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
@@ -51,8 +51,8 @@ importers:
   apps/server:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.0.0-rc.109
-        version: 4.0.0-rc.109(effect@4.0.0-rc.109)(redis@6.2.1)
+        specifier: 4.0.0-rc.111
+        version: 4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1)
       '@questdb/nodejs-client':
         specifier: ^4.2.0
         version: 4.2.0
@@ -60,8 +60,8 @@ importers:
         specifier: ^8.21.0
         version: 8.21.0
       effect:
-        specifier: 4.0.0-rc.109
-        version: 4.0.0-rc.109
+        specifier: 4.0.0-rc.111
+        version: 4.0.0-rc.111
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
@@ -83,7 +83,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-beta.102
-        version: 4.0.0-beta.102(effect@4.0.0-rc.109)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.2)(jsdom@23.2.0)(lightningcss@1.33.0))
+        version: 4.0.0-beta.102(effect@4.0.0-rc.111)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.2)(jsdom@23.2.0)(lightningcss@1.33.0))
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
@@ -118,11 +118,11 @@ importers:
   apps/web:
     dependencies:
       '@effect/platform-browser':
-        specifier: 4.0.0-rc.109
-        version: 4.0.0-rc.109(effect@4.0.0-rc.109)
+        specifier: 4.0.0-rc.111
+        version: 4.0.0-rc.111(effect@4.0.0-rc.111)
       '@foldkit/ui':
-        specifier: 0.145.0
-        version: 0.145.0(effect@4.0.0-rc.109)(foldkit@0.145.0(effect@4.0.0-rc.109))
+        specifier: 0.148.2
+        version: 0.148.2(effect@4.0.0-rc.111)(foldkit@0.148.2(effect@4.0.0-rc.111))
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -130,15 +130,15 @@ importers:
         specifier: ^6.1.0
         version: 6.1.0
       effect:
-        specifier: 4.0.0-rc.109
-        version: 4.0.0-rc.109
+        specifier: 4.0.0-rc.111
+        version: 4.0.0-rc.111
       foldkit:
-        specifier: 0.145.0
-        version: 0.145.0(effect@4.0.0-rc.109)
+        specifier: 0.148.2
+        version: 0.148.2(effect@4.0.0-rc.111)
     devDependencies:
       '@foldkit/vite-plugin':
-        specifier: 0.13.1
-        version: 0.13.1(effect@4.0.0-rc.109)(foldkit@0.145.0(effect@4.0.0-rc.109))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+        specifier: 0.16.1
+        version: 0.16.1(effect@4.0.0-rc.111)(foldkit@0.148.2(effect@4.0.0-rc.111))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -170,8 +170,8 @@ importers:
   packages/shared:
     dependencies:
       effect:
-        specifier: 4.0.0-rc.109
-        version: 4.0.0-rc.109
+        specifier: 4.0.0-rc.111
+        version: 4.0.0-rc.111
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^3.2.7
@@ -374,22 +374,22 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@effect/platform-browser@4.0.0-rc.109':
-    resolution: {integrity: sha512-63/hM2dCh0HQb7sRkAhAoZjO4swjRD2vT/eUrs8nXA0LzJMz52ChPsxdnL1D0yg+ZeXtMHQM0MFJxITJXjv+EA==}
+  '@effect/platform-browser@4.0.0-rc.111':
+    resolution: {integrity: sha512-4SmaYB4zWsmuM82V8Dgida2yupzEWlv6/QoDL2Ogj1jOPq65KUx3VjQKcNn2NenOR6SFRWaWsUWrnxwA2IPFzg==}
     peerDependencies:
-      effect: ^4.0.0-rc.109
+      effect: ^4.0.0-rc.111
 
-  '@effect/platform-node-shared@4.0.0-rc.110':
-    resolution: {integrity: sha512-P8EZloxS7RtCOSL3VSBPyqSenUm93xLbXf9jkWoy67cibZ2wgZ9nAou9iN8f1i4vzgxUsWtDuy6BEmg67np6Zw==}
+  '@effect/platform-node-shared@4.0.0-rc.111':
+    resolution: {integrity: sha512-iES0Q9vmjhaUKqeW9ceonuD45MUg/Ouk08LzRSptZ+B5qB0w9WlRjDmUz5TJmY2betNop5FRI5k4AD4mtQt3Bw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.110
+      effect: ^4.0.0-rc.111
 
-  '@effect/platform-node@4.0.0-rc.109':
-    resolution: {integrity: sha512-LE/GTh6MCZ0uzbEFH9WmxQkC9snjWuFyh8vW04AAgbKKxSHXsepHSK9RcE/2oYKr6RhrOTD0C2wC0i+J9qoe2g==}
+  '@effect/platform-node@4.0.0-rc.111':
+    resolution: {integrity: sha512-oy1i7HsOGg/5r+DuBe5+ddmnUhnXmyZFPFPXZCBdO/RQpHK3PIFe1/2UMGxZE+ngDymrSksuQTSgQLF6P+MLqw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.109
+      effect: ^4.0.0-rc.111
       redis: '>=5.0.0 <7.0.0'
 
   '@effect/vitest@4.0.0-beta.102':
@@ -860,19 +860,19 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@foldkit/ui@0.145.0':
-    resolution: {integrity: sha512-FOOwQrpuAsVBcD97S/KSgtSB85pS4yWPoQR0fgEpd0tGG6v6BIPxgZH4SS+s8fmQpw9gTnkXyz3eEuphU63uig==}
+  '@foldkit/ui@0.148.2':
+    resolution: {integrity: sha512-am9hXP16nyIbAOQKLlemfxr5mehWjBW7mWsA0Ib3B3UOGoQ9X/joDfCUnzY1bISQlwuBCs/4RtKcq+mtUhhd3w==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: 4.0.0-rc.108
+      effect: 4.0.0-rc.109
       foldkit: ^0
 
-  '@foldkit/vite-plugin@0.13.1':
-    resolution: {integrity: sha512-IrLwzMolg0Isd1NYXn5ykbKBrwJ9JRchdgN6eLppBv9iXjjzpYkT5aCf76VK4wyHuIRrKRwKFCwXajeuIa3U5w==}
-    engines: {node: '>=18.0.0'}
+  '@foldkit/vite-plugin@0.16.1':
+    resolution: {integrity: sha512-zYbiQbYPRh32jSeocJEKVwsbrL1xD3IKZDBPbE1Dvq4s6LOMWbqbJmON781SVwVJ9cFp0Wh6AITNGsH8GLvccA==}
+    engines: {node: '>=20.19.0'}
     peerDependencies:
-      effect: 4.0.0-rc.108
-      foldkit: ^0
+      effect: 4.0.0-rc.109
+      foldkit: '>=0.148.0'
       vite: ^7.0.0 || ^8.0.0
 
   '@isaacs/cliui@8.0.2':
@@ -1852,8 +1852,8 @@ packages:
   echarts@6.1.0:
     resolution: {integrity: sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==}
 
-  effect@4.0.0-rc.109:
-    resolution: {integrity: sha512-6ubcOCtfdbmFO5+vgcT2HsTw5s+n3aMUj4eAIbVpUxP7+VYCwXxxcBHgiWgizOrGO1eGmuOBFek3mM0dFcwaWA==}
+  effect@4.0.0-rc.111:
+    resolution: {integrity: sha512-ASd5L58EIR0CUNueZNKKjSsyOCd+2alxOAIaTcHaqkJkPsaYSsw5Cg/cfANk5K4Jr2YsX756xvX11shzqsreWA==}
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -1875,6 +1875,10 @@ packages:
   entities@7.0.1:
     resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
     engines: {node: '>=0.12'}
+
+  entities@8.0.0:
+    resolution: {integrity: sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA==}
+    engines: {node: '>=20.19.0'}
 
   es-define-property@1.0.1:
     resolution: {integrity: sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==}
@@ -1998,11 +2002,11 @@ packages:
   fix-dts-default-cjs-exports@1.0.1:
     resolution: {integrity: sha512-pVIECanWFC61Hzl2+oOCtoJ3F17kglZC/6N94eRWycFgBH35hHx0Li604ZIzhseh97mf2p0cv7vVrOZGoqhlEg==}
 
-  foldkit@0.145.0:
-    resolution: {integrity: sha512-gAWg5UMtdGhPPp55EOCDE2p/B02YUMRzT0XENb7cQx21akUYcnbgs0SsjC5L5NLiL0BGp7873BoJqRy2jsvYFQ==}
-    engines: {node: '>=18.0.0'}
+  foldkit@0.148.2:
+    resolution: {integrity: sha512-Bf735uDqbKU1jSUAMgkV1aMUEf5X+4ljsfQFkylgowOSKqTSEY0NYgrsAKiFSFkW3G2ReF1qyX61lBdbItYxnQ==}
+    engines: {node: '>=20.19.0'}
     peerDependencies:
-      effect: 4.0.0-rc.108
+      effect: 4.0.0-rc.109
 
   for-each@0.3.5:
     resolution: {integrity: sha512-dKx12eRCVIzqCxFGplyFKJMPvLEWgmNtUrpTiJIR5u97zEhRG8ySrtboPHZXx7daLxQVrl643cTzbab2tkQjxg==}
@@ -2608,6 +2612,9 @@ packages:
 
   parse5@7.3.0:
     resolution: {integrity: sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==}
+
+  parse5@8.0.1:
+    resolution: {integrity: sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==}
 
   path-key@3.1.1:
     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
@@ -3639,23 +3646,23 @@ snapshots:
   '@csstools/css-tokenizer@3.0.4':
     optional: true
 
-  '@effect/platform-browser@4.0.0-rc.109(effect@4.0.0-rc.109)':
+  '@effect/platform-browser@4.0.0-rc.111(effect@4.0.0-rc.111)':
     dependencies:
-      effect: 4.0.0-rc.109
+      effect: 4.0.0-rc.111
 
-  '@effect/platform-node-shared@4.0.0-rc.110(effect@4.0.0-rc.109)':
+  '@effect/platform-node-shared@4.0.0-rc.111(effect@4.0.0-rc.111)':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-rc.109
+      effect: 4.0.0-rc.111
       ws: 8.21.3
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-rc.109(effect@4.0.0-rc.109)(redis@6.2.1)':
+  '@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-rc.110(effect@4.0.0-rc.109)
-      effect: 4.0.0-rc.109
+      '@effect/platform-node-shared': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      effect: 4.0.0-rc.111
       mime: 4.1.0
       redis: 6.2.1
       undici: 8.10.0
@@ -3663,9 +3670,9 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@effect/vitest@4.0.0-beta.102(effect@4.0.0-rc.109)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.2)(jsdom@23.2.0)(lightningcss@1.33.0))':
+  '@effect/vitest@4.0.0-beta.102(effect@4.0.0-rc.111)(vitest@3.2.4(@types/node@24.13.3)(happy-dom@20.11.2)(jsdom@23.2.0)(lightningcss@1.33.0))':
     dependencies:
-      effect: 4.0.0-rc.109
+      effect: 4.0.0-rc.111
       vitest: 3.2.4(@types/node@24.13.3)(happy-dom@20.11.2)(jsdom@23.2.0)(lightningcss@1.33.0)
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -3906,16 +3913,16 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@foldkit/ui@0.145.0(effect@4.0.0-rc.109)(foldkit@0.145.0(effect@4.0.0-rc.109))':
+  '@foldkit/ui@0.148.2(effect@4.0.0-rc.111)(foldkit@0.148.2(effect@4.0.0-rc.111))':
     dependencies:
       '@floating-ui/dom': 1.8.0
-      effect: 4.0.0-rc.109
-      foldkit: 0.145.0(effect@4.0.0-rc.109)
+      effect: 4.0.0-rc.111
+      foldkit: 0.148.2(effect@4.0.0-rc.111)
 
-  '@foldkit/vite-plugin@0.13.1(effect@4.0.0-rc.109)(foldkit@0.145.0(effect@4.0.0-rc.109))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))':
+  '@foldkit/vite-plugin@0.16.1(effect@4.0.0-rc.111)(foldkit@0.148.2(effect@4.0.0-rc.111))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))':
     dependencies:
-      effect: 4.0.0-rc.109
-      foldkit: 0.145.0(effect@4.0.0-rc.109)
+      effect: 4.0.0-rc.111
+      foldkit: 0.148.2(effect@4.0.0-rc.111)
       magic-string: 0.30.21
       vite: 8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
       ws: 8.21.3
@@ -4801,7 +4808,7 @@ snapshots:
       tslib: 2.3.0
       zrender: 6.1.0
 
-  effect@4.0.0-rc.109:
+  effect@4.0.0-rc.111:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.9.0
@@ -4824,6 +4831,8 @@ snapshots:
     optional: true
 
   entities@7.0.1: {}
+
+  entities@8.0.0: {}
 
   es-define-property@1.0.1: {}
 
@@ -5002,9 +5011,10 @@ snapshots:
       mlly: 1.8.0
       rollup: 4.54.0
 
-  foldkit@0.145.0(effect@4.0.0-rc.109):
+  foldkit@0.148.2(effect@4.0.0-rc.111):
     dependencies:
-      effect: 4.0.0-rc.109
+      effect: 4.0.0-rc.111
+      parse5: 8.0.1
 
   for-each@0.3.5:
     dependencies:
@@ -5602,6 +5612,10 @@ snapshots:
     dependencies:
       entities: 6.0.1
     optional: true
+
+  parse5@8.0.1:
+    dependencies:
+      entities: 8.0.0
 
   path-key@3.1.1: {}
 
