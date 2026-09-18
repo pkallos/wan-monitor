@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.4
+
+### Patch Changes
+
+- [#328](https://github.com/pkallos/wan-monitor/pull/328) [`1850176`](https://github.com/pkallos/wan-monitor/commit/18501764dfaa8af77ad326e2a8c51f794e0bd83d) Thanks [@pkallos](https://github.com/pkallos)! - Upgrade Effect ecosystem to 4.0.0-rc.115, Foldkit to 0.160.0, Vitest to 5.0.1, and update workspace dependencies.
+
 ## 1.2.3
 
 ### Patch Changes
