@@ -1,5 +1,5 @@
 import { Option, Schema as S } from "effect";
-import { ts } from "foldkit/schema";
+import { taggedStruct as ts } from "foldkit/schema";
 import * as Dashboard from "@/dashboard";
 import { Settings } from "@/storage";
 

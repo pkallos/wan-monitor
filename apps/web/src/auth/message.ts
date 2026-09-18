@@ -1,5 +1,5 @@
 import { Schema as S } from "effect";
-import { m } from "foldkit/message";
+import { taggedStruct as m } from "foldkit/schema";
 import * as Dashboard from "@/dashboard";
 
 export const SucceededFetchAuthStatus = m("SucceededFetchAuthStatus", {

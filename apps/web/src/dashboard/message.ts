@@ -5,7 +5,7 @@ import {
 import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Schema as S } from "effect";
-import { m } from "foldkit/message";
+import { taggedStruct as m } from "foldkit/schema";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import { Toast } from "@/dashboard/toast";
 

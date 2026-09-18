@@ -153,7 +153,9 @@ describe("mountEchartsInstance", () => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 
     const message = await Effect.runPromise(
-      Stream.runHead(MountLatencyChart({ hostId: "svg-host" }).f(svg))
+      Stream.runHead(
+        MountLatencyChart({ hostId: "svg-host" }).f(svg, Stream.empty)
+      )
     );
 
     expect(message).toEqual(
@@ -167,7 +169,9 @@ describe("mountEchartsInstance", () => {
 
   test("mounting on a real element registers the chart under its hostId", async () => {
     const message = await Effect.runPromise(
-      Stream.runHead(MountLatencyChart({ hostId: "div-host" }).f(mountedHost()))
+      Stream.runHead(
+        MountLatencyChart({ hostId: "div-host" }).f(mountedHost(), Stream.empty)
+      )
     );
 
     expect(message).toEqual(
@@ -181,7 +185,10 @@ describe("mountEchartsInstance", () => {
   test("a mounted chart stays registered until the Mount is torn down, then is disposed", async () => {
     const fiber = Effect.runFork(
       Stream.runDrain(
-        MountLatencyChart({ hostId: "still-mounted-host" }).f(mountedHost())
+        MountLatencyChart({ hostId: "still-mounted-host" }).f(
+          mountedHost(),
+          Stream.empty
+        )
       )
     );
     // A fixed setTimeout(0) can't be trusted to outlast the fiber's acquire
@@ -202,12 +209,18 @@ describe("mountEchartsInstance", () => {
 const linkedQualityCharts = async () => {
   const hoveredFiber = Effect.runFork(
     Stream.runDrain(
-      MountLatencyChart({ hostId: "hovered-host" }).f(mountedHost())
+      MountLatencyChart({ hostId: "hovered-host" }).f(
+        mountedHost(),
+        Stream.empty
+      )
     )
   );
   const siblingFiber = Effect.runFork(
     Stream.runDrain(
-      MountJitterChart({ hostId: "sibling-host" }).f(mountedHost())
+      MountJitterChart({ hostId: "sibling-host" }).f(
+        mountedHost(),
+        Stream.empty
+      )
     )
   );
   // A fixed setTimeout(0) can't be trusted to outlast both fibers' acquire

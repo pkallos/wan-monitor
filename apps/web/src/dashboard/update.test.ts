@@ -783,13 +783,13 @@ describe("dashboard update — live connectivity", () => {
     };
     const appliedRange = Preset({ preset: "last7d" });
 
-    const [afterPreset] = withContext(
+    const { model: afterPreset } = withContext(
       model,
       GotDateRangePickerMessage({
         message: ClickedPreset({ preset: "last7d" }),
       })
     );
-    const [afterApply, commands] = withContext(
+    const { model: afterApply, commands = [] } = withContext(
       afterPreset,
       GotDateRangePickerMessage({ message: ClickedApply() })
     );
@@ -1101,7 +1101,7 @@ describe("dashboard update — connectivity segment hover", () => {
 
 describe("dashboard update — toast messages", () => {
   const modelWithToast = () => {
-    const [toast] = Toast.show(initModel(defaultSettings()).toast, {
+    const { model: toast } = Toast.show(initModel(defaultSettings()).toast, {
       variant: "Info",
       payload: { title: "Speed test complete", description: "all good" },
     });
@@ -1114,7 +1114,7 @@ describe("dashboard update — toast messages", () => {
       Story.given(modelWithToast()),
       Story.message(
         GotToastMessage({
-          message: UiToast.HoveredEntry({
+          message: UiToast.Message.HoveredEntry({
             entryId: "dashboard-toast-entry-0",
           }),
         })
@@ -1130,14 +1130,18 @@ describe("dashboard update — toast messages", () => {
     const hovered = withContext(
       modelWithToast(),
       GotToastMessage({
-        message: UiToast.HoveredEntry({ entryId: "dashboard-toast-entry-0" }),
+        message: UiToast.Message.HoveredEntry({
+          entryId: "dashboard-toast-entry-0",
+        }),
       })
-    )[0];
+    ).model;
 
-    const [model, commands] = withContext(
+    const { model, commands = [] } = withContext(
       hovered,
       GotToastMessage({
-        message: UiToast.LeftEntry({ entryId: "dashboard-toast-entry-0" }),
+        message: UiToast.Message.LeftEntry({
+          entryId: "dashboard-toast-entry-0",
+        }),
       })
     );
 

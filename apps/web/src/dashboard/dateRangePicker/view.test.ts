@@ -1,5 +1,4 @@
 import { Popover } from "@foldkit/ui";
-import { Option } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, test } from "vitest";
 import {
@@ -44,12 +43,18 @@ const boundView = (
 
 const openPopoverMounts = () =>
   Scene.Mount.resolveAll(
-    [Popover.AnchorPopover, Popover.CompletedAnchorPopover()],
-    [Popover.PortalPopoverBackdrop, Popover.CompletedPortalPopoverBackdrop()]
+    [Popover.AnchorPopover, Popover.Message.CompletedAnchorPopover()],
+    [
+      Popover.PortalPopoverBackdrop,
+      Popover.Message.CompletedPortalPopoverBackdrop(),
+    ]
   );
 
 const resolveFocusButton = () =>
-  Scene.Command.resolve(Popover.FocusButton, Popover.CompletedFocusButton());
+  Scene.Command.resolve(
+    Popover.FocusButton,
+    Popover.Message.CompletedFocusButton()
+  );
 
 const endedPopoverMounts = () =>
   Scene.Mount.expectEnded(Popover.AnchorPopover, Popover.PortalPopoverBackdrop);
@@ -164,7 +169,7 @@ describe("dateRangePicker view — presets", () => {
       Scene.expect(Scene.role("button", { name: "Apply" })).not.toExist(),
       Scene.tap((simulation) => {
         expect(simulation.outMessage).toEqual(
-          Option.some(AppliedRange({ selection: Preset({ preset: "last7d" }) }))
+          AppliedRange({ selection: Preset({ preset: "last7d" }) })
         );
       }),
       resolveFocusButton(),
@@ -257,16 +262,14 @@ describe("dateRangePicker view — calendar grids", () => {
       Scene.click(Scene.role("button", { name: "Apply" })),
       Scene.tap((simulation) => {
         expect(simulation.outMessage).toEqual(
-          Option.some(
-            AppliedRange({
-              selection: Custom({
-                startTime: new Date(day(2026, 6, 10)).toISOString(),
-                endTime: new Date(
-                  day(2026, 6, 20) + 24 * 60 * 60 * 1000 - 1
-                ).toISOString(),
-              }),
-            })
-          )
+          AppliedRange({
+            selection: Custom({
+              startTime: new Date(day(2026, 6, 10)).toISOString(),
+              endTime: new Date(
+                day(2026, 6, 20) + 24 * 60 * 60 * 1000 - 1
+              ).toISOString(),
+            }),
+          })
         );
       }),
       resolveFocusButton(),
@@ -360,7 +363,7 @@ describe("dateRangePicker view — Cancel", () => {
       Scene.click(Scene.role("button", { name: "Cancel" })),
       Scene.expect(Scene.role("button", { name: "Cancel" })).not.toExist(),
       Scene.tap((simulation) => {
-        expect(simulation.outMessage).toEqual(Option.some(Cancelled()));
+        expect(simulation.outMessage).toEqual(Cancelled());
       }),
       resolveFocusButton(),
       endedPopoverMounts()

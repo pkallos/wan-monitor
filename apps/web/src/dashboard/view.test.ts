@@ -756,10 +756,10 @@ describe("dashboard view", () => {
         Scene.expect(Scene.role("button", { name: initialLabel })).toExist(),
         Scene.click(Scene.role("button", { name: initialLabel })),
         Scene.Mount.resolveAll(
-          [Popover.AnchorPopover, Popover.CompletedAnchorPopover()],
+          [Popover.AnchorPopover, Popover.Message.CompletedAnchorPopover()],
           [
             Popover.PortalPopoverBackdrop,
-            Popover.CompletedPortalPopoverBackdrop(),
+            Popover.Message.CompletedPortalPopoverBackdrop(),
           ]
         ),
         Scene.click(Scene.role("button", { name: "Last 7 days" })),
@@ -821,7 +821,7 @@ describe("dashboard view", () => {
         Scene.Command.resolve(SaveSettings, CompletedSaveSettings()),
         Scene.Command.resolve(
           Popover.FocusButton,
-          Popover.CompletedFocusButton()
+          Popover.Message.CompletedFocusButton()
         ),
         Scene.Mount.expectEnded(
           Popover.AnchorPopover,

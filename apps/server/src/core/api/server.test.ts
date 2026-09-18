@@ -22,9 +22,6 @@ describe("NodeHttpServerLayer", () => {
   it("binds the listener to the configured host", async () => {
     const address = await addressForConfig("127.0.0.1");
 
-    expect(address).toMatchObject({
-      _tag: "TcpAddress",
-      hostname: "127.0.0.1",
-    });
+    expect(String(address)).toMatch(/^127\.0\.0\.1:\d+$/);
   });
 });

@@ -1,6 +1,6 @@
 import type { Granularity } from "@shared/api/routes/metrics";
 import { Option, Schema as S } from "effect";
-import { ts } from "foldkit/schema";
+import { taggedStruct as ts } from "foldkit/schema";
 
 export const PresetKey = S.Literals([
   "last1h",
