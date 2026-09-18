@@ -235,21 +235,17 @@ const TimelineChartArgs = {
 
 export const LATENCY_CHART_HOST_ID = "latency-chart";
 
-export const MountLatencyChart = Mount.define(
-  "MountLatencyChart",
-  { hostId: S.String },
-  SucceededMountLatencyChart,
-  FailedMountLatencyChart
-)(
-  ({ hostId }) =>
-    (element) =>
-      mountEchartsInstance(hostId, element, QUALITY_CHARTS_GROUP).pipe(
-        Effect.map(() => SucceededMountLatencyChart({ hostId })),
-        Effect.catch((error) =>
-          Effect.succeed(FailedMountLatencyChart({ reason: error.message }))
-        )
+export const MountLatencyChart = Mount.define("MountLatencyChart", {
+  args: { hostId: S.String },
+  messages: [SucceededMountLatencyChart, FailedMountLatencyChart],
+  execute: ({ hostId, element }) =>
+    mountEchartsInstance(hostId, element, QUALITY_CHARTS_GROUP).pipe(
+      Effect.map(() => SucceededMountLatencyChart({ hostId })),
+      Effect.catch((error) =>
+        Effect.succeed(FailedMountLatencyChart({ reason: error.message }))
       )
-);
+    ),
+});
 
 export const SyncLatencyChart = Command.define("SyncLatencyChart", {
   args: TimelineChartArgs,
@@ -283,21 +279,17 @@ export const SyncLatencyChart = Command.define("SyncLatencyChart", {
 
 export const PACKET_LOSS_CHART_HOST_ID = "packet-loss-chart";
 
-export const MountPacketLossChart = Mount.define(
-  "MountPacketLossChart",
-  { hostId: S.String },
-  SucceededMountPacketLossChart,
-  FailedMountPacketLossChart
-)(
-  ({ hostId }) =>
-    (element) =>
-      mountEchartsInstance(hostId, element, QUALITY_CHARTS_GROUP).pipe(
-        Effect.map(() => SucceededMountPacketLossChart({ hostId })),
-        Effect.catch((error) =>
-          Effect.succeed(FailedMountPacketLossChart({ reason: error.message }))
-        )
+export const MountPacketLossChart = Mount.define("MountPacketLossChart", {
+  args: { hostId: S.String },
+  messages: [SucceededMountPacketLossChart, FailedMountPacketLossChart],
+  execute: ({ hostId, element }) =>
+    mountEchartsInstance(hostId, element, QUALITY_CHARTS_GROUP).pipe(
+      Effect.map(() => SucceededMountPacketLossChart({ hostId })),
+      Effect.catch((error) =>
+        Effect.succeed(FailedMountPacketLossChart({ reason: error.message }))
       )
-);
+    ),
+});
 
 export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
   args: TimelineChartArgs,
@@ -331,21 +323,17 @@ export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
 
 export const JITTER_CHART_HOST_ID = "jitter-chart";
 
-export const MountJitterChart = Mount.define(
-  "MountJitterChart",
-  { hostId: S.String },
-  SucceededMountJitterChart,
-  FailedMountJitterChart
-)(
-  ({ hostId }) =>
-    (element) =>
-      mountEchartsInstance(hostId, element, QUALITY_CHARTS_GROUP).pipe(
-        Effect.map(() => SucceededMountJitterChart({ hostId })),
-        Effect.catch((error) =>
-          Effect.succeed(FailedMountJitterChart({ reason: error.message }))
-        )
+export const MountJitterChart = Mount.define("MountJitterChart", {
+  args: { hostId: S.String },
+  messages: [SucceededMountJitterChart, FailedMountJitterChart],
+  execute: ({ hostId, element }) =>
+    mountEchartsInstance(hostId, element, QUALITY_CHARTS_GROUP).pipe(
+      Effect.map(() => SucceededMountJitterChart({ hostId })),
+      Effect.catch((error) =>
+        Effect.succeed(FailedMountJitterChart({ reason: error.message }))
       )
-);
+    ),
+});
 
 export const SyncJitterChart = Command.define("SyncJitterChart", {
   args: TimelineChartArgs,
@@ -379,21 +367,17 @@ export const SyncJitterChart = Command.define("SyncJitterChart", {
 
 export const SPEED_CHART_HOST_ID = "speed-chart";
 
-export const MountSpeedChart = Mount.define(
-  "MountSpeedChart",
-  { hostId: S.String },
-  SucceededMountSpeedChart,
-  FailedMountSpeedChart
-)(
-  ({ hostId }) =>
-    (element) =>
-      mountEchartsInstance(hostId, element).pipe(
-        Effect.map(() => SucceededMountSpeedChart({ hostId })),
-        Effect.catch((error) =>
-          Effect.succeed(FailedMountSpeedChart({ reason: error.message }))
-        )
+export const MountSpeedChart = Mount.define("MountSpeedChart", {
+  args: { hostId: S.String },
+  messages: [SucceededMountSpeedChart, FailedMountSpeedChart],
+  execute: ({ hostId, element }) =>
+    mountEchartsInstance(hostId, element).pipe(
+      Effect.map(() => SucceededMountSpeedChart({ hostId })),
+      Effect.catch((error) =>
+        Effect.succeed(FailedMountSpeedChart({ reason: error.message }))
       )
-);
+    ),
+});
 
 export const SyncSpeedChart = Command.define("SyncSpeedChart", {
   args: {

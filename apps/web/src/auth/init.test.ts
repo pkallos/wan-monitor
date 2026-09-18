@@ -8,7 +8,7 @@ import { defaultSettings, type Settings } from "@/storage";
 
 describe("init", () => {
   test("starts Checking with the stored token, if any, and fetches auth status", () => {
-    const [model, commands] = init(
+    const { model, commands } = init(
       Flags.make({
         maybeToken: Option.some("stored-token"),
         settings: defaultSettings(),
@@ -25,7 +25,7 @@ describe("init", () => {
   });
 
   test("starts Checking with no token when none is stored", () => {
-    const [model] = init(
+    const { model } = init(
       Flags.make({ maybeToken: Option.none(), settings: defaultSettings() })
     );
 
@@ -41,7 +41,7 @@ describe("init", () => {
       isPaused: true,
     };
 
-    const [model] = init(Flags.make({ maybeToken: Option.none(), settings }));
+    const { model } = init(Flags.make({ maybeToken: Option.none(), settings }));
 
     expect(model).toEqual(Checking({ maybeToken: Option.none(), settings }));
   });

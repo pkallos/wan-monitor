@@ -125,31 +125,27 @@ export const update = (
   M.value(message).pipe(
     withUpdateReturn,
     M.tags({
-      ClickedPreset: ({ preset }) => [
-        evo(model, {
+      ClickedPreset: ({ preset }) => ({
+        model: evo(model, {
           maybeDraftPreset: () => Option.some(preset),
           maybeDraftRange: () => Option.none(),
           maybeRangeStart: () => Option.none(),
           maybeHoveredDay: () => Option.none(),
         }),
-        [],
-        Option.none(),
-      ],
+      }),
 
       ClickedDay: ({ dateMs }) =>
         Option.match(model.maybeRangeStart, {
-          onNone: () => [
-            evo(model, {
+          onNone: () => ({
+            model: evo(model, {
               maybeRangeStart: () => Option.some(dateMs),
               maybeDraftPreset: () => Option.none(),
               maybeDraftRange: () => Option.none(),
               maybeHoveredDay: () => Option.none(),
             }),
-            [],
-            Option.none(),
-          ],
-          onSome: (start) => [
-            evo(model, {
+          }),
+          onSome: (start) => ({
+            model: evo(model, {
               maybeDraftRange: () =>
                 Option.some({
                   start: Math.min(start, dateMs),
@@ -159,19 +155,17 @@ export const update = (
               maybeHoveredDay: () => Option.none(),
               maybeDraftPreset: () => Option.none(),
             }),
-            [],
-            Option.none(),
-          ],
+          }),
         }),
 
       HoveredDay: ({ dateMs }) =>
         Option.isSome(model.maybeRangeStart)
-          ? [
-              evo(model, { maybeHoveredDay: () => Option.some(dateMs) }),
-              [],
-              Option.none(),
-            ]
-          : [model, [], Option.none()],
+          ? {
+              model: evo(model, {
+                maybeHoveredDay: () => Option.some(dateMs),
+              }),
+            }
+          : { model },
 
       ClickedPreviousMonth: () => {
         const { year, month } = model.visibleMonth;
@@ -179,11 +173,7 @@ export const update = (
           month === 0
             ? { year: year - 1, month: 11 }
             : { year, month: month - 1 };
-        return [
-          evo(model, { visibleMonth: () => previous }),
-          [],
-          Option.none(),
-        ];
+        return { model: evo(model, { visibleMonth: () => previous }) };
       },
 
       ClickedNextMonth: () => {
@@ -192,65 +182,69 @@ export const update = (
           month === 11
             ? { year: year + 1, month: 0 }
             : { year, month: month + 1 };
-        return [evo(model, { visibleMonth: () => next }), [], Option.none()];
+        return { model: evo(model, { visibleMonth: () => next }) };
       },
 
       ClickedApply: () => {
         const selection = draftToSelection(model, appliedSelection);
-        const [nextPopover, popoverCommands] = Popover.close(model.popover);
-        return [
-          evo(model, { popover: () => nextPopover }),
-          mapPopoverCommands(popoverCommands),
-          Option.some(AppliedRange({ selection })),
-        ];
+        const { model: nextPopover, commands: popoverCommands } = Popover.close(
+          model.popover
+        );
+        return {
+          model: evo(model, { popover: () => nextPopover }),
+          commands: mapPopoverCommands(popoverCommands ?? []),
+          outMessage: AppliedRange({ selection }),
+        };
       },
 
       ClickedCancel: () => {
-        const [nextPopover, popoverCommands] = Popover.close(model.popover);
-        return [
-          resetDraftFromSelection(
+        const { model: nextPopover, commands: popoverCommands } = Popover.close(
+          model.popover
+        );
+        return {
+          model: resetDraftFromSelection(
             evo(model, { popover: () => nextPopover }),
             appliedSelection
           ),
-          mapPopoverCommands(popoverCommands),
-          Option.some(Cancelled()),
-        ];
+          commands: mapPopoverCommands(popoverCommands ?? []),
+          outMessage: Cancelled(),
+        };
       },
 
       GotPopoverMessage: ({ message: popoverMessage }) => {
-        const [nextPopover, popoverCommands, maybeOutMessage] = Popover.update(
-          model.popover,
-          popoverMessage
-        );
+        const {
+          model: nextPopover,
+          commands: popoverCommands,
+          outMessage,
+        } = Popover.update(model.popover, popoverMessage);
         const nextModel = evo(model, { popover: () => nextPopover });
-        const commands = mapPopoverCommands(popoverCommands);
+        const commands = mapPopoverCommands(popoverCommands ?? []);
 
-        return Option.match(maybeOutMessage, {
-          onNone: () => [nextModel, commands, Option.none()],
-          onSome: (out) =>
-            M.value(out).pipe(
-              withUpdateReturn,
-              M.tag("Opened", () => {
-                const window = getDateRangeWindow(
-                  appliedSelection,
-                  nowMs,
-                  maybeEarliestDataMs
-                );
-                return [
-                  resetDraftFromSelection(
-                    evo(nextModel, {
-                      visibleMonth: () => visibleMonthFromWindow(window),
-                    }),
-                    appliedSelection
-                  ),
-                  commands,
-                  Option.none(),
-                ];
-              }),
-              M.tag("Closed", () => [nextModel, commands, Option.none()]),
-              M.exhaustive
-            ),
-        });
+        if (outMessage === undefined) {
+          return { model: nextModel, commands };
+        }
+
+        return M.value(outMessage).pipe(
+          withUpdateReturn,
+          M.tag("Opened", () => {
+            const window = getDateRangeWindow(
+              appliedSelection,
+              nowMs,
+              maybeEarliestDataMs
+            );
+            return {
+              model: resetDraftFromSelection(
+                evo(nextModel, {
+                  visibleMonth: () => visibleMonthFromWindow(window),
+                }),
+                appliedSelection
+              ),
+              commands,
+            };
+          }),
+          M.tag("Closed", () => ({ model: nextModel, commands })),
+          M.exhaustive
+        );
       },
     }),
     M.exhaustive

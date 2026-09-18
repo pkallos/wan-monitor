@@ -26,12 +26,12 @@
     "@foldkit/vite-plugin": "0.22.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.4",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^5.0.1",
     "@wan-monitor/shared": "workspace:*",
     "happy-dom": "^20.14.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.1"
   }
 }

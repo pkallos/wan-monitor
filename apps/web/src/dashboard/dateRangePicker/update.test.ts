@@ -38,7 +38,10 @@ const endOfDay = (year: number, monthIndex: number, date: number): number =>
   day(year, monthIndex, date + 1) - 1;
 
 const resolveFocusButton = () =>
-  Story.Command.resolve(Popover.FocusButton, Popover.CompletedFocusButton());
+  Story.Command.resolve(
+    Popover.FocusButton,
+    Popover.Message.CompletedFocusButton()
+  );
 
 describe("dateRangePicker update — opening the popover", () => {
   test("resets drafts to reflect the applied preset and derives visibleMonth from it", () => {
@@ -53,7 +56,9 @@ describe("dateRangePicker update — opening the popover", () => {
     Story.story(
       withContext(),
       Story.given(dirtyModel),
-      Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
+      Story.message(
+        GotPopoverMessage({ message: Popover.Message.RequestedOpen() })
+      ),
       Story.model((model) => {
         expect(model.maybeDraftPreset).toEqual(Option.some("last30d"));
         expect(model.maybeDraftRange).toEqual(Option.none());
@@ -76,7 +81,9 @@ describe("dateRangePicker update — opening the popover", () => {
     Story.story(
       withContext(appliedCustom, NOW_MS),
       Story.given(init({ id: "picker" })),
-      Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
+      Story.message(
+        GotPopoverMessage({ message: Popover.Message.RequestedOpen() })
+      ),
       Story.model((model) => {
         expect(model.maybeDraftPreset).toEqual(Option.none());
         expect(model.maybeDraftRange).toEqual(
@@ -97,7 +104,9 @@ describe("dateRangePicker update — opening the popover", () => {
     Story.story(
       withContext(appliedCustom, NOW_MS),
       Story.given(init({ id: "picker" })),
-      Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
+      Story.message(
+        GotPopoverMessage({ message: Popover.Message.RequestedOpen() })
+      ),
       Story.model((model) => {
         expect(model.maybeDraftRange).toEqual(
           Option.some({
@@ -123,7 +132,9 @@ describe("dateRangePicker update — opening the popover", () => {
     Story.story(
       withContext(Preset({ preset: "allTime" }), NOW_MS),
       Story.given(init({ id: "picker" })),
-      Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
+      Story.message(
+        GotPopoverMessage({ message: Popover.Message.RequestedOpen() })
+      ),
       Story.model((model) => {
         expect(model.visibleMonth).toEqual({
           year: now.getFullYear(),
@@ -137,7 +148,9 @@ describe("dateRangePicker update — opening the popover", () => {
     Story.story(
       withContext(Preset({ preset: "last7d" }), NOW_MS),
       Story.given(init({ id: "picker" })),
-      Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
+      Story.message(
+        GotPopoverMessage({ message: Popover.Message.RequestedOpen() })
+      ),
       Story.model((model) => {
         expect(model.visibleMonth).toEqual({ year: 2026, month: 6 });
       })
@@ -147,7 +160,7 @@ describe("dateRangePicker update — opening the popover", () => {
 
 describe("dateRangePicker update — dismissing the popover", () => {
   test("Escape or a backdrop click closes without applying or discarding drafts", () => {
-    const openPopover = Popover.open(Popover.init({ id: "picker" }))[0];
+    const openPopover = Popover.open(Popover.init({ id: "picker" })).model;
     const model: Model = {
       ...init({ id: "picker" }),
       popover: openPopover,
@@ -157,7 +170,9 @@ describe("dateRangePicker update — dismissing the popover", () => {
     Story.story(
       withContext(),
       Story.given(model),
-      Story.message(GotPopoverMessage({ message: Popover.RequestedClose() })),
+      Story.message(
+        GotPopoverMessage({ message: Popover.Message.RequestedClose() })
+      ),
       Story.expectNoOutMessage(),
       Story.model((next) => {
         expect(next.popover.isOpen).toBe(false);
@@ -180,7 +195,9 @@ describe("dateRangePicker update — reopening an applied selection", () => {
     Story.story(
       withContext(appliedCustom, NOW_MS),
       Story.given(init({ id: "picker" })),
-      Story.message(GotPopoverMessage({ message: Popover.RequestedOpen() })),
+      Story.message(
+        GotPopoverMessage({ message: Popover.Message.RequestedOpen() })
+      ),
       Story.message(ClickedApply()),
       Story.expectOutMessage(AppliedRange({ selection: appliedCustom })),
       resolveFocusButton()
@@ -431,7 +448,7 @@ describe("dateRangePicker update — Apply", () => {
   });
 
   test("Apply closes the popover", () => {
-    const openPopover = Popover.open(Popover.init({ id: "picker" }))[0];
+    const openPopover = Popover.open(Popover.init({ id: "picker" })).model;
     const model: Model = { ...init({ id: "picker" }), popover: openPopover };
 
     Story.story(
@@ -469,7 +486,7 @@ describe("dateRangePicker update — Cancel", () => {
   });
 
   test("Cancel closes the popover", () => {
-    const openPopover = Popover.open(Popover.init({ id: "picker" }))[0];
+    const openPopover = Popover.open(Popover.init({ id: "picker" })).model;
     const model: Model = { ...init({ id: "picker" }), popover: openPopover };
 
     Story.story(

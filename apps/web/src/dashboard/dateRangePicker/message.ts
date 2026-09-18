@@ -1,6 +1,6 @@
 import { Popover } from "@foldkit/ui";
 import { Schema as S } from "effect";
-import { m } from "foldkit/message";
+import { taggedStruct as m } from "foldkit/schema";
 import { DateRangeSelection, PresetKey } from "@/dashboard/dateRange";
 
 export const ClickedPreset = m("ClickedPreset", { preset: PresetKey });

@@ -1,5 +1,5 @@
 import { Match as M, Option } from "effect";
-import { Command } from "foldkit";
+import { Command, type Update } from "foldkit";
 import { evo } from "foldkit/struct";
 import {
   ClearSession,
@@ -13,7 +13,7 @@ import { initLoggedOut, LoggedIn, type Model, Session } from "@/auth/model";
 import * as Dashboard from "@/dashboard";
 import type { Settings } from "@/storage";
 
-type UpdateReturn = readonly [Model, ReadonlyArray<Command.Command<Message>>];
+type UpdateReturn = Update.Return<Model, Message>;
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
 
 // Every state carries (or can derive) the chrome settings that survive a
@@ -40,18 +40,19 @@ const enterLoggedIn = (
   token: string,
   settings: Settings
 ): UpdateReturn => {
-  const [dashboardModel, dashboardCommands] = Dashboard.update(
-    Dashboard.initModel(settings),
-    Dashboard.EnteredDashboard(),
-    { token, now: Date.now }
-  );
+  const { model: dashboardModel, commands: dashboardCommands } =
+    Dashboard.update(
+      Dashboard.initModel(settings),
+      Dashboard.EnteredDashboard(),
+      { token, now: Date.now }
+    );
 
-  return [
-    LoggedIn({ maybeSession, dashboard: dashboardModel }),
-    Command.mapMessages(dashboardCommands, (message) =>
+  return {
+    model: LoggedIn({ maybeSession, dashboard: dashboardModel }),
+    commands: Command.mapMessages(dashboardCommands ?? [], (message) =>
       GotDashboardMessage({ message })
     ),
-  ];
+  };
 };
 
 export const update = (model: Model, message: Message): UpdateReturn =>
@@ -59,19 +60,21 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     withUpdateReturn,
     M.tags({
       SucceededFetchAuthStatus: ({ authRequired }) => {
-        if (model._tag !== "Checking") return [model, []];
+        if (model._tag !== "Checking") return { model };
         if (!authRequired) {
           return enterLoggedIn(Option.none(), "", model.settings);
         }
         return Option.match(model.maybeToken, {
-          onNone: () => [initLoggedOut(model.settings), []],
-          onSome: (token) => [model, [FetchMe({ token })]],
+          onNone: () => ({ model: initLoggedOut(model.settings) }),
+          onSome: (token) => ({ model, commands: [FetchMe({ token })] }),
         });
       },
-      FailedFetchAuthStatus: () => [initLoggedOut(currentSettings(model)), []],
+      FailedFetchAuthStatus: () => ({
+        model: initLoggedOut(currentSettings(model)),
+      }),
 
       SucceededFetchMe: ({ username }) => {
-        if (model._tag !== "Checking") return [model, []];
+        if (model._tag !== "Checking") return { model };
         const token = Option.getOrThrow(model.maybeToken);
         return enterLoggedIn(
           Option.some(Session.make({ token, username })),
@@ -79,73 +82,77 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           model.settings
         );
       },
-      FailedFetchMe: () => [
-        initLoggedOut(currentSettings(model)),
-        [ClearSession()],
-      ],
+      FailedFetchMe: () => ({
+        model: initLoggedOut(currentSettings(model)),
+        commands: [ClearSession()],
+      }),
 
       ChangedUsername: ({ value }) => {
-        if (model._tag !== "LoggedOut") return [model, []];
-        return [evo(model, { username: () => value }), []];
+        if (model._tag !== "LoggedOut") return { model };
+        return { model: evo(model, { username: () => value }) };
       },
       ChangedPassword: ({ value }) => {
-        if (model._tag !== "LoggedOut") return [model, []];
-        return [evo(model, { password: () => value }), []];
+        if (model._tag !== "LoggedOut") return { model };
+        return { model: evo(model, { password: () => value }) };
       },
       SubmittedLogin: () => {
-        if (model._tag !== "LoggedOut") return [model, []];
-        return [
-          evo(model, {
+        if (model._tag !== "LoggedOut") return { model };
+        return {
+          model: evo(model, {
             isSubmitting: () => true,
             maybeError: () => Option.none(),
           }),
-          [Login({ username: model.username, password: model.password })],
-        ];
+          commands: [
+            Login({ username: model.username, password: model.password }),
+          ],
+        };
       },
       SucceededLogin: ({ token, username }) => {
-        const [loggedInModel, commands] = enterLoggedIn(
+        const { model: loggedInModel, commands } = enterLoggedIn(
           Option.some(Session.make({ token, username })),
           token,
           currentSettings(model)
         );
-        return [loggedInModel, [...commands, SaveSession({ token, username })]];
+        return {
+          model: loggedInModel,
+          commands: [...(commands ?? []), SaveSession({ token, username })],
+        };
       },
       FailedLogin: ({ error }) => {
-        if (model._tag !== "LoggedOut") return [model, []];
-        return [
-          evo(model, {
+        if (model._tag !== "LoggedOut") return { model };
+        return {
+          model: evo(model, {
             isSubmitting: () => false,
             maybeError: () => Option.some(error),
           }),
-          [],
-        ];
+        };
       },
 
       // Settings come from the `LoggedIn` model's dashboard, not a default —
       // the theme and range the user was looking at survive the logout, so
       // the login screen stays themed and logging back in restores them.
-      ClickedLogout: () => [
-        initLoggedOut(currentSettings(model)),
-        [ClearSession(), Logout()],
-      ],
+      ClickedLogout: () => ({
+        model: initLoggedOut(currentSettings(model)),
+        commands: [ClearSession(), Logout()],
+      }),
 
       GotDashboardMessage: ({ message }) => {
-        if (model._tag !== "LoggedIn") return [model, []];
+        if (model._tag !== "LoggedIn") return { model };
         const token = Option.match(model.maybeSession, {
           onNone: () => "",
           onSome: (session) => session.token,
         });
-        const [dashboardModel, dashboardCommands] = Dashboard.update(
-          model.dashboard,
-          message,
-          { token, now: Date.now }
-        );
-        return [
-          evo(model, { dashboard: () => dashboardModel }),
-          Command.mapMessages(dashboardCommands, (message) =>
+        const { model: dashboardModel, commands: dashboardCommands } =
+          Dashboard.update(model.dashboard, message, {
+            token,
+            now: Date.now,
+          });
+        return {
+          model: evo(model, { dashboard: () => dashboardModel }),
+          commands: Command.mapMessages(dashboardCommands ?? [], (message) =>
             GotDashboardMessage({ message })
           ),
-        ];
+        };
       },
     }),
     // Fire-and-forget acknowledgments: the effect already happened (session
@@ -157,7 +164,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       "FailedSaveSession",
       "CompletedClearSession",
       "FailedClearSession",
-      () => [model, []]
+      () => ({ model })
     ),
     M.exhaustive
   );

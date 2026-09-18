@@ -15,6 +15,11 @@ vi.mock("pg");
 
 const asSender = (mock: Partial<Sender>): Sender => mock as Sender;
 const asPool = (mock: Partial<Pool>): Pool => mock as Pool;
+const mockPool = (mock: Partial<Pool>) => {
+  vi.mocked(Pool).mockImplementation(function (this: unknown) {
+    return asPool(mock);
+  });
+};
 
 const TestConfigLayer = makeTestConfigLayer({
   database: { requestTimeout: 5000, retryTimeout: 10000 },
@@ -39,7 +44,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -81,7 +86,7 @@ describe("QuestDBConnection integration tests", () => {
         };
 
         vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-        vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+        mockPool(mockPgClient);
 
         return Effect.gen(function* () {
           const connection = yield* QuestDBConnection;
@@ -128,7 +133,7 @@ describe("QuestDBConnection integration tests", () => {
         };
 
         vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-        vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+        mockPool(mockPgClient);
 
         return Effect.gen(function* () {
           const connection = yield* QuestDBConnection;
@@ -156,7 +161,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -204,7 +209,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -238,7 +243,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -277,7 +282,7 @@ describe("QuestDBConnection integration tests", () => {
         end: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
       };
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -324,7 +329,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -366,7 +371,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -397,7 +402,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
@@ -432,7 +437,7 @@ describe("QuestDBConnection integration tests", () => {
       };
 
       vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
-      vi.mocked(Pool).mockImplementation(() => asPool(mockPgClient));
+      mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
