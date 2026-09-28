@@ -22,7 +22,7 @@ importers:
         version: 3.0.3
       '@effect/vitest':
         specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))
+        version: 4.0.0-rc.115(effect@4.0.0-rc.117)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
@@ -51,8 +51,8 @@ importers:
   apps/server:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1)
+        specifier: 4.0.0-rc.117
+        version: 4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)
       '@questdb/nodejs-client':
         specifier: ^4.2.0
         version: 4.2.0
@@ -60,8 +60,8 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
       effect:
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115
+        specifier: 4.0.0-rc.117
+        version: 4.0.0-rc.117
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
@@ -83,7 +83,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.27.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))
+        version: 4.0.0-rc.115(effect@4.0.0-rc.117)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.27.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
@@ -118,11 +118,11 @@ importers:
   apps/web:
     dependencies:
       '@effect/platform-browser':
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
+        specifier: 4.0.0-rc.117
+        version: 4.0.0-rc.117(effect@4.0.0-rc.117)
       '@foldkit/ui':
-        specifier: 0.160.0
-        version: 0.160.0(effect@4.0.0-rc.115)(foldkit@0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))
+        specifier: 0.163.0
+        version: 0.163.0(effect@4.0.0-rc.117)(foldkit@0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -130,15 +130,15 @@ importers:
         specifier: ^6.1.0
         version: 6.1.0
       effect:
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115
+        specifier: 4.0.0-rc.117
+        version: 4.0.0-rc.117
       foldkit:
-        specifier: 0.160.0
-        version: 0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+        specifier: 0.163.0
+        version: 0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
     devDependencies:
       '@foldkit/vite-plugin':
-        specifier: 0.22.0
-        version: 0.22.0(effect@4.0.0-rc.115)(foldkit@0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+        specifier: 0.24.0
+        version: 0.24.0(effect@4.0.0-rc.117)(foldkit@0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -170,8 +170,8 @@ importers:
   packages/shared:
     dependencies:
       effect:
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115
+        specifier: 4.0.0-rc.117
+        version: 4.0.0-rc.117
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^5.0.1
@@ -370,22 +370,22 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@effect/platform-browser@4.0.0-rc.115':
-    resolution: {integrity: sha512-RwpnxRYSBHBL1HYYlRwIrwz0+1hwmn5RvgqkKI0Tb+ChOIR9UCMpXsAhnwQcGP+mBidrC7dlloL42poGHZW4yw==}
+  '@effect/platform-browser@4.0.0-rc.117':
+    resolution: {integrity: sha512-0ztUOWemk+MiEyPOXdijoghlzsvhie6tUpNPLBhDG+BRAPDaLjAIWf0QxSD7pg/Ly37FSnPb0R5qD+/h3C18Wg==}
     peerDependencies:
-      effect: ^4.0.0-rc.115
+      effect: ^4.0.0-rc.117
 
-  '@effect/platform-node-shared@4.0.0-rc.115':
-    resolution: {integrity: sha512-rcBwhDIfb82akJoTv7Vwh8K5x9vC/XfuePS7JjOr+z+dORXzsmKqI1BUQF27ARCN9fTAbDh7I6YvBlWhLjnqNg==}
+  '@effect/platform-node-shared@4.0.0-rc.118':
+    resolution: {integrity: sha512-pNbmIlxbAUxAthUNsp2xm1NLG9kxoYecsPkoYl9mNF2oxPcKDxAvkOar7tYnLSUpXJeATm4pxYVipdZjQfqO4Q==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.115
+      effect: ^4.0.0-rc.118
 
-  '@effect/platform-node@4.0.0-rc.115':
-    resolution: {integrity: sha512-mW03Wjq2FiTL5oi9yOkaKpCyUNBaduKgTk7qMHNELvC21Jq2qOAfdsfH+p+s2zmpB9w2RSa+ApODv4WjO9wQfw==}
+  '@effect/platform-node@4.0.0-rc.117':
+    resolution: {integrity: sha512-WbPcvQDkqXFnCeG6LohJ9eVNapCDhZbCpezhYKxm0IsZEk7swakRh7RkC1t2CXzd3hGmszTv2k9e/pXyZuL+wQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.115
+      effect: ^4.0.0-rc.117
       redis: '>=5.0.0 <7.0.0'
 
   '@effect/vitest@4.0.0-rc.115':
@@ -718,20 +718,20 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@foldkit/ui@0.160.0':
-    resolution: {integrity: sha512-7wT2UmutzdH9j7WyJrmp0RsqX2izSSOTnIztaeNs/s16I4GZ5SdewcJvZVPsDRqoPXJNe/hM2GmLgMVqL5MsRg==}
+  '@foldkit/ui@0.163.0':
+    resolution: {integrity: sha512-8UNyl88ovpJ2TC5biV+MA0vVcGZ0OgzlISx6qXKm1vqXGbanjsJPAezu22Iih+9hvh7upOKn8L05A2h8hz04Gg==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: 4.0.0-rc.115
-      foldkit: '>=0.160.0'
+      effect: 4.0.0-rc.116
+      foldkit: '>=0.163.0'
 
-  '@foldkit/vite-plugin@0.22.0':
-    resolution: {integrity: sha512-coow4jpk/Byi6tHBcqyWlf3KSlWw25P1qfTI6TjEEWYu4XzX9NsmPQuZuAr4cqC1P6tllSMc0DLzG6FR+eWzxg==}
+  '@foldkit/vite-plugin@0.24.0':
+    resolution: {integrity: sha512-xBo5pEGOAAYQDnmRThsJ8QAykJTPYqaL0uDfm1iD6Bs9W2DjRVvGTEcgggoEXJyE0AoVNu8RMv6Fw0hvqW8N5Q==}
     engines: {node: '>=20.19.0'}
     peerDependencies:
-      effect: 4.0.0-rc.115
+      effect: 4.0.0-rc.116
       foldkit: '>=0.159.0'
-      vite: ^7.0.0 || ^8.0.0
+      vite: ^8.0.0
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1567,8 +1567,8 @@ packages:
   echarts@6.1.0:
     resolution: {integrity: sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==}
 
-  effect@4.0.0-rc.115:
-    resolution: {integrity: sha512-ogYulZ5ffeOzrJqQrG0XOkDO5lKn2s9KNHhoxJy/6wKUkF0i12dlVXWA9TgsgQ+zV/JzizyG0+XMPepZEQX6vw==}
+  effect@4.0.0-rc.117:
+    resolution: {integrity: sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w==}
 
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
@@ -1699,12 +1699,12 @@ packages:
   fix-dts-default-cjs-exports@1.0.1:
     resolution: {integrity: sha512-pVIECanWFC61Hzl2+oOCtoJ3F17kglZC/6N94eRWycFgBH35hHx0Li604ZIzhseh97mf2p0cv7vVrOZGoqhlEg==}
 
-  foldkit@0.160.0:
-    resolution: {integrity: sha512-laMBs/PhOYraz03vNqerZUbOxtEGUKsejuBtpMUd/xNyaHgi74Y7IP2qKgXbRmWb5QyqEODNQ69zQG2ufx39Ug==}
+  foldkit@0.163.0:
+    resolution: {integrity: sha512-9IWvBd68MRpfgrMOVuwuasU81GWH4ccNaOkT7nJEzl+azhDOzHNysm7Z0RdtowBFlJX+6qJfSLDVzbiWOVd9Ww==}
     engines: {node: '>=20.19.0'}
     peerDependencies:
-      '@effect/platform-browser': 4.0.0-rc.115
-      effect: 4.0.0-rc.115
+      '@effect/platform-browser': 4.0.0-rc.116
+      effect: 4.0.0-rc.116
 
   for-each@0.3.5:
     resolution: {integrity: sha512-dKx12eRCVIzqCxFGplyFKJMPvLEWgmNtUrpTiJIR5u97zEhRG8ySrtboPHZXx7daLxQVrl643cTzbab2tkQjxg==}
@@ -2120,6 +2120,9 @@ packages:
 
   magic-string@1.4.1:
     resolution: {integrity: sha512-8lyCu36ErXR0J9uaGKlKQoiLZKmtI63YGLE8G2o9jyRPdr4X47LusSOwgOJOzcVtp81fTAAjxR7BwKz682Jhow==}
+
+  magic-string@1.4.2:
+    resolution: {integrity: sha512-vG+rjFRj1PqdIBozIxAGMjPlOhaVe+GXpbttY/iSK7rGcJRMlwNJO7dcUwmUqkymsFLJiNGI06t4D7Fr7yRC9g==}
 
   magicast@0.5.4:
     resolution: {integrity: sha512-llBEhWm1SacoRwgHUoQJYtwp4PBLF4faQi5TCpIGyGs9n4y5+juI0tDgyKIfpqxckRHaHzouUEph3THklWh03w==}
@@ -2702,8 +2705,8 @@ packages:
     resolution: {integrity: sha512-QEg3HPMll0o3t2ourKwOeUAZ159Kn9mx5pnzHRQO8+Wixmh88YdZRiIwat0iNzNNXn0yoEtXJqFpyW7eM8BV7g==}
     engines: {node: '>=20.18.1'}
 
-  undici@8.10.2:
-    resolution: {integrity: sha512-/y4/bH9YNU5hi9NIrpOuvGXFcxrj3CMrV+/AYpowAYTpHn8gX/XPFjNy766FPoYY0miQhdW977JFWKGNhBdwyQ==}
+  undici@8.11.2:
+    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
     engines: {node: '>=22.19.0'}
 
   universalify@0.2.0:
@@ -2847,6 +2850,18 @@ packages:
 
   ws@8.21.3:
     resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -3097,37 +3112,37 @@ snapshots:
   '@csstools/css-tokenizer@3.0.4':
     optional: true
 
-  '@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115)':
+  '@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117)':
     dependencies:
-      effect: 4.0.0-rc.115
+      effect: 4.0.0-rc.117
 
-  '@effect/platform-node-shared@4.0.0-rc.115(effect@4.0.0-rc.115)':
+  '@effect/platform-node-shared@4.0.0-rc.118(effect@4.0.0-rc.117)':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-rc.115
-      ws: 8.21.3
+      effect: 4.0.0-rc.117
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1)':
+  '@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-rc.115(effect@4.0.0-rc.115)
-      effect: 4.0.0-rc.115
+      '@effect/platform-node-shared': 4.0.0-rc.118(effect@4.0.0-rc.117)
+      effect: 4.0.0-rc.117
       redis: 6.2.1
-      undici: 8.10.2
+      undici: 8.11.2
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/vitest@4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.27.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))':
+  '@effect/vitest@4.0.0-rc.115(effect@4.0.0-rc.117)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.27.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))':
     dependencies:
-      effect: 4.0.0-rc.115
+      effect: 4.0.0-rc.117
       vitest: 5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.27.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
 
-  '@effect/vitest@4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))':
+  '@effect/vitest@4.0.0-rc.115(effect@4.0.0-rc.117)(vitest@5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))':
     dependencies:
-      effect: 4.0.0-rc.115
+      effect: 4.0.0-rc.117
       vitest: 5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
 
   '@esbuild/aix-ppc64@0.27.2':
@@ -3299,19 +3314,19 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@foldkit/ui@0.160.0(effect@4.0.0-rc.115)(foldkit@0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))':
+  '@foldkit/ui@0.163.0(effect@4.0.0-rc.117)(foldkit@0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))':
     dependencies:
       '@floating-ui/dom': 1.8.0
-      effect: 4.0.0-rc.115
-      foldkit: 0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+      effect: 4.0.0-rc.117
+      foldkit: 0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
 
-  '@foldkit/vite-plugin@0.22.0(effect@4.0.0-rc.115)(foldkit@0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))':
+  '@foldkit/vite-plugin@0.24.0(effect@4.0.0-rc.117)(foldkit@0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))':
     dependencies:
-      effect: 4.0.0-rc.115
-      foldkit: 0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
-      magic-string: 1.4.1
+      effect: 4.0.0-rc.117
+      foldkit: 0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      magic-string: 1.4.2
       vite: 8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
-      ws: 8.21.3
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -3690,7 +3705,7 @@ snapshots:
       obug: 2.1.4
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      vitest: 5.0.1(@types/node@24.13.4)(@vitest/coverage-v8@5.0.1)(happy-dom@20.14.5)(jsdom@23.2.0)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.27.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
 
   '@vitest/istanbul-lib-coverage@1.0.1': {}
 
@@ -4013,7 +4028,7 @@ snapshots:
       tslib: 2.3.0
       zrender: 6.1.0
 
-  effect@4.0.0-rc.115: {}
+  effect@4.0.0-rc.117: {}
 
   end-of-stream@1.4.5:
     dependencies:
@@ -4176,10 +4191,10 @@ snapshots:
       mlly: 1.8.0
       rollup: 4.54.0
 
-  foldkit@0.160.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115):
+  foldkit@0.163.0(@effect/platform-browser@4.0.0-rc.117(effect@4.0.0-rc.117))(effect@4.0.0-rc.117):
     dependencies:
-      '@effect/platform-browser': 4.0.0-rc.115(effect@4.0.0-rc.115)
-      effect: 4.0.0-rc.115
+      '@effect/platform-browser': 4.0.0-rc.117(effect@4.0.0-rc.117)
+      effect: 4.0.0-rc.117
       parse5: 8.0.1
 
   for-each@0.3.5:
@@ -4408,7 +4423,7 @@ snapshots:
       whatwg-encoding: 3.1.1
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
-      ws: 8.21.3
+      ws: 8.22.0
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - bufferutil
@@ -4591,6 +4606,10 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   magic-string@1.4.1:
+    dependencies:
+      '@jridgewell/sourcemap-codec': 1.6.0
+
+  magic-string@1.4.2:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
@@ -5224,7 +5243,7 @@ snapshots:
 
   undici@7.16.0: {}
 
-  undici@8.10.2: {}
+  undici@8.11.2: {}
 
   universalify@0.2.0:
     optional: true
@@ -5402,6 +5421,8 @@ snapshots:
   wrappy@1.0.2: {}
 
   ws@8.21.3: {}
+
+  ws@8.22.0: {}
 
   xml-name-validator@5.0.0:
     optional: true
