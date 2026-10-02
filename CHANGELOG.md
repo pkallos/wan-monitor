@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.5
+
+### Patch Changes
+
+- [#336](https://github.com/pkallos/wan-monitor/pull/336) [`98acc96`](https://github.com/pkallos/wan-monitor/commit/98acc96f958659f6175c028aea19a0a0950f1608) Thanks [@pkallos](https://github.com/pkallos)! - Upgrade to Effect 4.0.0 stable and Foldkit 0.165.0.
+
 ## 1.2.4
 
 ### Patch Changes
