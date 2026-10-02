@@ -2,11 +2,7 @@ import { DbUnavailableErrorSchema } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { GranularitySchema } from "@shared/api/routes/metrics";
 import { Schema } from "effect";
-import {
-  HttpApiEndpoint,
-  HttpApiGroup,
-  HttpApiSchema,
-} from "effect/unstable/httpapi";
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 
 const SpeedTestResult = Schema.Struct({
   downloadMbps: Schema.Number,

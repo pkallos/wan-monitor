@@ -7,7 +7,7 @@ import {
   liveConnectivityWindowSeconds,
 } from "@wan-monitor/shared";
 import { Clock, Effect, type Schema } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";

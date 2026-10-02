@@ -1,6 +1,6 @@
 import { Match as M, Option } from "effect";
 import { Command, type Update } from "foldkit";
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 import {
   ClearSession,
   FetchMe,
@@ -89,16 +89,16 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
       ChangedUsername: ({ value }) => {
         if (model._tag !== "LoggedOut") return { model };
-        return { model: evo(model, { username: () => value }) };
+        return { model: modifyFields(model, { username: () => value }) };
       },
       ChangedPassword: ({ value }) => {
         if (model._tag !== "LoggedOut") return { model };
-        return { model: evo(model, { password: () => value }) };
+        return { model: modifyFields(model, { password: () => value }) };
       },
       SubmittedLogin: () => {
         if (model._tag !== "LoggedOut") return { model };
         return {
-          model: evo(model, {
+          model: modifyFields(model, {
             isSubmitting: () => true,
             maybeError: () => Option.none(),
           }),
@@ -121,7 +121,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       FailedLogin: ({ error }) => {
         if (model._tag !== "LoggedOut") return { model };
         return {
-          model: evo(model, {
+          model: modifyFields(model, {
             isSubmitting: () => false,
             maybeError: () => Option.some(error),
           }),
@@ -148,7 +148,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             now: Date.now,
           });
         return {
-          model: evo(model, { dashboard: () => dashboardModel }),
+          model: modifyFields(model, { dashboard: () => dashboardModel }),
           commands: Command.mapMessages(dashboardCommands ?? [], (message) =>
             GotDashboardMessage({ message })
           ),

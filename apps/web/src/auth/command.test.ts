@@ -1,10 +1,6 @@
 import { Effect, Layer } from "effect";
-import {
-  HttpClient,
-  HttpClientError,
-  HttpClientResponse,
-} from "effect/unstable/http";
-import { KeyValueStore } from "effect/unstable/persistence";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
+import { KeyValueStore } from "effect/persistence";
 import { describe, expect, test } from "vitest";
 import {
   clearSession,

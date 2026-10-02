@@ -1,7 +1,7 @@
 import { Popover } from "@foldkit/ui";
 import { Match as M, Option } from "effect";
 import { Command, type Update } from "foldkit";
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 import {
   Custom,
   type DateRangeSelection,
@@ -94,7 +94,7 @@ const resetDraftFromSelection = (
   model: Model,
   selection: DateRangeSelection
 ): Model =>
-  evo(model, {
+  modifyFields(model, {
     maybeDraftPreset: () =>
       selection._tag === "Preset"
         ? Option.some(selection.preset)
@@ -126,7 +126,7 @@ export const update = (
     withUpdateReturn,
     M.tags({
       ClickedPreset: ({ preset }) => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           maybeDraftPreset: () => Option.some(preset),
           maybeDraftRange: () => Option.none(),
           maybeRangeStart: () => Option.none(),
@@ -137,7 +137,7 @@ export const update = (
       ClickedDay: ({ dateMs }) =>
         Option.match(model.maybeRangeStart, {
           onNone: () => ({
-            model: evo(model, {
+            model: modifyFields(model, {
               maybeRangeStart: () => Option.some(dateMs),
               maybeDraftPreset: () => Option.none(),
               maybeDraftRange: () => Option.none(),
@@ -145,7 +145,7 @@ export const update = (
             }),
           }),
           onSome: (start) => ({
-            model: evo(model, {
+            model: modifyFields(model, {
               maybeDraftRange: () =>
                 Option.some({
                   start: Math.min(start, dateMs),
@@ -161,7 +161,7 @@ export const update = (
       HoveredDay: ({ dateMs }) =>
         Option.isSome(model.maybeRangeStart)
           ? {
-              model: evo(model, {
+              model: modifyFields(model, {
                 maybeHoveredDay: () => Option.some(dateMs),
               }),
             }
@@ -173,7 +173,7 @@ export const update = (
           month === 0
             ? { year: year - 1, month: 11 }
             : { year, month: month - 1 };
-        return { model: evo(model, { visibleMonth: () => previous }) };
+        return { model: modifyFields(model, { visibleMonth: () => previous }) };
       },
 
       ClickedNextMonth: () => {
@@ -182,7 +182,7 @@ export const update = (
           month === 11
             ? { year: year + 1, month: 0 }
             : { year, month: month + 1 };
-        return { model: evo(model, { visibleMonth: () => next }) };
+        return { model: modifyFields(model, { visibleMonth: () => next }) };
       },
 
       ClickedApply: () => {
@@ -191,7 +191,7 @@ export const update = (
           model.popover
         );
         return {
-          model: evo(model, { popover: () => nextPopover }),
+          model: modifyFields(model, { popover: () => nextPopover }),
           commands: mapPopoverCommands(popoverCommands ?? []),
           outMessage: AppliedRange({ selection }),
         };
@@ -203,7 +203,7 @@ export const update = (
         );
         return {
           model: resetDraftFromSelection(
-            evo(model, { popover: () => nextPopover }),
+            modifyFields(model, { popover: () => nextPopover }),
             appliedSelection
           ),
           commands: mapPopoverCommands(popoverCommands ?? []),
@@ -217,7 +217,7 @@ export const update = (
           commands: popoverCommands,
           outMessage,
         } = Popover.update(model.popover, popoverMessage);
-        const nextModel = evo(model, { popover: () => nextPopover });
+        const nextModel = modifyFields(model, { popover: () => nextPopover });
         const commands = mapPopoverCommands(popoverCommands ?? []);
 
         if (outMessage === undefined) {
@@ -234,7 +234,7 @@ export const update = (
             );
             return {
               model: resetDraftFromSelection(
-                evo(nextModel, {
+                modifyFields(nextModel, {
                   visibleMonth: () => visibleMonthFromWindow(window),
                 }),
                 appliedSelection

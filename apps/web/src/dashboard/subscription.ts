@@ -40,10 +40,10 @@ export const dependenciesToStream = ({
 const activityStream = (): Stream.Stream<Message> =>
   Stream.mergeAll(
     ACTIVITY_EVENTS.map((type) =>
-      Subscription.fromEvent<Event, Message>({
+      Subscription.fromEvent({
         target: window,
         type,
-        toMessage: () => Interacted(),
+        mapEvent: () => Interacted(),
       })
     ),
     { concurrency: "unbounded" }

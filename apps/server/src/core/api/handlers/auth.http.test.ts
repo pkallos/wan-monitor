@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { HttpRouter, HttpServer } from "effect/unstable/http";
+import { HttpRouter, HttpServer } from "effect/http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiServiceLayer } from "@/core/api/service";
 import { PingExecutor } from "@/core/monitoring/ping-executor";

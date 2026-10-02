@@ -1,7 +1,7 @@
 import { WanMonitorApi } from "@shared/api";
 import type { GetMetricsQueryParams } from "@shared/api/routes/metrics";
 import { Clock, Effect, type Schema } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 

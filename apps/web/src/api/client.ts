@@ -1,7 +1,7 @@
 import { WanMonitorApi } from "@shared/api";
 import { Effect, Option } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
-import { HttpApiClient } from "effect/unstable/httpapi";
+import { HttpClient, HttpClientRequest } from "effect/http";
+import { HttpApiClient } from "effect/http-api";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 

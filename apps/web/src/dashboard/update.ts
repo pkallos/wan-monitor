@@ -1,6 +1,6 @@
 import { Match as M, Option, Result } from "effect";
 import { AsyncData, Command, Update } from "foldkit";
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 import {
   SyncJitterChart,
   SyncLatencyChart,
@@ -41,7 +41,7 @@ const enterMetrics =
     Option.match(AsyncData.loadIfMissing(model.metrics), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { metrics: () => next }),
+        model: modifyFields(model, { metrics: () => next }),
         commands: [
           FetchMetrics({
             token: context.token,
@@ -58,7 +58,7 @@ const enterSpeedtestHistory =
     Option.match(AsyncData.loadIfMissing(model.speedtestHistory), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { speedtestHistory: () => next }),
+        model: modifyFields(model, { speedtestHistory: () => next }),
         commands: [
           FetchSpeedtestHistory({
             token: context.token,
@@ -75,7 +75,7 @@ const enterConnectivityStatus =
     Option.match(AsyncData.loadIfMissing(model.connectivityStatus), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { connectivityStatus: () => next }),
+        model: modifyFields(model, { connectivityStatus: () => next }),
         commands: [
           FetchConnectivityStatus({
             token: context.token,
@@ -92,7 +92,7 @@ const enterLiveConnectivity =
     Option.match(AsyncData.loadIfMissing(model.liveConnectivity), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { liveConnectivity: () => next }),
+        model: modifyFields(model, { liveConnectivity: () => next }),
         commands: [FetchLiveConnectivity({ token: context.token })],
       }),
     });
@@ -124,7 +124,7 @@ const revalidateMetrics =
     Option.match(AsyncData.revalidate(model.metrics), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { metrics: () => next }),
+        model: modifyFields(model, { metrics: () => next }),
         commands: [
           FetchMetrics({
             token: context.token,
@@ -141,7 +141,7 @@ const revalidateSpeedtestHistory =
     Option.match(AsyncData.revalidate(model.speedtestHistory), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { speedtestHistory: () => next }),
+        model: modifyFields(model, { speedtestHistory: () => next }),
         commands: [
           FetchSpeedtestHistory({
             token: context.token,
@@ -158,7 +158,7 @@ const revalidateConnectivityStatus =
     Option.match(AsyncData.revalidate(model.connectivityStatus), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { connectivityStatus: () => next }),
+        model: modifyFields(model, { connectivityStatus: () => next }),
         commands: [
           FetchConnectivityStatus({
             token: context.token,
@@ -175,7 +175,7 @@ const revalidateLiveConnectivity =
     Option.match(AsyncData.revalidate(model.liveConnectivity), {
       onNone: () => ({ model }),
       onSome: (next) => ({
-        model: evo(model, { liveConnectivity: () => next }),
+        model: modifyFields(model, { liveConnectivity: () => next }),
         commands: [FetchLiveConnectivity({ token: context.token })],
       }),
     });
@@ -195,7 +195,7 @@ const forceReload = <A, E>(
 const reloadMetrics =
   (context: Context) =>
   (model: Model): UpdateReturn => ({
-    model: evo(model, { metrics: () => forceReload(model.metrics) }),
+    model: modifyFields(model, { metrics: () => forceReload(model.metrics) }),
     commands: [
       FetchMetrics({
         token: context.token,
@@ -208,7 +208,7 @@ const reloadMetrics =
 const reloadSpeedtestHistory =
   (context: Context) =>
   (model: Model): UpdateReturn => ({
-    model: evo(model, {
+    model: modifyFields(model, {
       speedtestHistory: () => forceReload(model.speedtestHistory),
     }),
     commands: [
@@ -223,7 +223,7 @@ const reloadSpeedtestHistory =
 const reloadConnectivityStatus =
   (context: Context) =>
   (model: Model): UpdateReturn => ({
-    model: evo(model, {
+    model: modifyFields(model, {
       connectivityStatus: () => forceReload(model.connectivityStatus),
     }),
     commands: [
@@ -238,7 +238,7 @@ const reloadConnectivityStatus =
 const reloadLiveConnectivity =
   (context: Context) =>
   (model: Model): UpdateReturn => ({
-    model: evo(model, {
+    model: modifyFields(model, {
       liveConnectivity: () => forceReload(model.liveConnectivity),
     }),
     commands: [FetchLiveConnectivity({ token: context.token })],
@@ -393,7 +393,9 @@ export const update = (
           pickerCommands ?? [],
           (message) => GotDateRangePickerMessage({ message })
         );
-        const withPicker = evo(model, { dateRangePicker: () => nextPicker });
+        const withPicker = modifyFields(model, {
+          dateRangePicker: () => nextPicker,
+        });
 
         if (outMessage === undefined) {
           return { model: withPicker, commands: mappedCommands };
@@ -402,7 +404,7 @@ export const update = (
         return M.value(outMessage).pipe(
           withUpdateReturn,
           M.tag("AppliedRange", ({ selection }) => {
-            const withAppliedRange = evo(withPicker, {
+            const withAppliedRange = modifyFields(withPicker, {
               dateRange: () => selection,
             });
             // `liveConnectivity` is deliberately absent: it answers "is
@@ -445,7 +447,7 @@ export const update = (
         endTimeMs,
         granularity,
       }) => {
-        const nextModel = evo(model, {
+        const nextModel = modifyFields(model, {
           metrics: () =>
             AsyncData.settle(model.metrics, Result.succeed(metrics)),
           maybeMetricsWindow: () =>
@@ -455,13 +457,13 @@ export const update = (
         return { model: nextModel, commands: syncQualityCharts(nextModel) };
       },
       FailedFetchMetrics: ({ error }) => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           metrics: () => AsyncData.settle(model.metrics, Result.fail(error)),
         }),
       }),
 
       SucceededFetchSpeedtestHistory: ({ history, startTimeMs, endTimeMs }) => {
-        const nextModel = evo(model, {
+        const nextModel = modifyFields(model, {
           speedtestHistory: () =>
             AsyncData.settle(model.speedtestHistory, Result.succeed(history)),
           maybeSpeedtestWindow: () => Option.some({ startTimeMs, endTimeMs }),
@@ -469,7 +471,7 @@ export const update = (
         return { model: nextModel, commands: syncSpeedChart(nextModel) };
       },
       FailedFetchSpeedtestHistory: ({ error }) => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           speedtestHistory: () =>
             AsyncData.settle(model.speedtestHistory, Result.fail(error)),
         }),
@@ -483,7 +485,7 @@ export const update = (
         endTimeMs,
         granularity,
       }) => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           connectivityStatus: () =>
             AsyncData.settle(
               model.connectivityStatus,
@@ -499,14 +501,14 @@ export const update = (
         }),
       }),
       FailedFetchConnectivityStatus: ({ error }) => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           connectivityStatus: () =>
             AsyncData.settle(model.connectivityStatus, Result.fail(error)),
         }),
       }),
 
       SucceededFetchLiveConnectivity: ({ status, maybeLastSampleAtMs }) => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           liveConnectivity: () =>
             AsyncData.settle(
               model.liveConnectivity,
@@ -515,7 +517,7 @@ export const update = (
         }),
       }),
       FailedFetchLiveConnectivity: ({ error }) => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           liveConnectivity: () =>
             AsyncData.settle(model.liveConnectivity, Result.fail(error)),
         }),
@@ -533,7 +535,7 @@ export const update = (
           model.dateRange.preset === "allTime" &&
           Option.isNone(model.maybeEarliestDataMs) &&
           Option.isSome(earliestMs);
-        const nextModel = evo(model, {
+        const nextModel = modifyFields(model, {
           maybeEarliestDataMs: () => earliestMs,
         });
         return learnedAnUnresolvedAllTimeStart
@@ -546,26 +548,34 @@ export const update = (
       },
 
       ClickedTogglePause: () => {
-        const nextModel = evo(model, { isPaused: (paused) => !paused });
+        const nextModel = modifyFields(model, {
+          isPaused: (paused) => !paused,
+        });
         return {
           model: nextModel,
           commands: [SaveSettings({ settings: settingsFromModel(nextModel) })],
         };
       },
 
-      Interacted: () => ({ model: evo(model, { isIdle: () => false }) }),
-      WentIdle: () => ({ model: evo(model, { isIdle: () => true }) }),
+      Interacted: () => ({
+        model: modifyFields(model, { isIdle: () => false }),
+      }),
+      WentIdle: () => ({ model: modifyFields(model, { isIdle: () => true }) }),
 
       HoveredConnectivitySegment: ({ index }) => ({
-        model: evo(model, { hoveredSegmentIndex: () => Option.some(index) }),
+        model: modifyFields(model, {
+          hoveredSegmentIndex: () => Option.some(index),
+        }),
       }),
       UnhoveredConnectivitySegment: () => ({
-        model: evo(model, { hoveredSegmentIndex: () => Option.none() }),
+        model: modifyFields(model, {
+          hoveredSegmentIndex: () => Option.none(),
+        }),
       }),
 
       ClickedToggleTheme: () => {
         const nextTheme = toggleTheme(model.theme);
-        const nextModel = evo(model, { theme: () => nextTheme });
+        const nextModel = modifyFields(model, { theme: () => nextTheme });
         return {
           model: nextModel,
           commands: [
@@ -578,7 +588,7 @@ export const update = (
       },
 
       ClickedTriggerSpeedtest: () => ({
-        model: evo(model, {
+        model: modifyFields(model, {
           speedtestTrigger: () => AsyncData.Loading(),
         }),
         commands: [TriggerSpeedtest({ token: context.token })],
@@ -595,7 +605,7 @@ export const update = (
           }
         );
         return {
-          model: evo(model, {
+          model: modifyFields(model, {
             speedtestTrigger: () =>
               AsyncData.Success({ data: { downloadMbps, uploadMbps, pingMs } }),
             toast: () => toastModel,
@@ -631,7 +641,7 @@ export const update = (
           }
         );
         return {
-          model: evo(model, {
+          model: modifyFields(model, {
             speedtestTrigger: () => AsyncData.Failure({ error: message }),
             toast: () => toastModel,
           }),
@@ -642,25 +652,25 @@ export const update = (
       },
 
       SucceededMountLatencyChart: ({ hostId }) => {
-        const nextModel = evo(model, {
+        const nextModel = modifyFields(model, {
           maybeLatencyChartHostId: () => Option.some(hostId),
         });
         return { model: nextModel, commands: syncLatencyChart(nextModel) };
       },
       SucceededMountPacketLossChart: ({ hostId }) => {
-        const nextModel = evo(model, {
+        const nextModel = modifyFields(model, {
           maybePacketLossChartHostId: () => Option.some(hostId),
         });
         return { model: nextModel, commands: syncPacketLossChart(nextModel) };
       },
       SucceededMountJitterChart: ({ hostId }) => {
-        const nextModel = evo(model, {
+        const nextModel = modifyFields(model, {
           maybeJitterChartHostId: () => Option.some(hostId),
         });
         return { model: nextModel, commands: syncJitterChart(nextModel) };
       },
       SucceededMountSpeedChart: ({ hostId }) => {
-        const nextModel = evo(model, {
+        const nextModel = modifyFields(model, {
           maybeSpeedChartHostId: () => Option.some(hostId),
         });
         return { model: nextModel, commands: syncSpeedChart(nextModel) };
@@ -672,7 +682,7 @@ export const update = (
           message
         );
         return {
-          model: evo(model, { toast: () => nextToast }),
+          model: modifyFields(model, { toast: () => nextToast }),
           commands: Command.mapMessages(commands ?? [], (message) =>
             GotToastMessage({ message })
           ),

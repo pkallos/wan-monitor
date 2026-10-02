@@ -3,7 +3,7 @@ import type { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
 import { mbpsToBps } from "@shared/metrics";
 import type { SpeedMetric } from "@wan-monitor/shared";
 import { Clock, Effect, Ref, type Schema } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import {

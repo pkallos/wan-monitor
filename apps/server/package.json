@@ -16,10 +16,10 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.0",
     "@questdb/nodejs-client": "^4.2.0",
     "@types/pg": "^8.23.1",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.0",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.0",
     "ping": "^1.0.0",
@@ -28,7 +28,7 @@
     "speedtest-net": "2.2.0"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.13.4",
     "@types/ping": "^0.4.4",

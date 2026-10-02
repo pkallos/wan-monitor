@@ -1,6 +1,6 @@
 import { WanMonitorApi } from "@shared/api";
 import { Layer } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { AuthGroupLive } from "@/core/api/handlers/auth";
 import { ConnectivityStatusGroupLive } from "@/core/api/handlers/connectivity-status";
 import { HealthGroupLive } from "@/core/api/handlers/health";

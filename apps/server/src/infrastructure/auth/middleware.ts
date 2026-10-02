@@ -5,7 +5,7 @@ import {
   Unauthorized,
 } from "@shared/api/middlewares/authorization";
 import { Context, Data, Effect, Layer } from "effect";
-import { HttpServerRequest } from "effect/unstable/http";
+import { HttpServerRequest } from "effect/http";
 import {
   type JwtError,
   type JwtPayload,

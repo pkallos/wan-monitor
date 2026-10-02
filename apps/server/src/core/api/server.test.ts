@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { HttpServer } from "effect/unstable/http";
+import { HttpServer } from "effect/http";
 import { describe, expect, it } from "vitest";
 import { NodeHttpServerLayer } from "@/core/api/server";
 import { makeTestConfigLayer } from "@/test/config";
