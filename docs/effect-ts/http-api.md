@@ -1,12 +1,10 @@
 # HttpApi
 
 Schema-first HTTP API definition and serving. In v4 this all lives in core, under two subpath
-modules — `effect/unstable/http` (transport primitives: request, response, client, router,
-middleware plumbing) and `effect/unstable/httpapi` (the schema-driven API layer: `HttpApi`,
-`HttpApiGroup`, `HttpApiEndpoint`, `HttpApiBuilder`, `HttpApiMiddleware`, `HttpApiClient`). Neither
-lives in `@effect/platform` anymore — that package folded entirely into `effect` for v4. The `unstable`
-prefix means these modules can get breaking changes in minor releases, unlike the rest of the `effect`
-barrel; expect some churn if you bump the beta version.
+modules — `effect/http` (transport primitives: request, response, client, router, middleware
+plumbing) and `effect/http-api` (the schema-driven API layer: `HttpApi`, `HttpApiGroup`,
+`HttpApiEndpoint`, `HttpApiBuilder`, `HttpApiMiddleware`, `HttpApiClient`). Neither lives in
+`@effect/platform` anymore — that package folded entirely into `effect` for v4.
 
 `packages/shared/src/api/` defines the whole API contract once; `apps/server` implements it;
 `apps/web` consumes it through a generated client. Neither side redeclares a route or a schema by hand.
@@ -15,7 +13,7 @@ barrel; expect some churn if you bump the beta version.
 
 ```ts
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/unstable/httpapi";
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 
 export const AuthApiGroup = HttpApiGroup.make("auth")
   .add(
@@ -48,7 +46,7 @@ See `packages/shared/src/api/routes/*.ts` for every group in this API.
 ## Assembling the API
 
 ```ts
-import { HttpApi } from "effect/unstable/httpapi";
+import { HttpApi } from "effect/http-api";
 
 export const WanMonitorApi = HttpApi.make("WanMonitorAPI")
   .add(AuthApiGroup.prefix("/auth"))
@@ -62,7 +60,7 @@ export const WanMonitorApi = HttpApi.make("WanMonitorAPI")
 ## Implementing handlers
 
 ```ts
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 
 export const loginHandler = ({ payload }: { payload: LoginRequestType }) =>
   Effect.gen(function* () {
@@ -98,7 +96,7 @@ export const ApiServiceLayer = HttpApiBuilder.layer(WanMonitorApi).pipe(
 
 ```ts
 // apps/server/src/core/api/server.ts
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 
 export const ApiServerLive = HttpRouter.serve(ApiServiceLayer);
 ```
@@ -168,7 +166,7 @@ See `error-handling.md`'s `Schema.TaggedErrorClass` + `httpApiStatus` section �
 ## Testing a full app instance
 
 ```ts
-import { HttpRouter, HttpServer } from "effect/unstable/http";
+import { HttpRouter, HttpServer } from "effect/http";
 
 const MockServicesLayer = Layer.mergeAll(ConfigLayer, JwtLayer, /* mocks */);
 

@@ -1,5 +1,5 @@
 import { Effect, Option, Schema as S } from "effect";
-import { KeyValueStore } from "effect/unstable/persistence";
+import { KeyValueStore } from "effect/persistence";
 import { DateRangeSelection, Preset } from "@/dashboard/dateRange";
 import { systemTheme, Theme } from "@/dashboard/theme";
 

@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { NodeHttpServer } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 
 import { ApiServiceLayer } from "@/core/api/service";
 import { ConfigService } from "@/infrastructure/config/config";

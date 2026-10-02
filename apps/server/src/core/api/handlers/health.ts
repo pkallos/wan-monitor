@@ -1,7 +1,7 @@
 import { WanMonitorApi } from "@shared/api";
 import { HealthUnhealthy } from "@shared/api/errors";
 import { DateTime, Effect } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
 export const getReadyHandler = () =>

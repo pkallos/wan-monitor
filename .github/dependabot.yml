@@ -14,9 +14,9 @@ updates:
       - "no-changeset"
     groups:
       # Effect ecosystem, including foldkit - foldkit and @foldkit/* peer-pin
-      # an exact effect beta version, so they move together. No update-types
-      # filter: prerelease bumps (e.g. beta.102 -> beta.103) aren't "minor" or
-      # "patch", so that filter would silently exclude them from the group.
+      # an exact effect version, so effect, foldkit and @foldkit/* move
+      # together. There is no update-types filter, so every bump that isn't
+      # ignored lands in the one group.
       effect:
         patterns:
           - "effect"
@@ -179,11 +179,6 @@ updates:
       - dependency-name: "vitest"
       - dependency-name: "@vitest/*"
         update-types: ["version-update:semver-major"]
-
-      # @effect/vitest beta.103+ requires vitest ^4.1.0, but root and
-      # apps/server still run vitest ^3.2.x. Fully excluded (no update-types):
-      # its beta-to-beta bumps are prerelease, not semver-minor/patch.
-      - dependency-name: "@effect/vitest"
 
       # Charting library major versions (recharts v3 needs a manual migration)
       - dependency-name: "recharts"

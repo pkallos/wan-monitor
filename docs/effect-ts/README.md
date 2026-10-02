@@ -9,30 +9,31 @@ with what you find in the codebase, the **codebase wins** — update these docs 
 
 ## Version and source
 
-Effect v4 is a beta major release. **effect.website's public docs describe v3 only** — the site's own
-source (`Effect-TS/website`, `src/content/docs/`) has a `v3/` directory and no `v4/` directory, because
-the docs site hasn't been rebuilt for the beta yet. There is no v4 tutorial site, no `llms.txt`, no
-`llms-full.txt` to mirror. The only authoritative v4 reference is the JSDoc embedded directly in
+**effect.website's public docs describe v3**, and the site publishes no `llms.txt` or `llms-full.txt`
+that could be mirrored. The authoritative v4 reference is the JSDoc embedded directly in
 [`Effect-TS/effect`](https://github.com/Effect-TS/effect)'s source (`packages/effect/src/**/*.ts`) —
 every export carries a `**When to use**` / `**Details**` / `**Example**` doc block, and that's what
 this library is built from. When something here looks wrong, re-read the source file directly; don't
-trust a cached copy or a blog post, since the beta API can move between releases.
+trust a cached copy or a blog post written against v3.
 
 ## Libraries in use
 
-Versions are pinned exactly in the workspace `package.json` files (not caret ranges) because v4 is
-beta and pins peer versions across the ecosystem in lockstep. Verify with `pnpm view <pkg> version`
-before bumping (see the "Verify dependency versions" rule in `AGENTS.md`) — check the [v4 beta
-release notes](https://effect.website/blog/releases/effect/40-beta) for what changed first.
+Versions live in the workspace `package.json` files (`apps/server`, `apps/web`, `packages/shared`, and
+the root and `apps/server` for `@effect/vitest`); this table deliberately carries none. The packages
+are pinned exactly, not with caret ranges, because Foldkit peer-pins `effect` to an exact version, so `effect`, the
+`@effect/*` packages, `foldkit` and `@foldkit/*` have to move together. Verify with
+`pnpm view <pkg> version` before bumping (see the "Verify dependency versions" rule in `AGENTS.md`),
+and read the [4.0.0 release notes](https://github.com/Effect-TS/effect/releases/tag/effect%404.0.0)
+for what changed first.
 
-| Package | Version | Where | What we use it for |
-| --- | --- | --- | --- |
-| `effect` | `4.0.0-beta.101` | server, web, shared | Core: `Effect`, `Layer`, `Context`, `Data`, `Config`, `Schema`, `Option`, `Result`, `Cause`, `Fiber`, `Logger`. Also `effect/unstable/http` and `effect/unstable/httpapi` (see below) |
-| `@effect/platform-node` | `4.0.0-beta.101` | server | `NodeHttpServer` — binds the HTTP API to a Node `http` server. The one platform package still separate from core in v4 |
-| `@effect/vitest` | `4.0.0-beta.101` | root (dev), server (dev) | `it.effect` / `it.live` Vitest integration |
+| Package | Where | What we use it for |
+| --- | --- | --- |
+| `effect` | server, web, shared | Core: `Effect`, `Layer`, `Context`, `Data`, `Config`, `Schema`, `Option`, `Result`, `Cause`, `Fiber`, `Logger`. Also `effect/http` and `effect/http-api` (see below) |
+| `@effect/platform-node` | server | `NodeHttpServer` — binds the HTTP API to a Node `http` server. The one platform package still separate from core in v4 |
+| `@effect/vitest` | root (dev), server (dev) | `it.effect` / `it.live` Vitest integration |
 
 `@effect/platform` and `@effect/schema` do not appear above on purpose. In v4, `@effect/platform`'s
-HTTP and HttpApi modules folded into core under `effect/unstable/http` and `effect/unstable/httpapi`;
+HTTP and HttpApi modules folded into core under `effect/http` and `effect/http-api`;
 `Schema` has been part of the `effect` barrel since 3.10 and there was never a reason to install
 `@effect/schema` separately. `@effect/language-service` (a v3-only TS plugin) is also gone — it has no
 v4 release, and its diagnostics escalated to hard type errors against v4 types rather than merely

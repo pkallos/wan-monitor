@@ -1,6 +1,6 @@
 import { WanMonitorApi } from "@shared/api";
 import { Clock, Effect } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
 import { ConfigService } from "@/infrastructure/config/config";
 

@@ -1,6 +1,6 @@
 import { HealthUnhealthy } from "@shared/api/errors";
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 const HealthStatus = Schema.Struct({
   status: Schema.String,

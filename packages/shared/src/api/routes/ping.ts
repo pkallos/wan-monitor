@@ -1,6 +1,6 @@
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 const PingResult = Schema.Struct({
   host: Schema.String,

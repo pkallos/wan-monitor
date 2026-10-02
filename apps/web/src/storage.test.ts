@@ -1,5 +1,5 @@
 import { Effect, Layer, Option } from "effect";
-import { KeyValueStore } from "effect/unstable/persistence";
+import { KeyValueStore } from "effect/persistence";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Custom, Preset } from "@/dashboard/dateRange";
 import {

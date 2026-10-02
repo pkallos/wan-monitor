@@ -1,6 +1,6 @@
 import { BrowserKeyValueStore } from "@effect/platform-browser";
 import { Effect, Option, Schema as S } from "effect";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient } from "effect/http";
 import { Command } from "foldkit";
 import { makeClient } from "@/api/client";
 import {

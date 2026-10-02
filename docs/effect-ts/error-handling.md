@@ -39,7 +39,7 @@ export class InvalidCredentials extends Schema.TaggedErrorClass<InvalidCredentia
 ```
 
 This is v4's `Schema.TaggedErrorClass` (v3's `Schema.TaggedError`, renamed). The third argument is a
-schema annotations object; `httpApiStatus` is the field `effect/unstable/httpapi`'s `HttpApiSchema`
+schema annotations object; `httpApiStatus` is the field `effect/http-api`'s `HttpApiSchema`
 reads to pick the response status — it's a public, documented annotation key (declared without an
 `@internal` marker in `HttpApiSchema.ts`'s `Schema.Annotations.Augment` interface), not an
 implementation detail to avoid. `HttpApiSchema.status(401)(someSchema)` is the equivalent form for a
