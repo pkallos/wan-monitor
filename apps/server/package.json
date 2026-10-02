@@ -33,7 +33,7 @@
     "@types/node": "^24.19.0",
     "@types/ping": "^0.4.4",
     "@types/speedtest-net": "^2.1.5",
-    "@vitest/coverage-v8": "^5.0.1",
+    "@vitest/coverage-v8": "^5.0.2",
     "@wan-monitor/shared": "workspace:*",
     "tsup": "^8.5.1",
     "tsx": "^4.23.15",
