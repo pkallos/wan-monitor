@@ -46,7 +46,7 @@
     "postinstall": "sh scripts/patch-speedtest-net.sh"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.13",
+    "@biomejs/biome": "^2.5.14",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@effect/vitest": "4.0.0",
@@ -54,7 +54,7 @@
     "@types/node": "^24.19.0",
     "@wan-monitor/shared": "workspace:*",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.1",
+    "lint-staged": "^17.6.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
