@@ -35,9 +35,7 @@ export const qualityCard = (h: HtmlBuilder<Message>, model: Model): Html => {
     );
 
   return card(h, { as: "section", className: "min-w-0" }, [
-    sectionHeader(h, {
-      title: "Network Quality",
-    }),
+    sectionHeader(h, { title: "Network quality" }),
     chart({
       title: "Latency · ms",
       label: "Latency chart",

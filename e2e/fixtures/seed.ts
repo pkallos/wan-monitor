@@ -90,19 +90,40 @@ export const resetSchema = async (baseUrl: string): Promise<void> => {
 const isoAt = (epochMs: number): string =>
   new Date(epochMs).toISOString().replace("Z", "000Z"); // ms -> microsecond precision
 
-/** 96 ping rows at 15-minute intervals across the last 24h, ending at now. */
+const SEEDED_HOSTS = ["8.8.8.8", "1.1.1.1"] as const;
+
+/** Cycles (counted back from now, 15 minutes apart) in which every host fails. */
+const OUTAGE_CYCLES = new Set([30, 31, 32, 33]);
+/** Cycles in which one host answers but drops 30% of its packets: degraded, not down. */
+const DEGRADED_CYCLES = new Set([60, 61]);
+
+/**
+ * 96 cycles at 15-minute intervals across the last 24h, ending at now, one row
+ * per host per cycle. One four-cycle outage and one two-cycle degraded period
+ * sit inside the window, so the incidents card and the ribbon have
+ * something to show.
+ */
 const buildPingRows = (nowMs: number): string[] => {
   const rows: string[] = [];
   for (let i = 0; i < 96; i++) {
     const ts = isoAt(nowMs - i * 15 * 60 * 1000);
-    const latency = 20 + (i % 30); // 20-49ms
-    const jitterTenths = i % 50;
-    const jitter = `${Math.floor(jitterTenths / 10)}.${jitterTenths % 10}`; // 0.0-4.9
-    const packetLoss = i % 20 === 0 ? i % 5 : 0;
-    const connectivity = i !== 0 && i % 50 === 0 ? "down" : "up";
-    rows.push(
-      `('${ts}', 'ping', '8.8.8.8', ${latency}, ${jitter}, ${packetLoss}, '${connectivity}', null, null, null, null, null, null)`
-    );
+    for (const [hostIndex, host] of SEEDED_HOSTS.entries()) {
+      if (OUTAGE_CYCLES.has(i)) {
+        rows.push(
+          `('${ts}', 'ping', '${host}', null, null, 100, 'down', null, null, null, null, null, null)`
+        );
+        continue;
+      }
+      const latency = 20 + (i % 30) + hostIndex * 4; // 20-53ms
+      const jitterTenths = i % 50;
+      const jitter = `${Math.floor(jitterTenths / 10)}.${jitterTenths % 10}`; // 0.0-4.9
+      const isDegraded = DEGRADED_CYCLES.has(i) && hostIndex === 0;
+      const packetLoss = isDegraded ? 30 : i % 20 === 0 ? i % 5 : 0;
+      const connectivity = i !== 0 && i % 50 === 0 ? "down" : "up";
+      rows.push(
+        `('${ts}', 'ping', '${host}', ${latency}, ${jitter}, ${packetLoss}, '${connectivity}', null, null, null, null, null, null)`
+      );
+    }
   }
   return rows;
 };
@@ -158,8 +179,8 @@ const waitForRowCount = async (
 };
 
 /**
- * Seed a fresh, deterministic dataset: 96 ping + 6 speedtest metrics spanning
- * the last 24 hours. Resets the schema first so the result is idempotent.
+ * Seed a fresh, deterministic dataset: 96 ping cycles (two hosts each) and 6
+ * speedtest metrics spanning the last 24 hours. Resets the schema first so the result is idempotent.
  */
 export const seedTestDatabase = async (baseUrl: string): Promise<void> => {
   const nowMs = Date.now();

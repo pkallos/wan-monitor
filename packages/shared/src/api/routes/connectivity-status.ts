@@ -81,7 +81,7 @@ const OutageSchema = Schema.Struct({
   peakLatency: Schema.NullOr(Schema.Number),
 });
 
-const GetOutagesResponse = Schema.Struct({
+export const GetOutagesResponse = Schema.Struct({
   /** Newest first, capped at a server-side maximum. */
   data: Schema.Array(OutageSchema),
   meta: Schema.Struct({

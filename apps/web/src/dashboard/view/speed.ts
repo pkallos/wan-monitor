@@ -9,11 +9,12 @@ import {
 import { calculateSpeedStats } from "@/dashboard/charts/stats";
 import { ClickedTriggerSpeedtest, type Message } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
-import { lastTestLabel, speedFigure } from "@/dashboard/overview";
+import { lastTestLabel, latestSpeedPair } from "@/dashboard/overview";
 import { chartHost } from "@/dashboard/view/chartHost";
 import { isAwaitingData } from "@/dashboard/view/loading";
 import { card } from "@/ui/card";
 import { PRIMARY_BUTTON_CLASS } from "@/ui/controls";
+import { failedLine } from "@/ui/failedLine";
 import { icon } from "@/ui/icon";
 import { sectionHeader } from "@/ui/sectionHeader";
 import { skeleton } from "@/ui/skeleton";
@@ -42,11 +43,11 @@ const statItem = (
 const lastTest = (
   h: HtmlBuilder<Message>,
   model: Model,
-  isLoading: boolean
+  isLoading: boolean,
+  hasFailed: boolean
 ): Html => {
   const history = AsyncData.getOrElse(model.speedtestHistory, () => []);
   const isRunning = AsyncData.isPending(model.speedtestTrigger);
-  const figure = speedFigure(history, Date.now());
 
   return h.div(
     [
@@ -55,46 +56,48 @@ const lastTest = (
       ),
     ],
     [
-      h.div(
-        [h.Class("min-w-0")],
-        [
-          isLoading
-            ? skeleton(h, "h-4 w-56 max-w-full")
-            : h.p(
-                [
-                  h.Class(
-                    "text-[13px] font-semibold tracking-[0.01em] text-ink-2"
-                  ),
-                ],
-                [
-                  Option.getOrElse(
-                    lastTestLabel(history),
-                    () => "Last test · none yet"
-                  ),
-                ]
-              ),
-          isLoading
-            ? skeleton(h, "mt-1 h-7 w-40")
-            : h.p(
-                [
-                  h.Class(
-                    "mt-1 whitespace-nowrap text-[22px] font-semibold tracking-[-0.01em] lg:text-[26px]"
-                  ),
-                ],
-                [
-                  figure.value,
-                  h.span(
+      hasFailed
+        ? h.div([], [])
+        : h.div(
+            [h.Class("min-w-0")],
+            [
+              isLoading
+                ? skeleton(h, "h-4 w-56 max-w-full")
+                : h.p(
                     [
                       h.Class(
-                        "ml-1 text-sm font-medium text-ink-2 lg:text-base"
+                        "text-[13px] font-semibold tracking-[0.01em] text-ink-2"
                       ),
                     ],
-                    [`${figure.unit} down / up`]
+                    [
+                      Option.getOrElse(
+                        lastTestLabel(history),
+                        () => "No tests in this range."
+                      ),
+                    ]
                   ),
-                ]
-              ),
-        ]
-      ),
+              isLoading
+                ? skeleton(h, "mt-1 h-7 w-40")
+                : h.p(
+                    [
+                      h.Class(
+                        "mt-1 whitespace-nowrap text-[22px] font-semibold tracking-[-0.01em] lg:text-[26px]"
+                      ),
+                    ],
+                    [
+                      latestSpeedPair(history),
+                      h.span(
+                        [
+                          h.Class(
+                            "ml-1 text-sm font-medium text-ink-2 lg:text-base"
+                          ),
+                        ],
+                        ["Mbps down / up"]
+                      ),
+                    ]
+                  ),
+            ]
+          ),
       h.button(
         [
           h.Type("button"),
@@ -106,7 +109,7 @@ const lastTest = (
         ],
         [
           icon(h, Gauge, { size: 18, strokeWidth: 1.75 }),
-          isRunning ? "Running…" : "Run Speed Test",
+          isRunning ? "Running…" : "Run speed test",
         ]
       ),
     ]
@@ -115,6 +118,7 @@ const lastTest = (
 
 export const speedCard = (h: HtmlBuilder<Message>, model: Model): Html => {
   const isLoading = isAwaitingData(model.speedtestHistory);
+  const hasFailed = AsyncData.isFailure(model.speedtestHistory);
   const stats = calculateSpeedStats(
     AsyncData.getOrElse(model.speedtestHistory, () => [])
   );
@@ -129,18 +133,24 @@ export const speedCard = (h: HtmlBuilder<Message>, model: Model): Html => {
       heightClass: "h-[260px]",
       isLoading,
     }),
-    h.div(
-      [h.Class("mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4")],
-      Array_.map(
-        [
-          ["Avg Download", stats.avgDownload],
-          ["Avg Upload", stats.avgUpload],
-          ["Max Download", stats.maxDownload],
-          ["Max Upload", stats.maxUpload],
-        ] as const,
-        ([label, value]) => statItem(h, label, value, isLoading)
-      )
-    ),
-    lastTest(h, model, isLoading),
+    hasFailed
+      ? failedLine(
+          h,
+          "Could not load speed tests.",
+          "mt-4 text-[15px] text-ink-2"
+        )
+      : h.div(
+          [h.Class("mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4")],
+          Array_.map(
+            [
+              ["Avg download", stats.avgDownload],
+              ["Avg upload", stats.avgUpload],
+              ["Max download", stats.maxDownload],
+              ["Max upload", stats.maxUpload],
+            ] as const,
+            ([label, value]) => statItem(h, label, value, isLoading)
+          )
+        ),
+    lastTest(h, model, isLoading, hasFailed),
   ]);
 };

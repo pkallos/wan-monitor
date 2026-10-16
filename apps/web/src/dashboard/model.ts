@@ -1,14 +1,22 @@
 import { Menu } from "@foldkit/ui";
 import {
   ConnectivityStatusPointSchema,
+  GetOutagesResponse,
   LiveConnectivityStatusSchema,
 } from "@shared/api/routes/connectivity-status";
 import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
+import { GetHostsResponse } from "@shared/api/routes/ping";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
-import { Option, Schema as S } from "effect";
+import { GetSummaryResponse } from "@shared/api/routes/summary";
+import { Equal, Option, Schema as S } from "effect";
 import { AsyncData } from "foldkit";
-import { DateRangeSelection } from "@/dashboard/dateRange";
+import {
+  DateRangeSelection,
+  isAllTime,
+  sameDateRange,
+} from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
+import { RangeRequest } from "@/dashboard/message";
 import { ThemePreference } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
 import type { Settings } from "@/storage";
@@ -51,6 +59,8 @@ const ConnectivityStatusData = S.Struct({
   startTimeMs: S.Number,
   endTimeMs: S.Number,
   granularity: GranularitySchema,
+  /** The range the window answers, which differs from the selected one until a refresh lands. */
+  request: RangeRequest,
 });
 export type ConnectivityStatusData = typeof ConnectivityStatusData.Type;
 export const ConnectivityStatusAsyncData = AsyncData.Schema(
@@ -66,6 +76,27 @@ export const LiveConnectivityAsyncData = AsyncData.Schema(
   LiveConnectivityData,
   S.String
 );
+
+const SummaryData = S.Struct({
+  summary: GetSummaryResponse,
+  /** The range the summary answers, which differs from the selected one until a refresh lands. */
+  request: RangeRequest,
+});
+export type SummaryData = typeof SummaryData.Type;
+export const SummaryAsyncData = AsyncData.Schema(SummaryData, S.String);
+export const PingHostsAsyncData = AsyncData.Schema(GetHostsResponse, S.String);
+
+const OutagesData = S.Struct({
+  log: GetOutagesResponse,
+  /** The selected range exceeded what the outage log accepts, so only its newest days are shown. */
+  isClamped: S.Boolean,
+  /** When the log was fetched; the end of a range that has not finished yet is not "now". */
+  fetchedAtMs: S.Number,
+  /** The range the log answers, which differs from the selected one until a refresh lands. */
+  request: RangeRequest,
+});
+export type OutagesData = typeof OutagesData.Type;
+export const OutagesAsyncData = AsyncData.Schema(OutagesData, S.String);
 
 const SpeedtestTriggerResult = S.Struct({
   downloadMbps: S.Number,
@@ -88,19 +119,54 @@ export const Model = S.Struct({
   maybeSpeedtestWindow: S.Option(SpeedtestTimelineWindow),
   connectivityStatus: ConnectivityStatusAsyncData.schema,
   liveConnectivity: LiveConnectivityAsyncData.schema,
+  summary: SummaryAsyncData.schema,
+  outages: OutagesAsyncData.schema,
+  pingHosts: PingHostsAsyncData.schema,
   speedtestTrigger: SpeedtestTriggerAsyncData.schema,
   maybeLatencyChartHostId: S.Option(S.String),
   maybePacketLossChartHostId: S.Option(S.String),
   maybeJitterChartHostId: S.Option(S.String),
   maybeSpeedChartHostId: S.Option(S.String),
+  /** The ribbon cell under the pointer: a tooltip that goes away when it leaves. */
   hoveredSegmentIndex: S.Option(S.Number),
+  /** The bucket pinned by a tap, a key or an incident chip. Its start, not its index, so a sliding window leaves it in place. */
+  maybeSelectedBucketStartMs: S.Option(S.Number),
+  /** The ribbon's rendered width, once measured; chip layout needs it. */
+  maybeRibbonWidthPx: S.Option(S.Number),
   theme: ThemePreference,
   menu: Menu.Model,
   maybeLastUpdatedMs: S.Option(S.Number),
   maybeEarliestDataMs: S.Option(S.Number),
+  /** Whether the earliest-datapoint fetch has answered, with a value, none, or a failure. */
+  isEarliestDataSettled: S.Boolean,
   toast: Toast.Model,
 });
 export type Model = typeof Model.Type;
+
+/** What decides which window a fetch resolves: the selected range and, for "All time", its start. */
+export type RangeScope = Pick<Model, "dateRange" | "maybeEarliestDataMs">;
+
+// "All time" resolves its start from `maybeEarliestDataMs`, so a response
+// issued before that arrived covers a different window than the current one.
+export const answersCurrentRange = (
+  current: RangeScope,
+  request: RangeRequest
+): boolean =>
+  sameDateRange(request.dateRange, current.dateRange) &&
+  (!isAllTime(current.dateRange) ||
+    Equal.equals(request.maybeEarliestDataMs, current.maybeEarliestDataMs));
+
+// "All time" has no start to resolve until the earliest datapoint answers, so
+// nothing scoped to the range is fetched before then.
+export const isAwaitingEarliestData = (
+  model: Pick<
+    Model,
+    "dateRange" | "maybeEarliestDataMs" | "isEarliestDataSettled"
+  >
+): boolean =>
+  isAllTime(model.dateRange) &&
+  Option.isNone(model.maybeEarliestDataMs) &&
+  !model.isEarliestDataSettled;
 
 // Settings are hydrated at boot (see `@/storage` and `auth/flags.ts`) and
 // passed in already resolved, so the model is never born with a default it
@@ -116,16 +182,22 @@ export const initModel = (settings: Settings): Model => ({
   maybeSpeedtestWindow: Option.none(),
   connectivityStatus: ConnectivityStatusAsyncData.Idle(),
   liveConnectivity: LiveConnectivityAsyncData.Idle(),
+  summary: SummaryAsyncData.Idle(),
+  outages: OutagesAsyncData.Idle(),
+  pingHosts: PingHostsAsyncData.Idle(),
   speedtestTrigger: SpeedtestTriggerAsyncData.Idle(),
   maybeLatencyChartHostId: Option.none(),
   maybePacketLossChartHostId: Option.none(),
   maybeJitterChartHostId: Option.none(),
   maybeSpeedChartHostId: Option.none(),
   hoveredSegmentIndex: Option.none(),
+  maybeSelectedBucketStartMs: Option.none(),
+  maybeRibbonWidthPx: Option.none(),
   theme: settings.theme,
   menu: Menu.init({ id: "dashboard-menu" }),
   maybeLastUpdatedMs: Option.none(),
   maybeEarliestDataMs: Option.none(),
+  isEarliestDataSettled: false,
   toast: Toast.init({ id: "dashboard-toast" }),
 });
 

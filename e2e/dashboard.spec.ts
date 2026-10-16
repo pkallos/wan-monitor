@@ -13,24 +13,25 @@ test.describe("WAN Monitor Dashboard", () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
-  test("should display the status headline and the figure tiles", async ({
+  test("should display the live status, the range figures and the stat rail", async ({
     page,
   }) => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(
-      page.getByRole("heading", {
-        name: /^(Connection is (healthy|degraded|down)\.|No recent data\.|Checking connection…)$/,
-      })
-    ).toBeVisible();
+    await expect(page.getByTestId("connection-status")).toHaveText(
+      /^(Online|Degraded|Offline|No data)$/,
+      { timeout: 15000 }
+    );
     for (const testId of [
-      "hero-availability",
-      "hero-latency",
-      "hero-speed",
-      "kpi-packet-loss",
-      "kpi-jitter",
+      "uptime-figure",
+      "availability-figure",
+      "rail-latency",
+      "rail-loss",
+      "rail-jitter",
+      "rail-download",
+      "rail-upload",
     ]) {
       await expect(page.getByTestId(testId)).toBeVisible();
     }
@@ -41,13 +42,11 @@ test.describe("WAN Monitor Dashboard", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
-    // "Availability" is also the label of a hero tile (an h3), so the section
-    // is pinned by its level.
     await expect(
       page.getByRole("heading", { name: "Availability", exact: true, level: 2 })
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Network Quality", exact: true })
+      page.getByRole("heading", { name: "Network quality", exact: true })
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Speed tests", exact: true })
@@ -154,10 +153,10 @@ test.describe("WAN Monitor Dashboard", () => {
     // ISP).
 
     // With speedtest data present (seeded baseline plus any live monitor
-    // results) the header resolves a real ISP instead of the "Unknown ISP"
+    // results) the header resolves a real ISP instead of the "ISP unknown"
     // fallback. We assert the fallback is gone rather than a specific value,
     // since the live monitor's ISP is environment-dependent.
-    await expect(page.getByText("Unknown ISP")).toHaveCount(0, {
+    await expect(page.getByText("ISP unknown")).toHaveCount(0, {
       timeout: 15000,
     });
   });
@@ -171,101 +170,140 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
-  test("hero figures show non-placeholder seeded values", async ({ page }) => {
-    // The seed anchors the most recent ping and speedtest at "now", so the
-    // default date range has data behind every figure.
-
-    // The headline resolves to a real status, never the "Checking…" placeholder.
-    await expect(
-      page.getByRole("heading", {
-        name: /^(Connection is (healthy|degraded|down)\.|No recent data\.)$/,
-      })
-    ).toBeVisible({ timeout: 15000 });
-
-    await expect(page.getByTestId("hero-availability")).toContainText(
-      /\d+(\.\d+)?\s*%/,
-      { timeout: 15000 }
-    );
-    await expect(page.getByTestId("hero-latency")).toContainText(
-      /\d+(\.\d+)?\s*ms/,
-      { timeout: 15000 }
-    );
-    // Download and upload read together as "down / up Mbps"; the empty state
-    // has no digits before the slash.
-    await expect(page.getByTestId("hero-speed")).toContainText(
-      /\d+(\.\d+)?\s*\/\s*\d+(\.\d+)?\s*Mbps/,
-      { timeout: 15000 }
-    );
-    await expect(page.getByTestId("kpi-packet-loss")).toContainText(
-      /\d+(\.\d+)?\s*%/,
-      { timeout: 15000 }
-    );
-    await expect(page.getByTestId("kpi-jitter")).toContainText(
-      /\d+(\.\d+)?\s*ms/,
-      { timeout: 15000 }
-    );
-  });
-
-  test("connectivity status timeline renders seeded data", async ({ page }) => {
-    // The timeline exposes role="img" only once it has a window to draw
-    // segments across, so visibility here proves the fetch settled.
-    await expect(
-      page.getByRole("img", { name: "Connectivity status timeline" })
-    ).toBeVisible({ timeout: 15000 });
-
-    // Uptime is rendered once data resolves. The line may carry a coverage
-    // suffix when the seeded window is shorter than the selected range, so
-    // only the leading uptime figure is anchored.
-    const uptime = page.getByText(/^Uptime: \d+\.\d+%/);
-    await expect(uptime).toBeVisible({ timeout: 15000 });
-    const uptimeText = (await uptime.textContent()) ?? "";
-    const uptimePct = Number(uptimeText.match(/^Uptime: ([\d.]+)%/)?.[1]);
-    expect(uptimePct).toBeGreaterThan(0);
-  });
-
-  test("hovering a connectivity segment shows a floating tooltip without shifting the page", async ({
+  test("status field and stat rail show non-placeholder seeded values", async ({
     page,
   }) => {
-    await expect(
-      page.getByRole("img", { name: "Connectivity status timeline" })
-    ).toBeVisible({ timeout: 15000 });
+    // The seed anchors the most recent ping and speedtest at "now", so the
+    // default date range has data behind every figure.
+    await expect(page.getByTestId("connection-status")).toHaveText(
+      /^(Online|Degraded|Offline|No data)$/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("uptime-figure")).toContainText(
+      /\d+\.\d{2}\s*% uptime/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("availability-figure")).toContainText(
+      /\d+\.\d{2}%\s*available/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("rail-latency")).toContainText(
+      /\d+(\.\d+)?\s*ms/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("rail-latency")).toContainText(/p95 \d/);
+    await expect(page.getByTestId("rail-loss")).toContainText(
+      /\d+(\.\d+)?\s*%/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("rail-jitter")).toContainText(
+      /\d+(\.\d+)?\s*ms/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("rail-download")).toContainText(
+      /\d+(\.\d+)?\s*Mbps/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("rail-download")).toContainText(
+      /median · \d+ tests?/
+    );
+    await expect(page.getByTestId("rail-upload")).toContainText(
+      /\d+(\.\d+)?\s*Mbps/
+    );
+  });
 
-    const segments = page.locator('[data-testid^="connectivity-segment-"]');
-    const segmentCount = await segments.count();
-    expect(segmentCount).toBeGreaterThan(0);
+  test("the availability ribbon renders a cell for every bucket of the range", async ({
+    page,
+  }) => {
+    // The ribbon only renders once it has a window to draw cells across, so
+    // visibility here proves the fetch settled.
+    const ribbon = page.getByTestId("availability-ribbon");
+    await expect(ribbon).toBeVisible({ timeout: 15000 });
+    await expect(ribbon).toHaveAttribute("aria-label", /^Hourly status, /);
+
+    const cells = page.locator('[data-testid^="connectivity-segment-"]');
+    expect(await cells.count()).toBeGreaterThan(24);
+
+    const uptimeText =
+      (await page.getByTestId("uptime-figure").textContent()) ?? "";
+    expect(Number(uptimeText.match(/^([\d.]+)/)?.[1])).toBeGreaterThan(0);
+  });
+
+  test("hovering a ribbon cell shows a floating tooltip without shifting the page", async ({
+    page,
+  }) => {
+    const ribbon = page.getByTestId("availability-ribbon");
+    await expect(ribbon).toBeVisible({ timeout: 15000 });
+
+    // The incidents card sits under the ribbon and sizes the page once it
+    // loads, so let it settle before measuring anything below.
+    await expect(page.getByTestId("incident-log")).toBeVisible({
+      timeout: 15000,
+    });
 
     await expect(page.getByRole("tooltip")).toHaveCount(0);
 
     // A heading further down the page: if the tooltip pushed content in
-    // normal document flow (the original bug) rather than floating above the
-    // bar, this would move when the tooltip appears.
+    // normal document flow rather than floating over the ribbon, this would
+    // move when the tooltip appears.
     const belowFold = page.getByRole("heading", {
-      name: "Network Quality",
+      name: "Network quality",
       exact: true,
     });
-    const boxBefore = await belowFold.boundingBox();
+    // Measured from the top-left of the document, not the viewport: the hover
+    // below scrolls the ribbon into view, which moves every viewport-relative
+    // box without anything having shifted in the page.
+    const documentBox = () =>
+      belowFold.evaluate((element) => {
+        const { left, top, width, height } = element.getBoundingClientRect();
+        return {
+          left: left + window.scrollX,
+          top: top + window.scrollY,
+          width,
+          height,
+        };
+      });
+    const boxBefore = await documentBox();
 
-    // The seed only populates the last 24h within the default 30-day range,
-    // so the first segment is always the unmeasured run spanning the rest of
-    // the window - wide and reliably hoverable, unlike an arbitrary middle
-    // segment, which can be a single narrow bucket easily overlapped by its
-    // neighbors.
-    await segments.first().hover();
+    // A 30-day ribbon has cells about a pixel wide, so the pointer goes to
+    // a position along the ribbon rather than to one cell's centre.
+    const box = await ribbon.boundingBox();
+    expect(box).not.toBeNull();
+    await ribbon.hover({
+      position: { x: (box?.width ?? 0) * 0.9, y: (box?.height ?? 0) / 2 },
+    });
 
-    // Any of the timeline's labels is acceptable here; this test is about the
-    // tooltip appearing without shifting the page. Which of the two grey
-    // labels the leading run gets depends on whether the earliest-timestamp
-    // fetch has landed, so it isn't pinned to one.
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toBeVisible();
+    // Which grey label a cell with no readings gets depends on whether the
+    // earliest-timestamp fetch has landed, so every status is acceptable.
     await expect(tooltip).toHaveText(
-      /: (Up|Down|Degraded|No Data \(monitor offline\)|Before monitoring started)$/
+      /(\d+(\.\d+)?% (up|degraded|down)|No data|Before monitoring started)$/
     );
 
-    const boxAfter = await belowFold.boundingBox();
-    expect(boxAfter).toEqual(boxBefore);
+    expect(await documentBox()).toEqual(boxBefore);
 
     await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+  });
+
+  test("the arrow keys step a tooltip along the ribbon from the keyboard", async ({
+    page,
+  }) => {
+    const ribbon = page.getByTestId("availability-ribbon");
+    await expect(ribbon).toBeVisible({ timeout: 15000 });
+
+    await ribbon.focus();
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+
+    await page.keyboard.press("End");
+    await expect(page.getByRole("tooltip")).toContainText("Now");
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByRole("tooltip")).toBeVisible();
+    await expect(page.getByRole("tooltip")).not.toContainText("Now");
+
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("tooltip")).toHaveCount(0);
   });
 
@@ -297,10 +335,10 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     );
 
     for (const label of [
-      "Avg Download",
-      "Avg Upload",
-      "Max Download",
-      "Max Upload",
+      "Avg download",
+      "Avg upload",
+      "Max download",
+      "Max upload",
     ]) {
       const statLabel = page.getByText(label, { exact: true });
       await expect(statLabel).toBeVisible({ timeout: 15000 });

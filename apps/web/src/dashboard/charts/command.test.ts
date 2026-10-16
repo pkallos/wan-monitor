@@ -33,6 +33,7 @@ const syncLatency = (hostId: string) =>
       hostId,
       metrics: [],
       ...ONE_DAY_WINDOW,
+      incidents: [],
     }).effect
   );
 
@@ -136,6 +137,7 @@ describe("syncChart", () => {
           hostId: "idempotent-latency-chart",
           metrics,
           ...ONE_DAY_WINDOW,
+          incidents: [],
         }).effect
       );
 

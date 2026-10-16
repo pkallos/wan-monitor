@@ -1,75 +1,19 @@
 import { expect, test } from "@playwright/test";
+import { stubEmptyApi } from "./fixtures/emptyApi";
 
 /**
  * First-run behaviour: the dashboard when every data endpoint returns zero rows.
  *
  * Every other spec runs on the globalSetup seed, so the empty state (the one a
  * fresh install actually sees) is otherwise never exercised. Every data
- * endpoint is stubbed at the network boundary with `page.route`, the same
- * approach `db-unavailable.spec.ts` uses, so this spec reads and writes no
- * shared database state and stays correct at any worker count.
- *
- * The stubbed bodies match what the server returns for an empty table (see
- * `getConnectivityStatusHandler`: zero rows yields `data: []` with
- * `uptimePercentage` and `availabilityPercentage` null and zero coverage), so
- * this drives the same frontend code path a real empty database would. Keep
- * the stubbed meta in sync with `ConnectivityStatusMeta`; a missing field
- * fails decoding and the dashboard renders the error branch instead of the
- * empty state this spec is about. Stubbing also holds the
- * window empty for the whole test: the live monitor writes a ping row every 30s
- * (PING_INTERVAL_SECONDS), which against the real table would drift into the
- * tail of the window mid-assertion.
+ * endpoint is stubbed at the network boundary (see `fixtures/emptyApi.ts`), so
+ * this spec drives the same frontend code path a real empty database would
+ * without reading or writing shared database state.
  */
-
-const emptyMeta = {
-  startTime: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-  endTime: new Date().toISOString(),
-  count: 0,
-};
-
-const fulfillJson = (body: unknown) => ({
-  status: 200,
-  contentType: "application/json",
-  body: JSON.stringify(body),
-});
 
 test.describe("Empty database first run", () => {
   test.beforeEach(async ({ page }) => {
-    // A glob's `*` never crosses a `/`, so this has to be routed separately
-    // from `**/api/metrics*` below or it falls through to the real seed.
-    await page.route("**/api/metrics/earliest*", (route) =>
-      route.fulfill(fulfillJson({ timestamp: null }))
-    );
-    await page.route("**/api/metrics*", (route) =>
-      route.fulfill(fulfillJson({ data: [], meta: emptyMeta }))
-    );
-    await page.route("**/api/speedtest/history*", (route) =>
-      route.fulfill(fulfillJson({ data: [], meta: emptyMeta }))
-    );
-    // Same glob caveat as `/api/metrics/earliest` above: `*` never crosses a
-    // `/`, so the live endpoint needs its own route or it falls through.
-    await page.route("**/api/connectivity-status/live*", (route) =>
-      route.fulfill(
-        fulfillJson({ status: "noInfo", lastSampleAt: null, windowSeconds: 60 })
-      )
-    );
-    await page.route("**/api/connectivity-status*", (route) =>
-      route.fulfill(
-        fulfillJson({
-          data: [],
-          meta: {
-            ...emptyMeta,
-            uptimePercentage: null,
-            availabilityPercentage: null,
-            expectedBuckets: 288,
-            observedBuckets: 0,
-            coveragePercentage: 0,
-            observedCycles: 0,
-            expectedSampleIntervalSeconds: 30,
-          },
-        })
-      )
-    );
+    await stubEmptyApi(page);
   });
 
   test("renders placeholder states instead of crashing or spinning", async ({
@@ -80,28 +24,29 @@ test.describe("Empty database first run", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
 
-    // The speed hero falls back to its placeholder with no speedtest rows
-    // behind it.
-    const speedHero = page.getByTestId("hero-speed");
-    await expect(speedHero).toContainText("no tests yet", { timeout: 15_000 });
-    await expect(speedHero).not.toContainText(/\d/);
+    // The figures fall back to placeholders with nothing behind them.
+    const speedStat = page.getByTestId("rail-download");
+    await expect(speedStat).toContainText("No tests in this range.", {
+      timeout: 15_000,
+    });
+    await expect(speedStat).not.toContainText(/\d/);
+    await expect(page.getByTestId("uptime-figure")).toHaveText("- uptime");
+    await expect(page.getByTestId("availability-figure")).not.toContainText(
+      /\d+\.\d/
+    );
 
-    // A monitor that has never reported reads as "No Data", not as an outage.
-    await expect(
-      page.getByRole("heading", { name: "No recent data." })
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("No Data", { exact: true })).toBeVisible();
+    // A monitor that has never reported reads as "No data", not as an outage.
+    await expect(page.getByTestId("connection-status")).toHaveText("No data", {
+      timeout: 15_000,
+    });
     await expect(page.getByText("Offline")).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: /^Connection is down\./ })
-    ).toHaveCount(0);
 
     // Same placeholder for the four speed test stats.
     for (const label of [
-      "Avg Download",
-      "Avg Upload",
-      "Max Download",
-      "Max Upload",
+      "Avg download",
+      "Avg upload",
+      "Max download",
+      "Max upload",
     ]) {
       const statValue = page
         .getByText(label, { exact: true })
@@ -110,12 +55,17 @@ test.describe("Empty database first run", () => {
     }
 
     // With no speedtest rows there is no resolved ISP either.
-    await expect(page.getByText("Unknown ISP")).toBeVisible();
+    await expect(page.getByText("ISP unknown")).toBeVisible();
 
     // Every fetch settled: the loading skeletons are gone rather than stuck,
     // and an empty database is not an error.
     await expect(page.getByRole("status", { name: /^Loading/ })).toHaveCount(0);
     await expect(page.getByRole("alert")).toHaveCount(0);
+
+    // The summary-backed cards say there is nothing to show rather than
+    // staying blank.
+    await expect(page.getByText("No incidents in this range.")).toBeVisible();
+    await expect(page.getByText("No host data in this range.")).toBeVisible();
 
     // The charts still mount and size themselves with an empty dataset.
     for (const label of [
@@ -132,7 +82,7 @@ test.describe("Empty database first run", () => {
     }
   });
 
-  test("connectivity timeline gap-fills the window as No Data", async ({
+  test("the availability ribbon gap-fills the window as No data", async ({
     page,
   }) => {
     await page.goto("/");
@@ -140,28 +90,32 @@ test.describe("Empty database first run", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
 
-    await expect(
-      page.getByRole("img", { name: "Connectivity status timeline" })
-    ).toBeVisible({ timeout: 15_000 });
+    const ribbon = page.getByTestId("availability-ribbon");
+    await expect(ribbon).toBeVisible({ timeout: 15_000 });
 
     // An empty database means nothing was ever measured. Reporting that as
-    // 0.0% would claim a total outage over a window nobody was watching.
-    await expect(
-      page.getByText("Uptime: no data for this period")
-    ).toBeVisible();
-    await expect(page.getByText(/^Uptime: \d/)).toHaveCount(0);
+    // 0% would claim a total outage over a window nobody was watching.
+    await expect(page.getByTestId("uptime-figure")).toHaveText("- uptime");
+    await expect(ribbon).toHaveAttribute("aria-label", /No data: \d+ /);
+    await expect(ribbon).not.toHaveAttribute("aria-label", /Down:/);
 
-    // Every slot gap-fills to the same `noInfo` status, so the whole window
-    // merges down to exactly one bar.
+    // Every cell is a gap, and none claims the link was up.
+    const cells = page.locator('[data-testid^="connectivity-segment-"]');
+    expect(await cells.count()).toBeGreaterThan(1);
     await expect(
-      page.locator('[data-testid^="connectivity-segment-"]')
-    ).toHaveCount(1);
+      page.locator(
+        '[data-testid^="connectivity-segment-"]:not(.pattern-nodata)'
+      )
+    ).toHaveCount(0);
 
-    await page.getByTestId("connectivity-segment-0").hover();
+    const box = await ribbon.boundingBox();
+    await ribbon.hover({
+      position: { x: (box?.width ?? 0) / 2, y: (box?.height ?? 0) / 2 },
+    });
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toBeVisible();
     // The monitor never ran during this window, which the label distinguishes
     // from the link having been down.
-    await expect(tooltip).toHaveText(/No Data \(monitor offline\)$/);
+    await expect(tooltip).toHaveText(/No data$/);
   });
 });

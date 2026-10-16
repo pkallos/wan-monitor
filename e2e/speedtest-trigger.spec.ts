@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * The "Run Speed Test" button in the Speed tests card, end to end.
+ * The "Run speed test" button in the Speed tests card, end to end.
  *
  * `POST /api/speedtest/trigger` is always stubbed with `page.route`: the real
  * endpoint runs an actual speedtest against the internet, which is slow and
@@ -19,7 +19,7 @@ const TRIGGER_ROUTE = "**/api/speedtest/trigger";
 const METRICS_PATH = "/api/metrics";
 
 const triggerButton = (page: Page) =>
-  page.getByRole("button", { name: /^(Run Speed Test|Running…)$/ });
+  page.getByRole("button", { name: /^(Run speed test|Running…)$/ });
 
 const successBody = JSON.stringify({
   success: true,
@@ -100,7 +100,7 @@ test.describe("Speed test trigger", () => {
     await expect(
       page.getByText("Download: 512.5 Mbps, Upload: 42.5 Mbps")
     ).toBeVisible();
-    await expect(triggerButton(page)).toHaveText("Run Speed Test");
+    await expect(triggerButton(page)).toHaveText("Run speed test");
     await expect(triggerButton(page)).toBeEnabled();
 
     // A successful trigger refetches metrics so the new sample shows up.
@@ -142,7 +142,7 @@ test.describe("Speed test trigger", () => {
     ).toBeVisible();
 
     // The button recovers so the user can retry.
-    await expect(triggerButton(page)).toHaveText("Run Speed Test");
+    await expect(triggerButton(page)).toHaveText("Run speed test");
     await expect(triggerButton(page)).toBeEnabled();
 
     // No new sample exists, so a failed trigger must not refetch. Auto-refresh
@@ -167,9 +167,7 @@ test.describe("Speed test trigger", () => {
     await expect(page.getByText("Speed test failed")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(
-      page.getByText("Something went wrong running the speed test.")
-    ).toBeVisible();
+    await expect(page.getByText("Speed test request failed.")).toBeVisible();
     await expect(triggerButton(page)).toBeEnabled();
   });
 });

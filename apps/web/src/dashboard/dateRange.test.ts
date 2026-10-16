@@ -10,6 +10,7 @@ import {
   PRESET_LABELS,
   PRESET_ORDER,
   Preset,
+  sameDateRange,
 } from "@/dashboard/dateRange";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -159,11 +160,13 @@ describe("getPresetRange", () => {
     });
   });
 
-  test("allTime falls back to the Unix epoch when no earliest datapoint is known", () => {
-    expect(getPresetRange("allTime", NOW_MS)).toEqual({
-      startTime: "1970-01-01T00:00:00.000Z",
-      endTime: "2026-07-26T12:00:00.000Z",
-    });
+  test("allTime falls back to the last 30 days when no earliest datapoint is known, never to the epoch", () => {
+    expect(getPresetRange("allTime", NOW_MS)).toEqual(
+      getPresetRange("last30d", NOW_MS)
+    );
+    expect(
+      Date.parse(getPresetRange("allTime", NOW_MS).startTime)
+    ).toBeGreaterThan(0);
   });
 
   test("allTime starts at the earliest known datapoint instead of the epoch", () => {
@@ -355,5 +358,42 @@ describe("granularityForSpeedtestRange", () => {
     expect(
       granularityForSpeedtestRange(getPresetRange("last24h", NOW_MS))
     ).toBeUndefined();
+  });
+});
+
+describe("sameDateRange", () => {
+  const custom = Custom({
+    startTime: "2026-07-01T00:00:00.000Z",
+    endTime: "2026-07-08T00:00:00.000Z",
+  });
+
+  test("matches an identical preset and rejects a different one", () => {
+    expect(
+      sameDateRange(Preset({ preset: "last7d" }), Preset({ preset: "last7d" }))
+    ).toBe(true);
+    expect(
+      sameDateRange(Preset({ preset: "last7d" }), Preset({ preset: "last30d" }))
+    ).toBe(false);
+  });
+
+  test("matches custom bounds only when both ends agree", () => {
+    expect(sameDateRange(custom, { ...custom })).toBe(true);
+    expect(
+      sameDateRange(
+        custom,
+        Custom({ ...custom, endTime: "2026-07-09T00:00:00.000Z" })
+      )
+    ).toBe(false);
+    expect(
+      sameDateRange(
+        custom,
+        Custom({ ...custom, startTime: "2026-06-30T00:00:00.000Z" })
+      )
+    ).toBe(false);
+  });
+
+  test("never mistakes a preset for a custom range or the reverse", () => {
+    expect(sameDateRange(custom, Preset({ preset: "last7d" }))).toBe(false);
+    expect(sameDateRange(Preset({ preset: "last7d" }), custom)).toBe(false);
   });
 });

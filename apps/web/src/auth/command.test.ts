@@ -104,7 +104,7 @@ describe("login", () => {
 
     expect(result).toEqual({
       _tag: "FailedLogin",
-      error: "Incorrect username or password. Please try again.",
+      error: "Incorrect username or password.",
     });
   });
 
@@ -121,8 +121,7 @@ describe("login", () => {
 
     expect(result).toEqual({
       _tag: "FailedLogin",
-      error:
-        "Authentication is not configured on the server. Contact your administrator.",
+      error: "Authentication is not configured on the server.",
     });
   });
 
@@ -151,7 +150,7 @@ describe("login", () => {
 
     expect(result).toEqual({
       _tag: "FailedLogin",
-      error: "Unable to connect to server. Please check your connection.",
+      error: "Cannot reach the server.",
     });
   });
 
@@ -163,7 +162,7 @@ describe("login", () => {
 
     expect(result).toEqual({
       _tag: "FailedLogin",
-      error: "Something went wrong. Please try again.",
+      error: "Sign-in failed.",
     });
   });
 });

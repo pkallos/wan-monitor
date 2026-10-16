@@ -26,7 +26,6 @@
   --down: #b3261e;
   --nodata: #8496a9;
   --pattern-hatch: rgba(255, 255, 255, 0.45);
-  --pattern-dot: rgba(255, 255, 255, 0.55);
   --chart-band: rgba(37, 99, 166, 0.18);
 }
 
@@ -49,7 +48,6 @@
   --down: #f2685f;
   --nodata: #8496a9;
   --pattern-hatch: rgba(255, 255, 255, 0.45);
-  --pattern-dot: rgba(255, 255, 255, 0.55);
   --chart-band: rgba(125, 179, 240, 0.22);
 }
 
@@ -95,8 +93,10 @@
   }
 }
 
-/* Form backups so status never rides on colour alone: degraded reads as
-   hatched, no data as dotted. */
+/* Form backups for status beyond colour: degraded reads as hatched, down as
+   struck through, no data as dashed. They draw only where a cell is wide
+   enough; on a dense range cells are about a pixel wide and read by colour
+   alone, with the incidents table and chips giving the same facts as text. */
 @utility pattern-hatch {
   background-image: repeating-linear-gradient(
     135deg,
@@ -105,11 +105,32 @@
   );
 }
 
-@utility pattern-dots {
-  background-image: radial-gradient(
-    circle,
-    var(--pattern-dot) 1px,
-    transparent 1.5px
+@utility pattern-strike {
+  background-image: linear-gradient(
+    to bottom,
+    transparent calc(50% - 1px),
+    var(--card) calc(50% - 1px) calc(50% + 1px),
+    transparent calc(50% + 1px)
   );
-  background-size: 5px 5px;
+}
+
+/* Dashes on the top and bottom edges rather than a border: a border adds to
+   a cell's width, and hundreds of 1px cells would then overflow their row. */
+@utility pattern-nodata {
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--nodata) 0 4px,
+      transparent 4px 7px
+    ),
+    repeating-linear-gradient(
+      to right,
+      var(--nodata) 0 4px,
+      transparent 4px 7px
+    );
+  background-position:
+    top left,
+    bottom left;
+  background-size: 100% 1.5px;
+  background-repeat: no-repeat;
 }
