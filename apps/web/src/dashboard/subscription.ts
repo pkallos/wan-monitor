@@ -1,5 +1,5 @@
 import { Duration, Effect, Schema as S, Stream } from "effect";
-import { Subscription } from "foldkit";
+import { Dom, Subscription } from "foldkit";
 import type { Message } from "@/dashboard/message";
 import { Interacted, TickedRefresh, WentIdle } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
@@ -40,7 +40,7 @@ export const dependenciesToStream = ({
 const activityStream = (): Stream.Stream<Message> =>
   Stream.mergeAll(
     ACTIVITY_EVENTS.map((type) =>
-      Subscription.fromEvent({
+      Dom.streamFromEvent({
         target: window,
         type,
         mapEvent: () => Interacted(),
@@ -73,5 +73,5 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
     { isPaused: S.Boolean, isIdle: S.Boolean },
     { modelToDependencies, dependenciesToStream }
   ),
-  activity: Subscription.persistent(activityAndIdleStream),
+  activity: Subscription.persistentEntry(activityAndIdleStream),
 }));
