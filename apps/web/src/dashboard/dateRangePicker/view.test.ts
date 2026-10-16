@@ -212,7 +212,7 @@ describe("dateRangePicker view — calendar grids", () => {
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 10)))),
       Scene.hover(Scene.testId(dayTestId(day(2026, 6, 15)))),
       Scene.expect(Scene.testId(dayTestId(day(2026, 6, 12)))).toHaveClass(
-        "bg-blue-100"
+        "bg-field"
       )
     );
   });
@@ -226,10 +226,10 @@ describe("dateRangePicker view — calendar grids", () => {
       Scene.hover(Scene.testId(dayTestId(day(2026, 6, 15)))),
       Scene.click(Scene.testId(dayTestId(day(2026, 6, 20)))),
       Scene.expect(Scene.testId(dayTestId(day(2026, 6, 15)))).toHaveClass(
-        "bg-blue-600"
+        "bg-accent"
       ),
       Scene.expect(Scene.testId(dayTestId(day(2026, 6, 15)))).not.toHaveClass(
-        "bg-blue-100"
+        "bg-field"
       )
     );
   });

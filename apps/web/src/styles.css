@@ -1,24 +1,115 @@
 @import "tailwindcss";
+@import "@fontsource-variable/figtree";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Tailwind's own OKLCH-based gray palette renders visibly lighter and more
-   blue-shifted than these hex values in dark mode. */
-@theme {
-  --color-gray-50: #f7fafc;
-  --color-gray-100: #edf2f7;
-  --color-gray-200: #e2e8f0;
-  --color-gray-300: #cbd5e0;
-  --color-gray-400: #a0aec0;
-  --color-gray-500: #718096;
-  --color-gray-600: #4a5568;
-  --color-gray-700: #2d3748;
-  --color-gray-800: #1a202c;
-  --color-gray-900: #171923;
+/* Semantic tokens: the CSS variables below are the single source of truth for
+   every colour in the app. Tailwind utilities (`bg-card`, `text-ink-2`, ...)
+   and the chart palette (charts/chartTheme.ts) both read from them, so a
+   theme change is only ever a swap of the `.dark` block. */
+:root {
+  color-scheme: light;
+  --bg: #f5f8fb;
+  --card: #ffffff;
+  --field: #dcebfa;
+  --field-rule: #bcd3ec;
+  --ink: #0b2545;
+  --ink-2: #45607a;
+  --rule: #d5dee8;
+  --track: #e4ebf2;
+  --accent: #2563a6;
+  --on-accent: #ffffff;
+  --up: #1a7356;
+  --deg: #b26b00;
+  --deg-text: #8a5300;
+  --deg-bg: #f8ebd3;
+  --down: #b3261e;
+  --nodata: #8496a9;
+  --pattern-hatch: rgba(255, 255, 255, 0.45);
+  --pattern-dot: rgba(255, 255, 255, 0.55);
+  --chart-band: rgba(37, 99, 166, 0.18);
 }
 
-body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+.dark {
+  color-scheme: dark;
+  --bg: #0b1220;
+  --card: #121b2e;
+  --field: #16294a;
+  --field-rule: #2a4470;
+  --ink: #e8eef7;
+  --ink-2: #a3b3c9;
+  --rule: #24324a;
+  --track: #1d2a42;
+  --accent: #7db3f0;
+  --on-accent: #0b1220;
+  --up: #4cc79a;
+  --deg: #f0a93b;
+  --deg-text: #f0a93b;
+  --deg-bg: #3a2a10;
+  --down: #f2685f;
+  --nodata: #8496a9;
+  --pattern-hatch: rgba(255, 255, 255, 0.45);
+  --pattern-dot: rgba(255, 255, 255, 0.55);
+  --chart-band: rgba(125, 179, 240, 0.22);
+}
+
+/* Dropping Tailwind's default palette makes any leftover `gray-*` or
+   `blue-*` utility render nothing instead of silently bypassing the tokens. */
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-field: var(--field);
+  --color-field-rule: var(--field-rule);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-rule: var(--rule);
+  --color-track: var(--track);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-up: var(--up);
+  --color-deg: var(--deg);
+  --color-deg-text: var(--deg-text);
+  --color-deg-bg: var(--deg-bg);
+  --color-down: var(--down);
+  --color-nodata: var(--nodata);
+}
+
+@theme {
+  --font-sans:
+    "Figtree Variable", ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+@layer base {
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Form backups so status never rides on colour alone: degraded reads as
+   hatched, no data as dotted. */
+@utility pattern-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 3px,
+    var(--pattern-hatch) 3px 5px
+  );
+}
+
+@utility pattern-dots {
+  background-image: radial-gradient(
+    circle,
+    var(--pattern-dot) 1px,
+    transparent 1.5px
+  );
+  background-size: 5px 5px;
 }
