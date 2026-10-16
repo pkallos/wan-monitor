@@ -90,9 +90,6 @@ importers:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
-      '@types/ping':
-        specifier: ^0.4.4
-        version: 0.4.4
       '@types/speedtest-net':
         specifier: ^2.1.5
         version: 2.1.5
@@ -1144,9 +1141,6 @@ packages:
 
   '@types/pg@8.23.1':
     resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
-
-  '@types/ping@0.4.4':
-    resolution: {integrity: sha512-ifvo6w2f5eJYlXm+HiVx67iJe8WZp87sfa683nlqED5Vnt9Z93onkokNoWqOG21EaE8fMxyKPobE+mkPEyxsdw==}
 
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
@@ -3625,8 +3619,6 @@ snapshots:
       '@types/node': 24.19.2
       pg-protocol: 1.16.0
       pg-types: 2.2.0
-
-  '@types/ping@0.4.4': {}
 
   '@types/responselike@1.0.3':
     dependencies:
