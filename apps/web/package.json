@@ -15,11 +15,11 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform-browser": "4.0.0",
+    "@effect/platform-browser": "4.0.4",
     "@foldkit/ui": "0.168.0",
     "clsx": "^2.1.1",
     "echarts": "^6.1.0",
-    "effect": "4.0.0",
+    "effect": "4.0.4",
     "foldkit": "0.168.0"
   },
   "devDependencies": {
