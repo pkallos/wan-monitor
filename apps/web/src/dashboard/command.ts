@@ -1,5 +1,5 @@
 import { BrowserKeyValueStore } from "@effect/platform-browser";
-import { DB_UNAVAILABLE } from "@shared/api/errors";
+import { DB_UNAVAILABLE, InvalidTimeRange } from "@shared/api/errors";
 import { Clock, Effect, Option, Schema as S } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { Command } from "foldkit";
@@ -10,6 +10,7 @@ import {
   granularityForRange,
   granularityForSpeedtestRange,
 } from "@/dashboard/dateRange";
+import { outageWindow } from "@/dashboard/incidents";
 import {
   CompletedApplyTheme,
   CompletedSaveSettings,
@@ -17,7 +18,10 @@ import {
   FailedFetchEarliestData,
   FailedFetchLiveConnectivity,
   FailedFetchMetrics,
+  FailedFetchOutages,
+  FailedFetchPingHosts,
   FailedFetchSpeedtestHistory,
+  FailedFetchSummary,
   FailedSaveSettings,
   FailedTriggerSpeedtest,
   type RangeRequest,
@@ -25,14 +29,17 @@ import {
   SucceededFetchEarliestData,
   SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
+  SucceededFetchOutages,
+  SucceededFetchPingHosts,
   SucceededFetchSpeedtestHistory,
+  SucceededFetchSummary,
   SucceededTriggerSpeedtest,
 } from "@/dashboard/message";
 import { resolveTheme, ThemePreference } from "@/dashboard/theme";
 import { Settings, writeSettings } from "@/storage";
 
-const DB_UNAVAILABLE_MESSAGE =
-  "Database temporarily unavailable. Retrying automatically.";
+const DB_UNAVAILABLE_MESSAGE = "Database unavailable.";
+const REQUEST_FAILED_MESSAGE = "Request failed";
 
 const isDbUnavailableError = (error: unknown): boolean =>
   typeof error === "object" &&
@@ -40,8 +47,16 @@ const isDbUnavailableError = (error: unknown): boolean =>
   "error" in error &&
   error.error === DB_UNAVAILABLE;
 
+const isInvalidTimeRange = S.is(InvalidTimeRange);
+
+// Typed API errors that carry a message written for the viewer pass it
+// through; transport and decoding failures say nothing a viewer can act on.
 const fetchErrorMessage = (error: unknown): string =>
-  isDbUnavailableError(error) ? DB_UNAVAILABLE_MESSAGE : String(error);
+  isDbUnavailableError(error)
+    ? DB_UNAVAILABLE_MESSAGE
+    : isInvalidTimeRange(error)
+      ? error.message
+      : REQUEST_FAILED_MESSAGE;
 
 const DateRangeArgs = {
   token: S.String,
@@ -212,6 +227,66 @@ export const fetchLiveConnectivity = ({ token }: { token: string }) =>
     )
   );
 
+export const fetchSummary = ({ token, ...range }: RangeArgs) => {
+  const request = rangeRequest(range);
+  return Effect.gen(function* () {
+    const nowMs = yield* Clock.currentTimeMillis;
+    const { startTime, endTime } = getDateRangeWindow(
+      request.dateRange,
+      nowMs,
+      request.maybeEarliestDataMs
+    );
+    const client = yield* makeClient(Option.some(token));
+    const summary = yield* client.summary.getSummary({
+      query: { startTime, endTime },
+    });
+    return SucceededFetchSummary({ summary, request });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        FailedFetchSummary({ error: fetchErrorMessage(error), request })
+      )
+    )
+  );
+};
+
+export const fetchOutages = ({ token, ...range }: RangeArgs) => {
+  const request = rangeRequest(range);
+  return Effect.gen(function* () {
+    const nowMs = yield* Clock.currentTimeMillis;
+    const { isClamped, ...window } = outageWindow(
+      getDateRangeWindow(request.dateRange, nowMs, request.maybeEarliestDataMs)
+    );
+    const client = yield* makeClient(Option.some(token));
+    const outages = yield* client.connectivityStatus.getOutages({
+      query: window,
+    });
+    return SucceededFetchOutages({
+      outages,
+      isClamped,
+      fetchedAtMs: nowMs,
+      request,
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        FailedFetchOutages({ error: fetchErrorMessage(error), request })
+      )
+    )
+  );
+};
+
+export const fetchPingHosts = ({ token }: { token: string }) =>
+  Effect.gen(function* () {
+    const client = yield* makeClient(Option.some(token));
+    const hosts = yield* client.ping.getHosts();
+    return SucceededFetchPingHosts({ hosts });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(FailedFetchPingHosts({ error: fetchErrorMessage(error) }))
+    )
+  );
+
 export const fetchEarliestData = ({ token }: { token: string }) =>
   Effect.gen(function* () {
     const client = yield* makeClient(Option.some(token));
@@ -250,7 +325,7 @@ export const triggerSpeedtest = ({ token }: { token: string }) =>
     Effect.catch(() =>
       Effect.succeed(
         FailedTriggerSpeedtest({
-          message: "Something went wrong running the speed test.",
+          message: "Speed test request failed.",
           isAlreadyRunning: false,
         })
       )
@@ -305,6 +380,27 @@ export const FetchLiveConnectivity = Command.define("FetchLiveConnectivity", {
   messages: [SucceededFetchLiveConnectivity, FailedFetchLiveConnectivity],
   execute: (args) =>
     fetchLiveConnectivity(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
+
+export const FetchSummary = Command.define("FetchSummary", {
+  args: DateRangeArgs,
+  messages: [SucceededFetchSummary, FailedFetchSummary],
+  execute: (args) =>
+    fetchSummary(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
+
+export const FetchOutages = Command.define("FetchOutages", {
+  args: DateRangeArgs,
+  messages: [SucceededFetchOutages, FailedFetchOutages],
+  execute: (args) =>
+    fetchOutages(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
+
+export const FetchPingHosts = Command.define("FetchPingHosts", {
+  args: { token: S.String },
+  messages: [SucceededFetchPingHosts, FailedFetchPingHosts],
+  execute: (args) =>
+    fetchPingHosts(args).pipe(Effect.provide(FetchHttpClient.layer)),
 });
 
 export const FetchEarliestData = Command.define("FetchEarliestData", {

@@ -92,9 +92,10 @@ const PRESET_START_MS: Record<PresetKey, (nowMs: number) => number> = {
       now.getUTCMilliseconds()
     );
   },
-  // Fallback for when no earliest datapoint is known yet (or the database
-  // has none) - `getPresetRange` prefers `maybeEarliestDataMs` over this.
-  allTime: () => 0,
+  // Fallback for when the earliest datapoint is unknown or the database has
+  // none; `getPresetRange` prefers `maybeEarliestDataMs` over this. The epoch
+  // would make a window of tens of thousands of buckets.
+  allTime: (nowMs) => nowMs - 30 * DAY_MS,
 };
 
 /**
@@ -103,7 +104,7 @@ const PRESET_START_MS: Record<PresetKey, (nowMs: number) => number> = {
  * from a Command that reads Clock.currentTimeMillis. `maybeEarliestDataMs`
  * is similarly threaded in rather than queried here, since resolving it
  * requires a database round-trip a pure function can't make; the "allTime"
- * preset starts there instead of the Unix epoch once it's known.
+ * preset starts there once it's known, and at the last 30 days until then.
  */
 export const getPresetRange = (
   preset: PresetKey,
@@ -125,9 +126,13 @@ export const getDateRangeWindow = (
   nowMs: number,
   maybeEarliestDataMs: Option.Option<number> = Option.none()
 ): { startTime: string; endTime: string } =>
-  selection._tag === "Preset"
-    ? getPresetRange(selection.preset, nowMs, maybeEarliestDataMs)
-    : { startTime: selection.startTime, endTime: selection.endTime };
+  M.value(selection).pipe(
+    M.tag("Preset", ({ preset }) =>
+      getPresetRange(preset, nowMs, maybeEarliestDataMs)
+    ),
+    M.tag("Custom", ({ startTime, endTime }) => ({ startTime, endTime })),
+    M.exhaustive
+  );
 
 const DATE_LABEL_OPTIONS_WITH_YEAR: Intl.DateTimeFormatOptions = {
   month: "short",

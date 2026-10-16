@@ -23,10 +23,10 @@ const loginErrorMessage = (error: {
   readonly reason?: { readonly _tag: string };
 }): string => {
   if (error._tag === "AuthNotConfigured") {
-    return "Authentication is not configured on the server. Contact your administrator.";
+    return "Authentication is not configured on the server.";
   }
   if (error._tag === "InvalidCredentials") {
-    return "Incorrect username or password. Please try again.";
+    return "Incorrect username or password.";
   }
   if (error._tag === "MissingCredentials") {
     return "Username and password are required.";
@@ -35,9 +35,9 @@ const loginErrorMessage = (error: {
     error._tag === "HttpClientError" &&
     error.reason?._tag === "TransportError"
   ) {
-    return "Unable to connect to server. Please check your connection.";
+    return "Cannot reach the server.";
   }
-  return "Something went wrong. Please try again.";
+  return "Sign-in failed.";
 };
 
 // Each fetch*/save/clear function still requires its service (HttpClient or

@@ -14,15 +14,19 @@ import {
   FetchEarliestData,
   FetchLiveConnectivity,
   FetchMetrics,
+  FetchOutages,
+  FetchPingHosts,
   FetchSpeedtestHistory,
+  FetchSummary,
   SaveSettings,
   TriggerSpeedtest,
 } from "@/dashboard/command";
-import { Preset, type PresetKey } from "@/dashboard/dateRange";
+import { Custom, Preset, type PresetKey } from "@/dashboard/dateRange";
 import { ClickedApply, ClickedPreset } from "@/dashboard/dateRangePicker";
 import { MENU_ITEMS, type MenuItem } from "@/dashboard/menu";
 import {
   ChangedSystemTheme,
+  ClearedConnectivitySelection,
   ClickedRefreshNow,
   ClickedTogglePause,
   ClickedTriggerSpeedtest,
@@ -37,7 +41,10 @@ import {
   FailedFetchEarliestData,
   FailedFetchLiveConnectivity,
   FailedFetchMetrics,
+  FailedFetchOutages,
+  FailedFetchPingHosts,
   FailedFetchSpeedtestHistory,
+  FailedFetchSummary,
   FailedMountJitterChart,
   FailedMountLatencyChart,
   FailedMountPacketLossChart,
@@ -52,7 +59,9 @@ import {
   GotToastMessage,
   HoveredConnectivitySegment,
   Interacted,
+  MeasuredRibbon,
   type Message,
+  PressedRibbonKey,
   type RangeRequest,
   RequestedLogout,
   SelectedQuickRange,
@@ -60,13 +69,17 @@ import {
   SucceededFetchEarliestData,
   SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
+  SucceededFetchOutages,
+  SucceededFetchPingHosts,
   SucceededFetchSpeedtestHistory,
+  SucceededFetchSummary,
   SucceededMountJitterChart,
   SucceededMountLatencyChart,
   SucceededMountPacketLossChart,
   SucceededMountSpeedChart,
   SucceededTriggerSpeedtest,
   TickedRefresh,
+  ToggledConnectivitySegment,
   UnhoveredConnectivitySegment,
   WentIdle,
 } from "@/dashboard/message";
@@ -76,19 +89,26 @@ import {
   LiveConnectivityAsyncData,
   MetricsAsyncData,
   type Model,
+  OutagesAsyncData,
+  PingHostsAsyncData,
   SpeedtestHistoryAsyncData,
   SpeedtestTriggerAsyncData,
+  SummaryAsyncData,
 } from "@/dashboard/model";
+import {
+  DEFAULT_REQUEST,
+  hostsResponse,
+  loadedInsights,
+  outagesResponse,
+  summaryResponse,
+} from "@/dashboard/testFixtures";
 import { Toast, ToastTest } from "@/dashboard/toast";
 import { update } from "@/dashboard/update";
+import { connectionOf } from "@/dashboard/view/derived";
 import { defaultSettings } from "@/storage";
 
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
-const DEFAULT_REQUEST = {
-  dateRange: DEFAULT_DATE_RANGE,
-  maybeEarliestDataMs: Option.none<number>(),
-};
 
 // A fetch resolves its window once and carries the result on its success
 // message, so a chart sync is driven by that stored window rather than by
@@ -149,6 +169,37 @@ const resolveFetchLiveConnectivity = () =>
     })
   );
 
+const resolveEnterInsights = () =>
+  Story.Command.resolveAll(
+    [
+      FetchSummary,
+      FailedFetchSummary({ error: "skip", request: DEFAULT_REQUEST }),
+    ],
+    [
+      FetchOutages,
+      FailedFetchOutages({ error: "skip", request: DEFAULT_REQUEST }),
+    ],
+    [FetchPingHosts, FailedFetchPingHosts({ error: "skip" })]
+  );
+
+const resolveRangeInsights = () =>
+  Story.Command.resolveAll(
+    [
+      FetchSummary,
+      FailedFetchSummary({ error: "skip", request: DEFAULT_REQUEST }),
+    ],
+    [
+      FetchOutages,
+      FailedFetchOutages({ error: "skip", request: DEFAULT_REQUEST }),
+    ]
+  );
+
+const resolveSummaryFetch = () =>
+  Story.Command.resolve(
+    FetchSummary,
+    FailedFetchSummary({ error: "skip", request: DEFAULT_REQUEST })
+  );
+
 const loadedLiveConnectivity = () =>
   LiveConnectivityAsyncData.Success({
     data: { status: "up" as const, maybeLastSampleAtMs: Option.none() },
@@ -189,7 +240,8 @@ describe("dashboard update — metrics", () => {
       ),
       resolveApplyTheme(),
       resolveFetchEarliestData(),
-      resolveFetchLiveConnectivity()
+      resolveFetchLiveConnectivity(),
+      resolveEnterInsights()
     );
   });
 
@@ -207,6 +259,7 @@ describe("dashboard update — metrics", () => {
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
+          request: DEFAULT_REQUEST,
         },
       }),
       liveConnectivity: loadedLiveConnectivity(),
@@ -215,7 +268,7 @@ describe("dashboard update — metrics", () => {
 
     Story.story(
       withContext,
-      Story.given(model),
+      Story.given({ ...model, ...loadedInsights() }),
       Story.message(EnteredDashboard()),
       // ApplyTheme is the one exception: it re-fires every entry as an
       // idempotent re-assert against `<html>`, regardless of what's loaded.
@@ -261,6 +314,7 @@ describe("dashboard update — metrics", () => {
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
+          request: DEFAULT_REQUEST,
         },
       }),
     };
@@ -421,6 +475,7 @@ describe("dashboard update — earliest data", () => {
       ),
       resolveApplyTheme(),
       resolveFetchLiveConnectivity(),
+      resolveEnterInsights(),
       Story.model((model) => {
         expect(model.maybeEarliestDataMs).toEqual(
           Option.some(Date.parse("2025-01-01T00:00:00.000Z"))
@@ -443,6 +498,7 @@ describe("dashboard update — earliest data", () => {
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
+          request: DEFAULT_REQUEST,
         },
       }),
       liveConnectivity: loadedLiveConnectivity(),
@@ -451,7 +507,7 @@ describe("dashboard update — earliest data", () => {
 
     Story.story(
       withContext,
-      Story.given(model),
+      Story.given({ ...model, ...loadedInsights() }),
       Story.message(EnteredDashboard()),
       // ApplyTheme is the one exception: it re-fires every entry as an
       // idempotent re-assert against `<html>`, regardless of what's loaded.
@@ -460,7 +516,7 @@ describe("dashboard update — earliest data", () => {
     );
   });
 
-  test("a failed fetch is a no-op acknowledgment, leaving the earliest datapoint unknown", () => {
+  test("a failed fetch leaves the earliest datapoint unknown and marks it settled", () => {
     Story.story(
       withContext,
       Story.given(initModel(defaultSettings())),
@@ -468,6 +524,7 @@ describe("dashboard update — earliest data", () => {
       Story.Command.expectNone(),
       Story.model((model) => {
         expect(model.maybeEarliestDataMs).toEqual(Option.none());
+        expect(model.isEarliestDataSettled).toBe(true);
       })
     );
   });
@@ -533,7 +590,8 @@ describe("dashboard update — earliest data", () => {
             granularity: "1m",
           }),
         ]
-      )
+      ),
+      resolveRangeInsights()
     );
   });
 
@@ -556,21 +614,6 @@ describe("dashboard update — earliest data", () => {
     );
   });
 
-  test("does not reload when the database has no data yet", () => {
-    const model = {
-      ...initModel(defaultSettings()),
-      dateRange: Preset({ preset: "allTime" }),
-      maybeEarliestDataMs: Option.none(),
-    };
-
-    Story.story(
-      withContext,
-      Story.given(model),
-      Story.message(SucceededFetchEarliestData({ earliestMs: Option.none() })),
-      Story.Command.expectNone()
-    );
-  });
-
   test("does not reload again once the earliest datapoint is already resolved", () => {
     const model = {
       ...initModel(defaultSettings()),
@@ -589,6 +632,358 @@ describe("dashboard update — earliest data", () => {
       Story.Command.expectNone()
     );
   });
+});
+
+describe("dashboard update: 'All time' while the earliest datapoint is unknown", () => {
+  const ALL_TIME = Preset({ preset: "allTime" });
+  const EARLIEST_MS = Date.parse("2025-01-01T00:00:00.000Z");
+  const RANGE_FETCHES = [
+    "FetchMetrics",
+    "FetchSpeedtestHistory",
+    "FetchConnectivityStatus",
+    "FetchSummary",
+    "FetchOutages",
+  ];
+  const onAllTime = (overrides: Partial<Model> = {}): Model => ({
+    ...initModel({ ...defaultSettings(), dateRange: ALL_TIME }),
+    ...overrides,
+  });
+  const names = (commands: ReadonlyArray<{ name: string }> = []) =>
+    commands.map((command) => command.name);
+  const argsOf = (
+    commands: ReadonlyArray<{ name: string; args?: unknown }> = [],
+    name: string
+  ) => commands.find((command) => command.name === name)?.args;
+
+  test("entering the dashboard fetches the earliest datapoint and nothing scoped to the range", () => {
+    const { model, commands } = withContext(onAllTime(), EnteredDashboard());
+
+    expect(names(commands)).toContain("FetchEarliestData");
+    for (const name of RANGE_FETCHES) {
+      expect(names(commands)).not.toContain(name);
+    }
+    expect(model.metrics._tag).toBe("Loading");
+    expect(model.summary._tag).toBe("Loading");
+    expect(model.outages._tag).toBe("Loading");
+  });
+
+  test("picking it before the earliest datapoint settles starts no range fetch", () => {
+    const { model, commands } = withContext(
+      initModel(defaultSettings()),
+      GotDateRangePickerMessage({
+        message: ClickedPreset({ preset: "allTime" }),
+      })
+    );
+    const applied = withContext(
+      model,
+      GotDateRangePickerMessage({ message: ClickedApply() })
+    );
+
+    expect(commands ?? []).toEqual([]);
+    expect(applied.model.dateRange).toEqual(ALL_TIME);
+    for (const name of RANGE_FETCHES) {
+      expect(names(applied.commands)).not.toContain(name);
+    }
+  });
+
+  test("a settled earliest datapoint of none falls back to the last 30 days and loads the range", () => {
+    const { model, commands } = withContext(
+      onAllTime(),
+      SucceededFetchEarliestData({ earliestMs: Option.none() })
+    );
+
+    expect(model.isEarliestDataSettled).toBe(true);
+    expect(model.dateRange).toEqual(ALL_TIME);
+    expect(names(commands)).toEqual(expect.arrayContaining(RANGE_FETCHES));
+    expect(argsOf(commands, "FetchMetrics")).toEqual({
+      token: "abc123",
+      dateRange: ALL_TIME,
+      maybeEarliestDataMs: Option.none(),
+    });
+  });
+
+  test("a failed earliest fetch loads the range the same way", () => {
+    const { model, commands } = withContext(
+      onAllTime(),
+      FailedFetchEarliestData({ error: "Request failed" })
+    );
+
+    expect(model.isEarliestDataSettled).toBe(true);
+    expect(names(commands)).toEqual(expect.arrayContaining(RANGE_FETCHES));
+  });
+
+  test("a failed earliest fetch keeps the earliest datapoint already known and reloads nothing", () => {
+    const known = Option.some(EARLIEST_MS);
+    const { model, commands } = withContext(
+      onAllTime({ maybeEarliestDataMs: known, isEarliestDataSettled: true }),
+      FailedFetchEarliestData({ error: "Request failed" })
+    );
+
+    expect(model.maybeEarliestDataMs).toEqual(known);
+    expect(commands ?? []).toEqual([]);
+  });
+
+  test("a settled earliest datapoint reloads nothing for another range", () => {
+    const { commands } = withContext(
+      initModel(defaultSettings()),
+      SucceededFetchEarliestData({ earliestMs: Option.none() })
+    );
+
+    expect(commands ?? []).toEqual([]);
+  });
+
+  test("once settled, picking it loads the range at once", () => {
+    const settled = onAllTime({
+      dateRange: Preset({ preset: "last7d" }),
+      isEarliestDataSettled: true,
+    });
+    const { model } = withContext(
+      settled,
+      GotDateRangePickerMessage({
+        message: ClickedPreset({ preset: "allTime" }),
+      })
+    );
+    const { commands } = withContext(
+      model,
+      GotDateRangePickerMessage({ message: ClickedApply() })
+    );
+
+    expect(names(commands)).toEqual(expect.arrayContaining(RANGE_FETCHES));
+  });
+
+  describe("Refresh now and auto-refresh", () => {
+    const unknown = onAllTime({ isEarliestDataSettled: true });
+    const known = onAllTime({
+      isEarliestDataSettled: true,
+      maybeEarliestDataMs: Option.some(EARLIEST_MS),
+    });
+
+    test("Refresh now fetches the earliest datapoint again while it is unknown", () => {
+      expect(
+        names(withContext(unknown, ClickedRefreshNow()).commands)
+      ).toContain("FetchEarliestData");
+    });
+
+    test("Refresh now leaves a known earliest datapoint alone", () => {
+      expect(
+        names(withContext(known, ClickedRefreshNow()).commands)
+      ).not.toContain("FetchEarliestData");
+    });
+
+    test("Refresh now before the earliest datapoint settles asks for it again and loads nothing for the range", () => {
+      const { commands } = withContext(onAllTime(), ClickedRefreshNow());
+
+      expect(names(commands)).toContain("FetchEarliestData");
+      for (const name of RANGE_FETCHES) {
+        expect(names(commands)).not.toContain(name);
+      }
+    });
+
+    test("a tick fetches it again while it is unknown and 'All time' is selected", () => {
+      expect(names(withContext(unknown, TickedRefresh()).commands)).toContain(
+        "FetchEarliestData"
+      );
+    });
+
+    test("a tick does not look for it on another range, or once it is known", () => {
+      expect(
+        names(
+          withContext(
+            { ...unknown, dateRange: Preset({ preset: "last7d" }) },
+            TickedRefresh()
+          ).commands
+        )
+      ).not.toContain("FetchEarliestData");
+      expect(names(withContext(known, TickedRefresh()).commands)).not.toContain(
+        "FetchEarliestData"
+      );
+    });
+
+    test("learning the start after a fallback reloads the range from it", () => {
+      const { model, commands } = withContext(
+        unknown,
+        SucceededFetchEarliestData({ earliestMs: Option.some(EARLIEST_MS) })
+      );
+
+      expect(model.maybeEarliestDataMs).toEqual(Option.some(EARLIEST_MS));
+      expect(argsOf(commands, "FetchSummary")).toEqual({
+        token: "abc123",
+        dateRange: ALL_TIME,
+        maybeEarliestDataMs: Option.some(EARLIEST_MS),
+      });
+    });
+  });
+});
+
+describe("dashboard update: retrying a fetch that failed", () => {
+  const failed = { error: "Request failed" };
+  const afterBootFailures = () => ({
+    ...initModel(defaultSettings()),
+    summary: SummaryAsyncData.Failure(failed),
+    outages: OutagesAsyncData.Failure(failed),
+    pingHosts: PingHostsAsyncData.Failure(failed),
+    connectivityStatus: ConnectivityStatusAsyncData.Failure(failed),
+    metrics: MetricsAsyncData.Failure(failed),
+  });
+  const tick = () => withContext(afterBootFailures(), TickedRefresh());
+
+  test.each([
+    ["summary", "FetchSummary"],
+    ["outages", "FetchOutages"],
+    ["pingHosts", "FetchPingHosts"],
+    ["connectivityStatus", "FetchConnectivityStatus"],
+  ] as const)(
+    "a tick starts the %s fetch again and keeps the failure on screen",
+    (field, command) => {
+      const before = afterBootFailures();
+      const { model, commands = [] } = tick();
+
+      expect(model[field]).toEqual(before[field]);
+      expect(commands.map(({ name }) => name)).toContain(command);
+    }
+  );
+
+  test("a retried fetch that succeeds settles to Success", () => {
+    const { model: retrying } = tick();
+
+    const afterSummary = withContext(
+      retrying,
+      SucceededFetchSummary({
+        summary: summaryResponse(),
+        request: DEFAULT_REQUEST,
+      })
+    ).model;
+    const afterOutages = withContext(
+      afterSummary,
+      SucceededFetchOutages({
+        outages: outagesResponse(),
+        isClamped: false,
+        fetchedAtMs: NOW_MS,
+        request: DEFAULT_REQUEST,
+      })
+    ).model;
+    const afterHosts = withContext(
+      afterOutages,
+      SucceededFetchPingHosts({ hosts: hostsResponse() })
+    ).model;
+
+    expect(afterHosts.summary._tag).toBe("Success");
+    expect(afterHosts.outages._tag).toBe("Success");
+    expect(afterHosts.pingHosts._tag).toBe("Success");
+  });
+
+  test("a retried fetch that fails again stays a Failure", () => {
+    const { model: retrying } = tick();
+
+    const afterFailures = withContext(
+      withContext(
+        withContext(
+          retrying,
+          FailedFetchSummary({ error: "db down", request: DEFAULT_REQUEST })
+        ).model,
+        FailedFetchOutages({ error: "db down", request: DEFAULT_REQUEST })
+      ).model,
+      FailedFetchPingHosts({ error: "db down" })
+    ).model;
+
+    expect(afterFailures.summary).toEqual(
+      SummaryAsyncData.Failure({ error: "db down" })
+    );
+    expect(afterFailures.outages).toEqual(
+      OutagesAsyncData.Failure({ error: "db down" })
+    );
+    expect(afterFailures.pingHosts).toEqual(
+      PingHostsAsyncData.Failure({ error: "db down" })
+    );
+  });
+
+  test("an answer for a range that was left while a retry was in flight is dropped", () => {
+    const { model: retrying } = tick();
+    const { model: moved } = withContext(
+      retrying,
+      SelectedQuickRange({ preset: "last7d" })
+    );
+
+    const { model } = withContext(
+      moved,
+      SucceededFetchSummary({
+        summary: summaryResponse(),
+        request: DEFAULT_REQUEST,
+      })
+    );
+
+    expect(model.summary._tag).toBe("Loading");
+  });
+
+  test("a tick leaves a failed metrics fetch alone", () => {
+    const { model, commands = [] } = tick();
+
+    expect(model.metrics._tag).toBe("Failure");
+    expect(commands.map(({ name }) => name)).not.toContain("FetchMetrics");
+  });
+
+  test("a tick does not restart a fetch that is already in flight", () => {
+    const { commands = [] } = withContext(
+      { ...afterBootFailures(), summary: SummaryAsyncData.Loading() },
+      TickedRefresh()
+    );
+
+    expect(commands.map(({ name }) => name)).not.toContain("FetchSummary");
+  });
+
+  test("a tick leaves loaded hosts alone: they are static config", () => {
+    const { commands = [] } = withContext(
+      { ...initModel(defaultSettings()), ...loadedInsights() },
+      TickedRefresh()
+    );
+
+    expect(commands.map(({ name }) => name)).not.toContain("FetchPingHosts");
+  });
+});
+
+describe("dashboard update: the range-scoped reload list", () => {
+  const RANGE_FETCHES = [
+    "FetchMetrics",
+    "FetchSpeedtestHistory",
+    "FetchConnectivityStatus",
+    "FetchSummary",
+    "FetchOutages",
+  ];
+  const allTimeUnresolved = {
+    ...initModel({
+      ...defaultSettings(),
+      dateRange: Preset({ preset: "allTime" }),
+    }),
+    ...loadedInsights(),
+  };
+  const paths: ReadonlyArray<readonly [string, Model, Message]> = [
+    [
+      "a range change",
+      { ...initModel(defaultSettings()), ...loadedInsights() },
+      SelectedQuickRange({ preset: "last7d" }),
+    ],
+    [
+      "Refresh now",
+      { ...initModel(defaultSettings()), ...loadedInsights() },
+      ClickedRefreshNow(),
+    ],
+    [
+      "the earliest datapoint landing",
+      allTimeUnresolved,
+      SucceededFetchEarliestData({ earliestMs: Option.some(1_000) }),
+    ],
+  ];
+
+  test.each(paths)(
+    "%s reloads every range-scoped resource",
+    (_name, model, message) => {
+      const { commands = [] } = withContext(model, message);
+
+      expect(commands.map(({ name }) => name)).toEqual(
+        expect.arrayContaining(RANGE_FETCHES)
+      );
+    }
+  );
 });
 
 describe("dashboard update — speedtest history", () => {
@@ -623,7 +1018,8 @@ describe("dashboard update — speedtest history", () => {
       ),
       resolveApplyTheme(),
       resolveFetchEarliestData(),
-      resolveFetchLiveConnectivity()
+      resolveFetchLiveConnectivity(),
+      resolveEnterInsights()
     );
   });
 
@@ -684,6 +1080,7 @@ describe("dashboard update — connectivity status", () => {
               startTimeMs: 0,
               endTimeMs: 3_600_000,
               granularity: "1m",
+              request: DEFAULT_REQUEST,
             },
           })
         );
@@ -744,7 +1141,8 @@ describe("dashboard update — live connectivity", () => {
       ),
       resolveApplyTheme(),
       resolveFetchEarliestData(),
-      resolveFetchLiveConnectivity()
+      resolveFetchLiveConnectivity(),
+      resolveEnterInsights()
     );
   });
 
@@ -763,6 +1161,132 @@ describe("dashboard update — live connectivity", () => {
         expect(model.liveConnectivity._tag).toBe("Refreshing");
       }),
       resolveFetchLiveConnectivity()
+    );
+  });
+
+  test("a refresh tick on a status the last fetch could not confirm drops the stale value while it refetches", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      liveConnectivity: LiveConnectivityAsyncData.Stale({
+        error: "network error",
+        data: { status: "up" as const, maybeLastSampleAtMs: Option.none() },
+      }),
+    };
+
+    Story.story(
+      withContext,
+      Story.given(model),
+      Story.message(TickedRefresh()),
+      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.model((model) => {
+        expect(model.liveConnectivity._tag).toBe("Loading");
+        expect(connectionOf(model)).not.toBe("up");
+      }),
+      resolveFetchLiveConnectivity()
+    );
+  });
+
+  test("a refresh tick retries a live status whose fetch failed with nothing to show", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      liveConnectivity: LiveConnectivityAsyncData.Failure({
+        error: "network error",
+      }),
+    };
+
+    Story.story(
+      withContext,
+      Story.given(model),
+      Story.message(TickedRefresh()),
+      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.model((model) => {
+        expect(model.liveConnectivity).toEqual(
+          LiveConnectivityAsyncData.Failure({ error: "network error" })
+        );
+        expect(connectionOf(model)).toBe("noInfo");
+      }),
+      resolveFetchLiveConnectivity()
+    );
+  });
+
+  test("a status that keeps failing reads the same before, during and after each retry", () => {
+    const failed = {
+      ...initModel(defaultSettings()),
+      liveConnectivity: LiveConnectivityAsyncData.Failure({
+        error: "network error",
+      }),
+    };
+
+    const retrying = withContext(failed, TickedRefresh()).model;
+    const failedAgain = withContext(
+      retrying,
+      FailedFetchLiveConnectivity({ error: "network error" })
+    ).model;
+
+    expect([failed, retrying, failedAgain].map(connectionOf)).toEqual([
+      "noInfo",
+      "noInfo",
+      "noInfo",
+    ]);
+    expect(failedAgain.liveConnectivity).toEqual(failed.liveConnectivity);
+  });
+
+  test("a refresh tick on a confirmed status keeps showing it while it refetches", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      liveConnectivity: loadedLiveConnectivity(),
+    };
+
+    Story.story(
+      withContext,
+      Story.given(model),
+      Story.message(TickedRefresh()),
+      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.model((model) => {
+        expect(connectionOf(model)).toBe("up");
+      }),
+      resolveFetchLiveConnectivity()
+    );
+  });
+
+  test("refresh now on a status the last fetch could not confirm drops the stale value while it refetches", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      liveConnectivity: LiveConnectivityAsyncData.Stale({
+        error: "network error",
+        data: { status: "up" as const, maybeLastSampleAtMs: Option.none() },
+      }),
+    };
+
+    Story.story(
+      withContext,
+      Story.given(model),
+      Story.message(ClickedRefreshNow()),
+      Story.model((model) => {
+        expect(model.liveConnectivity._tag).toBe("Loading");
+        expect(connectionOf(model)).not.toBe("up");
+      }),
+      Story.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.resolveAll(
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
+        [
+          FetchConnectivityStatus,
+          SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
+            points: [],
+            maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
+            coveragePercentage: 100,
+            startTimeMs: 0,
+            endTimeMs: 3_600_000,
+            granularity: "1m",
+          }),
+        ]
+      ),
+      resolveFetchLiveConnectivity(),
+      resolveFetchEarliestData(),
+      resolveEnterInsights()
     );
   });
 
@@ -830,6 +1354,7 @@ describe("dashboard update — live connectivity", () => {
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
+          request: DEFAULT_REQUEST,
         },
       }),
       liveConnectivity: loadedLiveConnectivity(),
@@ -870,6 +1395,7 @@ describe("dashboard update — date range", () => {
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
+          request: DEFAULT_REQUEST,
         },
       }),
     };
@@ -937,7 +1463,8 @@ describe("dashboard update — date range", () => {
           }),
         ],
         [SaveSettings, CompletedSaveSettings()]
-      )
+      ),
+      resolveRangeInsights()
     );
   });
 });
@@ -996,7 +1523,8 @@ describe("dashboard update — date range with no prior data", () => {
           }),
         ],
         [SaveSettings, CompletedSaveSettings()]
-      )
+      ),
+      resolveRangeInsights()
     );
   });
 });
@@ -1018,6 +1546,7 @@ describe("dashboard update — manual refresh", () => {
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m",
+          request: DEFAULT_REQUEST,
         },
       }),
       liveConnectivity: loadedLiveConnectivity(),
@@ -1073,7 +1602,9 @@ describe("dashboard update — manual refresh", () => {
           }),
         ]
       ),
-      resolveFetchLiveConnectivity()
+      resolveFetchLiveConnectivity(),
+      resolveFetchEarliestData(),
+      resolveEnterInsights()
     );
   });
 });
@@ -1160,6 +1691,203 @@ describe("dashboard update — connectivity segment hover", () => {
   });
 });
 
+describe("dashboard update: connectivity segment selection", () => {
+  const HOUR_MS = 3_600_000;
+  const WINDOW_START_MS = Date.UTC(2026, 9, 11, 10);
+  const statusOver = (startTimeMs: number, hours: number) =>
+    ConnectivityStatusAsyncData.Success({
+      data: {
+        points: [],
+        maybeUptimePercentage: Option.none(),
+        maybeAvailabilityPercentage: Option.none(),
+        coveragePercentage: 100,
+        startTimeMs,
+        endTimeMs: startTimeMs + hours * HOUR_MS,
+        granularity: "1h",
+        request: DEFAULT_REQUEST,
+      },
+    });
+  const bucket = (index: number) => WINDOW_START_MS + index * HOUR_MS;
+  const base = {
+    ...initModel(defaultSettings()),
+    connectivityStatus: statusOver(WINDOW_START_MS, 10),
+  };
+  const selected = (index: number) => ({
+    ...base,
+    maybeSelectedBucketStartMs: Option.some(bucket(index)),
+  });
+  const pressed = (
+    model: ReturnType<typeof initModel>,
+    key: string
+  ): ReturnType<typeof initModel> =>
+    withContext(model, PressedRibbonKey({ key })).model;
+
+  test("toggling a segment pins the bucket it starts", () => {
+    const { model } = withContext(
+      base,
+      ToggledConnectivitySegment({ startMs: bucket(3) })
+    );
+
+    expect(model.maybeSelectedBucketStartMs).toEqual(Option.some(bucket(3)));
+  });
+
+  test("toggling the pinned segment again unpins it", () => {
+    const { model } = withContext(
+      selected(3),
+      ToggledConnectivitySegment({ startMs: bucket(3) })
+    );
+
+    expect(model.maybeSelectedBucketStartMs).toEqual(Option.none());
+  });
+
+  test("toggling another segment moves the pin", () => {
+    const { model } = withContext(
+      selected(3),
+      ToggledConnectivitySegment({ startMs: bucket(5) })
+    );
+
+    expect(model.maybeSelectedBucketStartMs).toEqual(Option.some(bucket(5)));
+  });
+
+  test("clearing the selection drops the pin and leaves the hover alone", () => {
+    const { model } = withContext(
+      { ...selected(3), hoveredSegmentIndex: Option.some(4) },
+      ClearedConnectivitySelection()
+    );
+
+    expect(model.maybeSelectedBucketStartMs).toEqual(Option.none());
+    expect(model.hoveredSegmentIndex).toEqual(Option.some(4));
+  });
+
+  test("the arrow keys move the pin along the cells and Escape drops it", () => {
+    const afterRight = pressed(selected(3), "ArrowRight");
+    expect(afterRight.maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(4))
+    );
+
+    const afterEnd = pressed(afterRight, "End");
+    expect(afterEnd.maybeSelectedBucketStartMs).toEqual(Option.some(bucket(9)));
+
+    const afterEscape = pressed(afterEnd, "Escape");
+    expect(afterEscape.maybeSelectedBucketStartMs).toEqual(Option.none());
+  });
+
+  test("Home moves the pin to the first cell", () => {
+    expect(pressed(selected(5), "Home").maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(0))
+    );
+  });
+
+  test("arrow keys do not move through a window fetched for another range", () => {
+    const otherRange = {
+      ...selected(3),
+      dateRange: Preset({ preset: "last24h" }),
+    };
+
+    expect(
+      pressed(otherRange, "ArrowRight").maybeSelectedBucketStartMs
+    ).toEqual(Option.some(bucket(3)));
+  });
+
+  test("the first arrow press with nothing pinned starts at the matching end", () => {
+    expect(pressed(base, "ArrowRight").maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(0))
+    );
+    expect(pressed(base, "ArrowLeft").maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(9))
+    );
+  });
+
+  test("a key the ribbon does not use leaves the pin alone", () => {
+    expect(pressed(selected(3), "Tab").maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(3))
+    );
+  });
+
+  test("arrow keys do nothing before the ribbon's window is known", () => {
+    const loading = {
+      ...initModel(defaultSettings()),
+      maybeSelectedBucketStartMs: Option.some(bucket(3)),
+    };
+
+    expect(pressed(loading, "ArrowRight").maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(3))
+    );
+  });
+
+  test("a pin stays on its bucket when a refresh slides the window", () => {
+    const { model } = withContext(
+      selected(3),
+      SucceededFetchConnectivityStatus({
+        request: DEFAULT_REQUEST,
+        points: [],
+        maybeUptimePercentage: Option.none(),
+        maybeAvailabilityPercentage: Option.none(),
+        coveragePercentage: 100,
+        startTimeMs: bucket(1),
+        endTimeMs: bucket(11),
+        granularity: "1h",
+      })
+    );
+
+    expect(model.maybeSelectedBucketStartMs).toEqual(Option.some(bucket(3)));
+    expect(pressed(model, "ArrowRight").maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(4))
+    );
+  });
+
+  test("the first arrow press after the pinned bucket slid out of the window starts at the matching end", () => {
+    const slidPast = {
+      ...selected(0),
+      connectivityStatus: statusOver(bucket(2), 10),
+    };
+
+    expect(pressed(slidPast, "ArrowRight").maybeSelectedBucketStartMs).toEqual(
+      Option.some(bucket(2))
+    );
+  });
+
+  test("changing the range drops the pin, since its bucket belongs to the old window", () => {
+    const { model } = withContext(
+      { ...selected(3), hoveredSegmentIndex: Option.some(4) },
+      SelectedQuickRange({ preset: "last24h" })
+    );
+
+    expect(model.maybeSelectedBucketStartMs).toEqual(Option.none());
+    expect(model.hoveredSegmentIndex).toEqual(Option.none());
+  });
+});
+
+describe("dashboard update: ribbon width", () => {
+  test("starts unmeasured", () => {
+    expect(initModel(defaultSettings()).maybeRibbonWidthPx).toEqual(
+      Option.none()
+    );
+  });
+
+  test("keeps the width the ribbon reports", () => {
+    const { model, commands } = withContext(
+      initModel(defaultSettings()),
+      MeasuredRibbon({ widthPx: 560 })
+    );
+
+    expect(model.maybeRibbonWidthPx).toEqual(Option.some(560));
+    expect(commands).toBeUndefined();
+  });
+
+  test("replaces an earlier width when the ribbon is resized", () => {
+    const { model } = withContext(
+      {
+        ...initModel(defaultSettings()),
+        maybeRibbonWidthPx: Option.some(560),
+      },
+      MeasuredRibbon({ widthPx: 800 })
+    );
+
+    expect(model.maybeRibbonWidthPx).toEqual(Option.some(800));
+  });
+});
+
 describe("dashboard update — toast messages", () => {
   const modelWithToast = () => {
     const { model: toast } = Toast.show(initModel(defaultSettings()).toast, {
@@ -1229,6 +1957,7 @@ const expectEveryChartResynced = () => [
       hostId: "latency-chart",
       metrics: [],
       ...METRICS_WINDOW,
+      incidents: [],
     })
   ),
   Story.Command.expectHas(
@@ -1236,6 +1965,7 @@ const expectEveryChartResynced = () => [
       hostId: "packet-loss-chart",
       metrics: [],
       ...METRICS_WINDOW,
+      incidents: [],
     })
   ),
   Story.Command.expectHas(
@@ -1243,6 +1973,7 @@ const expectEveryChartResynced = () => [
       hostId: "jitter-chart",
       metrics: [],
       ...METRICS_WINDOW,
+      incidents: [],
     })
   ),
   Story.Command.expectHas(
@@ -1375,7 +2106,8 @@ describe("dashboard update: overflow menu", () => {
         [FetchMetrics, succeededFetchMetrics()],
         [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
       ),
-      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
+      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" }),
+      resolveSummaryFetch()
     );
   });
 
@@ -1460,7 +2192,8 @@ describe("dashboard update: quick range", () => {
           }),
         ],
         [SaveSettings, CompletedSaveSettings()]
-      )
+      ),
+      resolveRangeInsights()
     );
   });
 
@@ -1498,7 +2231,8 @@ describe("dashboard update — speedtest trigger", () => {
         [FetchMetrics, succeededFetchMetrics()],
         [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
       ),
-      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
+      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" }),
+      resolveSummaryFetch()
     );
   });
 
@@ -1539,10 +2273,18 @@ describe("dashboard update — speedtest trigger", () => {
           })
         );
       }),
+      Story.Command.expectHas(
+        FetchSummary({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
+      ),
       Story.Command.resolveAll(
         [FetchMetrics, succeededFetchMetrics()],
         [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
       ),
+      resolveSummaryFetch(),
       ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
     );
   });
@@ -1602,6 +2344,7 @@ describe("dashboard update — latency chart", () => {
           hostId: "latency-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          incidents: [],
         })
       ),
       Story.Command.resolve(SyncLatencyChart, CompletedSyncLatencyChart())
@@ -1624,6 +2367,7 @@ describe("dashboard update — latency chart", () => {
           hostId: "latency-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          incidents: [],
         })
       ),
       Story.Command.resolve(SyncLatencyChart, CompletedSyncLatencyChart())
@@ -1685,6 +2429,7 @@ describe("dashboard update — packet loss chart", () => {
           hostId: "packet-loss-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          incidents: [],
         })
       ),
       Story.Command.resolve(SyncPacketLossChart, CompletedSyncPacketLossChart())
@@ -1707,6 +2452,7 @@ describe("dashboard update — packet loss chart", () => {
           hostId: "packet-loss-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          incidents: [],
         })
       ),
       Story.Command.resolve(SyncPacketLossChart, CompletedSyncPacketLossChart())
@@ -1751,6 +2497,7 @@ describe("dashboard update — jitter chart", () => {
           hostId: "jitter-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          incidents: [],
         })
       ),
       Story.Command.resolve(SyncJitterChart, CompletedSyncJitterChart())
@@ -1773,6 +2520,7 @@ describe("dashboard update — jitter chart", () => {
           hostId: "jitter-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          incidents: [],
         })
       ),
       Story.Command.resolve(SyncJitterChart, CompletedSyncJitterChart())
@@ -2057,5 +2805,446 @@ describe("dashboard update: responses for a replaced range", () => {
     );
 
     expect(model.metrics._tag).toBe("Success");
+  });
+});
+
+describe("dashboard update: insight fetches", () => {
+  test("entering the dashboard starts all three insight fetches", () => {
+    Story.story(
+      withContext,
+      Story.given(initModel(defaultSettings())),
+      Story.message(EnteredDashboard()),
+      Story.Command.expectHas(
+        FetchSummary({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
+      ),
+      Story.Command.expectHas(
+        FetchOutages({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
+      ),
+      Story.Command.expectHas(FetchPingHosts({ token: "abc123" })),
+      Story.model((model) => {
+        expect(model.summary._tag).toBe("Loading");
+        expect(model.outages._tag).toBe("Loading");
+        expect(model.pingHosts._tag).toBe("Loading");
+      }),
+      Story.Command.resolveAll(
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
+        [
+          FetchConnectivityStatus,
+          FailedFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
+            error: "skip",
+          }),
+        ]
+      ),
+      resolveApplyTheme(),
+      resolveFetchEarliestData(),
+      resolveFetchLiveConnectivity(),
+      resolveEnterInsights()
+    );
+  });
+
+  test("a refresh tick revalidates the summary and outage data", () => {
+    Story.story(
+      withContext,
+      Story.given({ ...initModel(defaultSettings()), ...loadedInsights() }),
+      Story.message(TickedRefresh()),
+      Story.model((model) => {
+        expect(model.summary._tag).toBe("Refreshing");
+        expect(model.outages._tag).toBe("Refreshing");
+      }),
+      Story.Command.resolveAll(
+        [
+          FetchSummary,
+          FailedFetchSummary({ error: "skip", request: DEFAULT_REQUEST }),
+        ],
+        [
+          FetchOutages,
+          FailedFetchOutages({ error: "skip", request: DEFAULT_REQUEST }),
+        ]
+      )
+    );
+  });
+
+  test("a refresh tick leaves the host list alone: it is static config", () => {
+    const { model, commands = [] } = withContext(
+      { ...initModel(defaultSettings()), ...loadedInsights() },
+      TickedRefresh()
+    );
+
+    expect(model.pingHosts._tag).toBe("Success");
+    expect(commands.map((command) => command.name)).not.toContain(
+      "FetchPingHosts"
+    );
+  });
+
+  test("a range change reloads the summary and outages but not hosts", () => {
+    const { commands = [] } = withContext(
+      { ...initModel(defaultSettings()), ...loadedInsights() },
+      SelectedQuickRange({ preset: "last7d" })
+    );
+    const names = commands.map((command) => command.name);
+
+    expect(names).toContain("FetchSummary");
+    expect(names).toContain("FetchOutages");
+    expect(names).not.toContain("FetchPingHosts");
+  });
+
+  test("refresh now reloads all three insight fetches", () => {
+    const { commands = [] } = withContext(
+      { ...initModel(defaultSettings()), ...loadedInsights() },
+      ClickedRefreshNow()
+    );
+
+    expect(commands.map((command) => command.name)).toEqual(
+      expect.arrayContaining(["FetchSummary", "FetchOutages", "FetchPingHosts"])
+    );
+  });
+
+  test("settles each fetch into its own field, success or failure", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      summary: SummaryAsyncData.Loading(),
+      pingHosts: PingHostsAsyncData.Loading(),
+    };
+
+    const afterSummary = withContext(
+      model,
+      SucceededFetchSummary({
+        summary: summaryResponse(),
+        request: DEFAULT_REQUEST,
+      })
+    ).model;
+    const afterHosts = withContext(
+      afterSummary,
+      SucceededFetchPingHosts({ hosts: hostsResponse() })
+    ).model;
+
+    expect(afterHosts.summary._tag).toBe("Success");
+    expect(afterHosts.pingHosts._tag).toBe("Success");
+    expect(
+      withContext(
+        model,
+        FailedFetchSummary({ error: "db down", request: DEFAULT_REQUEST })
+      ).model.summary
+    ).toEqual(SummaryAsyncData.Failure({ error: "db down" }));
+    expect(
+      withContext(model, FailedFetchPingHosts({ error: "db down" })).model
+        .pingHosts
+    ).toEqual(PingHostsAsyncData.Failure({ error: "db down" }));
+  });
+
+  describe("outages", () => {
+    const outage = {
+      start: "2026-07-27T02:00:00.000Z",
+      end: "2026-07-27T02:06:00.000Z",
+      durationSeconds: 360,
+      status: "down" as const,
+      affectedHosts: ["1.1.1.1"],
+      maxPacketLoss: 100,
+      peakLatency: null,
+    };
+    const mounted = {
+      ...withLoadedWindows(initModel(defaultSettings())),
+      metrics: MetricsAsyncData.Success({ data: [] }),
+      outages: OutagesAsyncData.Loading(),
+      maybeLatencyChartHostId: Option.some("latency-chart"),
+      maybePacketLossChartHostId: Option.some("packet-loss-chart"),
+      maybeJitterChartHostId: Option.some("jitter-chart"),
+    };
+
+    test("settling the log keeps the clamp flag and repaints the quality charts with the incidents", () => {
+      const incidents = [
+        {
+          ref: "A",
+          startMs: Date.parse(outage.start),
+          endMs: Date.parse(outage.end),
+          status: "down" as const,
+        },
+      ];
+
+      Story.story(
+        withContext,
+        Story.given(mounted),
+        Story.message(
+          SucceededFetchOutages({
+            outages: outagesResponse([outage]),
+            isClamped: true,
+            fetchedAtMs: NOW_MS,
+            request: DEFAULT_REQUEST,
+          })
+        ),
+        Story.model((model) => {
+          expect(model.outages).toEqual(
+            OutagesAsyncData.Success({
+              data: {
+                log: outagesResponse([outage]),
+                isClamped: true,
+                fetchedAtMs: NOW_MS,
+                request: DEFAULT_REQUEST,
+              },
+            })
+          );
+        }),
+        Story.Command.expectHas(
+          SyncLatencyChart({
+            hostId: "latency-chart",
+            metrics: [],
+            ...METRICS_WINDOW,
+            incidents,
+          })
+        ),
+        Story.Command.expectHas(
+          SyncPacketLossChart({
+            hostId: "packet-loss-chart",
+            metrics: [],
+            ...METRICS_WINDOW,
+            incidents,
+          })
+        ),
+        Story.Command.expectHas(
+          SyncJitterChart({
+            hostId: "jitter-chart",
+            metrics: [],
+            ...METRICS_WINDOW,
+            incidents,
+          })
+        ),
+        Story.Command.resolveAll(
+          [SyncLatencyChart, CompletedSyncLatencyChart()],
+          [SyncPacketLossChart, CompletedSyncPacketLossChart()],
+          [SyncJitterChart, CompletedSyncJitterChart()]
+        )
+      );
+    });
+
+    describe("while a refresh for a new range is in flight", () => {
+      const previousRange = {
+        dateRange: Preset({ preset: "last7d" }),
+        maybeEarliestDataMs: Option.none<number>(),
+      };
+      const oldLog = (request: typeof previousRange) =>
+        OutagesAsyncData.Refreshing({
+          data: {
+            log: outagesResponse([outage]),
+            isClamped: false,
+            fetchedAtMs: NOW_MS,
+            request,
+          },
+        });
+      const latencyIncidents = (
+        commands: ReturnType<typeof withContext>["commands"]
+      ) =>
+        commands
+          ?.filter((command) => command.name === "SyncLatencyChart")
+          .map((command) => command.args);
+
+      test("marks no incidents on the charts from the log of the previous range", () => {
+        const { commands } = withContext(
+          { ...mounted, outages: oldLog(previousRange) },
+          succeededFetchMetrics()
+        );
+
+        expect(latencyIncidents(commands)).toEqual([
+          expect.objectContaining({ incidents: [] }),
+        ]);
+      });
+
+      test("keeps marking the incidents of a log that answers the selected range", () => {
+        const { commands } = withContext(
+          { ...mounted, outages: oldLog(DEFAULT_REQUEST) },
+          succeededFetchMetrics()
+        );
+
+        expect(latencyIncidents(commands)).toEqual([
+          expect.objectContaining({
+            incidents: [expect.objectContaining({ ref: "A" })],
+          }),
+        ]);
+      });
+    });
+
+    test("a failed fetch leaves the charts as they were", () => {
+      const { model, commands } = withContext(
+        mounted,
+        FailedFetchOutages({ error: "db down", request: DEFAULT_REQUEST })
+      );
+
+      expect(model.outages).toEqual(
+        OutagesAsyncData.Failure({ error: "db down" })
+      );
+      expect(commands).toBeUndefined();
+    });
+  });
+
+  describe("results for a range the viewer has left", () => {
+    const stale = {
+      dateRange: Preset({ preset: "last30d" }),
+      maybeEarliestDataMs: Option.none<number>(),
+    };
+    const current = {
+      dateRange: Preset({ preset: "last1h" }),
+      maybeEarliestDataMs: Option.none<number>(),
+    };
+    const onLastHour = {
+      ...withLoadedWindows(initModel(defaultSettings())),
+      dateRange: Preset({ preset: "last1h" }),
+      metrics: MetricsAsyncData.Success({ data: [] }),
+      summary: SummaryAsyncData.Loading(),
+      outages: OutagesAsyncData.Loading(),
+      maybeLatencyChartHostId: Option.some("latency-chart"),
+    };
+
+    test("a slow summary for the old range does not land under the new one", () => {
+      const { model } = withContext(
+        onLastHour,
+        SucceededFetchSummary({ summary: summaryResponse(), request: stale })
+      );
+
+      expect(model.summary).toEqual(SummaryAsyncData.Loading());
+    });
+
+    test("the summary for the current range is accepted", () => {
+      const { model } = withContext(
+        onLastHour,
+        SucceededFetchSummary({ summary: summaryResponse(), request: current })
+      );
+
+      expect(model.summary._tag).toBe("Success");
+    });
+
+    test("a slow failure for the old range does not mark the new one failed", () => {
+      const { model } = withContext(
+        onLastHour,
+        FailedFetchSummary({ error: "timeout", request: stale })
+      );
+
+      expect(model.summary).toEqual(SummaryAsyncData.Loading());
+    });
+
+    test("a slow outage log for the old range is dropped, and the charts are not repainted with it", () => {
+      const { model, commands } = withContext(
+        onLastHour,
+        SucceededFetchOutages({
+          outages: outagesResponse([
+            {
+              start: "2026-07-27T02:00:00.000Z",
+              end: "2026-07-27T02:06:00.000Z",
+              durationSeconds: 360,
+              status: "down",
+              affectedHosts: ["1.1.1.1"],
+              maxPacketLoss: 100,
+              peakLatency: null,
+            },
+          ]),
+          isClamped: true,
+          fetchedAtMs: NOW_MS,
+          request: stale,
+        })
+      );
+
+      expect(model.outages).toEqual(OutagesAsyncData.Loading());
+      expect(commands).toBeUndefined();
+    });
+
+    test("a slow outage failure for the old range is dropped too", () => {
+      const { model } = withContext(
+        onLastHour,
+        FailedFetchOutages({ error: "timeout", request: stale })
+      );
+
+      expect(model.outages).toEqual(OutagesAsyncData.Loading());
+    });
+
+    test("an All time result from before the earliest datapoint was known is dropped", () => {
+      const allTime = Preset({ preset: "allTime" });
+      const afterEarliestKnown = {
+        ...onLastHour,
+        dateRange: allTime,
+        maybeEarliestDataMs: Option.some(1_000),
+      };
+      const { model } = withContext(
+        afterEarliestKnown,
+        SucceededFetchSummary({
+          summary: summaryResponse(),
+          request: { dateRange: allTime, maybeEarliestDataMs: Option.none() },
+        })
+      );
+
+      expect(model.summary).toEqual(SummaryAsyncData.Loading());
+    });
+
+    test("a preset result requested before the earliest datapoint was known still lands", () => {
+      const { model } = withContext(
+        { ...onLastHour, maybeEarliestDataMs: Option.some(1_000) },
+        SucceededFetchSummary({
+          summary: summaryResponse(),
+          request: {
+            dateRange: onLastHour.dateRange,
+            maybeEarliestDataMs: Option.none(),
+          },
+        })
+      );
+
+      expect(model.summary._tag).toBe("Success");
+    });
+
+    test("an outage log requested before the earliest datapoint was known still lands", () => {
+      const { model } = withContext(
+        { ...onLastHour, maybeEarliestDataMs: Option.some(1_000) },
+        SucceededFetchOutages({
+          outages: outagesResponse([]),
+          isClamped: false,
+          fetchedAtMs: NOW_MS,
+          request: {
+            dateRange: onLastHour.dateRange,
+            maybeEarliestDataMs: Option.none(),
+          },
+        })
+      );
+
+      expect(model.outages._tag).toBe("Success");
+    });
+
+    test("a custom range matches only itself", () => {
+      const custom = Custom({
+        startTime: "2026-07-01T00:00:00.000Z",
+        endTime: "2026-07-08T00:00:00.000Z",
+      });
+      const onCustom = { ...onLastHour, dateRange: custom };
+
+      expect(
+        withContext(
+          onCustom,
+          SucceededFetchSummary({
+            summary: summaryResponse(),
+            request: {
+              dateRange: Custom({
+                startTime: "2026-07-01T00:00:00.000Z",
+                endTime: "2026-07-09T00:00:00.000Z",
+              }),
+              maybeEarliestDataMs: Option.none(),
+            },
+          })
+        ).model.summary
+      ).toEqual(SummaryAsyncData.Loading());
+      expect(
+        withContext(
+          onCustom,
+          SucceededFetchSummary({
+            summary: summaryResponse(),
+            request: { dateRange: custom, maybeEarliestDataMs: Option.none() },
+          })
+        ).model.summary._tag
+      ).toBe("Success");
+    });
   });
 });

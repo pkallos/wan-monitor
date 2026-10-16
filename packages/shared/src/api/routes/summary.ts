@@ -52,7 +52,7 @@ const SpeedSummarySchema = Schema.Struct({
   count: Schema.Number,
 });
 
-const GetSummaryResponse = Schema.Struct({
+export const GetSummaryResponse = Schema.Struct({
   range: RangeSummarySchema,
   windows: Schema.Struct({
     last24h: UptimeWindowSchema,

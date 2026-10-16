@@ -142,10 +142,14 @@ test.describe("Settings persistence", () => {
   });
 
   test("persists auto-refresh pause across page reloads", async ({ page }) => {
-    const pauseButton = page.getByRole("button", { name: "Pause" });
+    const pauseButton = page.getByRole("button", {
+      name: "Pause auto-refresh",
+    });
     await pauseButton.click();
 
-    const resumeButton = page.getByRole("button", { name: "Resume" });
+    const resumeButton = page.getByRole("button", {
+      name: "Resume auto-refresh",
+    });
     await expect(resumeButton).toBeVisible();
     await expect
       .poll(async () => (await readStoredSettings(page))?.isPaused)
@@ -155,7 +159,9 @@ test.describe("Settings persistence", () => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Resume auto-refresh" })
+    ).toBeVisible();
     expect((await readStoredSettings(page)).isPaused).toBe(true);
   });
 });

@@ -217,8 +217,10 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
       .toBeGreaterThan(countBeforeAuto);
 
     // Pause auto-refresh; the interval timer must be cleared.
-    await page.getByRole("button", { name: "Pause" }).click();
-    await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
+    await page.getByRole("button", { name: "Pause auto-refresh" }).click();
+    await expect(
+      page.getByRole("button", { name: "Resume auto-refresh" })
+    ).toBeVisible();
 
     // Let any in-flight refetch settle, then snapshot the count.
     await page.waitForTimeout(500);
@@ -230,8 +232,10 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
     expect(metricsRequests.length).toBe(countWhilePaused);
 
     // Resume: the interval restarts and a refetch fires on the next tick.
-    await page.getByRole("button", { name: "Resume" }).click();
-    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+    await page.getByRole("button", { name: "Resume auto-refresh" }).click();
+    await expect(
+      page.getByRole("button", { name: "Pause auto-refresh" })
+    ).toBeVisible();
 
     await page.clock.fastForward(31_000);
     await expect

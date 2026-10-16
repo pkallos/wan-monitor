@@ -1,4 +1,4 @@
-import { Equal, Match as M, Option, Result } from "effect";
+import { Match as M, Option, Result } from "effect";
 import { AsyncData, Command, Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 import {
@@ -13,18 +13,26 @@ import {
   FetchEarliestData,
   FetchLiveConnectivity,
   FetchMetrics,
+  FetchOutages,
+  FetchPingHosts,
   FetchSpeedtestHistory,
+  FetchSummary,
   rangeRequest,
   SaveSettings,
   TriggerSpeedtest,
 } from "@/dashboard/command";
 import {
+  bucketCount,
+  bucketIndexOf,
+  bucketStartMs,
+} from "@/dashboard/connectivity";
+import {
   type DateRangeSelection,
   isAllTime,
   Preset,
-  sameDateRange,
 } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
+import { assignIncidents } from "@/dashboard/incidents";
 import {
   DashboardMenu,
   isThemeItem,
@@ -40,7 +48,13 @@ import {
   type RangeRequest,
   RequestedLogout,
 } from "@/dashboard/message";
-import { type Model, settingsFromModel } from "@/dashboard/model";
+import {
+  answersCurrentRange,
+  isAwaitingEarliestData,
+  type Model,
+  settingsFromModel,
+} from "@/dashboard/model";
+import { segmentForKey } from "@/dashboard/ribbon";
 import type { ThemePreference } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
 
@@ -53,18 +67,33 @@ type StepReturn = Update.Return<Model, Message>;
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>;
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
 
-// "All time" resolves its start from `maybeEarliestDataMs`, so a response
-// issued before that arrived covers a different window than the current one.
-const answersCurrentRange = (model: Model, request: RangeRequest): boolean =>
-  sameDateRange(request.dateRange, model.dateRange) &&
-  (!isAllTime(model.dateRange) ||
-    Equal.equals(request.maybeEarliestDataMs, model.maybeEarliestDataMs));
-
 const ignoreStale = (
   model: Model,
   request: RangeRequest,
   apply: () => StepReturn
 ): StepReturn => (answersCurrentRange(model, request) ? apply() : { model });
+
+// Nothing scoped to the range can be fetched until "All time" knows its start.
+const rangeFetches = (
+  model: Model,
+  commands: ReadonlyArray<Command.Command<Message>>
+): ReadonlyArray<Command.Command<Message>> =>
+  isAwaitingEarliestData(model) ? [] : commands;
+
+const fetchMetricsCommand = (context: Context, model: Model) =>
+  FetchMetrics({ token: context.token, ...rangeRequest(model) });
+
+const fetchSpeedtestHistoryCommand = (context: Context, model: Model) =>
+  FetchSpeedtestHistory({ token: context.token, ...rangeRequest(model) });
+
+const fetchConnectivityStatusCommand = (context: Context, model: Model) =>
+  FetchConnectivityStatus({ token: context.token, ...rangeRequest(model) });
+
+const fetchSummaryCommand = (context: Context, model: Model) =>
+  FetchSummary({ token: context.token, ...rangeRequest(model) });
+
+const fetchOutagesCommand = (context: Context, model: Model) =>
+  FetchOutages({ token: context.token, ...rangeRequest(model) });
 
 const enterMetrics =
   (context: Context) =>
@@ -73,12 +102,7 @@ const enterMetrics =
       onNone: () => ({ model }),
       onSome: (next) => ({
         model: modifyFields(model, { metrics: () => next }),
-        commands: [
-          FetchMetrics({
-            token: context.token,
-            ...rangeRequest(model),
-          }),
-        ],
+        commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
       }),
     });
 
@@ -89,12 +113,9 @@ const enterSpeedtestHistory =
       onNone: () => ({ model }),
       onSome: (next) => ({
         model: modifyFields(model, { speedtestHistory: () => next }),
-        commands: [
-          FetchSpeedtestHistory({
-            token: context.token,
-            ...rangeRequest(model),
-          }),
-        ],
+        commands: rangeFetches(model, [
+          fetchSpeedtestHistoryCommand(context, model),
+        ]),
       }),
     });
 
@@ -105,12 +126,9 @@ const enterConnectivityStatus =
       onNone: () => ({ model }),
       onSome: (next) => ({
         model: modifyFields(model, { connectivityStatus: () => next }),
-        commands: [
-          FetchConnectivityStatus({
-            token: context.token,
-            ...rangeRequest(model),
-          }),
-        ],
+        commands: rangeFetches(model, [
+          fetchConnectivityStatusCommand(context, model),
+        ]),
       }),
     });
 
@@ -143,6 +161,23 @@ const enterEarliestData =
       onSome: () => ({ model }),
     });
 
+// Asks again while the start of "All time" is unknown, so a fetch that failed,
+// or that ran before the monitor wrote its first sample, does not leave "All
+// time" on its fallback window for good.
+const refetchEarliestData =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.isNone(model.maybeEarliestDataMs)
+      ? { model, commands: [FetchEarliestData({ token: context.token })] }
+      : { model };
+
+const refetchEarliestDataForAllTime =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    isAllTime(model.dateRange)
+      ? refetchEarliestData(context)(model)
+      : { model };
+
 const revalidateMetrics =
   (context: Context) =>
   (model: Model): StepReturn =>
@@ -150,12 +185,7 @@ const revalidateMetrics =
       onNone: () => ({ model }),
       onSome: (next) => ({
         model: modifyFields(model, { metrics: () => next }),
-        commands: [
-          FetchMetrics({
-            token: context.token,
-            ...rangeRequest(model),
-          }),
-        ],
+        commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
       }),
     });
 
@@ -166,41 +196,119 @@ const revalidateSpeedtestHistory =
       onNone: () => ({ model }),
       onSome: (next) => ({
         model: modifyFields(model, { speedtestHistory: () => next }),
-        commands: [
-          FetchSpeedtestHistory({
-            token: context.token,
-            ...rangeRequest(model),
-          }),
-        ],
+        commands: rangeFetches(model, [
+          fetchSpeedtestHistoryCommand(context, model),
+        ]),
       }),
     });
 
-const revalidateConnectivityStatus =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.revalidate(model.connectivityStatus), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { connectivityStatus: () => next }),
-        commands: [
-          FetchConnectivityStatus({
-            token: context.token,
-            ...rangeRequest(model),
-          }),
-        ],
-      }),
-    });
+// A tick retries what failed as well as refreshing what loaded, so one
+// transient failure does not stay on screen while auto-refresh reads "on". A
+// failure stays as it is while the retry is in flight, so a source that keeps
+// failing does not flicker through a loading state on every tick. A source
+// that was never asked for is left for `EnteredDashboard`.
+const revalidateOrRetry = <A, E>(
+  data: AsyncData.AsyncData<A, E>
+): Option.Option<AsyncData.AsyncData<A, E>> =>
+  AsyncData.isFailure(data) ? Option.some(data) : AsyncData.revalidate(data);
+
+// A Stale live status is one the latest fetch could not confirm, so its
+// refetch starts from Loading rather than showing that value again while the
+// request is in flight.
+const revalidateLive = <A, E>(
+  live: AsyncData.AsyncData<A, E>
+): Option.Option<AsyncData.AsyncData<A, E>> =>
+  AsyncData.isStale(live)
+    ? Option.some(AsyncData.Loading())
+    : revalidateOrRetry(live);
 
 const revalidateLiveConnectivity =
   (context: Context) =>
   (model: Model): StepReturn =>
-    Option.match(AsyncData.revalidate(model.liveConnectivity), {
+    Option.match(revalidateLive(model.liveConnectivity), {
       onNone: () => ({ model }),
       onSome: (next) => ({
         model: modifyFields(model, { liveConnectivity: () => next }),
         commands: [FetchLiveConnectivity({ token: context.token })],
       }),
     });
+
+const revalidateOrRetryConnectivityStatus =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(revalidateOrRetry(model.connectivityStatus), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { connectivityStatus: () => next }),
+        commands: rangeFetches(model, [
+          fetchConnectivityStatusCommand(context, model),
+        ]),
+      }),
+    });
+
+const revalidateOrRetrySummary =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(revalidateOrRetry(model.summary), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { summary: () => next }),
+        commands: rangeFetches(model, [fetchSummaryCommand(context, model)]),
+      }),
+    });
+
+const revalidateOrRetryOutages =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(revalidateOrRetry(model.outages), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { outages: () => next }),
+        commands: rangeFetches(model, [fetchOutagesCommand(context, model)]),
+      }),
+    });
+
+const enterSummary =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(AsyncData.loadIfMissing(model.summary), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { summary: () => next }),
+        commands: rangeFetches(model, [fetchSummaryCommand(context, model)]),
+      }),
+    });
+
+const enterOutages =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(AsyncData.loadIfMissing(model.outages), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { outages: () => next }),
+        commands: rangeFetches(model, [fetchOutagesCommand(context, model)]),
+      }),
+    });
+
+const enterPingHosts =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(AsyncData.loadIfMissing(model.pingHosts), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { pingHosts: () => next }),
+        commands: [FetchPingHosts({ token: context.token })],
+      }),
+    });
+
+// The host list is static config: a loaded one is kept, and only a failed one
+// is asked for again.
+const retryPingHosts =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    AsyncData.isFailure(model.pingHosts)
+      ? { model, commands: [FetchPingHosts({ token: context.token })] }
+      : { model };
 
 // The time range changing means the current window's data (or in-flight
 // fetch) belongs to a query that no longer applies, so this always starts a
@@ -218,12 +326,30 @@ const reloadMetrics =
   (context: Context) =>
   (model: Model): StepReturn => ({
     model: modifyFields(model, { metrics: () => forceReload(model.metrics) }),
-    commands: [
-      FetchMetrics({
-        token: context.token,
-        ...rangeRequest(model),
-      }),
-    ],
+    commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
+  });
+
+const reloadSummary =
+  (context: Context) =>
+  (model: Model): StepReturn => ({
+    model: modifyFields(model, { summary: () => forceReload(model.summary) }),
+    commands: rangeFetches(model, [fetchSummaryCommand(context, model)]),
+  });
+
+const reloadOutages =
+  (context: Context) =>
+  (model: Model): StepReturn => ({
+    model: modifyFields(model, { outages: () => forceReload(model.outages) }),
+    commands: rangeFetches(model, [fetchOutagesCommand(context, model)]),
+  });
+
+const reloadPingHosts =
+  (context: Context) =>
+  (model: Model): StepReturn => ({
+    model: modifyFields(model, {
+      pingHosts: () => forceReload(model.pingHosts),
+    }),
+    commands: [FetchPingHosts({ token: context.token })],
   });
 
 const reloadSpeedtestHistory =
@@ -232,12 +358,9 @@ const reloadSpeedtestHistory =
     model: modifyFields(model, {
       speedtestHistory: () => forceReload(model.speedtestHistory),
     }),
-    commands: [
-      FetchSpeedtestHistory({
-        token: context.token,
-        ...rangeRequest(model),
-      }),
-    ],
+    commands: rangeFetches(model, [
+      fetchSpeedtestHistoryCommand(context, model),
+    ]),
   });
 
 const reloadConnectivityStatus =
@@ -246,22 +369,78 @@ const reloadConnectivityStatus =
     model: modifyFields(model, {
       connectivityStatus: () => forceReload(model.connectivityStatus),
     }),
-    commands: [
-      FetchConnectivityStatus({
-        token: context.token,
-        ...rangeRequest(model),
-      }),
-    ],
+    commands: rangeFetches(model, [
+      fetchConnectivityStatusCommand(context, model),
+    ]),
   });
 
 const reloadLiveConnectivity =
   (context: Context) =>
   (model: Model): StepReturn => ({
     model: modifyFields(model, {
-      liveConnectivity: () => forceReload(model.liveConnectivity),
+      liveConnectivity: () =>
+        AsyncData.isStale(model.liveConnectivity)
+          ? AsyncData.Loading()
+          : forceReload(model.liveConnectivity),
     }),
     commands: [FetchLiveConnectivity({ token: context.token })],
   });
+
+// Every resource whose fetch is scoped to the selected range. Each path that
+// moves the range reloads this one list, so a resource added here is reloaded
+// by all of them.
+const RANGE_SCOPED_RELOADS = [
+  reloadMetrics,
+  reloadSpeedtestHistory,
+  reloadConnectivityStatus,
+  reloadSummary,
+  reloadOutages,
+];
+
+const reloadRangeScoped =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Update.combine(
+      model,
+      RANGE_SCOPED_RELOADS.map((reload) => reload(context))
+    );
+
+const incidentsOf = (model: Model) =>
+  Option.match(AsyncData.getData(model.outages), {
+    onNone: () => [],
+    onSome: ({ log, request }) =>
+      answersCurrentRange(model, request) ? assignIncidents(log.data) : [],
+  });
+
+// The bucket a key moves the pin to, read off the window the ribbon is drawn
+// from; with no window for the selected range there is nothing to move through.
+const pinAfterKey = (
+  model: Model,
+  key: string,
+  maybeSelectedStartMs: Option.Option<number>
+): Option.Option<number> =>
+  Option.match(
+    Option.filter(AsyncData.getData(model.connectivityStatus), ({ request }) =>
+      answersCurrentRange(model, request)
+    ),
+    {
+      onNone: () => maybeSelectedStartMs,
+      onSome: (window) =>
+        Option.match(
+          segmentForKey(
+            key,
+            Option.flatMap(maybeSelectedStartMs, (startMs) =>
+              bucketIndexOf(window, startMs)
+            ),
+            bucketCount(window)
+          ),
+          {
+            onNone: () => maybeSelectedStartMs,
+            onSome: (index) => Option.some(bucketStartMs(window, index)),
+          }
+        ),
+    }
+  );
 
 // Each chart only needs re-painting when it's actually mounted, there's data
 // to show it, and the window that data was fetched for is known. That window
@@ -285,6 +464,7 @@ const syncLatencyChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
+          incidents: incidentsOf(model),
         }),
       ],
     }
@@ -308,6 +488,7 @@ const syncPacketLossChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
+          incidents: incidentsOf(model),
         }),
       ],
     }
@@ -331,6 +512,7 @@ const syncJitterChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
+          incidents: incidentsOf(model),
         }),
       ],
     }
@@ -393,13 +575,16 @@ const setThemePreference = (
 const applyDateRange =
   (context: Context, selection: DateRangeSelection) =>
   (model: Model): StepReturn => {
-    const { model: nextModel, commands: reloadCommands } = Update.combine(
-      modifyFields(model, { dateRange: () => selection }),
-      [
-        reloadMetrics(context),
-        reloadSpeedtestHistory(context),
-        reloadConnectivityStatus(context),
-      ]
+    const { model: nextModel, commands: reloadCommands } = reloadRangeScoped(
+      context
+    )(
+      // The ribbon's buckets change with the range, so a hovered or pinned
+      // one means nothing in the new window.
+      modifyFields(model, {
+        dateRange: () => selection,
+        hoveredSegmentIndex: () => Option.none(),
+        maybeSelectedBucketStartMs: () => Option.none(),
+      })
     );
     return {
       model: nextModel,
@@ -432,6 +617,27 @@ const selectMenuItem = (
     M.exhaustive
   );
 
+// A start that was unknown reloads "All time" from it; one it already had does
+// not move, so a later, older sample leaves the range where it is.
+const settleEarliestData = (
+  context: Context,
+  model: Model,
+  maybeEarliestMs: Option.Option<number>
+): StepReturn => {
+  const needsReload =
+    isAllTime(model.dateRange) &&
+    (isAwaitingEarliestData(model) ||
+      (Option.isNone(model.maybeEarliestDataMs) &&
+        Option.isSome(maybeEarliestMs)));
+  const nextModel = modifyFields(model, {
+    maybeEarliestDataMs: () => maybeEarliestMs,
+    isEarliestDataSettled: () => true,
+  });
+  return needsReload
+    ? reloadRangeScoped(context)(nextModel)
+    : { model: nextModel };
+};
+
 export const update = (
   model: Model,
   message: Message,
@@ -447,6 +653,9 @@ export const update = (
           enterConnectivityStatus(context),
           enterLiveConnectivity(context),
           enterEarliestData(context),
+          enterSummary(context),
+          enterOutages(context),
+          enterPingHosts(context),
           applyThemeOnEnter,
         ]),
 
@@ -454,8 +663,12 @@ export const update = (
         Update.combine(model, [
           revalidateMetrics(context),
           revalidateSpeedtestHistory(context),
-          revalidateConnectivityStatus(context),
+          revalidateOrRetryConnectivityStatus(context),
           revalidateLiveConnectivity(context),
+          revalidateOrRetrySummary(context),
+          revalidateOrRetryOutages(context),
+          retryPingHosts(context),
+          refetchEarliestDataForAllTime(context),
         ]),
 
       GotDateRangePickerMessage: ({ message: pickerMessage }) => {
@@ -505,10 +718,10 @@ export const update = (
 
       ClickedRefreshNow: () =>
         Update.combine(model, [
-          reloadMetrics(context),
-          reloadSpeedtestHistory(context),
-          reloadConnectivityStatus(context),
+          reloadRangeScoped(context),
           reloadLiveConnectivity(context),
+          reloadPingHosts(context),
+          refetchEarliestData(context),
         ]),
 
       SucceededFetchMetrics: ({
@@ -581,6 +794,7 @@ export const update = (
                   startTimeMs,
                   endTimeMs,
                   granularity,
+                  request,
                 })
               ),
           }),
@@ -609,28 +823,66 @@ export const update = (
         }),
       }),
 
-      // A restored "All time" range resolves its start from
-      // `maybeEarliestDataMs` (see `dateRange.ts`), which is unknown at boot
-      // — so `EnteredDashboard`'s first fetch runs against the Unix epoch
-      // fallback. Once the real earliest timestamp lands, reload rather than
-      // just storing it, or a persisted "All time" + paused reload would
-      // never repaint past that epoch-wide window.
-      SucceededFetchEarliestData: ({ earliestMs }) => {
-        const learnedAnUnresolvedAllTimeStart =
-          isAllTime(model.dateRange) &&
-          Option.isNone(model.maybeEarliestDataMs) &&
-          Option.isSome(earliestMs);
-        const nextModel = modifyFields(model, {
-          maybeEarliestDataMs: () => earliestMs,
-        });
-        return learnedAnUnresolvedAllTimeStart
-          ? Update.combine(nextModel, [
-              reloadMetrics(context),
-              reloadSpeedtestHistory(context),
-              reloadConnectivityStatus(context),
-            ])
-          : { model: nextModel };
-      },
+      SucceededFetchSummary: ({ summary, request }) =>
+        ignoreStale(model, request, () => ({
+          model: modifyFields(model, {
+            summary: () =>
+              AsyncData.settle(
+                model.summary,
+                Result.succeed({ summary, request })
+              ),
+          }),
+        })),
+      FailedFetchSummary: ({ error, request }) =>
+        ignoreStale(model, request, () => ({
+          model: modifyFields(model, {
+            summary: () => AsyncData.settle(model.summary, Result.fail(error)),
+          }),
+        })),
+
+      SucceededFetchOutages: ({ outages, isClamped, fetchedAtMs, request }) =>
+        ignoreStale(model, request, () => {
+          const nextModel = modifyFields(model, {
+            outages: () =>
+              AsyncData.settle(
+                model.outages,
+                Result.succeed({
+                  log: outages,
+                  isClamped,
+                  fetchedAtMs,
+                  request,
+                })
+              ),
+          });
+          return { model: nextModel, commands: syncQualityCharts(nextModel) };
+        }),
+      FailedFetchOutages: ({ error, request }) =>
+        ignoreStale(model, request, () => ({
+          model: modifyFields(model, {
+            outages: () => AsyncData.settle(model.outages, Result.fail(error)),
+          }),
+        })),
+
+      SucceededFetchPingHosts: ({ hosts }) => ({
+        model: modifyFields(model, {
+          pingHosts: () =>
+            AsyncData.settle(model.pingHosts, Result.succeed(hosts)),
+        }),
+      }),
+      FailedFetchPingHosts: ({ error }) => ({
+        model: modifyFields(model, {
+          pingHosts: () =>
+            AsyncData.settle(model.pingHosts, Result.fail(error)),
+        }),
+      }),
+
+      // "All time" has no start until this answers, so a restored "All time"
+      // holds back its range fetches (see `rangeFetches`) and loads them here,
+      // from the earliest datapoint or, with none, from its fallback window.
+      SucceededFetchEarliestData: ({ earliestMs }) =>
+        settleEarliestData(context, model, earliestMs),
+      FailedFetchEarliestData: () =>
+        settleEarliestData(context, model, model.maybeEarliestDataMs),
 
       ClickedTogglePause: () => {
         const nextModel = modifyFields(model, {
@@ -655,6 +907,32 @@ export const update = (
       UnhoveredConnectivitySegment: () => ({
         model: modifyFields(model, {
           hoveredSegmentIndex: () => Option.none(),
+        }),
+      }),
+      ToggledConnectivitySegment: ({ startMs }) => ({
+        model: modifyFields(model, {
+          maybeSelectedBucketStartMs: (selected) =>
+            Option.contains(selected, startMs)
+              ? Option.none()
+              : Option.some(startMs),
+        }),
+      }),
+      ClearedConnectivitySelection: () => ({
+        model: modifyFields(model, {
+          maybeSelectedBucketStartMs: () => Option.none(),
+        }),
+      }),
+      PressedRibbonKey: ({ key }) => ({
+        model: modifyFields(model, {
+          maybeSelectedBucketStartMs: (selected) =>
+            key === "Escape"
+              ? Option.none()
+              : pinAfterKey(model, key, selected),
+        }),
+      }),
+      MeasuredRibbon: ({ widthPx }) => ({
+        model: modifyFields(model, {
+          maybeRibbonWidthPx: () => Option.some(widthPx),
         }),
       }),
 
@@ -711,14 +989,11 @@ export const update = (
             toast: () => toastModel,
           }),
           commands: [
-            FetchMetrics({
-              token: context.token,
-              ...rangeRequest(model),
-            }),
-            FetchSpeedtestHistory({
-              token: context.token,
-              ...rangeRequest(model),
-            }),
+            ...rangeFetches(model, [
+              fetchMetricsCommand(context, model),
+              fetchSpeedtestHistoryCommand(context, model),
+              fetchSummaryCommand(context, model),
+            ]),
             ...Command.mapMessages(toastCommands ?? [], (message) =>
               GotToastMessage({ message })
             ),
@@ -806,7 +1081,6 @@ export const update = (
       "CompletedApplyTheme",
       "CompletedSaveSettings",
       "FailedSaveSettings",
-      "FailedFetchEarliestData",
       () => ({ model })
     ),
     M.exhaustive
