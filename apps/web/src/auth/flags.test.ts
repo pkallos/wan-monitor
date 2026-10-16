@@ -31,6 +31,7 @@ describe("readFlags", () => {
         theme: "dark",
         dateRange: Preset({ preset: "last7d" }),
         isPaused: true,
+        latencyView: "all",
       },
     });
   });

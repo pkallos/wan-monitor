@@ -1,10 +1,17 @@
+import type { Granularity } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import type { GetSummaryResponseType } from "@shared/api/routes/summary";
 import { Array as Array_, Match as M, Option, Order } from "effect";
 import type { ConnectivityStatus } from "@/dashboard/connectivity";
-import type { DateRangeSelection, PresetKey } from "@/dashboard/dateRange";
+import {
+  type DateRangeSelection,
+  describeCustomRange,
+  type PresetKey,
+  SPEEDTEST_AGGREGATION_THRESHOLD_MS,
+} from "@/dashboard/dateRange";
 import {
   counted,
+  everyInterval,
   fixed,
   formatClock,
   formatDurationAgo,
@@ -57,37 +64,6 @@ const PRESET_PHRASES: Record<PresetKey, string> = {
   ytd: "the year to date",
   last12m: "the last 12 months",
   allTime: "all time",
-};
-
-const UTC_DAY_FORMAT: Intl.DateTimeFormatOptions = {
-  month: "short",
-  day: "numeric",
-  timeZone: "UTC",
-};
-
-const utcDayText = (
-  iso: string,
-  options: Intl.DateTimeFormatOptions = UTC_DAY_FORMAT
-): string => new Date(iso).toLocaleDateString([], options);
-
-/**
- * A custom range as it reads mid-sentence, in the UTC days its picker label
- * uses: "Oct 4 to Oct 10, 2026", or the one day when it starts and ends on it.
- */
-const describeCustomRange = ({
-  startTime,
-  endTime,
-}: {
-  startTime: string;
-  endTime: string;
-}): string => {
-  const withYear = { ...UTC_DAY_FORMAT, year: "numeric" } as const;
-  const start = utcDayText(startTime, withYear);
-  const end = utcDayText(endTime, withYear);
-  if (start === end) return end;
-  const isSameYear =
-    new Date(startTime).getUTCFullYear() === new Date(endTime).getUTCFullYear();
-  return `${isSameYear ? utcDayText(startTime) : start} to ${end}`;
 };
 
 /** The range as it reads mid-sentence: "the last 30 days", "all time", "Oct 4 to Oct 10, 2026". */
@@ -247,6 +223,32 @@ export const networkText = ({ isp, maybeExternalIp }: NetworkInfo): string =>
     onSome: (externalIp) => `${isp}, public IP ${externalIp}`,
   });
 
+const BUCKET_ADJECTIVES: Record<Granularity, string> = {
+  "1m": "1-minute",
+  "5m": "5-minute",
+  "15m": "15-minute",
+  "1h": "hourly",
+  "6h": "6-hour",
+  "1d": "daily",
+};
+
+const BUCKET_AMOUNTS: Record<Granularity, string> = {
+  "1m": "a minute",
+  "5m": "5 minutes",
+  "15m": "15 minutes",
+  "1h": "an hour",
+  "6h": "6 hours",
+  "1d": "a day",
+};
+
+/** "A test runs every hour.", the cadence read from the configured interval. */
+export const speedCadenceText = (speedtestIntervalSeconds: number): string =>
+  `A test runs ${everyInterval(speedtestIntervalSeconds)}.`;
+
+/** What the speed figures are when the history came in buckets: "Over 7 days or more, each point averages an hour of tests." */
+export const speedAveragesNote = (bucket: Granularity): string =>
+  `Over ${formatLongDuration(SPEEDTEST_AGGREGATION_THRESHOLD_MS / 1000)} or more, each point averages ${BUCKET_AMOUNTS[bucket]} of tests.`;
+
 const speedClause = (
   value: number | null | undefined,
   direction: "down" | "up"
@@ -257,7 +259,10 @@ const speedClause = (
 
 /**
  * The newest test as a sentence: "Last test, Oct 15 at 2:00 PM: 100 Mbps down,
- * 10.0 Mbps up (Fremont, CA).". The server clause drops out when unknown.
+ * 10.0 Mbps up (Fremont, CA).". The server clause drops out when unknown. A
+ * history fetched in buckets holds averages, so the newest row is named as
+ * one: "Latest hourly average, Oct 15 at 2:00 PM: ...". A daily bucket is cut
+ * at UTC midnight, so it names its UTC day and no time.
  */
 export const lastTestLabel = (
   history: ReadonlyArray<
@@ -265,15 +270,23 @@ export const lastTestLabel = (
       SpeedMetric,
       "timestamp" | "download_speed" | "upload_speed" | "server_location"
     >
-  >
+  >,
+  maybeBucket: Option.Option<Granularity>
 ): Option.Option<string> =>
   Option.map(Array_.last(chronological(history)), (latest) => {
     const at = Date.parse(latest.timestamp);
+    const lead = Option.match(maybeBucket, {
+      onNone: () => "Last test",
+      onSome: (bucket) => `Latest ${BUCKET_ADJECTIVES[bucket]} average`,
+    });
+    const when = Option.exists(maybeBucket, (bucket) => bucket === "1d")
+      ? formatMonthDay(at, "UTC")
+      : `${formatMonthDay(at)} at ${formatClock(at)}`;
     const server =
       latest.server_location === undefined
         ? ""
         : ` (${latest.server_location})`;
-    return `Last test, ${formatMonthDay(at)} at ${formatClock(at)}: ${speedClause(latest.download_speed, "down")}, ${speedClause(latest.upload_speed, "up")}${server}.`;
+    return `${lead}, ${when}: ${speedClause(latest.download_speed, "down")}, ${speedClause(latest.upload_speed, "up")}${server}.`;
   });
 
 export type FetchErrorEntry = Readonly<{

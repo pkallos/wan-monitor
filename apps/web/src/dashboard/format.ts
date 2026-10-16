@@ -114,7 +114,7 @@ export const CLOCK_FORMAT: Intl.DateTimeFormatOptions = {
   minute: "2-digit",
 };
 
-const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = {
+export const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "numeric",
   ...CLOCK_FORMAT,
@@ -241,3 +241,10 @@ export const fixed = (
   decimals: number,
   suffix = ""
 ): string => (value === null ? "-" : `${value.toFixed(decimals)}${suffix}`);
+
+/** Whether `date` is exactly midnight in the viewer's time zone. */
+export const isLocalMidnight = (date: Date): boolean =>
+  date.getHours() === 0 &&
+  date.getMinutes() === 0 &&
+  date.getSeconds() === 0 &&
+  date.getMilliseconds() === 0;

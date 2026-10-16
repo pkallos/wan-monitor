@@ -16,6 +16,7 @@ import {
   CompletedSaveSettings,
   FailedFetchConnectivityStatus,
   FailedFetchEarliestData,
+  FailedFetchHostLatency,
   FailedFetchLiveConnectivity,
   FailedFetchMetrics,
   FailedFetchOutages,
@@ -27,6 +28,7 @@ import {
   type RangeRequest,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
+  SucceededFetchHostLatency,
   SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
   SucceededFetchOutages,
@@ -276,6 +278,55 @@ export const fetchOutages = ({ token, ...range }: RangeArgs) => {
   );
 };
 
+export const fetchHostLatency = ({
+  token,
+  hosts,
+  ...range
+}: RangeArgs & { hosts: ReadonlyArray<string> }) => {
+  const request = rangeRequest(range);
+  return Effect.gen(function* () {
+    const nowMs = yield* Clock.currentTimeMillis;
+    const window = getDateRangeWindow(
+      request.dateRange,
+      nowMs,
+      request.maybeEarliestDataMs
+    );
+    const { startTime, endTime } = window;
+    const granularity = granularityForRange(window);
+    const client = yield* makeClient(Option.some(token));
+    const series = yield* Effect.forEach(
+      hosts,
+      (host) =>
+        client.metrics
+          .getMetrics({
+            query: {
+              startTime,
+              endTime,
+              granularity,
+              host,
+              source: "ping",
+              percentiles: "p50",
+            },
+          })
+          .pipe(Effect.map((response) => ({ host, metrics: response.data }))),
+      { concurrency: "unbounded" }
+    );
+    return SucceededFetchHostLatency({
+      series,
+      startTimeMs: Date.parse(startTime),
+      endTimeMs: Date.parse(endTime),
+      granularity,
+      request,
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        FailedFetchHostLatency({ error: fetchErrorMessage(error), request })
+      )
+    )
+  );
+};
+
 export const fetchPingHosts = ({ token }: { token: string }) =>
   Effect.gen(function* () {
     const client = yield* makeClient(Option.some(token));
@@ -394,6 +445,13 @@ export const FetchOutages = Command.define("FetchOutages", {
   messages: [SucceededFetchOutages, FailedFetchOutages],
   execute: (args) =>
     fetchOutages(args).pipe(Effect.provide(FetchHttpClient.layer)),
+});
+
+export const FetchHostLatency = Command.define("FetchHostLatency", {
+  args: { ...DateRangeArgs, hosts: S.Array(S.String) },
+  messages: [SucceededFetchHostLatency, FailedFetchHostLatency],
+  execute: (args) =>
+    fetchHostLatency(args).pipe(Effect.provide(FetchHttpClient.layer)),
 });
 
 export const FetchPingHosts = Command.define("FetchPingHosts", {

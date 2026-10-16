@@ -283,6 +283,14 @@ describe("Auth HTTP integration (real JWT flow)", () => {
         expect(body.meta.count).toBe(0);
       });
 
+      it("returns 400 for a percentiles value the query does not offer", async () => {
+        const token = await loginForToken(app);
+
+        const res = await get(app, "/api/metrics?percentiles=p99", token);
+
+        expect(res.status).toBe(400);
+      });
+
       it("returns 401 for a token signed with a different secret", async () => {
         // Mint a real JWT from an app configured with a different secret; the
         // app under test must reject it on verification.

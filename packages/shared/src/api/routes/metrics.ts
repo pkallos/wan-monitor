@@ -16,11 +16,16 @@ export type Granularity = Schema.Schema.Type<typeof GranularitySchema>;
 const MetricSourceSchema = Schema.Literals(["ping", "speedtest"]);
 export type MetricSource = Schema.Schema.Type<typeof MetricSourceSchema>;
 
+const PercentilesSchema = Schema.Literals(["p50", "p50-p95"]);
+
 export const MetricSchema = Schema.Struct({
   timestamp: Schema.String,
   source: MetricSourceSchema,
   host: Schema.optional(Schema.String),
   latency: Schema.optional(Schema.Number),
+  /** Per-bucket percentiles of latency, present on aggregated rows only. */
+  latency_p50: Schema.optional(Schema.Number),
+  latency_p95: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),
   packet_loss: Schema.optional(Schema.Number),
   connectivity_status: Schema.optional(Schema.String),
@@ -47,6 +52,9 @@ export const GetMetricsQueryParams = Schema.Struct({
   // Aggregated queries need this to get one row per bucket. See
   // `buildQueryMetrics`.
   source: Schema.optional(MetricSourceSchema),
+  // `p50-p95` (the default) is the all-hosts band; `p50` skips the 95th
+  // percentile for callers that draw only the median.
+  percentiles: Schema.optional(PercentilesSchema),
 });
 
 const GetMetricsResponse = Schema.Struct({

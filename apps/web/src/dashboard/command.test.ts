@@ -6,6 +6,7 @@ import {
   applyTheme,
   fetchConnectivityStatus,
   fetchEarliestData,
+  fetchHostLatency,
   fetchLiveConnectivity,
   fetchMetrics,
   fetchOutages,
@@ -916,6 +917,7 @@ describe("saveSettings", () => {
       theme: "dark",
       dateRange: Preset({ preset: "last7d" }),
       isPaused: true,
+      latencyView: "all",
     };
 
     const result = await Effect.gen(function* () {
@@ -1113,6 +1115,92 @@ describe("fetchOutages", () => {
     }).pipe(Effect.provide(mockHttpClient(500, "boom")), Effect.runPromise);
 
     expect(result._tag).toBe("FailedFetchOutages");
+  });
+});
+
+describe("fetchHostLatency", () => {
+  const metricsBody = {
+    data: [
+      { timestamp: "2026-07-26T00:05:00.000Z", source: "ping", latency: 12 },
+    ],
+    meta: { startTime: "x", endTime: "y", count: 1 },
+  };
+
+  test("asks for each host's own aggregated ping series over the same window", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+
+    await fetchHostLatency({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+      hosts: ["8.8.8.8", "1.1.1.1"],
+    }).pipe(
+      Effect.provide(capturingHttpClient(capturedParams, metricsBody)),
+      Effect.runPromise
+    );
+
+    expect(capturedParams).toHaveLength(2);
+    expect(
+      capturedParams
+        .map((params) => params.find(([k]) => k === "host")?.[1])
+        .sort()
+    ).toEqual(["1.1.1.1", "8.8.8.8"]);
+    for (const params of capturedParams) {
+      expect(params).toContainEqual(["startTime", "2026-07-26T00:00:00.000Z"]);
+      expect(params).toContainEqual(["endTime", "2026-07-27T00:00:00.000Z"]);
+      expect(params).toContainEqual(["granularity", "5m"]);
+      expect(params).toContainEqual(["source", "ping"]);
+    }
+  });
+
+  test("asks for the median alone, since the host lines draw no band", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+
+    await fetchHostLatency({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+      hosts: ["8.8.8.8"],
+    }).pipe(
+      Effect.provide(capturingHttpClient(capturedParams, metricsBody)),
+      Effect.runPromise
+    );
+
+    expect(capturedParams[0]).toContainEqual(["percentiles", "p50"]);
+  });
+
+  test("returns the series in the order the hosts were given, with the window and the range asked for", async () => {
+    const result = await fetchHostLatency({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+      hosts: ["8.8.8.8", "1.1.1.1"],
+    }).pipe(
+      Effect.provide(mockHttpClient(200, metricsBody)),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "SucceededFetchHostLatency",
+      series: [
+        { host: "8.8.8.8", metrics: metricsBody.data },
+        { host: "1.1.1.1", metrics: metricsBody.data },
+      ],
+      startTimeMs: Date.parse("2026-07-26T00:00:00.000Z"),
+      endTimeMs: Date.parse("2026-07-27T00:00:00.000Z"),
+      granularity: "5m",
+      request: { dateRange: ONE_DAY_RANGE, maybeEarliestDataMs: Option.none() },
+    });
+  });
+
+  test("fails as a whole when any host's request fails, naming the range", async () => {
+    const result = await fetchHostLatency({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+      hosts: ["8.8.8.8"],
+    }).pipe(Effect.provide(mockHttpClient(500, "boom")), Effect.runPromise);
+
+    expect(result).toMatchObject({
+      _tag: "FailedFetchHostLatency",
+      request: { dateRange: ONE_DAY_RANGE },
+    });
   });
 });
 

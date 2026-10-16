@@ -9,6 +9,7 @@ import {
   formatLongDuration,
   formatMonthDay,
   formatTimeSpan,
+  isLocalMidnight,
   isSameLocalDay,
 } from "@/dashboard/format";
 import { withTimeZone } from "@/dashboard/testFixtures";
@@ -160,6 +161,21 @@ describe("isSameLocalDay", () => {
 
     expect(isSameLocalDay(day, new Date(2026, 8, 15).getTime())).toBe(false);
     expect(isSameLocalDay(day, new Date(2025, 9, 15).getTime())).toBe(false);
+  });
+});
+
+describe("isLocalMidnight", () => {
+  test("is true for exactly midnight", () => {
+    expect(isLocalMidnight(new Date(2026, 0, 5, 0, 0, 0, 0))).toBe(true);
+  });
+
+  test.each([
+    ["an hour", new Date(2026, 0, 5, 1, 0, 0, 0)],
+    ["a minute", new Date(2026, 0, 5, 0, 1, 0, 0)],
+    ["a second", new Date(2026, 0, 5, 0, 0, 1, 0)],
+    ["a millisecond", new Date(2026, 0, 5, 0, 0, 0, 1)],
+  ])("is false %s past midnight", (_, date) => {
+    expect(isLocalMidnight(date)).toBe(false);
   });
 });
 

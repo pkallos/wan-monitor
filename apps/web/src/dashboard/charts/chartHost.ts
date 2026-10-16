@@ -1,5 +1,6 @@
 import type { EChartsType } from "echarts/core";
 import { Option } from "effect";
+import type { Dom } from "foldkit";
 
 // A module-level mutable map outside the Model, touched only from Mount
 // (setChart/removeChart) and from Commands (getChart) — the sanctioned
@@ -22,3 +23,15 @@ export const removeChart = (hostId: string): void => {
     chartsByHostId.delete(hostId);
   }
 };
+
+/** A span of the latency chart's time axis the viewer dragged across, in milliseconds. */
+export type ChartBrush = Readonly<{ startMs: number; endMs: number }>;
+
+/**
+ * Where a chart reports what the viewer did to it. An ECharts instance lives
+ * outside the Model and its events fire outside the update loop, so they
+ * cross over as DOM events that a Subscription turns into Messages.
+ */
+export const chartEvents: Dom.TypedEventTarget<{
+  brush: CustomEvent<ChartBrush>;
+}> = new EventTarget();
