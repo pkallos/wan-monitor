@@ -1,4 +1,4 @@
-import { Option, Schema as S } from "effect";
+import { Match as M, Option, Schema as S } from "effect";
 import { taggedStruct as ts } from "foldkit/schema";
 import * as Dashboard from "@/dashboard";
 import { Settings } from "@/storage";
@@ -44,3 +44,16 @@ export const initLoggedOut = (
     maybeError,
     settings,
   });
+
+// Every state carries (or can derive) the chrome settings that survive a
+// reload. `LoggedIn` holds no separate copy, so its settings come from the
+// live dashboard via `settingsFromModel`.
+export const currentSettings = (model: Model): Settings =>
+  M.value(model).pipe(
+    M.withReturnType<Settings>(),
+    M.tagsExhaustive({
+      Checking: (checking) => checking.settings,
+      LoggedOut: (loggedOut) => loggedOut.settings,
+      LoggedIn: (loggedIn) => Dashboard.settingsFromModel(loggedIn.dashboard),
+    })
+  );

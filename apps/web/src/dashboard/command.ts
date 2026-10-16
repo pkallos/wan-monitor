@@ -20,6 +20,7 @@ import {
   FailedFetchSpeedtestHistory,
   FailedSaveSettings,
   FailedTriggerSpeedtest,
+  type RangeRequest,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
   SucceededFetchLiveConnectivity,
@@ -27,7 +28,7 @@ import {
   SucceededFetchSpeedtestHistory,
   SucceededTriggerSpeedtest,
 } from "@/dashboard/message";
-import { Theme } from "@/dashboard/theme";
+import { resolveTheme, ThemePreference } from "@/dashboard/theme";
 import { Settings, writeSettings } from "@/storage";
 
 const DB_UNAVAILABLE_MESSAGE =
@@ -48,18 +49,33 @@ const DateRangeArgs = {
   maybeEarliestDataMs: S.optional(S.Option(S.Number)),
 };
 
-export const fetchMetrics = ({
-  token,
-  dateRange,
-  maybeEarliestDataMs,
-}: {
+type RangeArgs = {
   token: string;
   dateRange: DateRangeSelection;
   maybeEarliestDataMs?: Option.Option<number>;
-}) =>
-  Effect.gen(function* () {
+};
+
+/**
+ * The inputs that decide which window a fetch resolves, spread into a
+ * range-scoped Command's args. The fetch echoes them back as `request`.
+ */
+export const rangeRequest = ({
+  dateRange,
+  maybeEarliestDataMs = Option.none(),
+}: Omit<RangeArgs, "token">): RangeRequest => ({
+  dateRange,
+  maybeEarliestDataMs,
+});
+
+export const fetchMetrics = ({ token, ...range }: RangeArgs) => {
+  const request = rangeRequest(range);
+  return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
-    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
+    const window = getDateRangeWindow(
+      request.dateRange,
+      nowMs,
+      request.maybeEarliestDataMs
+    );
     const { startTime, endTime } = window;
     const granularity = granularityForRange(window);
     const client = yield* makeClient(Option.some(token));
@@ -76,6 +92,7 @@ export const fetchMetrics = ({
     });
     // The resolved window rides along so the paint step never re-resolves it.
     return SucceededFetchMetrics({
+      request,
       metrics: response.data,
       nowMs,
       startTimeMs: Date.parse(startTime),
@@ -84,22 +101,22 @@ export const fetchMetrics = ({
     });
   }).pipe(
     Effect.catch((error) =>
-      Effect.succeed(FailedFetchMetrics({ error: fetchErrorMessage(error) }))
+      Effect.succeed(
+        FailedFetchMetrics({ request, error: fetchErrorMessage(error) })
+      )
     )
   );
+};
 
-export const fetchSpeedtestHistory = ({
-  token,
-  dateRange,
-  maybeEarliestDataMs,
-}: {
-  token: string;
-  dateRange: DateRangeSelection;
-  maybeEarliestDataMs?: Option.Option<number>;
-}) =>
-  Effect.gen(function* () {
+export const fetchSpeedtestHistory = ({ token, ...range }: RangeArgs) => {
+  const request = rangeRequest(range);
+  return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
-    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
+    const window = getDateRangeWindow(
+      request.dateRange,
+      nowMs,
+      request.maybeEarliestDataMs
+    );
     const { startTime, endTime } = window;
     const granularity = granularityForSpeedtestRange(window);
     const client = yield* makeClient(Option.some(token));
@@ -111,6 +128,7 @@ export const fetchSpeedtestHistory = ({
       },
     });
     return SucceededFetchSpeedtestHistory({
+      request,
       history: response.data,
       startTimeMs: Date.parse(startTime),
       endTimeMs: Date.parse(endTime),
@@ -118,23 +136,24 @@ export const fetchSpeedtestHistory = ({
   }).pipe(
     Effect.catch((error) =>
       Effect.succeed(
-        FailedFetchSpeedtestHistory({ error: fetchErrorMessage(error) })
+        FailedFetchSpeedtestHistory({
+          request,
+          error: fetchErrorMessage(error),
+        })
       )
     )
   );
+};
 
-export const fetchConnectivityStatus = ({
-  token,
-  dateRange,
-  maybeEarliestDataMs,
-}: {
-  token: string;
-  dateRange: DateRangeSelection;
-  maybeEarliestDataMs?: Option.Option<number>;
-}) =>
-  Effect.gen(function* () {
+export const fetchConnectivityStatus = ({ token, ...range }: RangeArgs) => {
+  const request = rangeRequest(range);
+  return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
-    const window = getDateRangeWindow(dateRange, nowMs, maybeEarliestDataMs);
+    const window = getDateRangeWindow(
+      request.dateRange,
+      nowMs,
+      request.maybeEarliestDataMs
+    );
     const { startTime, endTime } = window;
     const client = yield* makeClient(Option.some(token));
     const response = yield* client.connectivityStatus.getConnectivityStatus({
@@ -145,9 +164,13 @@ export const fetchConnectivityStatus = ({
       },
     });
     return SucceededFetchConnectivityStatus({
+      request,
       points: response.data,
       maybeUptimePercentage: Option.fromNullishOr(
         response.meta.uptimePercentage
+      ),
+      maybeAvailabilityPercentage: Option.fromNullishOr(
+        response.meta.availabilityPercentage
       ),
       coveragePercentage: response.meta.coveragePercentage,
       startTimeMs: Date.parse(startTime),
@@ -157,10 +180,14 @@ export const fetchConnectivityStatus = ({
   }).pipe(
     Effect.catch((error) =>
       Effect.succeed(
-        FailedFetchConnectivityStatus({ error: fetchErrorMessage(error) })
+        FailedFetchConnectivityStatus({
+          request,
+          error: fetchErrorMessage(error),
+        })
       )
     )
   );
+};
 
 /**
  * Takes no date range on purpose: the live indicator answers "right now", and
@@ -233,10 +260,11 @@ export const triggerSpeedtest = ({ token }: { token: string }) =>
 // The one place that owns `<html>`'s `dark` class at runtime. It has to sit
 // there, not on the dashboard root, because the Tailwind variant is
 // `&:where(.dark, .dark *)` (styles.css) and must also reach the login screen.
-export const applyTheme = ({ theme }: { theme: Theme }) =>
+export const applyTheme = ({ theme }: { theme: ThemePreference }) =>
   Effect.sync(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    document.documentElement.style.colorScheme = theme;
+    const resolved = resolveTheme(theme);
+    document.documentElement.classList.toggle("dark", resolved === "dark");
+    document.documentElement.style.colorScheme = resolved;
     return CompletedApplyTheme();
   }).pipe(Effect.catch(() => Effect.succeed(CompletedApplyTheme())));
 
@@ -294,7 +322,7 @@ export const TriggerSpeedtest = Command.define("TriggerSpeedtest", {
 });
 
 export const ApplyTheme = Command.define("ApplyTheme", {
-  args: { theme: Theme },
+  args: { theme: ThemePreference },
   messages: [CompletedApplyTheme],
   execute: applyTheme,
 });

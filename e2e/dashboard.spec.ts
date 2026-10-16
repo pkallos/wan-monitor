@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("WAN Monitor Dashboard", () => {
   test.beforeEach(async ({ page }) => {
@@ -13,21 +13,27 @@ test.describe("WAN Monitor Dashboard", () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
-  test("should display metric cards", async ({ page }) => {
+  test("should display the status headline and the figure tiles", async ({
+    page,
+  }) => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
-    // Top-row metric cards render their titles as headings.
     await expect(
-      page.getByRole("heading", { name: "Connectivity", exact: true })
+      page.getByRole("heading", {
+        name: /^(Connection is (healthy|degraded|down)\.|No recent data\.|Checking connection…)$/,
+      })
     ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Download Speed", exact: true })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Upload Speed", exact: true })
-    ).toBeVisible();
+    for (const testId of [
+      "hero-availability",
+      "hero-latency",
+      "hero-speed",
+      "kpi-packet-loss",
+      "kpi-jitter",
+    ]) {
+      await expect(page.getByTestId(testId)).toBeVisible();
+    }
   });
 
   test("should display the dashboard section headings", async ({ page }) => {
@@ -35,14 +41,16 @@ test.describe("WAN Monitor Dashboard", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10000 });
 
+    // "Availability" is also the label of a hero tile (an h3), so the section
+    // is pinned by its level.
     await expect(
-      page.getByRole("heading", { name: "Connectivity Status", exact: true })
+      page.getByRole("heading", { name: "Availability", exact: true, level: 2 })
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Network Quality", exact: true })
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Speed Test History", exact: true })
+      page.getByRole("heading", { name: "Speed tests", exact: true })
     ).toBeVisible();
   });
 
@@ -109,8 +117,8 @@ test.describe("WAN Monitor Dashboard", () => {
     ).toBeVisible({ timeout: 10000 });
 
     // The theme is persisted as part of the `wan_monitor_settings` blob;
-    // assert the mode flips after clicking the toggle rather than sniffing
-    // computed styles.
+    // assert the preference changes after choosing it in the menu rather than
+    // sniffing computed styles.
     const readMode = () =>
       page.evaluate(() => {
         const raw = localStorage.getItem("wan_monitor_settings");
@@ -118,12 +126,11 @@ test.describe("WAN Monitor Dashboard", () => {
       });
     const initialMode = await readMode();
 
-    const themeToggle = page.getByRole("button", {
-      name: /^(Dark mode|Light mode)$/,
-    });
-    await themeToggle.click();
+    await page.getByRole("button", { name: "Menu" }).click();
+    await page.getByRole("menuitem", { name: "Dark" }).click();
 
-    await expect.poll(readMode).not.toBe(initialMode);
+    await expect.poll(readMode).toBe("dark");
+    expect(initialMode).not.toBe("dark");
   });
 
   test("should display last updated indicator", async ({ page }) => {
@@ -164,31 +171,37 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
-  // Locate a top metric card by its (case-sensitive) heading, returning the
-  // card container so we can assert on the value it renders.
-  const metricCard = (page: Page, title: string) =>
-    page.getByRole("heading", { name: title, exact: true }).locator("..");
-
-  test("top metric cards show non-placeholder seeded values", async ({
-    page,
-  }) => {
+  test("hero figures show non-placeholder seeded values", async ({ page }) => {
     // The seed anchors the most recent ping and speedtest at "now", so the
-    // default date range has data behind every top card.
+    // default date range has data behind every figure.
 
-    // Connectivity resolves to a real status, never the "Checking…" placeholder.
-    await expect(metricCard(page, "Connectivity")).toContainText(
-      /Online|Degraded|Offline|No Data/,
+    // The headline resolves to a real status, never the "Checking…" placeholder.
+    await expect(
+      page.getByRole("heading", {
+        name: /^(Connection is (healthy|degraded|down)\.|No recent data\.)$/,
+      })
+    ).toBeVisible({ timeout: 15000 });
+
+    await expect(page.getByTestId("hero-availability")).toContainText(
+      /\d+(\.\d+)?\s*%/,
       { timeout: 15000 }
     );
-
-    // A digit immediately before "Mbps" proves a real reading; the empty state
-    // renders "- Mbps", which this pattern rejects.
-    await expect(metricCard(page, "Download Speed")).toContainText(
-      /\d+(\.\d+)?\s*Mbps/,
+    await expect(page.getByTestId("hero-latency")).toContainText(
+      /\d+(\.\d+)?\s*ms/,
       { timeout: 15000 }
     );
-    await expect(metricCard(page, "Upload Speed")).toContainText(
-      /\d+(\.\d+)?\s*Mbps/,
+    // Download and upload read together as "down / up Mbps"; the empty state
+    // has no digits before the slash.
+    await expect(page.getByTestId("hero-speed")).toContainText(
+      /\d+(\.\d+)?\s*\/\s*\d+(\.\d+)?\s*Mbps/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("kpi-packet-loss")).toContainText(
+      /\d+(\.\d+)?\s*%/,
+      { timeout: 15000 }
+    );
+    await expect(page.getByTestId("kpi-jitter")).toContainText(
+      /\d+(\.\d+)?\s*ms/,
       { timeout: 15000 }
     );
   });

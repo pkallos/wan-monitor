@@ -38,7 +38,11 @@ const WEEKDAY_LABELS: ReadonlyArray<string> = [
   "Sa",
 ];
 
-const TRIGGER_BUTTON_CLASS = `flex items-center gap-2 ${SECONDARY_BUTTON_CLASS}`;
+// Sits on the tinted status field, so it borders in the field's own rule.
+// At lg the width is fixed so the controls beside it do not shift when the
+// label changes; 16rem fits the widest label, "May 28, 2025 - May 28, 2026".
+const TRIGGER_BUTTON_CLASS =
+  "flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-field-rule bg-card px-3.5 text-left text-sm font-semibold text-ink transition-colors hover:bg-bg lg:min-h-10 lg:w-64";
 
 // Absolutely-positioned with no explicit width, this shrinks to whatever
 // space Floating UI leaves on the constrained side of the anchor rather than
@@ -326,7 +330,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
             [
               h.button(
                 [...button, h.Class(TRIGGER_BUTTON_CLASS)],
-                [icon(h, Calendar, { size: 16 }), triggerLabel]
+                [
+                  icon(h, Calendar, { size: 16 }),
+                  h.span([h.Class("truncate")], [triggerLabel]),
+                ]
               ),
               ...(isVisible
                 ? [

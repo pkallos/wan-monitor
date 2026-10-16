@@ -1,8 +1,8 @@
-import { Effect, Schema as S, Stream } from "effect";
+import { Effect, Match as M, Schema as S, Stream } from "effect";
 import { Subscription } from "foldkit";
 import type { Message } from "@/auth/message";
 import { GotDashboardMessage } from "@/auth/message";
-import type { Model } from "@/auth/model";
+import { currentSettings, type Model } from "@/auth/model";
 import * as Dashboard from "@/dashboard";
 
 export const modelToDependencies = (
@@ -12,13 +12,14 @@ export const modelToDependencies = (
   readonly isIdle: boolean;
   readonly isLoggedIn: boolean;
 } =>
-  model._tag === "LoggedIn"
-    ? {
-        isPaused: model.dashboard.isPaused,
-        isIdle: model.dashboard.isIdle,
-        isLoggedIn: true,
-      }
-    : { isPaused: true, isIdle: false, isLoggedIn: false };
+  M.value(model).pipe(
+    M.tag("LoggedIn", ({ dashboard }) => ({
+      isPaused: dashboard.isPaused,
+      isIdle: dashboard.isIdle,
+      isLoggedIn: true,
+    })),
+    M.orElse(() => ({ isPaused: true, isIdle: false, isLoggedIn: false }))
+  );
 
 export const dependenciesToStream = ({
   isPaused,
@@ -39,7 +40,10 @@ export const dependenciesToStream = ({
 export const activityModelToDependencies = (
   model: Model
 ): { readonly isLoggedIn: boolean } => ({
-  isLoggedIn: model._tag === "LoggedIn",
+  isLoggedIn: M.value(model).pipe(
+    M.tag("LoggedIn", () => true),
+    M.orElse(() => false)
+  ),
 });
 
 export const activityDependenciesToStream = ({
@@ -54,10 +58,32 @@ export const activityDependenciesToStream = ({
     Effect.sync(() => isLoggedIn)
   );
 
+export const systemThemeModelToDependencies = (
+  model: Model
+): { readonly isSystemTheme: boolean } => ({
+  isSystemTheme: currentSettings(model).theme === "system",
+});
+
+export const systemThemeDependenciesToStream = ({
+  isSystemTheme,
+}: {
+  readonly isSystemTheme: boolean;
+}): Stream.Stream<Message> =>
+  Dashboard.systemThemeDependenciesToStream({ isSystemTheme }).pipe(
+    Stream.map((message) => GotDashboardMessage({ message }))
+  );
+
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
   dashboardRefresh: entry(
     { isPaused: S.Boolean, isIdle: S.Boolean, isLoggedIn: S.Boolean },
     { modelToDependencies, dependenciesToStream }
+  ),
+  dashboardSystemTheme: entry(
+    { isSystemTheme: S.Boolean },
+    {
+      modelToDependencies: systemThemeModelToDependencies,
+      dependenciesToStream: systemThemeDependenciesToStream,
+    }
   ),
   dashboardActivity: entry(
     { isLoggedIn: S.Boolean },

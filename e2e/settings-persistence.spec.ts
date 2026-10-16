@@ -12,8 +12,12 @@ const readStoredSettings = (page: Page) =>
 
 const html = (page: Page) => page.locator("html");
 
-// Matches only a standalone "dark" class token, not the always-present
-// `dark:bg-*`/`dark:text-*` Tailwind variant prefixes.
+const chooseTheme = async (page: Page, name: "Light" | "Dark" | "System") => {
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("menuitem", { name }).click();
+};
+
+// Matches only a standalone "dark" class token on `<html>`.
 const DARK_CLASS = /(?:^|\s)dark(?:\s|$)/;
 
 test.describe("Settings persistence", () => {
@@ -31,22 +35,16 @@ test.describe("Settings persistence", () => {
   test("persists the selected theme across page reloads, and light mode actually repaints", async ({
     page,
   }) => {
-    const themeToggle = page.getByRole("button", {
-      name: /^(Dark mode|Light mode)$/,
-    });
-
-    // Default theme follows the (pinned light) OS preference. The button is
-    // icon-only, so its name lives in the accessible name, not visible text.
-    await expect(themeToggle).toHaveAccessibleName("Dark mode");
+    // Default theme is "system", which follows the (pinned light) OS
+    // preference, so nothing has been stored yet.
     await expect(html(page)).not.toHaveClass(DARK_CLASS);
     await expect
       .poll(async () => (await readStoredSettings(page))?.theme)
       .not.toBe("dark");
 
-    // Toggle to dark mode -> the whole page (not just the dashboard's root
-    // div) goes dark, since `<html>` is the class's one owner.
-    await themeToggle.click();
-    await expect(themeToggle).toHaveAccessibleName("Light mode");
+    // Choose dark mode -> the whole page (not just the dashboard's root div)
+    // goes dark, since `<html>` is the class's one owner.
+    await chooseTheme(page, "Dark");
     await expect(html(page)).toHaveClass(DARK_CLASS);
     await expect
       .poll(async () => (await readStoredSettings(page))?.theme)
@@ -61,7 +59,7 @@ test.describe("Settings persistence", () => {
     await expect(html(page)).toHaveClass(DARK_CLASS);
     expect((await readStoredSettings(page)).theme).toBe("dark");
 
-    // Toggle back to light within the same session. Assert an actual painted
+    // Switch back to light within the same session. Assert an actual painted
     // color, not just the class: `<html>` is the class's one owner, so this
     // is the check that would catch it silently staying stuck on `<html>`.
     const heading = page.getByRole("heading", { name: "WAN Monitor" });
@@ -69,9 +67,7 @@ test.describe("Settings persistence", () => {
       (el) => getComputedStyle(el).color
     );
 
-    await page
-      .getByRole("button", { name: /^(Dark mode|Light mode)$/ })
-      .click();
+    await chooseTheme(page, "Light");
     await expect(html(page)).not.toHaveClass(DARK_CLASS);
     await expect
       .poll(async () => (await readStoredSettings(page))?.theme)
@@ -87,6 +83,34 @@ test.describe("Settings persistence", () => {
     ).toBeVisible({ timeout: 10000 });
     await expect(html(page)).not.toHaveClass(DARK_CLASS);
     expect((await readStoredSettings(page)).theme).toBe("light");
+  });
+
+  test("the menu marks the active theme and System follows the OS live", async ({
+    page,
+  }) => {
+    await chooseTheme(page, "Light");
+    await page.getByRole("button", { name: "Menu" }).click();
+    await expect(
+      page.getByRole("menuitem", { name: "Light (selected)" })
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await chooseTheme(page, "System");
+    await expect
+      .poll(async () => (await readStoredSettings(page))?.theme)
+      .toBe("system");
+    await expect(html(page)).not.toHaveClass(DARK_CLASS);
+
+    // No reload: the OS flips and the page follows.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(html(page)).toHaveClass(DARK_CLASS);
+    await page.emulateMedia({ colorScheme: "light" });
+    await expect(html(page)).not.toHaveClass(DARK_CLASS);
+
+    // An explicit choice ignores the OS.
+    await chooseTheme(page, "Light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(html(page)).not.toHaveClass(DARK_CLASS);
   });
 
   test("persists the selected date range across page reloads", async ({
@@ -155,9 +179,11 @@ test.describe("Settings persistence — first visit follows the OS theme", () =>
     // that matters is that it's still true once the app has taken over —
     // otherwise the hydrated default silently overrode the OS preference.
     await expect(html(page)).toHaveClass(DARK_CLASS);
-    const themeToggle = page.getByRole("button", {
-      name: /^(Dark mode|Light mode)$/,
-    });
-    await expect(themeToggle).toHaveAccessibleName("Light mode");
+
+    // "System" is the stored default, so the menu shows it as the active one.
+    await page.getByRole("button", { name: "Menu" }).click();
+    await expect(
+      page.getByRole("menuitem", { name: "System (selected)" })
+    ).toBeVisible();
   });
 });
