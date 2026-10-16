@@ -27,6 +27,7 @@ import {
   type SpeedTestServiceInterface,
   SpeedTestTimeoutError,
 } from "@/infrastructure/speedtest/service";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 const createTestSpeedTestService = (
   runTestEffect: Effect.Effect<
@@ -57,6 +58,7 @@ const createTestQuestDB = (): QuestDBService => ({
   queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
   queryLatestPingTimestamp: () => Effect.succeed(null),
+  ...emptyAnalyticsQueries,
   health: () =>
     Effect.succeed({ connected: true, version: "test", uptime: 1000 }),
   close: () => Effect.succeed(undefined),

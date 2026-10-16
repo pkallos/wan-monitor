@@ -20,6 +20,7 @@ import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
 import { makeTestAppConfig } from "@/test/config";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 /**
  * Integration tests for server startup and lifecycle (index.ts)
@@ -83,6 +84,7 @@ describe("Server Lifecycle Integration Tests", () => {
     queryLiveConnectivity: vi.fn(),
     queryEarliestTimestamp: vi.fn(),
     queryLatestPingTimestamp: vi.fn(),
+    ...emptyAnalyticsQueries,
     health: vi.fn(() =>
       Effect.succeed({
         connected: true,
@@ -336,6 +338,7 @@ describe("Server Lifecycle Integration Tests", () => {
           queryLiveConnectivity: vi.fn(),
           queryEarliestTimestamp: vi.fn(),
           queryLatestPingTimestamp: vi.fn(),
+          ...emptyAnalyticsQueries,
           health: vi.fn(() =>
             Effect.fail(new DbUnavailable({ message: "Connection refused" }))
           ),
@@ -435,6 +438,7 @@ describe("Server Lifecycle Integration Tests", () => {
         queryLiveConnectivity: vi.fn(),
         queryEarliestTimestamp: vi.fn(),
         queryLatestPingTimestamp: vi.fn(),
+        ...emptyAnalyticsQueries,
         health: vi.fn(() =>
           Effect.succeed({
             connected: true,

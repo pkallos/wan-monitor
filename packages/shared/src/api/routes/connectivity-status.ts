@@ -1,5 +1,6 @@
-import { DbUnavailableErrorSchema } from "@shared/api/errors";
+import { DbUnavailableErrorSchema, InvalidTimeRange } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
+import { IsoTimestampSchema } from "@shared/api/schemas";
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 
@@ -67,6 +68,31 @@ const ConnectivityStatusMeta = Schema.Struct({
   expectedSampleIntervalSeconds: Schema.Number,
 });
 
+const OutageSchema = Schema.Struct({
+  start: Schema.String,
+  end: Schema.String,
+  durationSeconds: Schema.Number,
+  /** Worst cycle status in the outage: `down` if any cycle was down. */
+  status: Schema.Literals(["down", "degraded"]),
+  /** Hosts that failed or exceeded the loss floor in any of the outage's cycles. */
+  affectedHosts: Schema.Array(Schema.String),
+  maxPacketLoss: Schema.Number,
+  /** Highest latency reading during the outage; null when every sample failed. */
+  peakLatency: Schema.NullOr(Schema.Number),
+});
+
+const GetOutagesResponse = Schema.Struct({
+  /** Newest first, capped at a server-side maximum. */
+  data: Schema.Array(OutageSchema),
+  meta: Schema.Struct({
+    startTime: Schema.String,
+    endTime: Schema.String,
+    count: Schema.Number,
+    /** Outages found before the cap was applied. */
+    totalCount: Schema.Number,
+  }),
+});
+
 const ConnectivityStatusResponse = Schema.Struct({
   data: Schema.Array(ConnectivityStatusPointSchema),
   meta: ConnectivityStatusMeta,
@@ -89,7 +115,16 @@ export const GetConnectivityStatusQuery = Schema.Struct({
   ),
 });
 
+export const GetOutagesQuery = Schema.Struct({
+  startTime: Schema.optional(IsoTimestampSchema),
+  endTime: Schema.optional(IsoTimestampSchema),
+});
+
 // Export TypeScript types derived from schemas
+export type Outage = Schema.Schema.Type<typeof OutageSchema>;
+export type GetOutagesResponseType = Schema.Schema.Type<
+  typeof GetOutagesResponse
+>;
 export type ConnectivityStatusPoint = Schema.Schema.Type<
   typeof ConnectivityStatusPointSchema
 >;
@@ -118,6 +153,17 @@ export const ConnectivityStatusApiGroup = HttpApiGroup.make(
     HttpApiEndpoint.get("getLiveConnectivity", "/live", {
       success: GetLiveConnectivityResponse,
       error: [
+        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
+        Schema.String,
+      ],
+    })
+  )
+  .add(
+    HttpApiEndpoint.get("getOutages", "/outages", {
+      query: GetOutagesQuery,
+      success: GetOutagesResponse,
+      error: [
+        InvalidTimeRange,
         HttpApiSchema.status(503)(DbUnavailableErrorSchema),
         Schema.String,
       ],

@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  attachOutageHosts,
   mapConnectivityStatusRow,
+  mapCyclePeriodMs,
+  mapHostStatsRow,
   mapLiveConnectivityRow,
   mapMetricRow,
+  mapOutageHostRow,
+  mapOutageRunRow,
+  mapSummaryStatsRow,
 } from "@/infrastructure/database/questdb/mappers";
+import type { OutageRunRow } from "@/infrastructure/database/questdb/model";
 
 describe("mapMetricRow", () => {
   it("should map complete ping metric row", () => {
@@ -286,5 +293,173 @@ describe("mapLiveConnectivityRow", () => {
     });
 
     expect(result.cycle_status).toBe("up");
+  });
+});
+
+describe("mapSummaryStatsRow", () => {
+  it("should map every aggregate", () => {
+    expect(
+      mapSummaryStatsRow({
+        latency_p50: 20,
+        latency_p95: 45.5,
+        avg_packet_loss: 1.5,
+        avg_jitter: 2,
+      })
+    ).toEqual({
+      latency_p50: 20,
+      latency_p95: 45.5,
+      avg_packet_loss: 1.5,
+      avg_jitter: 2,
+    });
+  });
+
+  it("should keep nulls null rather than coercing them to 0", () => {
+    const result = mapSummaryStatsRow({
+      latency_p50: null,
+      latency_p95: null,
+      avg_packet_loss: null,
+      avg_jitter: null,
+    });
+
+    expect(Object.values(result).every((value) => value === null)).toBe(true);
+  });
+});
+
+describe("mapHostStatsRow", () => {
+  it("should coerce string counts and map the status", () => {
+    expect(
+      mapHostStatsRow({
+        host: "8.8.8.8",
+        latency_p50: 10,
+        latency_p95: 30,
+        avg_packet_loss: 0,
+        avg_jitter: null,
+        answered_count: "58",
+        total_count: "60",
+        last_status: "degraded",
+      })
+    ).toEqual({
+      host: "8.8.8.8",
+      latency_p50: 10,
+      latency_p95: 30,
+      avg_packet_loss: 0,
+      avg_jitter: null,
+      answered_count: 58,
+      total_count: 60,
+      last_status: "degraded",
+    });
+  });
+});
+
+describe("mapOutageRunRow", () => {
+  it("should map a run's span, worst loss and peak latency", () => {
+    expect(
+      mapOutageRunRow({
+        run_id: "3",
+        start_time: "2024-01-01T12:00:00.000Z",
+        last_time: "2024-01-01T12:05:00.000Z",
+        had_down: 1,
+        max_packet_loss: 100,
+        peak_latency: 40,
+      })
+    ).toEqual({
+      run_id: 3,
+      start_time: "2024-01-01T12:00:00.000Z",
+      last_time: "2024-01-01T12:05:00.000Z",
+      had_down: true,
+      max_packet_loss: 100,
+      peak_latency: 40,
+    });
+  });
+
+  it("should read a run with no down cycle as not down", () => {
+    const result = mapOutageRunRow({
+      run_id: 1,
+      start_time: "t1",
+      last_time: "t2",
+      had_down: 0,
+      max_packet_loss: 20,
+      peak_latency: 40,
+    });
+
+    expect(result.had_down).toBe(false);
+  });
+
+  it("should keep a missing loss and latency null", () => {
+    const result = mapOutageRunRow({
+      run_id: 1,
+      start_time: "t1",
+      last_time: "t2",
+      had_down: 1,
+      max_packet_loss: null,
+      peak_latency: null,
+    });
+
+    expect(result.max_packet_loss).toBeNull();
+    expect(result.peak_latency).toBeNull();
+  });
+});
+
+describe("attachOutageHosts", () => {
+  const run = (runId: number): OutageRunRow => ({
+    run_id: runId,
+    start_time: `start-${runId}`,
+    last_time: `last-${runId}`,
+    had_down: true,
+    max_packet_loss: 100,
+    peak_latency: null,
+  });
+
+  it("should list every affected host under its own run", () => {
+    const result = attachOutageHosts(
+      [run(1), run(2), run(3)],
+      [
+        { run_id: 1, host: "8.8.8.8" },
+        { run_id: 1, host: "1.1.1.1" },
+        { run_id: 3, host: "8.8.8.8" },
+      ]
+    );
+
+    expect(result.map((row) => row.affected_hosts)).toEqual([
+      ["8.8.8.8", "1.1.1.1"],
+      [],
+      ["8.8.8.8"],
+    ]);
+  });
+
+  it("should ignore affected hosts whose run was not returned", () => {
+    const result = attachOutageHosts(
+      [run(1)],
+      [{ run_id: 9, host: "8.8.8.8" }]
+    );
+
+    expect(result).toEqual([{ ...run(1), affected_hosts: [] }]);
+  });
+});
+
+describe("mapOutageHostRow", () => {
+  it("should map a run id and host", () => {
+    expect(mapOutageHostRow({ run_id: "2", host: "8.8.8.8" })).toEqual({
+      run_id: 2,
+      host: "8.8.8.8",
+    });
+  });
+});
+
+describe("mapCyclePeriodMs", () => {
+  it("should convert microseconds to whole milliseconds", () => {
+    expect(mapCyclePeriodMs({ period_micros: 40_500_223 })).toBe(40_500);
+    expect(mapCyclePeriodMs({ period_micros: 59_999_700 })).toBe(60_000);
+  });
+
+  it.each([null, undefined])(
+    "should read %s as no measurable period",
+    (period) => {
+      expect(mapCyclePeriodMs({ period_micros: period })).toBeNull();
+    }
+  );
+
+  it("should read a missing row as no measurable period", () => {
+    expect(mapCyclePeriodMs(undefined)).toBeNull();
   });
 });

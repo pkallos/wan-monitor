@@ -4,6 +4,7 @@ import { HealthApiGroup } from "@shared/api/routes/health";
 import { MetricsApiGroup } from "@shared/api/routes/metrics";
 import { PingApiGroup } from "@shared/api/routes/ping";
 import { SpeedTestApiGroup } from "@shared/api/routes/speedtest";
+import { SummaryApiGroup } from "@shared/api/routes/summary";
 import { HttpApi } from "effect/http-api";
 
 export const WanMonitorApi = HttpApi.make("WanMonitorAPI")
@@ -13,4 +14,5 @@ export const WanMonitorApi = HttpApi.make("WanMonitorAPI")
   .add(MetricsApiGroup.prefix("/metrics"))
   .add(PingApiGroup.prefix("/ping"))
   .add(SpeedTestApiGroup.prefix("/speedtest"))
+  .add(SummaryApiGroup.prefix("/summary"))
   .prefix("/api");
