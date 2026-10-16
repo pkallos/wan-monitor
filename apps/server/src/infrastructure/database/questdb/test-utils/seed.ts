@@ -238,6 +238,61 @@ export const seedDatabase = (
     yield* waitForRowCount(metrics.length);
   });
 
+/** A run of evenly spaced ping samples for one host, generated in SQL. */
+export interface GeneratedPingSeries {
+  readonly host: string;
+  readonly startMs: number;
+  readonly count: number;
+  readonly intervalMs: number;
+  readonly kind: "up" | "down";
+}
+
+const runSql = (query: string): Effect.Effect<void, SeedError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(
+        `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(query)}`
+      );
+      if (!response.ok) {
+        throw new Error(`${response.status} ${await response.text()}`);
+      }
+    },
+    catch: (error) =>
+      new SeedError({ message: `Failed to run seed SQL: ${error}` }),
+  });
+
+const generatedPingSql = ({
+  host,
+  startMs,
+  count,
+  intervalMs,
+  kind,
+}: GeneratedPingSeries): string => {
+  const reading =
+    kind === "down" ? "NULL, NULL, 100.0, 'down'" : "30.0, 2.0, 0.0, 'up'";
+  return `INSERT INTO ${TEST_TABLE} (timestamp, source, host, latency, jitter, packet_loss, connectivity_status)
+    SELECT cast(${startMs * 1000}L + (x - 1) * ${intervalMs * 1000}L as timestamp), 'ping', '${host}', ${reading}
+    FROM long_sequence(${count})`;
+};
+
+/**
+ * Seed large ping histories with SQL instead of the ILP sender, which cannot
+ * absorb tens of thousands of rows through `seedDatabase`. Assumes the table
+ * was just truncated, so the row total converges to the sum of the series.
+ */
+export const seedGeneratedPings = (
+  series: readonly GeneratedPingSeries[]
+): Effect.Effect<void, SeedError> =>
+  Effect.gen(function* () {
+    for (const one of series) {
+      yield* runSql(generatedPingSql(one));
+    }
+    yield* waitForRowCount(
+      series.reduce((total, one) => total + one.count, 0),
+      "60 seconds"
+    );
+  });
+
 /**
  * Create a complete deterministic seed dataset for integration tests.
  */

@@ -283,8 +283,10 @@ wan-monitor/
 | `/api/metrics` | GET | Query ping and speedtest data |
 | `/api/connectivity-status` | GET | Aggregated up/down/degraded status |
 | `/api/connectivity-status/live` | GET | Current status from the newest ping cycle in a trailing window |
+| `/api/connectivity-status/outages` | GET | Outage log: runs of non-up ping cycles, newest first (500 at most) |
+| `/api/summary` | GET | Latency percentiles, loss and jitter for a range, uptime for the last 24h/7d/30d, per-host stats, speed test summary |
 | `/api/ping/trigger` | POST | Manually trigger a ping test |
-| `/api/ping/hosts` | GET | Get configured ping hosts |
+| `/api/ping/hosts` | GET | Get configured ping hosts and the ping and speed test intervals |
 
 Query parameters for `/api/metrics`:
 - `startTime`: ISO timestamp
@@ -292,6 +294,15 @@ Query parameters for `/api/metrics`:
 - `granularity`: `1m`, `5m`, `15m`, `1h`, `6h`, `1d`
 - `host`: Filter by specific ping host
 - `source`: `ping` or `speedtest`. Filters to one measurement kind; aggregated queries need it to get one row per bucket
+
+The summary and outage endpoints are read-only aggregates over the same `network_metrics` table. They take `startTime` and `endTime`, ISO 8601 timestamps with a time and a zone (`2024-02-10T08:00:00Z`). Both default to the trailing 24 hours. A malformed timestamp, one whose UTC instant falls outside years 0000 to 9999, a `startTime` after the `endTime`, or a window wider than the endpoint allows (below) is rejected with a 400 before any query runs.
+
+- `/api/summary`
+  - `range` carries `latencyP50` and `latencyP95` (percentiles of per-cycle latency, the mean across hosts, so they are approximate), `avgPacketLoss`, `avgJitter`, `uptimePercentage`, `availabilityPercentage` and `coveragePercentage`.
+  - `windows.last24h`, `last7d` and `last30d` give uptime anchored at `endTime`.
+  - `hosts` has one entry per ping host. Its `availabilityPercentage` is the share of that host's ping samples that were answered; a lossy but answered sample counts as answered. `lastStatus` is the host's newest sample in the range: `down`, `degraded` (loss at or over the degraded floor) or `up`.
+  - `speed` is in Mbps over successful tests (a stored 0 is a failed test): `downloadMedian` and `uploadMedian`, plus the test `count`.
+- `/api/connectivity-status/outages` returns `data` and `meta`, and covers at most 90 days per request (`MAX_OUTAGE_SPAN_DAYS`); `meta.startTime` and `meta.endTime` are the window actually queried. An outage is a run of consecutive non-up ping cycles. Runs separated by a single missing cycle are merged (cycle spacing is measured from the window's own cycles, not assumed from the configured interval), and an up cycle always ends a run. Its `status` is the worst status in the run (`down` if any cycle was down, otherwise `degraded`), `affectedHosts` lists the hosts that failed or were lossy, and `end` is one ping cycle after the last non-up cycle, clipped to the range end.
 
 ## Contributing
 

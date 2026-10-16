@@ -19,6 +19,7 @@ import {
 // Import from speedtest-service to avoid native module loading
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
 import { makeTestConfigLayer } from "@/test/config";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 describe("NetworkMonitor", () => {
   const mockPingResults: readonly PingExecutionResult[] = [
@@ -61,6 +62,7 @@ describe("NetworkMonitor", () => {
     queryLiveConnectivity: vi.fn(),
     queryEarliestTimestamp: vi.fn(),
     queryLatestPingTimestamp: vi.fn(),
+    ...emptyAnalyticsQueries,
     health: vi.fn(),
     close: vi.fn(),
   });
@@ -369,6 +371,7 @@ describe("NetworkMonitor", () => {
       queryLiveConnectivity: vi.fn(),
       queryEarliestTimestamp: vi.fn(),
       queryLatestPingTimestamp: vi.fn(),
+      ...emptyAnalyticsQueries,
       health: vi.fn(),
       close: vi.fn(),
     });

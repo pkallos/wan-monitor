@@ -54,6 +54,23 @@ export type Granularity = Schema.Schema.Type<typeof GranularitySchema>;
 - `Schema.encode(schema)` / `Schema.decode(schema)` — for values already known to be schema-shaped
   (`Type`/`Encoded` respectively), not raw `unknown`.
 
+## Custom validation
+
+`Schema.check` attaches a predicate to a schema, and `Schema.makeFilter` builds one from a plain
+function. A request that fails the predicate is rejected by `HttpApi` with a 400 before the handler runs:
+
+```ts
+export const IsoTimestampSchema = Schema.String.check(
+  Schema.makeFilter((value) => isValidIsoTimestamp(value), {
+    message: "Expected an ISO 8601 timestamp in years 0000 to 9999, such as 2024-02-10T08:00:00Z",
+  })
+);
+```
+
+See `packages/shared/src/api/schemas.ts`, used by the `startTime` and `endTime` query fields in
+`packages/shared/src/api/routes/summary.ts`. The predicate is `isValidIsoTimestamp` in
+`packages/shared/src/timestamp.ts`.
+
 ## Config-validated values
 
 `Config.schema(schema, envVarName)` reads an environment variable through a `Schema` and produces a

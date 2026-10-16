@@ -52,6 +52,13 @@ export class AuthNotConfigured extends Schema.TaggedError<AuthNotConfigured>()(
   { httpApiStatus: 503 }
 ) {}
 
+/** 400 when a time range is reversed or wider than the endpoint allows. */
+export class InvalidTimeRange extends Schema.TaggedError<InvalidTimeRange>()(
+  "InvalidTimeRange",
+  { message: Schema.String },
+  { httpApiStatus: 400 }
+) {}
+
 /** 503 — a dependency health check failed (e.g. QuestDB unreachable). */
 export class HealthUnhealthy extends Schema.TaggedError<HealthUnhealthy>()(
   "HealthUnhealthy",

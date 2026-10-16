@@ -12,6 +12,7 @@ import {
 } from "@/infrastructure/database/questdb/service";
 import { SpeedTestService } from "@/infrastructure/speedtest/service";
 import { makeTestAppConfig } from "@/test/config";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 /**
  * HTTP-level integration tests for the auth routes (PHI-106).
@@ -44,6 +45,7 @@ const mockQuestDB: QuestDBService = {
   queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
   queryLatestPingTimestamp: () => Effect.succeed(null),
+  ...emptyAnalyticsQueries,
   health: () => Effect.succeed({ connected: true, uptime: 1000 }),
   close: () => Effect.void,
 };
@@ -294,6 +296,81 @@ describe("Auth HTTP integration (real JWT flow)", () => {
         const res = await get(app, "/api/metrics", foreignToken);
 
         expect(res.status).toBe(401);
+      });
+    });
+
+    describe.each(["/api/summary", "/api/connectivity-status/outages"])(
+      "protected route GET %s",
+      (path) => {
+        it("returns 401 without a token", async () => {
+          const res = await get(app, path);
+
+          expect(res.status).toBe(401);
+        });
+
+        it("returns 200 with a real signed token", async () => {
+          const token = await loginForToken(app);
+
+          const res = await get(app, path, token);
+
+          expect(res.status).toBe(200);
+        });
+      }
+    );
+
+    describe("time range validation", () => {
+      const bounds = (startTime: string, endTime: string) =>
+        `startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`;
+      const reversed = bounds("2024-01-02T00:00:00Z", "2024-01-01T00:00:00Z");
+
+      it.each([
+        ["/api/summary", "startTime=garbage"],
+        ["/api/summary", "endTime=2024-02-30T00:00:00Z"],
+        ["/api/connectivity-status/outages", "startTime=2024-01-01"],
+        ["/api/summary", reversed],
+        ["/api/connectivity-status/outages", reversed],
+        [
+          "/api/connectivity-status/outages",
+          bounds("2024-01-01T00:00:00Z", "2024-04-01T00:00:00Z"),
+        ],
+      ])("rejects %s?%s with a 400", async (path, search) => {
+        const token = await loginForToken(app);
+
+        const res = await get(app, `${path}?${search}`, token);
+
+        expect(res.status).toBe(400);
+      });
+
+      it.each([
+        [
+          "/api/connectivity-status/outages",
+          bounds("2024-01-01T00:00:00Z", "2024-03-30T00:00:00Z"),
+        ],
+        [
+          "/api/summary",
+          bounds("2023-01-01T00:00:00Z", "2024-02-01T00:00:00Z"),
+        ],
+      ])("accepts %s?%s", async (path, search) => {
+        const token = await loginForToken(app);
+
+        const res = await get(app, `${path}?${search}`, token);
+
+        expect(res.status).toBe(200);
+      });
+    });
+
+    describe("GET /api/ping/hosts", () => {
+      it("reports the configured intervals alongside the hosts", async () => {
+        const token = await loginForToken(app);
+
+        const res = await get(app, "/api/ping/hosts", token);
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({
+          hosts: ["8.8.8.8"],
+          pingIntervalSeconds: 30,
+          speedtestIntervalSeconds: 3600,
+        });
       });
     });
   });
