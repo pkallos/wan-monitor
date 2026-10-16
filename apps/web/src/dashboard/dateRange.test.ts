@@ -2,6 +2,7 @@ import { Option } from "effect";
 import { describe, expect, test } from "vitest";
 import {
   Custom,
+  formatCustomRangeLabel,
   formatDateRangeLabel,
   getDateRangeWindow,
   getPresetRange,
@@ -10,7 +11,9 @@ import {
   PRESET_LABELS,
   PRESET_ORDER,
   Preset,
+  rangeFromBrush,
   sameDateRange,
+  speedtestBucketOf,
 } from "@/dashboard/dateRange";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -253,6 +256,68 @@ describe("formatDateRangeLabel", () => {
   });
 });
 
+describe("formatCustomRangeLabel", () => {
+  const local = (month: number, day: number, hour: number, minute: number) =>
+    new Date(2026, month - 1, day, hour, minute).toISOString();
+
+  test("labels a range shorter than a day with local start and end times", () => {
+    expect(
+      formatCustomRangeLabel(
+        Custom({
+          startTime: local(10, 16, 9, 12),
+          endTime: local(10, 16, 12, 40),
+        }),
+        false
+      )
+    ).toBe("Oct 16, 09:12–12:40");
+  });
+
+  test("follows the 12-hour clock when the viewer's locale does", () => {
+    expect(
+      formatCustomRangeLabel(
+        Custom({
+          startTime: local(10, 16, 9, 12),
+          endTime: local(10, 16, 12, 40),
+        }),
+        true
+      )
+    ).toBe("Oct 16, 9:12 AM–12:40 PM");
+  });
+
+  test("labels a brushed range of a day or more with its local start and end times, not whole UTC dates", () => {
+    expect(
+      formatCustomRangeLabel(
+        Custom({
+          startTime: local(10, 10, 9, 12),
+          endTime: local(10, 16, 12, 40),
+        }),
+        false
+      )
+    ).toBe("Oct 10, 09:12–Oct 16, 12:40");
+  });
+
+  test("reads whole local days as dates, as the date picker makes them", () => {
+    const custom = Custom({
+      startTime: new Date(2026, 9, 1).toISOString(),
+      endTime: new Date(new Date(2026, 9, 17).getTime() - 1).toISOString(),
+    });
+
+    expect(formatCustomRangeLabel(custom)).toBe(formatDateRangeLabel(custom));
+  });
+
+  test("repeats the date on the end when the range crosses local midnight", () => {
+    expect(
+      formatCustomRangeLabel(
+        Custom({
+          startTime: local(10, 16, 23, 30),
+          endTime: local(10, 17, 0, 40),
+        }),
+        false
+      )
+    ).toBe("Oct 16, 23:30–Oct 17, 00:40");
+  });
+});
+
 describe("granularityForRange", () => {
   const NOW_MS = Date.parse("2026-07-26T12:00:00.000Z");
   const windowOfSpan = (spanMs: number) => ({
@@ -395,5 +460,81 @@ describe("sameDateRange", () => {
   test("never mistakes a preset for a custom range or the reverse", () => {
     expect(sameDateRange(custom, Preset({ preset: "last7d" }))).toBe(false);
     expect(sameDateRange(Preset({ preset: "last7d" }), custom)).toBe(false);
+  });
+});
+
+describe("rangeFromBrush", () => {
+  const MINUTE_MS = 60_000;
+  const START = Date.parse("2026-07-01T10:00:00.000Z");
+
+  test("turns a dragged span into a custom range between the two instants", () => {
+    expect(rangeFromBrush(START, START + 90 * MINUTE_MS)).toEqual(
+      Option.some(
+        Custom({
+          startTime: "2026-07-01T10:00:00.000Z",
+          endTime: "2026-07-01T11:30:00.000Z",
+        })
+      )
+    );
+  });
+
+  test("takes a drag from right to left the same as one from left to right", () => {
+    expect(rangeFromBrush(START + 90 * MINUTE_MS, START)).toEqual(
+      rangeFromBrush(START, START + 90 * MINUTE_MS)
+    );
+  });
+
+  test("rounds each end to a whole second, so the range reads and reloads cleanly", () => {
+    expect(rangeFromBrush(START + 400, START + 90 * MINUTE_MS + 600)).toEqual(
+      Option.some(
+        Custom({
+          startTime: "2026-07-01T10:00:00.000Z",
+          endTime: "2026-07-01T11:30:01.000Z",
+        })
+      )
+    );
+  });
+
+  test("ignores a drag shorter than five minutes, too few buckets to chart", () => {
+    expect(rangeFromBrush(START, START + 299_000)).toEqual(Option.none());
+    expect(rangeFromBrush(START, START)).toEqual(Option.none());
+  });
+
+  test("keeps a drag of exactly five minutes", () => {
+    expect(Option.isSome(rangeFromBrush(START, START + 5 * MINUTE_MS))).toBe(
+      true
+    );
+  });
+
+  test("ignores a span that is not a real pair of instants", () => {
+    expect(rangeFromBrush(Number.NaN, START)).toEqual(Option.none());
+    expect(rangeFromBrush(START, Number.POSITIVE_INFINITY)).toEqual(
+      Option.none()
+    );
+  });
+});
+
+describe("speedtestBucketOf", () => {
+  const START_MS = Date.parse("2026-01-01T00:00:00.000Z");
+  const windowOfSpan = (spanMs: number) => ({
+    startTimeMs: START_MS,
+    endTimeMs: START_MS + spanMs,
+  });
+
+  test("a window under 7 days was fetched as raw tests, so has no bucket", () => {
+    expect(speedtestBucketOf(windowOfSpan(7 * DAY_MS - 1))).toEqual(
+      Option.none()
+    );
+  });
+
+  test.each([
+    [7 * DAY_MS, "1h"],
+    [30 * DAY_MS, "1h"],
+    [30 * DAY_MS + 1, "6h"],
+    [365 * DAY_MS, "1d"],
+  ] as const)("a %i ms window was fetched in %s buckets", (spanMs, bucket) => {
+    expect(speedtestBucketOf(windowOfSpan(spanMs))).toEqual(
+      Option.some(bucket)
+    );
   });
 });

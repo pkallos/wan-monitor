@@ -59,6 +59,7 @@ describe("readSettings", () => {
       theme: "dark",
       dateRange: Preset({ preset: "last7d" }),
       isPaused: true,
+      latencyView: "all",
     };
 
     const result = await Effect.gen(function* () {
@@ -69,11 +70,71 @@ describe("readSettings", () => {
     expect(result).toEqual(settings);
   });
 
+  test("round-trips the per-host latency view", async () => {
+    const settings: Settings = {
+      theme: "light",
+      dateRange: Preset({ preset: "last24h" }),
+      isPaused: false,
+      latencyView: "perHost",
+    };
+
+    const result = await Effect.gen(function* () {
+      yield* writeSettings(settings);
+      return yield* readSettings;
+    }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
+
+    expect(result.latencyView).toBe("perHost");
+  });
+
+  test("a blob from before the latency view existed reads as all hosts", async () => {
+    const result = await Effect.gen(function* () {
+      const store = yield* KeyValueStore.KeyValueStore;
+      yield* store.set(
+        SETTINGS_STORAGE_KEY,
+        JSON.stringify({
+          version: SETTINGS_VERSION,
+          theme: "dark",
+          dateRange: Preset({ preset: "last7d" }),
+          isPaused: true,
+        })
+      );
+      return yield* readSettings;
+    }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
+
+    expect(result.latencyView).toBe("all");
+    expect(result.theme).toBe("dark");
+  });
+
+  test("an unrecognised latency view reads as all hosts without disturbing the rest", async () => {
+    const result = await Effect.gen(function* () {
+      const store = yield* KeyValueStore.KeyValueStore;
+      yield* store.set(
+        SETTINGS_STORAGE_KEY,
+        JSON.stringify({
+          version: SETTINGS_VERSION,
+          theme: "dark",
+          dateRange: Preset({ preset: "last7d" }),
+          isPaused: true,
+          latencyView: "sideways",
+        })
+      );
+      return yield* readSettings;
+    }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
+
+    expect(result).toEqual({
+      theme: "dark",
+      dateRange: Preset({ preset: "last7d" }),
+      isPaused: true,
+      latencyView: "all",
+    });
+  });
+
   test("round-trips the system theme preference", async () => {
     const settings: Settings = {
       theme: "system",
       dateRange: Preset({ preset: "last24h" }),
       isPaused: false,
+      latencyView: "all",
     };
 
     const result = await Effect.gen(function* () {
@@ -126,6 +187,7 @@ describe("readSettings", () => {
         endTime: "2026-01-08T00:00:00.000Z",
       }),
       isPaused: false,
+      latencyView: "all",
     };
 
     const result = await Effect.gen(function* () {
@@ -181,6 +243,7 @@ describe("readSettings", () => {
       theme: defaultSettings().theme,
       dateRange: Preset({ preset: "last7d" }),
       isPaused: true,
+      latencyView: "all",
     });
   });
 
@@ -198,6 +261,7 @@ describe("readSettings", () => {
       theme: "dark",
       dateRange: defaultSettings().dateRange,
       isPaused: false,
+      latencyView: "all",
     });
   });
 
@@ -221,6 +285,7 @@ describe("readSettings", () => {
       theme: "dark",
       dateRange: Preset({ preset: "last7d" }),
       isPaused: false,
+      latencyView: "all",
     });
   });
 
@@ -260,6 +325,7 @@ describe("readSettings", () => {
       theme: "dark",
       dateRange: Preset({ preset: "last7d" }),
       isPaused: true,
+      latencyView: "all",
     });
   });
 });

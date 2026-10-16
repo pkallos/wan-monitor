@@ -136,6 +136,40 @@ describe("buildQueryMetrics", () => {
     });
   });
 
+  describe("how much each aggregated bucket computes", () => {
+    const build = (params: QueryMetricsParams) =>
+      Effect.runPromise(buildQueryMetrics({ granularity: "1h", ...params }));
+
+    it("should take the median and the 95th percentile over per-cycle means across hosts", async () => {
+      const { query } = await build({ source: "ping" });
+
+      expect(query).toContain("approx_percentile(latency, 0.5");
+      expect(query).toContain("approx_percentile(latency, 0.95");
+      expect(query).toContain("SAMPLE BY 1s");
+    });
+
+    it("should skip the 95th percentile when only the median is asked for", async () => {
+      const { query } = await build({ percentiles: "p50" });
+
+      expect(query).toContain("approx_percentile(latency, 0.5");
+      expect(query).not.toContain("0.95");
+      expect(query).not.toContain("latency_p95");
+    });
+
+    it("should skip the per-cycle collapse for a single host, which has one row per cycle", async () => {
+      const { query } = await build({ host: "8.8.8.8", percentiles: "p50" });
+
+      expect(query).not.toContain("SAMPLE BY 1s");
+      expect(query).toContain("AND host = $3");
+    });
+
+    it("should keep the per-cycle collapse for all hosts even when only the median is asked for", async () => {
+      const { query } = await build({ percentiles: "p50" });
+
+      expect(query).toContain("SAMPLE BY 1s");
+    });
+  });
+
   // Ping and speedtest rows share the table, and `source` is projected
   // un-aggregated beside SAMPLE BY, so QuestDB groups by it and returns one
   // row per source per bucket unless a single source is pinned.

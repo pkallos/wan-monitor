@@ -442,6 +442,54 @@ describe("Summary Handlers", () => {
     );
 
     it.effect(
+      "summarizes the speed tests of the window just before the range as previousSpeed",
+      () => {
+        const speedtest = (download: number, upload: number): MetricRow => ({
+          timestamp: "2024-01-01T12:00:00Z",
+          source: "speedtest",
+          download_speed: download,
+          upload_speed: upload,
+        });
+        const rangeStartMs = Date.parse(summaryQuery.startTime);
+        const db: Partial<QuestDBService> = {
+          querySpeedtests: ({ startTime }) =>
+            Effect.succeed(
+              (startTime?.getTime() ?? 0) < rangeStartMs
+                ? [speedtest(0, 0), speedtest(400, 40), speedtest(600, 80)]
+                : [speedtest(100, 10)]
+            ),
+        };
+
+        return Effect.gen(function* () {
+          const { speed, previousSpeed } = yield* getSummaryHandler({
+            query: summaryQuery,
+          });
+
+          expect(speed).toMatchObject({ downloadMedian: 100, count: 1 });
+          expect(previousSpeed).toMatchObject({
+            downloadMedian: 500,
+            uploadMedian: 60,
+            count: 2,
+          });
+        }).pipe(Effect.provide(layers(db)));
+      }
+    );
+
+    it.effect("reports a previous window with no speed tests as nulls", () =>
+      Effect.gen(function* () {
+        const { previousSpeed } = yield* getSummaryHandler({
+          query: summaryQuery,
+        });
+
+        expect(previousSpeed).toMatchObject({
+          downloadMedian: null,
+          uploadMedian: null,
+          count: 0,
+        });
+      }).pipe(Effect.provide(layers({})))
+    );
+
+    it.effect(
       "maps an unreachable database to the shared 503 error body",
       () => {
         const db: Partial<QuestDBService> = {

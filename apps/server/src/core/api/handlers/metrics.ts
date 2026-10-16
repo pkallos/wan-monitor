@@ -21,6 +21,7 @@ export const getMetricsHandler = ({
       limit: query.limit,
       granularity: query.granularity,
       source: query.source,
+      percentiles: query.percentiles,
     });
 
     const data = rawData.map((m) => ({
@@ -28,6 +29,8 @@ export const getMetricsHandler = ({
       source: m.source,
       host: m.host ?? undefined,
       latency: m.latency ?? undefined,
+      latency_p50: m.latency_p50 ?? undefined,
+      latency_p95: m.latency_p95 ?? undefined,
       jitter: m.jitter ?? undefined,
       packet_loss: m.packet_loss ?? undefined,
       connectivity_status: m.connectivity_status ?? undefined,

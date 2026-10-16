@@ -1,6 +1,7 @@
 import { Effect, Option, Schema as S } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { DateRangeSelection, Preset } from "@/dashboard/dateRange";
+import { DEFAULT_LATENCY_VIEW, LatencyView } from "@/dashboard/latencyView";
 import { ThemePreference } from "@/dashboard/theme";
 
 // Every localStorage key this app owns is declared here. `index.html`'s
@@ -26,6 +27,7 @@ export const Settings = S.Struct({
   theme: ThemePreference,
   dateRange: DateRangeSelection,
   isPaused: S.Boolean,
+  latencyView: LatencyView,
 });
 export type Settings = typeof Settings.Type;
 
@@ -33,11 +35,12 @@ export const defaultSettings = (): Settings => ({
   theme: SYSTEM_THEME,
   dateRange: Preset({ preset: "last30d" }),
   isPaused: false,
+  latencyView: DEFAULT_LATENCY_VIEW,
 });
 
 // Each field below chains `catchDecoding` (an invalid value degrades to the
 // fallback) with `withDecodingDefaultTypeKey` (a missing key does too), so
-// one bad field can't wipe the other three. Written per-field rather than
+// one bad field can't wipe the others. Written per-field rather than
 // through a shared generic helper: a helper generic over the schema type
 // can't convince the type checker that composing the two combinators on an
 // abstract `T` still returns a `T`, even though it does for every concrete
@@ -60,6 +63,10 @@ const StoredSettings = S.Struct({
   isPaused: S.Boolean.pipe(
     S.catchDecoding(() => Effect.succeed(Option.some(false))),
     S.withDecodingDefaultTypeKey(Effect.succeed(false))
+  ),
+  latencyView: LatencyView.pipe(
+    S.catchDecoding(() => Effect.succeed(Option.some(DEFAULT_LATENCY_VIEW))),
+    S.withDecodingDefaultTypeKey(Effect.succeed(DEFAULT_LATENCY_VIEW))
   ),
 });
 

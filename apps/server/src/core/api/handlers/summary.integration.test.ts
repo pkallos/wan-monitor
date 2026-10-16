@@ -203,6 +203,35 @@ describe("Summary Integration Tests", () => {
   );
 
   it.skipIf(skipTests)(
+    "summarizes the speed tests of the window just before the range",
+    async () => {
+      const program = Effect.gen(function* () {
+        const db = yield* setupIntegrationTest();
+        yield* seedDatabase(db, [...scenario(), ...speedtests()]);
+
+        // The seeded hour, queried as the "previous" of the hour after it.
+        const summary = yield* getSummaryHandler({
+          query: {
+            startTime: new Date(T0 + HOUR).toISOString(),
+            endTime: new Date(T0 + 2 * HOUR).toISOString(),
+          },
+        });
+
+        expect(summary.speed.count).toBe(0);
+        expect(summary.previousSpeed).toMatchObject({
+          downloadMedian: 200,
+          uploadMedian: 40,
+          count: 3,
+        });
+
+        yield* teardownIntegrationTest(db);
+      });
+
+      await Effect.runPromise(Effect.provide(program, testLayer));
+    }
+  );
+
+  it.skipIf(skipTests)(
     "compares the range against the window just before it",
     async () => {
       const program = Effect.gen(function* () {

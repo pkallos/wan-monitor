@@ -68,6 +68,11 @@ export const summaryResponse = (
     uploadMedian: 917,
     count: 24,
   },
+  previousSpeed: {
+    downloadMedian: 900,
+    uploadMedian: 920,
+    count: 20,
+  },
   meta: {
     startTime: "2026-07-21T00:00:00.000Z",
     endTime: "2026-07-28T00:00:00.000Z",

@@ -29,6 +29,12 @@ const emptyRange = {
   coveragePercentage: 0,
 };
 
+const emptySpeed = {
+  downloadMedian: null,
+  uploadMedian: null,
+  count: 0,
+};
+
 const emptyWindow = { uptimePercentage: null };
 
 export type EmptyApiOptions = Readonly<{
@@ -77,11 +83,8 @@ export const stubEmptyApi = async (
           last30d: emptyWindow,
         },
         hosts: [],
-        speed: {
-          downloadMedian: null,
-          uploadMedian: null,
-          count: 0,
-        },
+        speed: emptySpeed,
+        previousSpeed: emptySpeed,
         meta: {
           startTime: emptyMeta.startTime,
           endTime: emptyMeta.endTime,

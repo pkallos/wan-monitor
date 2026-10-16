@@ -59,7 +59,11 @@ import { WRAP_CLASS } from "@/dashboard/view/layout";
 import { isAwaitingData } from "@/dashboard/view/loading";
 import { ribbonCard } from "@/dashboard/view/ribbon";
 import { statRail } from "@/dashboard/view/statRail";
-import { FIELD_ICON_BUTTON_CLASS } from "@/ui/controls";
+import {
+  FIELD_ICON_BUTTON_CLASS,
+  FIELD_SEGMENTED_GROUP_CLASS,
+  segmentStateClass,
+} from "@/ui/controls";
 import { deltaRow } from "@/ui/deltaRow";
 import { icon } from "@/ui/icon";
 import { skeleton } from "@/ui/skeleton";
@@ -114,9 +118,7 @@ const quickRange = (h: HtmlBuilder<Message>, model: Model): Html =>
     [
       h.Role("group"),
       h.AriaLabel("Quick range"),
-      h.Class(
-        "inline-flex items-center gap-0.5 rounded-xl border border-field-rule bg-card p-[3px]"
-      ),
+      h.Class(FIELD_SEGMENTED_GROUP_CLASS),
     ],
     Array_.map(QUICK_RANGES, ([preset, label]) => {
       const isActive = M.value(model.dateRange).pipe(
@@ -128,13 +130,7 @@ const quickRange = (h: HtmlBuilder<Message>, model: Model): Html =>
           h.Type("button"),
           h.OnClick(SelectedQuickRange({ preset })),
           h.AriaPressed(String(isActive)),
-          h.Class(
-            `${QUICK_RANGE_BUTTON_CLASS} ${
-              isActive
-                ? "bg-accent text-on-accent"
-                : "text-ink-2 hover:bg-field hover:text-ink"
-            }`
-          ),
+          h.Class(`${QUICK_RANGE_BUTTON_CLASS} ${segmentStateClass(isActive)}`),
         ],
         [label]
       );

@@ -1,4 +1,4 @@
-import { Menu } from "@foldkit/ui";
+import { Menu, RadioGroup } from "@foldkit/ui";
 import {
   ConnectivityStatusPointSchema,
   GetOutagesResponse,
@@ -89,6 +89,25 @@ export const FailedFetchSummary = m("FailedFetchSummary", {
   request: RangeRequest,
 });
 
+export const SucceededFetchHostLatency = m("SucceededFetchHostLatency", {
+  series: S.Array(S.Struct({ host: S.String, metrics: S.Array(MetricSchema) })),
+  startTimeMs: S.Number,
+  endTimeMs: S.Number,
+  granularity: GranularitySchema,
+  request: RangeRequest,
+});
+export const FailedFetchHostLatency = m("FailedFetchHostLatency", {
+  error: S.String,
+  request: RangeRequest,
+});
+
+/** A drag across the latency chart, in the milliseconds of its time axis. */
+export const BrushedChartRange = m("BrushedChartRange", {
+  startMs: S.Number,
+  endMs: S.Number,
+});
+export const ClickedResetRange = m("ClickedResetRange");
+
 export const SucceededFetchOutages = m("SucceededFetchOutages", {
   outages: GetOutagesResponse,
   /** The range was wider than the outage log accepts, so only its newest days were asked for. */
@@ -144,6 +163,9 @@ export const FailedSaveSettings = m("FailedSaveSettings", { error: S.String });
 
 export const GotMenuMessage = m("GotMenuMessage", {
   message: Menu.Message,
+});
+export const GotLatencyViewMessage = m("GotLatencyViewMessage", {
+  message: RadioGroup.Message,
 });
 export const GotToastMessage = m("GotToastMessage", {
   message: Toast.Message,
@@ -219,6 +241,10 @@ export const Message = S.Union([
   FailedFetchLiveConnectivity,
   SucceededFetchSummary,
   FailedFetchSummary,
+  SucceededFetchHostLatency,
+  FailedFetchHostLatency,
+  BrushedChartRange,
+  ClickedResetRange,
   SucceededFetchOutages,
   FailedFetchOutages,
   SucceededFetchPingHosts,
@@ -238,6 +264,7 @@ export const Message = S.Union([
   CompletedSaveSettings,
   FailedSaveSettings,
   GotMenuMessage,
+  GotLatencyViewMessage,
   GotToastMessage,
   EnteredDashboard,
   TickedRefresh,

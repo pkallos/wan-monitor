@@ -1,4 +1,4 @@
-import { Menu } from "@foldkit/ui";
+import { Menu, RadioGroup } from "@foldkit/ui";
 import {
   ConnectivityStatusPointSchema,
   GetOutagesResponse,
@@ -16,6 +16,7 @@ import {
   sameDateRange,
 } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
+import { LatencyView } from "@/dashboard/latencyView";
 import { RangeRequest } from "@/dashboard/message";
 import { ThemePreference } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
@@ -35,11 +36,13 @@ export const SpeedtestHistoryAsyncData = AsyncData.Schema(
 // clock, so resolving one a second time at paint time lands on a different
 // window, and for ranges that grow with wall-clock time it can even cross a
 // `granularityForRange` threshold. Either way the same rows get re-bucketed
-// onto a grid that no longer matches the server's.
+// onto a grid that no longer matches the server's. `request` is the range the
+// window answers, which differs from the selected one until a refresh lands.
 const TimelineWindow = S.Struct({
   startTimeMs: S.Number,
   endTimeMs: S.Number,
   granularity: GranularitySchema,
+  request: RangeRequest,
 });
 
 // The speed chart plots raw points rather than bucketing, so its window needs
@@ -47,6 +50,7 @@ const TimelineWindow = S.Struct({
 const SpeedtestTimelineWindow = S.Struct({
   startTimeMs: S.Number,
   endTimeMs: S.Number,
+  request: RangeRequest,
 });
 
 const ConnectivityStatusData = S.Struct({
@@ -67,6 +71,13 @@ export const ConnectivityStatusAsyncData = AsyncData.Schema(
   ConnectivityStatusData,
   S.String
 );
+
+/** One host's latency over the window the per-host chart was fetched for. */
+const HostLatencyData = S.Struct({
+  series: S.Array(S.Struct({ host: S.String, metrics: S.Array(MetricSchema) })),
+  window: TimelineWindow,
+});
+export const HostLatencyAsyncData = AsyncData.Schema(HostLatencyData, S.String);
 
 const LiveConnectivityData = S.Struct({
   status: LiveConnectivityStatusSchema,
@@ -127,6 +138,12 @@ export const Model = S.Struct({
   maybePacketLossChartHostId: S.Option(S.String),
   maybeJitterChartHostId: S.Option(S.String),
   maybeSpeedChartHostId: S.Option(S.String),
+  latencyView: LatencyView,
+  latencyViewRadioGroup: RadioGroup.Model,
+  /** Per-host latency, fetched only while the latency chart is in that view. */
+  hostLatency: HostLatencyAsyncData.schema,
+  /** The range the page showed before a brush on the latency chart narrowed it. */
+  maybeRangeBeforeBrush: S.Option(DateRangeSelection),
   /** The ribbon cell under the pointer: a tooltip that goes away when it leaves. */
   hoveredSegmentIndex: S.Option(S.Number),
   /** The bucket pinned by a tap, a key or an incident chip. Its start, not its index, so a sliding window leaves it in place. */
@@ -190,6 +207,10 @@ export const initModel = (settings: Settings): Model => ({
   maybePacketLossChartHostId: Option.none(),
   maybeJitterChartHostId: Option.none(),
   maybeSpeedChartHostId: Option.none(),
+  latencyView: settings.latencyView,
+  latencyViewRadioGroup: RadioGroup.init({ id: "latency-view" }),
+  hostLatency: HostLatencyAsyncData.Idle(),
+  maybeRangeBeforeBrush: Option.none(),
   hoveredSegmentIndex: Option.none(),
   maybeSelectedBucketStartMs: Option.none(),
   maybeRibbonWidthPx: Option.none(),
@@ -201,9 +222,15 @@ export const initModel = (settings: Settings): Model => ({
   toast: Toast.init({ id: "dashboard-toast" }),
 });
 
-// The inverse of `initModel` and the single place deciding what persists.
+// The inverse of `initModel` and the single place deciding what persists. A
+// brushed span is a passing narrowing, so the range it narrowed is what is
+// saved.
 export const settingsFromModel = (model: Model): Settings => ({
   theme: model.theme,
-  dateRange: model.dateRange,
+  dateRange: Option.getOrElse(
+    model.maybeRangeBeforeBrush,
+    () => model.dateRange
+  ),
   isPaused: model.isPaused,
+  latencyView: model.latencyView,
 });

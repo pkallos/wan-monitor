@@ -11,6 +11,12 @@ const LIGHT = {
   down: "#b3261e",
   "chart-band": "rgba(37, 99, 166, 0.18)",
   "font-sans": '"Figtree Variable", sans-serif',
+  "series-1": "#0072b2",
+  "series-2": "#d55e00",
+  "series-3": "#7e2537",
+  "series-4": "#00855f",
+  "series-5": "#b87800",
+  "series-6": "#7b5ea7",
 };
 
 const DARK = {
@@ -23,6 +29,12 @@ const DARK = {
   down: "#f2685f",
   "chart-band": "rgba(125, 179, 240, 0.22)",
   "font-sans": '"Figtree Variable", sans-serif',
+  "series-1": "#56b4e9",
+  "series-2": "#f0e442",
+  "series-3": "#ff6f61",
+  "series-4": "#3dd6a0",
+  "series-5": "#cc79a7",
+  "series-6": "#9aa5ff",
 };
 
 const declarations = (tokens: Record<string, string>): string =>
@@ -54,6 +66,14 @@ describe("readChartPalette", () => {
       degraded: LIGHT.deg,
       down: LIGHT.down,
       band: LIGHT["chart-band"],
+      series: [
+        LIGHT["series-1"],
+        LIGHT["series-2"],
+        LIGHT["series-3"],
+        LIGHT["series-4"],
+        LIGHT["series-5"],
+        LIGHT["series-6"],
+      ],
       fontFamily: LIGHT["font-sans"],
     });
   });
@@ -70,6 +90,14 @@ describe("readChartPalette", () => {
       degraded: DARK.deg,
       down: DARK.down,
       band: DARK["chart-band"],
+      series: [
+        DARK["series-1"],
+        DARK["series-2"],
+        DARK["series-3"],
+        DARK["series-4"],
+        DARK["series-5"],
+        DARK["series-6"],
+      ],
       fontFamily: DARK["font-sans"],
     });
   });

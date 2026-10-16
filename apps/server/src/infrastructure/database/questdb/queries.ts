@@ -17,6 +17,12 @@ export interface SqlQuerySpec {
   readonly params: readonly (string | number)[];
 }
 
+/**
+ * Significant digits `approx_percentile` keeps; at 3 a value is quantized to
+ * within 0.1% (QuestDB docs, approx_percentile).
+ */
+const PERCENTILE_PRECISION = 3;
+
 export const buildQueryMetrics = (
   params: QueryMetricsParams,
   table = "network_metrics"
@@ -62,6 +68,44 @@ export const buildQueryMetrics = (
       );
     }
 
+    const windowFilter = `
+            WHERE timestamp >= $1
+              AND timestamp <= $2
+              ${hostFilter}
+              ${sourceFilter}`;
+    // For one host every reading counts, as in the host summary. Across hosts,
+    // the inner SAMPLE BY 1s collapses each ping cycle to one row so the
+    // bucket's figures cover the same per-cycle population as the summary.
+    const aggregatedFrom =
+      params.host === undefined
+        ? `(
+            SELECT
+              timestamp,
+              source,
+              first(host) as host,
+              avg(latency) as latency,
+              avg(jitter) as jitter,
+              avg(packet_loss) as packet_loss,
+              last(connectivity_status) as connectivity_status,
+              avg(download_bandwidth) as download_bandwidth,
+              avg(upload_bandwidth) as upload_bandwidth,
+              last(server_location) as server_location,
+              last(isp) as isp,
+              last(external_ip) as external_ip,
+              last(internal_ip) as internal_ip
+            FROM ${table}
+            ${windowFilter}
+            SAMPLE BY 1s
+          )`
+        : `${table}
+            ${windowFilter}`;
+    // Each percentile is a pass of its own over every cycle in the window, so
+    // the 95th is only computed for callers that draw it.
+    const p95Column =
+      params.percentiles === "p50"
+        ? ""
+        : `approx_percentile(latency, 0.95, ${PERCENTILE_PRECISION}) as latency_p95,`;
+
     const query = granularity
       ? `
           SELECT
@@ -69,6 +113,8 @@ export const buildQueryMetrics = (
             source,
             first(host) as host,
             avg(latency) as latency,
+            approx_percentile(latency, 0.5, ${PERCENTILE_PRECISION}) as latency_p50,
+            ${p95Column}
             avg(jitter) as jitter,
             avg(packet_loss) as packet_loss,
             last(connectivity_status) as connectivity_status,
@@ -78,11 +124,7 @@ export const buildQueryMetrics = (
             last(isp) as isp,
             last(external_ip) as external_ip,
             last(internal_ip) as internal_ip
-          FROM ${table}
-          WHERE timestamp >= $1
-            AND timestamp <= $2
-            ${hostFilter}
-            ${sourceFilter}
+          FROM ${aggregatedFrom}
           SAMPLE BY ${granularity} ALIGN TO CALENDAR
           ORDER BY timestamp DESC
           ${limitClause}
@@ -309,12 +351,6 @@ export const buildQueryConnectivityStatus = (
 
     return { query, params: [startTime, endTime] } satisfies SqlQuerySpec;
   });
-
-/**
- * Significant digits `approx_percentile` keeps; at 3 a value is quantized to
- * within 0.1% (QuestDB docs, approx_percentile).
- */
-const PERCENTILE_PRECISION = 3;
 
 /** Precision for the cycle period, where a sub-millisecond error matters. */
 const MAX_PERCENTILE_PRECISION = 5;

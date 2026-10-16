@@ -1,11 +1,18 @@
+import type { Granularity } from "@shared/api/routes/metrics";
 import type { EChartsType } from "echarts/core";
-import { Effect, Fiber, Option, Stream } from "effect";
-import { describe, expect, test, vi } from "vitest";
-import { getChart, setChart } from "@/dashboard/charts/chartHost";
+import * as echarts from "echarts/core";
+import { Effect, Fiber, Option, Schema as S, Stream } from "effect";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { chartEvents, getChart, setChart } from "@/dashboard/charts/chartHost";
 import {
   MountJitterChart,
   MountLatencyChart,
+  MountPacketLossChart,
+  MountSpeedChart,
+  resizeChart,
+  SyncJitterChart,
   SyncLatencyChart,
+  SyncPacketLossChart,
   SyncSpeedChart,
 } from "@/dashboard/charts/command";
 import { registerEcharts } from "@/dashboard/charts/echartsSetup";
@@ -20,12 +27,49 @@ const ONE_DAY_WINDOW = {
   granularity: "5m" as const,
 };
 
-// A stand-in for a live ECharts instance. The real one can't paint under
-// happy-dom (no canvas 2d context), and `syncChart` only ever calls
-// `getWidth` (to size the axis label density) and `setOption` on what it
-// finds in chartHost.
-const stubChart = (setOption: (option: unknown, notMerge: boolean) => void) =>
-  ({ setOption, getWidth: () => 800 }) as unknown as EChartsType;
+// A real ECharts instance on a sized host, whose `setOption`, `getOption` and
+// `dispatchAction` (and optionally `resize`) are stood in for: the real ones
+// can't paint under happy-dom (no canvas 2d context). `getWidth` stays real,
+// so a sync lays out against `widthPx`.
+type Overrides = Partial<
+  Pick<EChartsType, "resize" | "getOption" | "dispatchAction">
+> & { widthPx?: number };
+
+const stubChart = (
+  setOption: (option: unknown, notMerge?: unknown) => void,
+  { resize, getOption, dispatchAction, widthPx = 800 }: Overrides = {}
+): EChartsType => {
+  const chart = echarts.init(mountedHost(), undefined, {
+    renderer: "canvas",
+    width: widthPx,
+    height: 200,
+  });
+  vi.spyOn(chart, "setOption").mockImplementation(setOption);
+  vi.spyOn(chart, "getOption").mockImplementation(getOption ?? (() => ({})));
+  vi.spyOn(chart, "dispatchAction").mockImplementation(
+    dispatchAction ?? (() => {})
+  );
+  if (resize !== undefined)
+    vi.spyOn(chart, "resize").mockImplementation(resize);
+  return chart;
+};
+
+// The option a Sync Command hands to a registered chart, read through a schema
+// so a changed shape fails the test instead of reading `undefined`.
+const paintedOption = async <A, I>(
+  hostId: string,
+  schema: S.Codec<A, I>,
+  run: () => Promise<unknown>,
+  chartOverrides: Overrides = {}
+): Promise<A> => {
+  const options: unknown[] = [];
+  setChart(
+    hostId,
+    stubChart((option) => options.push(option), chartOverrides)
+  );
+  await run();
+  return S.decodeUnknownSync(schema)(options[options.length - 1]);
+};
 
 const syncLatency = (hostId: string) =>
   Effect.runPromise(
@@ -33,6 +77,7 @@ const syncLatency = (hostId: string) =>
       hostId,
       metrics: [],
       ...ONE_DAY_WINDOW,
+      hostSeries: [],
       incidents: [],
     }).effect
   );
@@ -89,21 +134,19 @@ describe("syncChart", () => {
     style.textContent =
       ":root { --accent: #111111; } .dark { --accent: #eeeeee; }";
     document.head.appendChild(style);
-    const lineColors: unknown[] = [];
-    setChart(
-      "themed-latency-chart",
-      stubChart((option) => {
-        const { series } = option as {
-          series: Array<{ lineStyle: { color: unknown } }>;
-        };
-        lineColors.push(series[0]?.lineStyle.color);
-      })
-    );
+    const LineColor = S.Struct({
+      series: S.Array(S.Struct({ lineStyle: S.Struct({ color: S.String }) })),
+    });
+    const lineColor = () =>
+      paintedOption("themed-latency-chart", LineColor, () =>
+        syncLatency("themed-latency-chart")
+      ).then(({ series }) => series[0]?.lineStyle.color);
+    const lineColors: Array<string | undefined> = [];
 
     try {
-      await syncLatency("themed-latency-chart");
+      lineColors.push(await lineColor());
       document.documentElement.classList.add("dark");
-      await syncLatency("themed-latency-chart");
+      lineColors.push(await lineColor());
     } finally {
       document.documentElement.classList.remove("dark");
       style.remove();
@@ -137,6 +180,7 @@ describe("syncChart", () => {
           hostId: "idempotent-latency-chart",
           metrics,
           ...ONE_DAY_WINDOW,
+          hostSeries: [],
           incidents: [],
         }).effect
       );
@@ -172,6 +216,440 @@ describe("syncChart", () => {
       _tag: "FailedSyncLatencyChart",
       reason: "zrender is gone",
     });
+  });
+});
+
+const WithSeries = S.Struct({
+  series: S.Array(
+    S.Struct({
+      name: S.String,
+      markArea: S.optional(S.Struct({ data: S.Array(S.Unknown) })),
+      markLine: S.optional(
+        S.Struct({ data: S.Array(S.Struct({ yAxis: S.optional(S.Number) })) })
+      ),
+    })
+  ),
+  xAxis: S.Struct({ min: S.Number, max: S.Number }),
+});
+
+const TIMELINE_ARGS = {
+  metrics: [
+    {
+      timestamp: "2026-07-26T06:07:00.000Z",
+      source: "ping" as const,
+      jitter: 2,
+      packet_loss: 1,
+    },
+  ],
+  ...ONE_DAY_WINDOW,
+  incidents: [],
+};
+
+describe("the packet loss, jitter and speed charts", () => {
+  test("the jitter chart paints jitter with its acceptable-level reference line", async () => {
+    const option = await paintedOption("sync-jitter", WithSeries, () =>
+      Effect.runPromise(
+        SyncJitterChart({ hostId: "sync-jitter", ...TIMELINE_ARGS }).effect
+      )
+    );
+
+    expect(option.series.map(({ name }) => name)).toEqual(["Jitter"]);
+    expect(option.series[0].markLine?.data[0].yAxis).toBe(10);
+  });
+
+  test("the packet loss chart paints loss", async () => {
+    const option = await paintedOption("sync-loss", WithSeries, () =>
+      Effect.runPromise(
+        SyncPacketLossChart({ hostId: "sync-loss", ...TIMELINE_ARGS }).effect
+      )
+    );
+
+    expect(option.series.map(({ name }) => name)).toEqual(["Packet loss"]);
+  });
+
+  const incident = {
+    ref: "A",
+    startMs: ONE_DAY_WINDOW.startTimeMs + 3_600_000,
+    endMs: ONE_DAY_WINDOW.startTimeMs + 7_200_000,
+    status: "down" as const,
+  };
+
+  test.each([
+    [
+      "latency",
+      (hostId: string) =>
+        Effect.runPromise(
+          SyncLatencyChart({
+            hostId,
+            ...TIMELINE_ARGS,
+            hostSeries: [],
+            incidents: [incident],
+          }).effect
+        ),
+    ],
+    [
+      "packet loss",
+      (hostId: string) =>
+        Effect.runPromise(
+          SyncPacketLossChart({
+            hostId,
+            ...TIMELINE_ARGS,
+            incidents: [incident],
+          }).effect
+        ),
+    ],
+    [
+      "jitter",
+      (hostId: string) =>
+        Effect.runPromise(
+          SyncJitterChart({
+            hostId,
+            ...TIMELINE_ARGS,
+            incidents: [incident],
+          }).effect
+        ),
+    ],
+  ])("the %s chart marks the incidents it is given", async (name, command) => {
+    const hostId = `incidents-${name}`;
+    const option = await paintedOption(hostId, WithSeries, () =>
+      command(hostId)
+    );
+
+    expect(option.series[0].markArea?.data).toHaveLength(1);
+  });
+
+  test("the speed chart paints on the window it is given", async () => {
+    const option = await paintedOption("sync-speed", WithSeries, () =>
+      Effect.runPromise(
+        SyncSpeedChart({
+          hostId: "sync-speed",
+          metrics: [],
+          startTimeMs: ONE_DAY_WINDOW.startTimeMs,
+          endTimeMs: ONE_DAY_WINDOW.endTimeMs,
+        }).effect
+      )
+    );
+
+    expect(option.xAxis.min).toBe(ONE_DAY_WINDOW.startTimeMs);
+    expect(option.xAxis.max).toBe(ONE_DAY_WINDOW.endTimeMs);
+  });
+
+  test.each([
+    [
+      "jitter",
+      (hostId: string) =>
+        Effect.runPromise(SyncJitterChart({ hostId, ...TIMELINE_ARGS }).effect),
+    ],
+    [
+      "packet loss",
+      (hostId: string) =>
+        Effect.runPromise(
+          SyncPacketLossChart({ hostId, ...TIMELINE_ARGS }).effect
+        ),
+    ],
+  ])(
+    "the %s chart reports a missing chart with its own failure",
+    async (_name, run) => {
+      const result = await run("never-mounted-chart");
+
+      expect(result).toEqual({
+        _tag: expect.stringMatching(/^FailedSync/),
+        reason: "Could not find a live chart for hostId never-mounted-chart.",
+      });
+    }
+  );
+
+  test("the speed chart does not take part in the quality charts' shared hover and zoom", async () => {
+    const speedFiber = Effect.runFork(
+      Stream.runDrain(
+        MountSpeedChart({ hostId: "speed-host" }).f(mountedHost(), Stream.empty)
+      )
+    );
+    const { emitZoom, cleanup } = await linkedQualityCharts();
+    await vi.waitFor(() =>
+      expect(Option.isSome(getChart("speed-host"))).toBe(true)
+    );
+    const speedDispatch = vi.fn();
+    Object.assign(Option.getOrThrow(getChart("speed-host")), {
+      dispatchAction: speedDispatch,
+    });
+
+    emitZoom({ batch: [{ dataZoomId: "z", start: 20, end: 50 }] });
+
+    expect(speedDispatch).not.toHaveBeenCalled();
+
+    await cleanup();
+    await Effect.runPromise(Fiber.interrupt(speedFiber));
+  });
+});
+
+describe("the latency chart's sync", () => {
+  const SLOT_COUNT = 24 * 12;
+  const PerHostSeries = S.Struct({
+    series: S.Array(
+      S.Struct({
+        name: S.String,
+        data: S.Array(S.Tuple([S.Number, S.NullOr(S.Number)])),
+        markLine: S.optional(
+          S.Struct({
+            data: S.Array(
+              S.Struct({
+                yAxis: S.optional(S.Number),
+                label: S.optional(S.Struct({ formatter: S.String })),
+                xAxis: S.optional(S.Number),
+              })
+            ),
+          })
+        ),
+      })
+    ),
+  });
+  const reading = (isoTime: string, latency: number) => ({
+    timestamp: isoTime,
+    source: "ping" as const,
+    latency,
+  });
+  const first = reading("2026-07-26T06:07:00.000Z", 12);
+  const second = reading("2026-07-26T18:30:00.000Z", 30);
+
+  const paintLatency = (
+    hostId: string,
+    args: {
+      metrics?: ReadonlyArray<typeof first>;
+      hostSeries?: ReadonlyArray<{
+        host: string;
+        metrics: ReadonlyArray<typeof first>;
+      }>;
+      incidents?: ReadonlyArray<{
+        ref: string;
+        startMs: number;
+        endMs: number;
+        status: "down";
+      }>;
+    },
+    widthPx = 800
+  ) =>
+    paintedOption(
+      hostId,
+      PerHostSeries,
+      () =>
+        Effect.runPromise(
+          SyncLatencyChart({
+            hostId,
+            metrics: [],
+            hostSeries: [],
+            incidents: [],
+            ...ONE_DAY_WINDOW,
+            ...args,
+          }).effect
+        ),
+      { widthPx }
+    );
+
+  test("draws one line per host, each on the window's own slots with gaps where a host has no reading", async () => {
+    const option = await paintLatency("per-host-sync", {
+      hostSeries: [
+        { host: "8.8.8.8", metrics: [first, second] },
+        { host: "1.1.1.1", metrics: [first] },
+      ],
+    });
+
+    const hosts = option.series.filter(
+      ({ name }) => name === "8.8.8.8" || name === "1.1.1.1"
+    );
+    expect(hosts.map(({ name }) => name)).toEqual(["8.8.8.8", "1.1.1.1"]);
+    for (const { data } of hosts) {
+      expect(data).toHaveLength(SLOT_COUNT);
+    }
+    const readings = (name: string) =>
+      hosts
+        .find((host) => host.name === name)
+        ?.data.filter(([, value]) => value !== null);
+    expect(readings("8.8.8.8")).toEqual([
+      [Date.parse("2026-07-26T06:05:00.000Z"), 12],
+      [Date.parse("2026-07-26T18:30:00.000Z"), 30],
+    ]);
+    expect(readings("1.1.1.1")).toEqual([
+      [Date.parse("2026-07-26T06:05:00.000Z"), 12],
+    ]);
+  });
+
+  test("draws the all-hosts line with its average when no host series are given", async () => {
+    const option = await paintLatency("all-hosts-sync", {
+      metrics: [first, second],
+    });
+
+    const [line] = option.series;
+    expect(line?.name).toBe("Latency");
+    expect(
+      line?.markLine?.data.find(({ label }) =>
+        label?.formatter.startsWith("Avg")
+      )
+    ).toEqual(
+      expect.objectContaining({
+        yAxis: 21,
+        label: { formatter: "Avg 21.0 ms" },
+      })
+    );
+  });
+
+  test("lays the incident chips out against the chart's own width", async () => {
+    const incidents = [
+      {
+        ref: "A",
+        startMs: ONE_DAY_WINDOW.startTimeMs + 3_600_000,
+        endMs: ONE_DAY_WINDOW.startTimeMs + 3_660_000,
+        status: "down" as const,
+      },
+      {
+        ref: "B",
+        startMs: ONE_DAY_WINDOW.startTimeMs + 7_200_000,
+        endMs: ONE_DAY_WINDOW.startTimeMs + 7_260_000,
+        status: "down" as const,
+      },
+    ];
+    const chipLabels = async (widthPx: number) => {
+      const option = await paintLatency(
+        `chips-at-${widthPx}`,
+        { incidents },
+        widthPx
+      );
+      return option.series
+        .flatMap(({ markLine }) => markLine?.data ?? [])
+        .filter(({ xAxis }) => xAxis !== undefined)
+        .map(({ label }) => label?.formatter);
+    };
+
+    expect(await chipLabels(800)).toEqual(["A", "B"]);
+    expect(await chipLabels(320)).toEqual(["A–B", "B"]);
+  });
+});
+
+describe("chart motion", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const animationOf = async (prefersReducedMotion: boolean) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches:
+        prefersReducedMotion && query === "(prefers-reduced-motion: reduce)",
+    }));
+    const hostId = `motion-${prefersReducedMotion}`;
+    const paint = (run: () => Promise<unknown>) =>
+      paintedOption(hostId, S.Struct({ animation: S.Boolean }), run).then(
+        ({ animation }) => animation
+      );
+    return {
+      latency: await paint(() => syncLatency(hostId)),
+      speed: await paint(() =>
+        Effect.runPromise(
+          SyncSpeedChart({
+            hostId,
+            metrics: [],
+            startTimeMs: ONE_DAY_WINDOW.startTimeMs,
+            endTimeMs: ONE_DAY_WINDOW.endTimeMs,
+          }).effect
+        )
+      ),
+    };
+  };
+
+  test("charts do not animate for a viewer who prefers reduced motion", async () => {
+    expect(await animationOf(true)).toEqual({ latency: false, speed: false });
+  });
+
+  test("charts animate otherwise", async () => {
+    expect(await animationOf(false)).toEqual({ latency: true, speed: true });
+  });
+});
+
+describe("zoom across repaints", () => {
+  const zoomedChart = (zoom: { start: number; end: number }) => {
+    const setOption = vi.fn();
+    const chart = stubChart(setOption, {
+      getOption: () => ({
+        dataZoom: [{ ...zoom, startValue: 0, endValue: 1 }],
+      }),
+    });
+    return { chart, setOption };
+  };
+
+  const PaintedZoom = S.Struct({
+    dataZoom: S.Array(S.Struct({ start: S.Number, end: S.Number })),
+  });
+  const zoomPainted = (setOption: ReturnType<typeof vi.fn>) => {
+    const [option] =
+      setOption.mock.calls[setOption.mock.calls.length - 1] ?? [];
+    const [zoom] = S.decodeUnknownSync(PaintedZoom)(option).dataZoom;
+    return { start: zoom?.start, end: zoom?.end };
+  };
+
+  const paintLatency = (
+    hostId: string,
+    window: {
+      startTimeMs: number;
+      endTimeMs: number;
+      granularity: Granularity;
+    }
+  ) =>
+    Effect.runPromise(
+      SyncLatencyChart({
+        hostId,
+        metrics: [],
+        ...window,
+        hostSeries: [],
+        incidents: [],
+      }).effect
+    );
+
+  test("the first paint is fully zoomed out", async () => {
+    const { chart, setOption } = zoomedChart({ start: 20, end: 50 });
+    setChart("first-paint-zoom", chart);
+
+    await paintLatency("first-paint-zoom", ONE_DAY_WINDOW);
+
+    expect(zoomPainted(setOption)).toEqual({ start: 0, end: 100 });
+  });
+
+  test("a repaint of the same window keeps the zoom the viewer reached", async () => {
+    const { chart, setOption } = zoomedChart({ start: 20, end: 50 });
+    setChart("same-window-zoom", chart);
+
+    await paintLatency("same-window-zoom", ONE_DAY_WINDOW);
+    await paintLatency("same-window-zoom", ONE_DAY_WINDOW);
+
+    expect(zoomPainted(setOption)).toEqual({ start: 20, end: 50 });
+  });
+
+  test("a refresh that rolled the window forward keeps the same span zoomed", async () => {
+    const { chart, setOption } = zoomedChart({ start: 50, end: 75 });
+    setChart("rolled-window-zoom", chart);
+    const rolled = {
+      ...ONE_DAY_WINDOW,
+      startTimeMs: ONE_DAY_WINDOW.startTimeMs + 3_600_000,
+      endTimeMs: ONE_DAY_WINDOW.endTimeMs + 3_600_000,
+    };
+
+    await paintLatency("rolled-window-zoom", ONE_DAY_WINDOW);
+    await paintLatency("rolled-window-zoom", rolled);
+
+    const { start, end } = zoomPainted(setOption);
+    expect(start).toBeCloseTo((11 / 24) * 100);
+    expect(end).toBeCloseTo((17 / 24) * 100);
+  });
+
+  test("a different window starts fully zoomed out", async () => {
+    const { chart, setOption } = zoomedChart({ start: 20, end: 50 });
+    setChart("new-window-zoom", chart);
+    const week = {
+      ...ONE_DAY_WINDOW,
+      startTimeMs: ONE_DAY_WINDOW.endTimeMs - 7 * 24 * 3_600_000,
+      granularity: "1h" as const,
+    };
+
+    await paintLatency("new-window-zoom", ONE_DAY_WINDOW);
+    await paintLatency("new-window-zoom", week);
+
+    expect(zoomPainted(setOption)).toEqual({ start: 0, end: 100 });
   });
 });
 
@@ -221,7 +699,7 @@ describe("mountEchartsInstance", () => {
     // A fixed setTimeout(0) can't be trusted to outlast the fiber's acquire
     // step under coverage instrumentation's overhead, so poll instead.
     await vi.waitFor(() =>
-      expect(getChart("still-mounted-host")._tag).toBe("Some")
+      expect(Option.isSome(getChart("still-mounted-host"))).toBe(true)
     );
 
     await Effect.runPromise(Fiber.interrupt(fiber));
@@ -233,7 +711,9 @@ describe("mountEchartsInstance", () => {
 // Two mounted quality charts, with the sibling's zrender and coordinate
 // conversion stubbed: zrender can't paint under happy-dom, and the crosshair
 // is observable as the elements handed to `zr.add`.
-const linkedQualityCharts = async () => {
+const linkedQualityCharts = async (
+  siblingKind: "jitter" | "packetLoss" = "jitter"
+) => {
   const hoveredFiber = Effect.runFork(
     Stream.runDrain(
       MountLatencyChart({ hostId: "hovered-host" }).f(
@@ -242,30 +722,30 @@ const linkedQualityCharts = async () => {
       )
     )
   );
-  const siblingFiber = Effect.runFork(
-    Stream.runDrain(
-      MountJitterChart({ hostId: "sibling-host" }).f(
-        mountedHost(),
-        Stream.empty
-      )
-    )
-  );
+  const siblingMount =
+    siblingKind === "jitter"
+      ? Stream.runDrain(
+          MountJitterChart({ hostId: "sibling-host" }).f(
+            mountedHost(),
+            Stream.empty
+          )
+        )
+      : Stream.runDrain(
+          MountPacketLossChart({ hostId: "sibling-host" }).f(
+            mountedHost(),
+            Stream.empty
+          )
+        );
+  const siblingFiber = Effect.runFork(siblingMount);
   // A fixed setTimeout(0) can't be trusted to outlast both fibers' acquire
   // steps under coverage instrumentation's overhead, so poll instead.
   await vi.waitFor(() => {
-    if (
-      getChart("hovered-host")._tag !== "Some" ||
-      getChart("sibling-host")._tag !== "Some"
-    ) {
-      throw new Error("both quality charts should have mounted");
-    }
+    expect(Option.isSome(getChart("hovered-host"))).toBe(true);
+    expect(Option.isSome(getChart("sibling-host"))).toBe(true);
   });
 
-  const maybeHovered = getChart("hovered-host");
-  const maybeSibling = getChart("sibling-host");
-  if (maybeHovered._tag !== "Some" || maybeSibling._tag !== "Some") {
-    throw new Error("both quality charts should have mounted");
-  }
+  const hovered = Option.getOrThrow(getChart("hovered-host"));
+  const sibling = Option.getOrThrow(getChart("sibling-host"));
 
   const siblingZr = {
     add: vi.fn(),
@@ -273,27 +753,100 @@ const linkedQualityCharts = async () => {
     on: vi.fn(),
     off: vi.fn(),
   };
-  Object.assign(maybeSibling.value, {
+  const siblingDispatch = vi.fn();
+  const hoveredDispatch = vi.spyOn(hovered, "dispatchAction");
+  Object.assign(sibling, {
     getZr: () => siblingZr,
     convertToPixel: () => 42,
+    dispatchAction: siblingDispatch,
   });
+
+  // echarts lowercases event names when registering listeners, and
+  // dispatches its own events under the lowercased name.
+  const trigger = (event: string, payload: unknown) =>
+    (
+      hovered as EChartsType & {
+        trigger: (event: string, payload: unknown) => void;
+      }
+    ).trigger(event, payload);
 
   return {
     siblingZr,
-    // echarts lowercases event names when registering listeners, and
-    // dispatches its own axis pointer updates under the lowercased name.
-    emit: (payload: unknown) =>
-      (
-        maybeHovered.value as EChartsType & {
-          trigger: (event: string, payload: unknown) => void;
-        }
-      ).trigger("updateaxispointer", payload),
+    siblingDispatch,
+    hoveredDispatch,
+    emit: (payload: unknown) => trigger("updateaxispointer", payload),
+    emitZoom: (payload: unknown) => trigger("datazoom", payload),
     cleanup: async () => {
       await Effect.runPromise(Fiber.interrupt(hoveredFiber));
       await Effect.runPromise(Fiber.interrupt(siblingFiber));
     },
   };
 };
+
+describe("zoom sync", () => {
+  test("zooming one quality chart forwards the zoom to the others", async () => {
+    const { siblingDispatch, hoveredDispatch, emitZoom, cleanup } =
+      await linkedQualityCharts();
+
+    emitZoom({ batch: [{ dataZoomId: "z", start: 20, end: 50 }] });
+
+    expect(siblingDispatch).toHaveBeenCalledWith(
+      { type: "dataZoom", start: 20, end: 50 },
+      { silent: true }
+    );
+    expect(hoveredDispatch).not.toHaveBeenCalled();
+
+    await cleanup();
+  });
+
+  test("the packet loss chart takes part in the shared zoom", async () => {
+    const { siblingDispatch, emitZoom, cleanup } =
+      await linkedQualityCharts("packetLoss");
+
+    emitZoom({ batch: [{ dataZoomId: "z", start: 20, end: 50 }] });
+
+    expect(siblingDispatch).toHaveBeenCalledWith(
+      { type: "dataZoom", start: 20, end: 50 },
+      { silent: true }
+    );
+
+    await cleanup();
+  });
+
+  test("a zoom event with no usable range forwards nothing and never throws", async () => {
+    const { siblingDispatch, emitZoom, cleanup } = await linkedQualityCharts();
+
+    expect(() => emitZoom({ batch: [] })).not.toThrow();
+    expect(() => emitZoom({ batch: [{ start: "a", end: "b" }] })).not.toThrow();
+    expect(() => emitZoom(undefined)).not.toThrow();
+
+    expect(siblingDispatch).not.toHaveBeenCalled();
+
+    await cleanup();
+  });
+
+  test("stops forwarding once the chart is unmounted", async () => {
+    const { siblingDispatch, emitZoom, cleanup } = await linkedQualityCharts();
+    await cleanup();
+
+    emitZoom({ batch: [{ start: 20, end: 50 }] });
+
+    expect(siblingDispatch).not.toHaveBeenCalled();
+  });
+
+  // Joining an echarts group connects the chart, and a connected chart mirrors
+  // every action, a tooltip among them, onto the rest of the group, so one
+  // hover would open a tooltip on all three charts.
+  test("the quality charts stay out of any echarts group", async () => {
+    const { cleanup } = await linkedQualityCharts();
+    const group = (hostId: string) => Option.getOrThrow(getChart(hostId)).group;
+
+    expect(group("hovered-host")).toBeFalsy();
+    expect(group("sibling-host")).toBeFalsy();
+
+    await cleanup();
+  });
+});
 
 describe("axis pointer sync", () => {
   test("a well-formed updateAxisPointer draws a crosshair on the sibling", async () => {
@@ -318,5 +871,215 @@ describe("axis pointer sync", () => {
     expect(siblingZr.add).not.toHaveBeenCalled();
 
     await cleanup();
+  });
+});
+
+describe("resizeChart", () => {
+  const realChart = () => {
+    const element = mountedHost();
+    return echarts.init(element, undefined, {
+      renderer: "canvas",
+      width: 800,
+      height: 200,
+    });
+  };
+
+  // Merging an x axis into a chart that has no grid or series yet makes
+  // echarts lay out an axis with no coordinate system, which throws from
+  // inside its renderer. A container can resize before the first data paint.
+  test("a resize before the first paint leaves the chart's options alone", () => {
+    const chart = realChart();
+
+    expect(() => resizeChart(chart)).not.toThrow();
+    expect(chart.getOption()).toBeUndefined();
+  });
+
+  // zrender can't paint under happy-dom, so a painted chart is stood in for.
+  test("a resize after a paint re-derives how many ticks the axis shows", () => {
+    const setOption = vi.fn();
+    const resize = vi.fn();
+    const painted = stubChart(setOption, {
+      resize,
+      getOption: () => ({ series: [{ type: "line" }] }),
+    });
+
+    resizeChart(painted);
+
+    expect(resize).toHaveBeenCalledTimes(1);
+    expect(setOption).toHaveBeenCalledWith({
+      xAxis: { splitNumber: expect.any(Number) },
+    });
+  });
+});
+
+describe("range brush", () => {
+  const HOST_ID = "brushed-latency-host";
+
+  const mountLatency = async () => {
+    const fiber = Effect.runFork(
+      Stream.runDrain(
+        MountLatencyChart({ hostId: HOST_ID }).f(mountedHost(), Stream.empty)
+      )
+    );
+    await vi.waitFor(() => expect(Option.isSome(getChart(HOST_ID))).toBe(true));
+    const chart = Option.getOrThrow(getChart(HOST_ID));
+    const dispatchAction = vi.fn();
+    Object.assign(chart, { dispatchAction });
+    return {
+      dispatchAction,
+      // echarts lowercases event names when registering listeners.
+      emit: (payload: unknown) =>
+        (
+          chart as EChartsType & {
+            trigger: (event: string, payload: unknown) => void;
+          }
+        ).trigger("brushend", payload),
+      stop: () => Effect.runPromise(Fiber.interrupt(fiber)),
+    };
+  };
+
+  const heard = () => {
+    const details: unknown[] = [];
+    const listener = (event: Event) => {
+      if (event instanceof CustomEvent) details.push(event.detail);
+    };
+    chartEvents.addEventListener("brush", listener);
+    return {
+      details,
+      stop: () => chartEvents.removeEventListener("brush", listener),
+    };
+  };
+
+  test("a committed stroke is reported with the span it covers, then cleared", async () => {
+    const { emit, dispatchAction, stop } = await mountLatency();
+    const listening = heard();
+
+    emit({ areas: [{ coordRange: [1000, 5000], brushType: "lineX" }] });
+
+    expect(listening.details).toEqual([{ startMs: 1000, endMs: 5000 }]);
+    expect(dispatchAction).toHaveBeenCalledWith({ type: "brush", areas: [] });
+
+    listening.stop();
+    await stop();
+  });
+
+  test("an event with no usable span reports nothing", async () => {
+    const { emit, dispatchAction, stop } = await mountLatency();
+    const listening = heard();
+
+    emit({ areas: [] });
+    emit({ areas: [{ coordRange: "nope" }] });
+    emit(undefined);
+
+    expect(listening.details).toEqual([]);
+    expect(dispatchAction).not.toHaveBeenCalled();
+
+    listening.stop();
+    await stop();
+  });
+
+  test("stops listening once the Mount is torn down", async () => {
+    const { emit, stop } = await mountLatency();
+    const listening = heard();
+    await stop();
+
+    emit({ areas: [{ coordRange: [1000, 5000] }] });
+
+    expect(listening.details).toEqual([]);
+    listening.stop();
+  });
+
+  describe("turning the drag into a stroke", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const paintLatency = async (isFinePointer: boolean) => {
+      vi.stubGlobal("matchMedia", () => ({ matches: isFinePointer }));
+      const dispatchAction = vi.fn();
+      setChart(
+        "stroke-latency-chart",
+        stubChart(() => {}, { dispatchAction })
+      );
+      await syncLatency("stroke-latency-chart");
+      return dispatchAction;
+    };
+
+    test("a precise pointer gets a plain drag as a horizontal stroke, after each paint", async () => {
+      const dispatchAction = await paintLatency(true);
+
+      expect(dispatchAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "takeGlobalCursor",
+          key: "brush",
+          brushOption: { brushType: "lineX", brushMode: "single" },
+        })
+      );
+    });
+
+    test("a touch screen keeps its drag for scrolling the page", async () => {
+      const dispatchAction = await paintLatency(false);
+
+      expect(dispatchAction).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("wheel over a chart", () => {
+  const HOST_ID = "wheel-latency-host";
+
+  const mountWithListener = async () => {
+    const host = mountedHost();
+    const fiber = Effect.runFork(
+      Stream.runDrain(
+        MountLatencyChart({ hostId: HOST_ID }).f(host, Stream.empty)
+      )
+    );
+    await vi.waitFor(() => expect(Option.isSome(getChart(HOST_ID))).toBe(true));
+    // Where echarts listens: an element inside the host.
+    const inner = document.createElement("div");
+    host.appendChild(inner);
+    const seen: WheelEvent[] = [];
+    inner.addEventListener("wheel", (event) => seen.push(event));
+    return {
+      inner,
+      seen,
+      stop: () => Effect.runPromise(Fiber.interrupt(fiber)),
+    };
+  };
+
+  test("a plain turn never reaches the chart, so the page keeps scrolling", async () => {
+    const { inner, seen, stop } = await mountWithListener();
+
+    inner.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 100, bubbles: true })
+    );
+
+    expect(seen).toEqual([]);
+    await stop();
+  });
+
+  test("a turn with Ctrl held, or a trackpad pinch, reaches the chart to zoom it", async () => {
+    const { inner, seen, stop } = await mountWithListener();
+
+    // happy-dom's WheelEvent drops the modifier keys, so it is set by hand.
+    const zoomTurn = new WheelEvent("wheel", { deltaY: -100, bubbles: true });
+    Object.defineProperty(zoomTurn, "ctrlKey", { value: true });
+    inner.dispatchEvent(zoomTurn);
+
+    expect(seen).toHaveLength(1);
+    await stop();
+  });
+
+  test("leaves the page's own scrolling alone, never cancelling the event", async () => {
+    const { inner, stop } = await mountWithListener();
+    const event = new WheelEvent("wheel", {
+      deltaY: 100,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    inner.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    await stop();
   });
 });

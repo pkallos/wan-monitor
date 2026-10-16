@@ -1,10 +1,17 @@
+import type { Granularity } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import type { GetSummaryResponseType } from "@shared/api/routes/summary";
-import { Array as Array_, Match as M, Option, Order } from "effect";
+import {
+  Array as Array_,
+  Match as M,
+  Option,
+  Order,
+  String as Str,
+} from "effect";
 import type { ConnectivityStatus } from "@/dashboard/connectivity";
 import {
   type DateRangeSelection,
-  formatDateRangeLabel,
+  formatCustomRangeLabel,
   type PresetKey,
 } from "@/dashboard/dateRange";
 import type { Delta, SummaryDeltas } from "@/dashboard/deltas";
@@ -75,14 +82,14 @@ const PRESET_NAMES: Record<PresetKey, PresetNames> = {
 export const describeRange = (selection: DateRangeSelection): string =>
   M.value(selection).pipe(
     M.tag("Preset", ({ preset }) => PRESET_NAMES[preset].phrase),
-    M.orElse((custom) => formatDateRangeLabel(custom))
+    M.orElse(formatCustomRangeLabel)
   );
 
 /** The range as a card subtitle opens with it: "7 days", "Month to date". */
 export const rangeTitle = (selection: DateRangeSelection): string =>
   M.value(selection).pipe(
     M.tag("Preset", ({ preset }) => PRESET_NAMES[preset].title),
-    M.orElse((custom) => formatDateRangeLabel(custom))
+    M.orElse(formatCustomRangeLabel)
   );
 
 /** A preset's short form for a figure's caption; a custom range has none. */
@@ -192,7 +199,7 @@ export const railStats = (
       value: formatSpeed(speed.downloadMedian),
       unit: "Mbps",
       sub: testCountText(speed.count),
-      delta: Option.none(),
+      delta: deltaOf((deltas) => deltas.download),
     },
     {
       key: "upload",
@@ -200,7 +207,7 @@ export const railStats = (
       value: formatSpeed(speed.uploadMedian),
       unit: "Mbps",
       sub: testCountText(speed.count),
-      delta: Option.none(),
+      delta: deltaOf((deltas) => deltas.upload),
     },
   ];
 };
@@ -243,13 +250,34 @@ export const networkInfo = (
     }
   );
 
-/** "Last test · Oct 15, 2:00 PM · Fremont, CA"; the server clause drops out when unknown. */
+const BUCKET_NAMES: Record<Granularity, string> = {
+  "1m": "1-minute",
+  "5m": "5-minute",
+  "15m": "15-minute",
+  "1h": "hourly",
+  "6h": "6-hour",
+  "1d": "daily",
+};
+
+/** What the speed figures are when the history came in buckets: "Hourly averages, not single tests." */
+export const speedAveragesNote = (bucket: Granularity): string =>
+  `${Str.capitalize(BUCKET_NAMES[bucket])} averages, not single tests.`;
+
+/**
+ * "Last test · Oct 15, 2:00 PM · Fremont, CA"; the server clause drops out when
+ * unknown. A history fetched in buckets holds averages, so the newest row is
+ * named as one: "Latest hourly average · Oct 15, 2:00 PM".
+ */
 export const lastTestLabel = (
-  history: ReadonlyArray<Pick<SpeedMetric, "timestamp" | "server_location">>
+  history: ReadonlyArray<Pick<SpeedMetric, "timestamp" | "server_location">>,
+  maybeBucket: Option.Option<Granularity>
 ): Option.Option<string> =>
   Option.map(Array_.last(chronological(history)), (latest) =>
     [
-      "Last test",
+      Option.match(maybeBucket, {
+        onNone: () => "Last test",
+        onSome: (bucket) => `Latest ${BUCKET_NAMES[bucket]} average`,
+      }),
       formatDateTime(latest.timestamp),
       ...(latest.server_location === undefined ? [] : [latest.server_location]),
     ].join(" · ")
