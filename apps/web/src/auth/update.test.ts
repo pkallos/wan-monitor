@@ -1,3 +1,4 @@
+import { Menu } from "@foldkit/ui";
 import { Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
@@ -11,7 +12,6 @@ import {
 import {
   ChangedPassword,
   ChangedUsername,
-  ClickedLogout,
   CompletedClearSession,
   CompletedLogout,
   CompletedSaveSession,
@@ -34,6 +34,7 @@ import {
 import { update } from "@/auth/update";
 import {
   ApplyTheme,
+  ChangedSystemTheme,
   CompletedApplyTheme,
   type DateRangeSelection,
   FetchConnectivityStatus,
@@ -41,6 +42,7 @@ import {
   FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
+  GotMenuMessage,
   initModel as initDashboardModel,
   Preset,
   SpeedtestTriggerAsyncData,
@@ -52,10 +54,15 @@ import {
   SucceededTriggerSpeedtest,
   settingsFromModel,
 } from "@/dashboard";
+import { MENU_ITEMS } from "@/dashboard/menu";
 import { ToastTest } from "@/dashboard/toast";
 import { defaultSettings, type Settings } from "@/storage";
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
+const DEFAULT_REQUEST = {
+  dateRange: DEFAULT_DATE_RANGE,
+  maybeEarliestDataMs: Option.none<number>(),
+};
 
 // Each fetch resolves its window once and reports it back, so the dashboard's
 // charts paint the range that was actually requested.
@@ -94,7 +101,12 @@ const resolveDashboardEntry = (
         dateRange,
         maybeEarliestDataMs: Option.none(),
       }),
-      SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW }),
+      SucceededFetchMetrics({
+        metrics: [],
+        nowMs: 0,
+        ...METRICS_WINDOW,
+        request: DEFAULT_REQUEST,
+      }),
     ],
     [
       FetchSpeedtestHistory({
@@ -102,7 +114,11 @@ const resolveDashboardEntry = (
         dateRange,
         maybeEarliestDataMs: Option.none(),
       }),
-      SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW }),
+      SucceededFetchSpeedtestHistory({
+        history: [],
+        ...SPEEDTEST_WINDOW,
+        request: DEFAULT_REQUEST,
+      }),
     ],
     [
       FetchConnectivityStatus({
@@ -111,8 +127,10 @@ const resolveDashboardEntry = (
         maybeEarliestDataMs: Option.none(),
       }),
       SucceededFetchConnectivityStatus({
+        request: DEFAULT_REQUEST,
         points: [],
         maybeUptimePercentage: Option.some(100),
+        maybeAvailabilityPercentage: Option.some(100),
         coveragePercentage: 100,
         startTimeMs: 0,
         endTimeMs: 3_600_000,
@@ -132,6 +150,16 @@ const resolveDashboardEntry = (
       SucceededFetchEarliestData({ earliestMs: Option.none() }),
     ]
   );
+
+const chooseLogoutFromMenu = () =>
+  GotDashboardMessage({
+    message: GotMenuMessage({
+      message: Menu.Message.SelectedItem({
+        index: MENU_ITEMS.indexOf("Logout"),
+        item: "Logout",
+      }),
+    }),
+  });
 
 describe("auth update", () => {
   test("auth not required transitions Checking to LoggedIn with no session", () => {
@@ -357,7 +385,7 @@ describe("auth update", () => {
           dashboard: initDashboardModel(defaultSettings()),
         })
       ),
-      Story.message(ClickedLogout()),
+      Story.message(chooseLogoutFromMenu()),
       Story.Command.expectHas(ClearSession),
       Story.Command.expectHas(Logout),
       Story.Command.resolveAll(
@@ -392,7 +420,7 @@ describe("auth update", () => {
           dashboard,
         })
       ),
-      Story.message(ClickedLogout()),
+      Story.message(chooseLogoutFromMenu()),
       Story.Command.resolveAll(
         [ClearSession, CompletedClearSession()],
         [Logout, CompletedLogout()]
@@ -465,7 +493,12 @@ describe("auth update", () => {
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           }),
-          SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW }),
+          SucceededFetchMetrics({
+            metrics: [],
+            nowMs: 0,
+            ...METRICS_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
         ],
         [
           FetchSpeedtestHistory({
@@ -473,7 +506,11 @@ describe("auth update", () => {
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           }),
-          SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW }),
+          SucceededFetchSpeedtestHistory({
+            history: [],
+            ...SPEEDTEST_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
         ]
       ),
       ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
@@ -561,6 +598,40 @@ describe("auth update — stale messages arriving in the wrong state", () => {
     );
   });
 
+  test.each([
+    [
+      "Checking",
+      Checking({
+        maybeToken: Option.none(),
+        settings: { ...defaultSettings(), theme: "system" },
+      }),
+    ],
+    ["LoggedOut", initLoggedOut({ ...defaultSettings(), theme: "system" })],
+  ])(
+    "an OS theme change repaints the %s screen on the system preference",
+    (_state, model) => {
+      Story.story(
+        update,
+        Story.given(model),
+        Story.message(GotDashboardMessage({ message: ChangedSystemTheme() })),
+        Story.Command.expectExact(ApplyTheme({ theme: "system" })),
+        Story.Command.resolve(ApplyTheme, CompletedApplyTheme()),
+        Story.model((next) => {
+          expect(next).toBe(model);
+        })
+      );
+    }
+  );
+
+  test("an OS theme change leaves the login screen alone under an explicit theme", () => {
+    Story.story(
+      update,
+      Story.given(initLoggedOut({ ...defaultSettings(), theme: "dark" })),
+      Story.message(GotDashboardMessage({ message: ChangedSystemTheme() })),
+      Story.Command.expectNone()
+    );
+  });
+
   test("a dashboard message is dropped once logged out", () => {
     Story.story(
       update,
@@ -571,6 +642,7 @@ describe("auth update — stale messages arriving in the wrong state", () => {
             metrics: [],
             nowMs: 0,
             ...METRICS_WINDOW,
+            request: DEFAULT_REQUEST,
           }),
         })
       ),

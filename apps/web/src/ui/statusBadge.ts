@@ -28,7 +28,13 @@ export const statusBadge = <Message>(
 ): Html => {
   const { glyph, className } = TONES[tone];
   return h.span(
-    [h.Class(`inline-flex items-center gap-2 ${className}`)],
-    [icon(h, glyph, { size: iconSize }), h.span([], [label])]
+    [h.Class("inline-flex items-center gap-2 font-semibold text-ink")],
+    [
+      h.span(
+        [h.Class(`inline-flex ${className}`)],
+        [icon(h, glyph, { size: iconSize })]
+      ),
+      h.span([], [label]),
+    ]
   );
 };

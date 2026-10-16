@@ -80,25 +80,23 @@ test.describe("Empty database first run", () => {
       page.getByRole("heading", { name: "WAN Monitor" })
     ).toBeVisible({ timeout: 10_000 });
 
-    // The top speed cards fall back to "- Mbps" with no speedtest rows behind
-    // them; each card renders its value as the heading's sibling paragraph.
-    for (const title of ["Download Speed", "Upload Speed"]) {
-      const cardValue = page
-        .getByRole("heading", { name: title, exact: true })
-        .locator("xpath=following-sibling::p[1]");
-      await expect(cardValue).toHaveText("- Mbps", { timeout: 15_000 });
-    }
+    // The speed hero falls back to its placeholder with no speedtest rows
+    // behind it.
+    const speedHero = page.getByTestId("hero-speed");
+    await expect(speedHero).toContainText("no tests yet", { timeout: 15_000 });
+    await expect(speedHero).not.toContainText(/\d/);
 
     // A monitor that has never reported reads as "No Data", not as an outage.
-    const connectivityValue = page
-      .getByRole("heading", { name: "Connectivity", exact: true })
-      .locator("xpath=following-sibling::p[1]");
-    await expect(connectivityValue).toContainText("No Data", {
-      timeout: 15_000,
-    });
-    await expect(connectivityValue).not.toContainText("Offline");
+    await expect(
+      page.getByRole("heading", { name: "No recent data." })
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("No Data", { exact: true })).toBeVisible();
+    await expect(page.getByText("Offline")).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: /^Connection is down\./ })
+    ).toHaveCount(0);
 
-    // Same placeholder for the four Speed Test History stats.
+    // Same placeholder for the four speed test stats.
     for (const label of [
       "Avg Download",
       "Avg Upload",
@@ -114,10 +112,10 @@ test.describe("Empty database first run", () => {
     // With no speedtest rows there is no resolved ISP either.
     await expect(page.getByText("Unknown ISP")).toBeVisible();
 
-    // Every fetch settled: the loading placeholders are gone rather than stuck.
-    await expect(page.getByText("Loading metrics…")).toHaveCount(0);
-    await expect(page.getByText("Loading speed test history…")).toHaveCount(0);
-    await expect(page.getByText("Loading connectivity status…")).toHaveCount(0);
+    // Every fetch settled: the loading skeletons are gone rather than stuck,
+    // and an empty database is not an error.
+    await expect(page.getByRole("status", { name: /^Loading/ })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
 
     // The charts still mount and size themselves with an empty dataset.
     for (const label of [

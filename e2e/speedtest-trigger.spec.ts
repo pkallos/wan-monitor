@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * The "Run Speed Test" button in the Speed Test History card, end to end.
+ * The "Run Speed Test" button in the Speed tests card, end to end.
  *
  * `POST /api/speedtest/trigger` is always stubbed with `page.route`: the real
  * endpoint runs an actual speedtest against the internet, which is slow and

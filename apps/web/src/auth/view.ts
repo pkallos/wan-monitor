@@ -4,7 +4,6 @@ import { TriangleAlert } from "lucide";
 import {
   ChangedPassword,
   ChangedUsername,
-  ClickedLogout,
   GotDashboardMessage,
   type Message,
   SubmittedLogin,
@@ -12,11 +11,7 @@ import {
 import type { LoggedOut, Model } from "@/auth/model";
 import { view as dashboardView } from "@/dashboard/view";
 import { card } from "@/ui/card";
-import {
-  GHOST_BUTTON_CLASS,
-  INPUT_CLASS,
-  PRIMARY_BUTTON_CLASS,
-} from "@/ui/controls";
+import { INPUT_CLASS, PRIMARY_BUTTON_CLASS } from "@/ui/controls";
 import { icon } from "@/ui/icon";
 
 const LABEL_CLASS = "mb-1 block text-sm font-medium text-ink-2";
@@ -105,34 +100,19 @@ const loginView = (model: LoggedOut, h: HtmlBuilder<Message>): Html => {
 const dashboardShellView = (
   model: Extract<Model, { _tag: "LoggedIn" }>,
   h: HtmlBuilder<Message>
-): Html => {
-  // A pre-built Html node can't cross into viewInputs (its embedded OnClick
-  // handler is a nested function, and only top-level viewInputs functions
-  // get auto-scoped to this boundary), so the button is built lazily by a
-  // top-level callback the dashboard view calls instead.
-  const renderLogoutButton = (): Html =>
-    h.button(
-      [
-        h.Type("button"),
-        h.OnClick(ClickedLogout()),
-        h.Class(GHOST_BUTTON_CLASS),
-      ],
-      [
-        Option.match(model.maybeSession, {
-          onNone: () => "Logout",
-          onSome: (session) => `Logout (${session.username})`,
-        }),
-      ]
-    );
-
-  return h.submodel({
+): Html =>
+  h.submodel({
     slotId: "dashboard",
     model: model.dashboard,
     view: dashboardView,
-    viewInputs: { renderLogoutButton },
+    viewInputs: {
+      maybeUsername: Option.map(
+        model.maybeSession,
+        (session) => session.username
+      ),
+    },
     toParentMessage: (message) => GotDashboardMessage({ message }),
   });
-};
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: "WAN Monitor",

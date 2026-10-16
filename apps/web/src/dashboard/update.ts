@@ -1,4 +1,4 @@
-import { Match as M, Option, Result } from "effect";
+import { Equal, Match as M, Option, Result } from "effect";
 import { AsyncData, Command, Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 import {
@@ -14,17 +14,34 @@ import {
   FetchLiveConnectivity,
   FetchMetrics,
   FetchSpeedtestHistory,
+  rangeRequest,
   SaveSettings,
   TriggerSpeedtest,
 } from "@/dashboard/command";
+import {
+  type DateRangeSelection,
+  isAllTime,
+  Preset,
+  sameDateRange,
+} from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import {
+  DashboardMenu,
+  isThemeItem,
+  type MenuItem,
+  THEME_ITEMS,
+} from "@/dashboard/menu";
+import {
   GotDateRangePickerMessage,
+  GotMenuMessage,
   GotToastMessage,
   type Message,
+  type OutMessage,
+  type RangeRequest,
+  RequestedLogout,
 } from "@/dashboard/message";
 import { type Model, settingsFromModel } from "@/dashboard/model";
-import type { Theme } from "@/dashboard/theme";
+import type { ThemePreference } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
 
 // `now` is injected (rather than read via `Date.now()` here) so `update`
@@ -32,12 +49,26 @@ import { Toast } from "@/dashboard/toast";
 // supplies the real clock, and tests can supply a fixed one.
 export type Context = { readonly token: string; readonly now: () => number };
 
-type UpdateReturn = Update.Return<Model, Message>;
+type StepReturn = Update.Return<Model, Message>;
+type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>;
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
+
+// "All time" resolves its start from `maybeEarliestDataMs`, so a response
+// issued before that arrived covers a different window than the current one.
+const answersCurrentRange = (model: Model, request: RangeRequest): boolean =>
+  sameDateRange(request.dateRange, model.dateRange) &&
+  (!isAllTime(model.dateRange) ||
+    Equal.equals(request.maybeEarliestDataMs, model.maybeEarliestDataMs));
+
+const ignoreStale = (
+  model: Model,
+  request: RangeRequest,
+  apply: () => StepReturn
+): StepReturn => (answersCurrentRange(model, request) ? apply() : { model });
 
 const enterMetrics =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.loadIfMissing(model.metrics), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -45,8 +76,7 @@ const enterMetrics =
         commands: [
           FetchMetrics({
             token: context.token,
-            dateRange: model.dateRange,
-            maybeEarliestDataMs: model.maybeEarliestDataMs,
+            ...rangeRequest(model),
           }),
         ],
       }),
@@ -54,7 +84,7 @@ const enterMetrics =
 
 const enterSpeedtestHistory =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.loadIfMissing(model.speedtestHistory), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -62,8 +92,7 @@ const enterSpeedtestHistory =
         commands: [
           FetchSpeedtestHistory({
             token: context.token,
-            dateRange: model.dateRange,
-            maybeEarliestDataMs: model.maybeEarliestDataMs,
+            ...rangeRequest(model),
           }),
         ],
       }),
@@ -71,7 +100,7 @@ const enterSpeedtestHistory =
 
 const enterConnectivityStatus =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.loadIfMissing(model.connectivityStatus), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -79,8 +108,7 @@ const enterConnectivityStatus =
         commands: [
           FetchConnectivityStatus({
             token: context.token,
-            dateRange: model.dateRange,
-            maybeEarliestDataMs: model.maybeEarliestDataMs,
+            ...rangeRequest(model),
           }),
         ],
       }),
@@ -88,7 +116,7 @@ const enterConnectivityStatus =
 
 const enterLiveConnectivity =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.loadIfMissing(model.liveConnectivity), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -99,14 +127,14 @@ const enterLiveConnectivity =
 
 // Re-asserts the model's theme onto `<html>` so it matches even if the boot
 // script's pre-hydration paint (`index.html`) somehow diverged from it.
-const applyThemeOnEnter = (model: Model): UpdateReturn => ({
+const applyThemeOnEnter = (model: Model): StepReturn => ({
   model,
   commands: [ApplyTheme({ theme: model.theme })],
 });
 
 const enterEarliestData =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(model.maybeEarliestDataMs, {
       onNone: () => ({
         model,
@@ -115,12 +143,9 @@ const enterEarliestData =
       onSome: () => ({ model }),
     });
 
-const toggleTheme = (theme: Theme): Theme =>
-  theme === "light" ? "dark" : "light";
-
 const revalidateMetrics =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.revalidate(model.metrics), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -128,8 +153,7 @@ const revalidateMetrics =
         commands: [
           FetchMetrics({
             token: context.token,
-            dateRange: model.dateRange,
-            maybeEarliestDataMs: model.maybeEarliestDataMs,
+            ...rangeRequest(model),
           }),
         ],
       }),
@@ -137,7 +161,7 @@ const revalidateMetrics =
 
 const revalidateSpeedtestHistory =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.revalidate(model.speedtestHistory), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -145,8 +169,7 @@ const revalidateSpeedtestHistory =
         commands: [
           FetchSpeedtestHistory({
             token: context.token,
-            dateRange: model.dateRange,
-            maybeEarliestDataMs: model.maybeEarliestDataMs,
+            ...rangeRequest(model),
           }),
         ],
       }),
@@ -154,7 +177,7 @@ const revalidateSpeedtestHistory =
 
 const revalidateConnectivityStatus =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.revalidate(model.connectivityStatus), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -162,8 +185,7 @@ const revalidateConnectivityStatus =
         commands: [
           FetchConnectivityStatus({
             token: context.token,
-            dateRange: model.dateRange,
-            maybeEarliestDataMs: model.maybeEarliestDataMs,
+            ...rangeRequest(model),
           }),
         ],
       }),
@@ -171,7 +193,7 @@ const revalidateConnectivityStatus =
 
 const revalidateLiveConnectivity =
   (context: Context) =>
-  (model: Model): UpdateReturn =>
+  (model: Model): StepReturn =>
     Option.match(AsyncData.revalidate(model.liveConnectivity), {
       onNone: () => ({ model }),
       onSome: (next) => ({
@@ -194,50 +216,47 @@ const forceReload = <A, E>(
 
 const reloadMetrics =
   (context: Context) =>
-  (model: Model): UpdateReturn => ({
+  (model: Model): StepReturn => ({
     model: modifyFields(model, { metrics: () => forceReload(model.metrics) }),
     commands: [
       FetchMetrics({
         token: context.token,
-        dateRange: model.dateRange,
-        maybeEarliestDataMs: model.maybeEarliestDataMs,
+        ...rangeRequest(model),
       }),
     ],
   });
 
 const reloadSpeedtestHistory =
   (context: Context) =>
-  (model: Model): UpdateReturn => ({
+  (model: Model): StepReturn => ({
     model: modifyFields(model, {
       speedtestHistory: () => forceReload(model.speedtestHistory),
     }),
     commands: [
       FetchSpeedtestHistory({
         token: context.token,
-        dateRange: model.dateRange,
-        maybeEarliestDataMs: model.maybeEarliestDataMs,
+        ...rangeRequest(model),
       }),
     ],
   });
 
 const reloadConnectivityStatus =
   (context: Context) =>
-  (model: Model): UpdateReturn => ({
+  (model: Model): StepReturn => ({
     model: modifyFields(model, {
       connectivityStatus: () => forceReload(model.connectivityStatus),
     }),
     commands: [
       FetchConnectivityStatus({
         token: context.token,
-        dateRange: model.dateRange,
-        maybeEarliestDataMs: model.maybeEarliestDataMs,
+        ...rangeRequest(model),
       }),
     ],
   });
 
 const reloadLiveConnectivity =
   (context: Context) =>
-  (model: Model): UpdateReturn => ({
+  (model: Model): StepReturn => ({
     model: modifyFields(model, {
       liveConnectivity: () => forceReload(model.liveConnectivity),
     }),
@@ -347,6 +366,72 @@ const syncQualityCharts = (
   ...syncJitterChart(model),
 ];
 
+const syncAllCharts = (
+  model: Model
+): ReadonlyArray<Command.Command<Message>> => [
+  ...syncQualityCharts(model),
+  ...syncSpeedChart(model),
+];
+
+// ApplyTheme goes first in every theme change: the chart syncs resolve their
+// palette from `<html>`'s class, so it has to be current when they run.
+const setThemePreference = (
+  model: Model,
+  preference: ThemePreference
+): StepReturn => {
+  const nextModel = modifyFields(model, { theme: () => preference });
+  return {
+    model: nextModel,
+    commands: [
+      ApplyTheme({ theme: preference }),
+      SaveSettings({ settings: settingsFromModel(nextModel) }),
+      ...syncAllCharts(nextModel),
+    ],
+  };
+};
+
+const applyDateRange =
+  (context: Context, selection: DateRangeSelection) =>
+  (model: Model): StepReturn => {
+    const { model: nextModel, commands: reloadCommands } = Update.combine(
+      modifyFields(model, { dateRange: () => selection }),
+      [
+        reloadMetrics(context),
+        reloadSpeedtestHistory(context),
+        reloadConnectivityStatus(context),
+      ]
+    );
+    return {
+      model: nextModel,
+      commands: [
+        ...(reloadCommands ?? []),
+        SaveSettings({ settings: settingsFromModel(nextModel) }),
+      ],
+    };
+  };
+
+const startSpeedtest =
+  (context: Context) =>
+  (model: Model): StepReturn => ({
+    model: modifyFields(model, { speedtestTrigger: () => AsyncData.Loading() }),
+    commands: [TriggerSpeedtest({ token: context.token })],
+  });
+
+const selectMenuItem = (
+  context: Context,
+  model: Model,
+  item: MenuItem
+): UpdateReturn =>
+  M.value(item).pipe(
+    withUpdateReturn,
+    M.when(isThemeItem, (themeItem) =>
+      setThemePreference(model, THEME_ITEMS[themeItem].preference)
+    ),
+    M.when("RunSpeedTest", () => startSpeedtest(context)(model)),
+    M.when("Logout", () => ({ model, outMessage: RequestedLogout() })),
+    M.exhaustive
+  );
+
 export const update = (
   model: Model,
   message: Message,
@@ -400,24 +485,11 @@ export const update = (
         return M.value(outMessage).pipe(
           withUpdateReturn,
           M.tag("AppliedRange", ({ selection }) => {
-            const withAppliedRange = modifyFields(withPicker, {
-              dateRange: () => selection,
-            });
-            // `liveConnectivity` is deliberately absent: it answers "is
-            // the link up right now", which no range selection can change.
-            const { model: nextModel, commands: reloadCommands } =
-              Update.combine(withAppliedRange, [
-                reloadMetrics(context),
-                reloadSpeedtestHistory(context),
-                reloadConnectivityStatus(context),
-              ]);
+            const { model: nextModel, commands: appliedCommands } =
+              applyDateRange(context, selection)(withPicker);
             return {
               model: nextModel,
-              commands: [
-                ...mappedCommands,
-                ...(reloadCommands ?? []),
-                SaveSettings({ settings: settingsFromModel(nextModel) }),
-              ],
+              commands: [...mappedCommands, ...(appliedCommands ?? [])],
             };
           }),
           M.tag("Cancelled", () => ({
@@ -428,6 +500,9 @@ export const update = (
         );
       },
 
+      SelectedQuickRange: ({ preset }) =>
+        applyDateRange(context, Preset({ preset }))(model),
+
       ClickedRefreshNow: () =>
         Update.combine(model, [
           reloadMetrics(context),
@@ -437,71 +512,86 @@ export const update = (
         ]),
 
       SucceededFetchMetrics: ({
+        request,
         metrics,
         nowMs,
         startTimeMs,
         endTimeMs,
         granularity,
-      }) => {
-        const nextModel = modifyFields(model, {
-          metrics: () =>
-            AsyncData.settle(model.metrics, Result.succeed(metrics)),
-          maybeMetricsWindow: () =>
-            Option.some({ startTimeMs, endTimeMs, granularity }),
-          maybeLastUpdatedMs: () => Option.some(nowMs),
-        });
-        return { model: nextModel, commands: syncQualityCharts(nextModel) };
-      },
-      FailedFetchMetrics: ({ error }) => ({
-        model: modifyFields(model, {
-          metrics: () => AsyncData.settle(model.metrics, Result.fail(error)),
+      }) =>
+        ignoreStale(model, request, () => {
+          const nextModel = modifyFields(model, {
+            metrics: () =>
+              AsyncData.settle(model.metrics, Result.succeed(metrics)),
+            maybeMetricsWindow: () =>
+              Option.some({ startTimeMs, endTimeMs, granularity }),
+            maybeLastUpdatedMs: () => Option.some(nowMs),
+          });
+          return { model: nextModel, commands: syncQualityCharts(nextModel) };
         }),
-      }),
+      FailedFetchMetrics: ({ request, error }) =>
+        ignoreStale(model, request, () => ({
+          model: modifyFields(model, {
+            metrics: () => AsyncData.settle(model.metrics, Result.fail(error)),
+          }),
+        })),
 
-      SucceededFetchSpeedtestHistory: ({ history, startTimeMs, endTimeMs }) => {
-        const nextModel = modifyFields(model, {
-          speedtestHistory: () =>
-            AsyncData.settle(model.speedtestHistory, Result.succeed(history)),
-          maybeSpeedtestWindow: () => Option.some({ startTimeMs, endTimeMs }),
-        });
-        return { model: nextModel, commands: syncSpeedChart(nextModel) };
-      },
-      FailedFetchSpeedtestHistory: ({ error }) => ({
-        model: modifyFields(model, {
-          speedtestHistory: () =>
-            AsyncData.settle(model.speedtestHistory, Result.fail(error)),
+      SucceededFetchSpeedtestHistory: ({
+        request,
+        history,
+        startTimeMs,
+        endTimeMs,
+      }) =>
+        ignoreStale(model, request, () => {
+          const nextModel = modifyFields(model, {
+            speedtestHistory: () =>
+              AsyncData.settle(model.speedtestHistory, Result.succeed(history)),
+            maybeSpeedtestWindow: () => Option.some({ startTimeMs, endTimeMs }),
+          });
+          return { model: nextModel, commands: syncSpeedChart(nextModel) };
         }),
-      }),
+      FailedFetchSpeedtestHistory: ({ request, error }) =>
+        ignoreStale(model, request, () => ({
+          model: modifyFields(model, {
+            speedtestHistory: () =>
+              AsyncData.settle(model.speedtestHistory, Result.fail(error)),
+          }),
+        })),
 
       SucceededFetchConnectivityStatus: ({
+        request,
         points,
         maybeUptimePercentage,
+        maybeAvailabilityPercentage,
         coveragePercentage,
         startTimeMs,
         endTimeMs,
         granularity,
-      }) => ({
-        model: modifyFields(model, {
-          connectivityStatus: () =>
-            AsyncData.settle(
-              model.connectivityStatus,
-              Result.succeed({
-                points,
-                maybeUptimePercentage,
-                coveragePercentage,
-                startTimeMs,
-                endTimeMs,
-                granularity,
-              })
-            ),
-        }),
-      }),
-      FailedFetchConnectivityStatus: ({ error }) => ({
-        model: modifyFields(model, {
-          connectivityStatus: () =>
-            AsyncData.settle(model.connectivityStatus, Result.fail(error)),
-        }),
-      }),
+      }) =>
+        ignoreStale(model, request, () => ({
+          model: modifyFields(model, {
+            connectivityStatus: () =>
+              AsyncData.settle(
+                model.connectivityStatus,
+                Result.succeed({
+                  points,
+                  maybeUptimePercentage,
+                  maybeAvailabilityPercentage,
+                  coveragePercentage,
+                  startTimeMs,
+                  endTimeMs,
+                  granularity,
+                })
+              ),
+          }),
+        })),
+      FailedFetchConnectivityStatus: ({ request, error }) =>
+        ignoreStale(model, request, () => ({
+          model: modifyFields(model, {
+            connectivityStatus: () =>
+              AsyncData.settle(model.connectivityStatus, Result.fail(error)),
+          }),
+        })),
 
       SucceededFetchLiveConnectivity: ({ status, maybeLastSampleAtMs }) => ({
         model: modifyFields(model, {
@@ -527,8 +617,7 @@ export const update = (
       // never repaint past that epoch-wide window.
       SucceededFetchEarliestData: ({ earliestMs }) => {
         const learnedAnUnresolvedAllTimeStart =
-          model.dateRange._tag === "Preset" &&
-          model.dateRange.preset === "allTime" &&
+          isAllTime(model.dateRange) &&
           Option.isNone(model.maybeEarliestDataMs) &&
           Option.isSome(earliestMs);
         const nextModel = modifyFields(model, {
@@ -569,28 +658,41 @@ export const update = (
         }),
       }),
 
-      ClickedToggleTheme: () => {
-        const nextTheme = toggleTheme(model.theme);
-        const nextModel = modifyFields(model, { theme: () => nextTheme });
-        // ApplyTheme goes first: the chart syncs resolve their palette from
-        // `<html>`'s class, so it has to be current when they run.
+      ChangedSystemTheme: () =>
+        model.theme === "system"
+          ? {
+              model,
+              commands: [
+                ApplyTheme({ theme: model.theme }),
+                ...syncAllCharts(model),
+              ],
+            }
+          : { model },
+
+      GotMenuMessage: ({ message: menuMessage }) => {
+        const {
+          model: nextMenu,
+          commands: menuCommands,
+          outMessage,
+        } = DashboardMenu.update(model.menu, menuMessage);
+        const withMenu = modifyFields(model, { menu: () => nextMenu });
+        const mappedCommands = Command.mapMessages(
+          menuCommands ?? [],
+          (message) => GotMenuMessage({ message })
+        );
+
+        if (outMessage === undefined) {
+          return { model: withMenu, commands: mappedCommands };
+        }
+
+        const selected = selectMenuItem(context, withMenu, outMessage.value);
         return {
-          model: nextModel,
-          commands: [
-            ApplyTheme({ theme: nextTheme }),
-            SaveSettings({ settings: settingsFromModel(nextModel) }),
-            ...syncQualityCharts(nextModel),
-            ...syncSpeedChart(nextModel),
-          ],
+          ...selected,
+          commands: [...mappedCommands, ...(selected.commands ?? [])],
         };
       },
 
-      ClickedTriggerSpeedtest: () => ({
-        model: modifyFields(model, {
-          speedtestTrigger: () => AsyncData.Loading(),
-        }),
-        commands: [TriggerSpeedtest({ token: context.token })],
-      }),
+      ClickedTriggerSpeedtest: () => startSpeedtest(context)(model),
       SucceededTriggerSpeedtest: ({ downloadMbps, uploadMbps, pingMs }) => {
         const { model: toastModel, commands: toastCommands } = Toast.show(
           model.toast,
@@ -611,13 +713,11 @@ export const update = (
           commands: [
             FetchMetrics({
               token: context.token,
-              dateRange: model.dateRange,
-              maybeEarliestDataMs: model.maybeEarliestDataMs,
+              ...rangeRequest(model),
             }),
             FetchSpeedtestHistory({
               token: context.token,
-              dateRange: model.dateRange,
-              maybeEarliestDataMs: model.maybeEarliestDataMs,
+              ...rangeRequest(model),
             }),
             ...Command.mapMessages(toastCommands ?? [], (message) =>
               GotToastMessage({ message })

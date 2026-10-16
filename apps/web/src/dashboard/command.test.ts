@@ -1,7 +1,7 @@
 import { Effect, Layer, Option } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { KeyValueStore } from "effect/persistence";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   applyTheme,
   fetchConnectivityStatus,
@@ -16,6 +16,14 @@ import { Custom, Preset } from "@/dashboard/dateRange";
 import { defaultSettings, readSettings, type Settings } from "@/storage";
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
+const DEFAULT_REQUEST = {
+  dateRange: DEFAULT_DATE_RANGE,
+  maybeEarliestDataMs: Option.none<number>(),
+};
+const ALL_TIME_REQUEST = {
+  dateRange: Preset({ preset: "allTime" }),
+  maybeEarliestDataMs: Option.some(Date.parse("2025-01-01T00:00:00.000Z")),
+};
 // A 1h span lands in the granularity threshold's "<= 6 hours" branch, and
 // Custom resolves to this window regardless of the real clock.
 const ONE_HOUR_RANGE = Custom({
@@ -35,6 +43,12 @@ const THIRTY_DAY_RANGE = Custom({
   endTime: "2026-07-27T00:00:00.000Z",
 });
 const ALL_TIME_RANGE = Preset({ preset: "allTime" });
+
+const DB_UNAVAILABLE_BODY = {
+  error: "DB_UNAVAILABLE",
+  message: "Database temporarily unavailable",
+  timestamp: "2026-07-26T00:30:00.000Z",
+};
 
 const mockHttpClient = (status: number, body: unknown) =>
   Layer.succeed(
@@ -91,6 +105,38 @@ const failingKeyValueStore = Layer.succeed(
 );
 
 describe("fetchMetrics", () => {
+  test("echoes the range it was issued for on success and on failure", async () => {
+    const succeeded = await fetchMetrics({
+      token: "abc",
+      ...ALL_TIME_REQUEST,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          data: [],
+          meta: {
+            startTime: "2025-01-01T00:00:00.000Z",
+            endTime: "2026-07-26T01:00:00.000Z",
+            count: 0,
+          },
+        })
+      ),
+      Effect.runPromise
+    );
+    const failed = await fetchMetrics({
+      token: "abc",
+      ...ALL_TIME_REQUEST,
+    }).pipe(
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
+      Effect.runPromise
+    );
+
+    expect(succeeded).toMatchObject({ request: ALL_TIME_REQUEST });
+    expect(failed).toMatchObject({
+      _tag: "FailedFetchMetrics",
+      request: ALL_TIME_REQUEST,
+    });
+  });
+
   test("decodes a successful response into SucceededFetchMetrics", async () => {
     const result = await fetchMetrics({
       token: "abc",
@@ -149,6 +195,7 @@ describe("fetchMetrics", () => {
 
     expect(result).toEqual({
       _tag: "FailedFetchMetrics",
+      request: DEFAULT_REQUEST,
       error: "Database temporarily unavailable. Retrying automatically.",
     });
   });
@@ -273,6 +320,38 @@ describe("fetchMetrics", () => {
 });
 
 describe("fetchSpeedtestHistory", () => {
+  test("echoes the range it was issued for on success and on failure", async () => {
+    const succeeded = await fetchSpeedtestHistory({
+      token: "abc",
+      ...ALL_TIME_REQUEST,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          data: [],
+          meta: {
+            startTime: "2025-01-01T00:00:00.000Z",
+            endTime: "2026-07-26T01:00:00.000Z",
+            count: 0,
+          },
+        })
+      ),
+      Effect.runPromise
+    );
+    const failed = await fetchSpeedtestHistory({
+      token: "abc",
+      ...ALL_TIME_REQUEST,
+    }).pipe(
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
+      Effect.runPromise
+    );
+
+    expect(succeeded).toMatchObject({ request: ALL_TIME_REQUEST });
+    expect(failed).toMatchObject({
+      _tag: "FailedFetchSpeedtestHistory",
+      request: ALL_TIME_REQUEST,
+    });
+  });
+
   test("decodes a successful response into SucceededFetchSpeedtestHistory", async () => {
     const result = await fetchSpeedtestHistory({
       token: "abc",
@@ -318,6 +397,7 @@ describe("fetchSpeedtestHistory", () => {
 
     expect(result).toEqual({
       _tag: "FailedFetchSpeedtestHistory",
+      request: DEFAULT_REQUEST,
       error: "Database temporarily unavailable. Retrying automatically.",
     });
   });
@@ -395,6 +475,45 @@ describe("fetchSpeedtestHistory", () => {
 });
 
 describe("fetchConnectivityStatus", () => {
+  test("echoes the range it was issued for on success and on failure", async () => {
+    const succeeded = await fetchConnectivityStatus({
+      token: "abc",
+      ...ALL_TIME_REQUEST,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          data: [],
+          meta: {
+            startTime: "2025-01-01T00:00:00.000Z",
+            endTime: "2026-07-26T01:00:00.000Z",
+            count: 0,
+            uptimePercentage: null,
+            availabilityPercentage: null,
+            expectedBuckets: 0,
+            observedBuckets: 0,
+            coveragePercentage: 0,
+            observedCycles: 0,
+            expectedSampleIntervalSeconds: 30,
+          },
+        })
+      ),
+      Effect.runPromise
+    );
+    const failed = await fetchConnectivityStatus({
+      token: "abc",
+      ...ALL_TIME_REQUEST,
+    }).pipe(
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
+      Effect.runPromise
+    );
+
+    expect(succeeded).toMatchObject({ request: ALL_TIME_REQUEST });
+    expect(failed).toMatchObject({
+      _tag: "FailedFetchConnectivityStatus",
+      request: ALL_TIME_REQUEST,
+    });
+  });
+
   test("decodes a successful response into SucceededFetchConnectivityStatus with uptimePercentage lifted from meta", async () => {
     const result = await fetchConnectivityStatus({
       token: "abc",
@@ -416,7 +535,7 @@ describe("fetchConnectivityStatus", () => {
             endTime: "2026-07-26T01:00:00.000Z",
             count: 1,
             uptimePercentage: 99.9,
-            availabilityPercentage: 99.9,
+            availabilityPercentage: 99.95,
             expectedBuckets: 60,
             observedBuckets: 60,
             coveragePercentage: 100,
@@ -440,6 +559,7 @@ describe("fetchConnectivityStatus", () => {
         },
       ],
       maybeUptimePercentage: Option.some(99.9),
+      maybeAvailabilityPercentage: Option.some(99.95),
       coveragePercentage: 100,
       granularity: "1m",
     });
@@ -475,6 +595,7 @@ describe("fetchConnectivityStatus", () => {
 
     expect(result).toMatchObject({
       maybeUptimePercentage: Option.none(),
+      maybeAvailabilityPercentage: Option.none(),
       coveragePercentage: 0,
     });
   });
@@ -496,6 +617,7 @@ describe("fetchConnectivityStatus", () => {
 
     expect(result).toEqual({
       _tag: "FailedFetchConnectivityStatus",
+      request: DEFAULT_REQUEST,
       error: "Database temporarily unavailable. Retrying automatically.",
     });
   });
@@ -740,6 +862,43 @@ describe("applyTheme", () => {
     expect(result).toEqual({ _tag: "CompletedApplyTheme" });
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(document.documentElement.style.colorScheme).toBe("light");
+  });
+
+  describe("system preference", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const stubPrefersDark = (prefersDark: boolean) =>
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: prefersDark && query === "(prefers-color-scheme: dark)",
+      }));
+
+    test("resolves to dark when the OS prefers dark", async () => {
+      stubPrefersDark(true);
+      document.documentElement.classList.remove("dark");
+
+      await applyTheme({ theme: "system" }).pipe(Effect.runPromise);
+
+      expect(document.documentElement.classList.contains("dark")).toBe(true);
+      expect(document.documentElement.style.colorScheme).toBe("dark");
+    });
+
+    test("resolves to light when the OS prefers light", async () => {
+      stubPrefersDark(false);
+      document.documentElement.classList.add("dark");
+
+      await applyTheme({ theme: "system" }).pipe(Effect.runPromise);
+
+      expect(document.documentElement.classList.contains("dark")).toBe(false);
+      expect(document.documentElement.style.colorScheme).toBe("light");
+    });
+
+    test("an explicit choice ignores the OS preference", async () => {
+      stubPrefersDark(true);
+
+      await applyTheme({ theme: "light" }).pipe(Effect.runPromise);
+
+      expect(document.documentElement.classList.contains("dark")).toBe(false);
+    });
   });
 });
 

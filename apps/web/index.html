@@ -11,7 +11,9 @@
       // Pre-hydration paint only. The runtime owner of `<html>`'s `dark`
       // class is the ApplyTheme Command (dashboard/command.ts); this exists
       // solely so the first frame isn't blank. Key and fallback chain must
-      // match @/storage's SETTINGS_STORAGE_KEY and defaultSettings.
+      // match @/storage's SETTINGS_STORAGE_KEY and defaultSettings: an
+      // explicit "light"/"dark" wins, anything else (including "system" or
+      // no stored value) follows the OS.
       (() => {
         let theme;
         try {

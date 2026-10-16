@@ -1,3 +1,4 @@
+import { Menu } from "@foldkit/ui";
 import {
   ConnectivityStatusPointSchema,
   LiveConnectivityStatusSchema,
@@ -8,7 +9,7 @@ import { Option, Schema as S } from "effect";
 import { AsyncData } from "foldkit";
 import { DateRangeSelection } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
-import { Theme } from "@/dashboard/theme";
+import { ThemePreference } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
 import type { Settings } from "@/storage";
 
@@ -44,11 +45,14 @@ const ConnectivityStatusData = S.Struct({
   points: S.Array(ConnectivityStatusPointSchema),
   /** None when the window held no ping cycles: uptime is unanswerable, not 0%. */
   maybeUptimePercentage: S.Option(S.Number),
+  /** None under the same no-data condition as `maybeUptimePercentage`. */
+  maybeAvailabilityPercentage: S.Option(S.Number),
   coveragePercentage: S.Number,
   startTimeMs: S.Number,
   endTimeMs: S.Number,
   granularity: GranularitySchema,
 });
+export type ConnectivityStatusData = typeof ConnectivityStatusData.Type;
 export const ConnectivityStatusAsyncData = AsyncData.Schema(
   ConnectivityStatusData,
   S.String
@@ -90,7 +94,8 @@ export const Model = S.Struct({
   maybeJitterChartHostId: S.Option(S.String),
   maybeSpeedChartHostId: S.Option(S.String),
   hoveredSegmentIndex: S.Option(S.Number),
-  theme: Theme,
+  theme: ThemePreference,
+  menu: Menu.Model,
   maybeLastUpdatedMs: S.Option(S.Number),
   maybeEarliestDataMs: S.Option(S.Number),
   toast: Toast.Model,
@@ -118,6 +123,7 @@ export const initModel = (settings: Settings): Model => ({
   maybeSpeedChartHostId: Option.none(),
   hoveredSegmentIndex: Option.none(),
   theme: settings.theme,
+  menu: Menu.init({ id: "dashboard-menu" }),
   maybeLastUpdatedMs: Option.none(),
   maybeEarliestDataMs: Option.none(),
   toast: Toast.init({ id: "dashboard-toast" }),

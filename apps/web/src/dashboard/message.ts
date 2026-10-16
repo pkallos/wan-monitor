@@ -1,3 +1,4 @@
+import { Menu } from "@foldkit/ui";
 import {
   ConnectivityStatusPointSchema,
   LiveConnectivityStatusSchema,
@@ -6,10 +7,22 @@ import { GranularitySchema, MetricSchema } from "@shared/api/routes/metrics";
 import { SpeedMetricSchema } from "@shared/api/routes/speedtest";
 import { Schema as S } from "effect";
 import { taggedStruct as m } from "foldkit/schema";
+import { DateRangeSelection, PresetKey } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import { Toast } from "@/dashboard/toast";
 
+/**
+ * The range a fetch was issued for. Every range-scoped response echoes it so
+ * `update` can drop an answer for a range the user has since left.
+ */
+export const RangeRequest = S.Struct({
+  dateRange: DateRangeSelection,
+  maybeEarliestDataMs: S.Option(S.Number),
+});
+export type RangeRequest = typeof RangeRequest.Type;
+
 export const SucceededFetchMetrics = m("SucceededFetchMetrics", {
+  request: RangeRequest,
   metrics: S.Array(MetricSchema),
   nowMs: S.Number,
   startTimeMs: S.Number,
@@ -17,26 +30,31 @@ export const SucceededFetchMetrics = m("SucceededFetchMetrics", {
   granularity: GranularitySchema,
 });
 export const FailedFetchMetrics = m("FailedFetchMetrics", {
+  request: RangeRequest,
   error: S.String,
 });
 
 export const SucceededFetchSpeedtestHistory = m(
   "SucceededFetchSpeedtestHistory",
   {
+    request: RangeRequest,
     history: S.Array(SpeedMetricSchema),
     startTimeMs: S.Number,
     endTimeMs: S.Number,
   }
 );
 export const FailedFetchSpeedtestHistory = m("FailedFetchSpeedtestHistory", {
+  request: RangeRequest,
   error: S.String,
 });
 
 export const SucceededFetchConnectivityStatus = m(
   "SucceededFetchConnectivityStatus",
   {
+    request: RangeRequest,
     points: S.Array(ConnectivityStatusPointSchema),
     maybeUptimePercentage: S.Option(S.Number),
+    maybeAvailabilityPercentage: S.Option(S.Number),
     coveragePercentage: S.Number,
     startTimeMs: S.Number,
     endTimeMs: S.Number,
@@ -45,7 +63,7 @@ export const SucceededFetchConnectivityStatus = m(
 );
 export const FailedFetchConnectivityStatus = m(
   "FailedFetchConnectivityStatus",
-  { error: S.String }
+  { request: RangeRequest, error: S.String }
 );
 
 export const SucceededFetchLiveConnectivity = m(
@@ -81,11 +99,14 @@ export const FailedFetchEarliestData = m("FailedFetchEarliestData", {
   error: S.String,
 });
 
-export const ClickedToggleTheme = m("ClickedToggleTheme");
+export const ChangedSystemTheme = m("ChangedSystemTheme");
 export const CompletedApplyTheme = m("CompletedApplyTheme");
 export const CompletedSaveSettings = m("CompletedSaveSettings");
 export const FailedSaveSettings = m("FailedSaveSettings", { error: S.String });
 
+export const GotMenuMessage = m("GotMenuMessage", {
+  message: Menu.Message,
+});
 export const GotToastMessage = m("GotToastMessage", {
   message: Toast.Message,
 });
@@ -97,6 +118,9 @@ export const Interacted = m("Interacted");
 export const WentIdle = m("WentIdle");
 export const GotDateRangePickerMessage = m("GotDateRangePickerMessage", {
   message: DateRangePicker.Message,
+});
+export const SelectedQuickRange = m("SelectedQuickRange", {
+  preset: PresetKey,
 });
 export const ClickedTriggerSpeedtest = m("ClickedTriggerSpeedtest");
 export const ClickedRefreshNow = m("ClickedRefreshNow");
@@ -161,10 +185,11 @@ export const Message = S.Union([
   FailedFetchEarliestData,
   HoveredConnectivitySegment,
   UnhoveredConnectivitySegment,
-  ClickedToggleTheme,
+  ChangedSystemTheme,
   CompletedApplyTheme,
   CompletedSaveSettings,
   FailedSaveSettings,
+  GotMenuMessage,
   GotToastMessage,
   EnteredDashboard,
   TickedRefresh,
@@ -172,6 +197,7 @@ export const Message = S.Union([
   Interacted,
   WentIdle,
   GotDateRangePickerMessage,
+  SelectedQuickRange,
   ClickedTriggerSpeedtest,
   ClickedRefreshNow,
   SucceededMountLatencyChart,
@@ -192,3 +218,9 @@ export const Message = S.Union([
   FailedSyncSpeedChart,
 ]);
 export type Message = typeof Message.Type;
+
+/** Sent to the parent when the user picks Log out from the overflow menu. */
+export const RequestedLogout = m("RequestedLogout");
+
+export const OutMessage = S.Union([RequestedLogout]);
+export type OutMessage = typeof OutMessage.Type;
