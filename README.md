@@ -143,12 +143,15 @@ All configuration is done via environment variables.
 
 ## Dashboard Features
 
-- **Connectivity Status Chart**: Shows network availability over time (up/down/degraded) with uptime percentage
+- **Status headline**: A plain sentence ("Connection is healthy.", "Connection is degraded.", "Connection is down.") with the live status, when it was last sampled, and your ISP and external IP, followed by the uptime over the selected range
+- **Hero figures**: Availability, average latency, and the latest download/upload, each with a sparkline of the loaded range; packet loss and jitter sit beside the availability timeline
+- **Availability timeline**: Shows network availability over time (up/degraded/down) with uptime percentage
 - **Latency Chart**: Ping times to each configured host
 - **Packet Loss Chart**: Percentage of packets lost
 - **Jitter Chart**: Network stability (variance in latency)
-- **Speed Test History**: Download and upload speeds over time
-- **ISP & IP Display**: Shows your current ISP and external IP address
+- **Speed tests**: Download and upload speeds over time, with average and maximum figures and a button to run a test now
+- **Overflow menu**: Light, Dark, or System theme, Run speed test, and Log out
+- **Errors**: A single banner with a Retry button reports any failed fetch while the last good data stays on screen
 
 ### How connectivity status is classified
 
@@ -160,7 +163,7 @@ Every host is pinged together in one cycle, and the cycle as a whole is classifi
 
 The **uptime percentage** is deliberately "clean up only": it counts strictly *up* cycles over all cycles. Degraded cycles are still reachable but are **not** counted toward uptime, so packet loss lowers the uptime figure rather than being treated as full availability. The per-interval degraded share is shown separately on the connectivity chart.
 
-The **Connectivity card** at the top of the dashboard answers "is the link up right now" and is independent of the selected date range. It reports the newest ping cycle inside a trailing window of two ping intervals (60 seconds at the default `PING_INTERVAL_SECONDS`, never shorter than 60 seconds). An empty window reads as grey **No Data** with the time the monitor last reported — that means the monitoring process isn't running, which is a different fact from the internet being down.
+The **status headline** at the top of the dashboard answers "is the link up right now" and is independent of the selected date range. It reports the newest ping cycle inside a trailing window of two ping intervals (60 seconds at the default `PING_INTERVAL_SECONDS`, never shorter than 60 seconds). An empty window reads as grey **No Data** with the time the monitor last reported. That means the monitoring process isn't running, which is a different fact from the internet being down.
 
 ### Data gaps vs. outages
 
@@ -170,13 +173,13 @@ Uptime is measured only over the periods that were actually monitored. Alongside
 
 On the connectivity timeline the two grey shades mean different things. **No Data (monitor offline)** is a gap after monitoring had already started. **Before monitoring started** is the stretch that predates the first sample in the database.
 
-**Date Range**: a calendar picker with presets — last 7 days, last 30 days, month to date, quarter to date, year to date, last 12 months, all time — plus a two-month calendar for picking an arbitrary start and end day.
+**Date Range**: quick buttons for the last hour, 24 hours, 7 days and 30 days, plus a calendar picker with presets (last 7 days, last 30 days, month to date, quarter to date, year to date, last 12 months, all time) and a two-month calendar for picking an arbitrary start and end day.
 
 Charts support linked cursors (hovering on one chart highlights the same time on others) and automatic data aggregation: the bucket size is derived from the selected range's span, from 1-minute buckets for a range of 6 hours or less up to 1-day buckets beyond 90 days.
 
 ### Saved preferences
 
-The theme, the selected date range, and whether auto-refresh is paused are stored in your browser's local storage (key `wan_monitor_settings`) and restored on the next visit. They're per-browser, not per-account — nothing is sent to the server. On a first visit the theme follows your operating system's light/dark preference; after that your explicit choice wins. A paused dashboard stays paused across reloads — the toolbar button reads **Resume** when that's the case. A custom (non-preset) date range is stored as absolute timestamps, so reopening the dashboard days later shows the same fixed window, not a rolling one. Clearing site data resets all three to defaults. Upgrading from an older version that only persisted theme resets it once, to your OS preference — the old `wan_monitor_theme` key is no longer read.
+The theme, the selected date range, and whether auto-refresh is paused are stored in your browser's local storage (key `wan_monitor_settings`) and restored on the next visit. They're per-browser, not per-account, and nothing is sent to the server. The theme is Light, Dark, or System (the default), chosen from the overflow menu; System follows your operating system's light/dark preference and changes with it live, while an explicit Light or Dark choice always wins. A paused dashboard stays paused across reloads: the toolbar's pause button turns into a play button (named "Resume" for screen readers) and a "Live updates paused" chip appears beside the connection status. A custom (non-preset) date range is stored as absolute timestamps, so reopening the dashboard days later shows the same fixed window, not a rolling one. Clearing site data resets all three to defaults. Upgrading from an older version that only persisted theme resets it once, to your OS preference.
 
 ## Limitations
 

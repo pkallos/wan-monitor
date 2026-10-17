@@ -1,4 +1,4 @@
-import { Popover } from "@foldkit/ui";
+import { Menu, Popover } from "@foldkit/ui";
 import { Option } from "effect";
 import { Scene } from "foldkit";
 import { describe, test, vi } from "vitest";
@@ -36,6 +36,8 @@ import {
   CompletedSyncLatencyChart,
   CompletedSyncPacketLossChart,
   CompletedSyncSpeedChart,
+  FailedFetchConnectivityStatus,
+  FailedFetchLiveConnectivity,
   SucceededFetchConnectivityStatus,
   SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
@@ -59,6 +61,10 @@ import { defaultSettings } from "@/storage";
 
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
+const DEFAULT_REQUEST = {
+  dateRange: DEFAULT_DATE_RANGE,
+  maybeEarliestDataMs: Option.none<number>(),
+};
 
 // Each fetch resolves its window once and reports it back on the success
 // message; these stand in for the 30-day default the dashboard opens with.
@@ -78,10 +84,10 @@ const boundUpdate = (
   message: Parameters<typeof update>[1]
 ) => update(model, message, context);
 
-// The dashboard view takes viewInputs (the Logout button, supplied by its
-// auth parent in production); tests stand in a no-op placeholder for it.
+// The dashboard view takes viewInputs (the signed-in username, supplied by
+// its auth parent in production); tests stand in "no session" for it.
 const view = Scene.withViewInputs(dashboardView, {
-  renderLogoutButton: () => null,
+  maybeUsername: Option.none(),
 })();
 
 const acknowledgeAllChartMounts = () =>
@@ -109,6 +115,17 @@ const liveConnectivity = (
     data: { status, maybeLastSampleAtMs },
   });
 
+const resolveMenuMounts = () => [
+  Scene.Mount.resolveAll(
+    [Menu.AnchorMenu, Menu.Message.CompletedAnchorMenu()],
+    [Menu.PortalMenuBackdrop, Menu.Message.CompletedPortalMenuBackdrop()]
+  ),
+  Scene.Command.resolveAll([
+    Menu.FocusItems,
+    Menu.Message.CompletedFocusItems(),
+  ]),
+];
+
 const resolveAllChartSyncs = () =>
   Scene.Command.resolveAll(
     [SyncLatencyChart, CompletedSyncLatencyChart()],
@@ -118,12 +135,72 @@ const resolveAllChartSyncs = () =>
   );
 
 describe("dashboard view", () => {
-  test("shows a loading indicator while metrics are idle", () => {
+  test("shows skeletons in place of numbers and charts while data is idle", () => {
     Scene.scene(
       { update: boundUpdate, view },
       Scene.given(initModel(defaultSettings())),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.text("Loading metrics…")).toExist()
+      Scene.expect(Scene.role("status", { name: "Loading latency" })).toExist(),
+      Scene.expect(
+        Scene.role("status", { name: "Loading packet loss" })
+      ).toExist(),
+      Scene.expect(
+        Scene.role("status", { name: "Loading latency chart" })
+      ).toExist(),
+      Scene.expect(
+        Scene.role("status", { name: "Loading speed chart" })
+      ).toExist(),
+      Scene.expect(
+        Scene.role("status", { name: "Loading availability" })
+      ).toExist(),
+      Scene.expect(Scene.text("Loading metrics…")).not.toExist()
+    );
+  });
+
+  test("drops the skeletons once every series has settled", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        metrics: MetricsAsyncData.Success({ data: [] }),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+        connectivityStatus: ConnectivityStatusAsyncData.Success({
+          data: {
+            points: [],
+            maybeUptimePercentage: Option.none(),
+            maybeAvailabilityPercentage: Option.none(),
+            coveragePercentage: 0,
+            startTimeMs: 0,
+            endTimeMs: 3_600_000,
+            granularity: "1m" as const,
+          },
+        }),
+      }),
+      acknowledgeAllChartMounts(),
+      resolveAllChartSyncs(),
+      Scene.expect(Scene.role("status", { name: /^Loading/ })).not.toExist()
+    );
+  });
+
+  test("does not claim there are no speed tests until the history has loaded", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(initModel(defaultSettings())),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.text("Last test · none yet")).not.toExist()
+    );
+  });
+
+  test("says no speed test has run once the history has loaded empty", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+      }),
+      acknowledgeAllChartMounts(),
+      resolveAllChartSyncs(),
+      Scene.expect(Scene.text("Last test · none yet")).toExist()
     );
   });
 
@@ -144,7 +221,7 @@ describe("dashboard view", () => {
     );
   });
 
-  test("shows the connectivity, download, and upload summary cards", () => {
+  test("shows the status headline and the hero figures", () => {
     const model = {
       ...initModel(defaultSettings()),
       liveConnectivity: liveConnectivity("up"),
@@ -165,13 +242,88 @@ describe("dashboard view", () => {
       Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
-      Scene.expect(Scene.text("Connectivity")).toExist(),
+      Scene.expect(Scene.text("Connection is healthy.")).toExist(),
       Scene.expect(Scene.text("Online")).toExist(),
-      Scene.expect(Scene.text("Download Speed")).toExist(),
-      Scene.expect(Scene.text("123.4 Mbps")).toExist(),
-      Scene.expect(Scene.text("Upload Speed")).toExist(),
-      Scene.expect(Scene.text("12.3 Mbps")).toExist()
+      Scene.expect(Scene.testId("hero-speed")).toContainText("123 / 12.3"),
+      Scene.expect(Scene.testId("hero-speed")).toContainText("Mbps"),
+      Scene.expect(Scene.testId("hero-availability")).toExist(),
+      Scene.expect(Scene.testId("hero-latency")).toExist()
     );
+  });
+
+  test("shows the availability and average latency the loaded data produces", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        metrics: MetricsAsyncData.Success({
+          data: [
+            {
+              timestamp: "2026-07-26T00:00:00.000Z",
+              source: "ping",
+              latency: 10,
+            },
+            {
+              timestamp: "2026-07-26T00:01:00.000Z",
+              source: "ping",
+              latency: 30,
+            },
+          ],
+        }),
+        connectivityStatus: ConnectivityStatusAsyncData.Success({
+          data: {
+            points: [],
+            maybeUptimePercentage: Option.some(99.6),
+            maybeAvailabilityPercentage: Option.some(99.9),
+            coveragePercentage: 100,
+            startTimeMs: 0,
+            endTimeMs: 3_600_000,
+            granularity: "1m" as const,
+          },
+        }),
+      }),
+      acknowledgeAllChartMounts(),
+      resolveAllChartSyncs(),
+      Scene.expect(Scene.testId("hero-availability")).toContainText("99.9"),
+      Scene.expect(Scene.testId("hero-latency")).toContainText("20.0"),
+      Scene.expect(Scene.testId("hero-latency")).toContainText("avg"),
+      Scene.expect(Scene.text("99.6% uptime over the last 30 days.")).toExist()
+    );
+  });
+
+  test("sums up a degraded or down connection in plain words", () => {
+    for (const [status, headline] of [
+      ["degraded", "Connection is degraded."],
+      ["down", "Connection is down."],
+      ["noInfo", "No recent data."],
+    ] as const) {
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given({
+          ...initModel(defaultSettings()),
+          liveConnectivity: liveConnectivity(status),
+        }),
+        acknowledgeAllChartMounts(),
+        Scene.expect(Scene.text(headline)).toExist()
+      );
+    }
+  });
+
+  test("says how long ago the last sample was taken", () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
+    try {
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given({
+          ...initModel(defaultSettings()),
+          liveConnectivity: liveConnectivity("up"),
+        }),
+        acknowledgeAllChartMounts(),
+        Scene.expect(Scene.text("last sample 30s ago")).toExist()
+      );
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   test.each([
@@ -207,13 +359,13 @@ describe("dashboard view", () => {
         }),
         acknowledgeAllChartMounts(),
         Scene.expect(
-          Scene.selector(`p.text-3xl span.${toneClass} svg[aria-hidden="true"]`)
+          Scene.selector(`span.${toneClass} svg[aria-hidden="true"]`)
         ).toExist()
       );
     }
   );
 
-  test("renders the speed cards without a status icon", () => {
+  test("shows the latest speed test in the hero without a status icon", () => {
     Scene.scene(
       { update: boundUpdate, view },
       Scene.given({
@@ -231,8 +383,8 @@ describe("dashboard view", () => {
       }),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
-      Scene.expect(Scene.text("123.4 Mbps")).toExist(),
-      Scene.expect(Scene.selector("p.text-3xl svg")).not.toExist()
+      Scene.expect(Scene.testId("hero-speed")).toContainText("123 / 12.3"),
+      Scene.expect(Scene.testId("hero-speed")).not.toContainText("Online")
     );
   });
 
@@ -343,9 +495,7 @@ describe("dashboard view", () => {
       { update: boundUpdate, view },
       Scene.given(model),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.role("alert")).toHaveText(
-        "Metrics error: network error"
-      )
+      Scene.expect(Scene.role("alert")).toContainText("Metrics: network error")
     );
   });
 
@@ -361,8 +511,8 @@ describe("dashboard view", () => {
       { update: boundUpdate, view },
       Scene.given(model),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.role("alert")).toHaveText(
-        "Speed test history error: network error"
+      Scene.expect(Scene.role("alert")).toContainText(
+        "Speed tests: network error"
       )
     );
   });
@@ -379,8 +529,26 @@ describe("dashboard view", () => {
       { update: boundUpdate, view },
       Scene.given(model),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.role("alert")).toHaveText(
-        "Connectivity status error: network error"
+      Scene.expect(Scene.role("alert")).toContainText(
+        "Availability: network error"
+      )
+    );
+  });
+
+  test("shows an alert with the error when the live status fails", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      liveConnectivity: LiveConnectivityAsyncData.Failure({
+        error: "network error",
+      }),
+    };
+
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(model),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.role("alert")).toContainText(
+        "Live status: network error"
       )
     );
   });
@@ -401,9 +569,7 @@ describe("dashboard view", () => {
       Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
-      Scene.expect(Scene.role("alert")).toHaveText(
-        "Metrics error: network error"
-      )
+      Scene.expect(Scene.role("alert")).toContainText("Metrics: network error")
     );
   });
 
@@ -428,8 +594,8 @@ describe("dashboard view", () => {
       Scene.given(model),
       acknowledgeAllChartMounts(),
       resolveAllChartSyncs(),
-      Scene.expect(Scene.role("alert")).toHaveText(
-        "Speed test history error: network error"
+      Scene.expect(Scene.role("alert")).toContainText(
+        "Speed tests: network error"
       )
     );
   });
@@ -442,6 +608,7 @@ describe("dashboard view", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -455,8 +622,8 @@ describe("dashboard view", () => {
       Scene.given(model),
       acknowledgeAllChartMounts(),
       Scene.expect(Scene.text("Uptime: 100.0%")).toExist(),
-      Scene.expect(Scene.role("alert")).toHaveText(
-        "Connectivity status error: network error"
+      Scene.expect(Scene.role("alert")).toContainText(
+        "Availability: network error"
       )
     );
   });
@@ -484,6 +651,7 @@ describe("dashboard view", () => {
             },
           ],
           maybeUptimePercentage: Option.some(50),
+          maybeAvailabilityPercentage: Option.some(50),
           coveragePercentage: 100,
           startTimeMs,
           endTimeMs: startTimeMs + 10 * 60 * 1000,
@@ -529,6 +697,7 @@ describe("dashboard view", () => {
             },
           ],
           maybeUptimePercentage: Option.some(50),
+          maybeAvailabilityPercentage: Option.some(50),
           coveragePercentage: 100,
           startTimeMs,
           endTimeMs: startTimeMs + 10 * 60 * 1000,
@@ -655,6 +824,7 @@ describe("dashboard view", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -696,17 +866,28 @@ describe("dashboard view", () => {
       Scene.Command.resolveAll(
         [
           FetchMetrics,
-          SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW }),
+          SucceededFetchMetrics({
+            metrics: [],
+            nowMs: 0,
+            ...METRICS_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
         ],
         [
           FetchSpeedtestHistory,
-          SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW }),
+          SucceededFetchSpeedtestHistory({
+            history: [],
+            ...SPEEDTEST_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
         ],
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -753,18 +934,278 @@ describe("dashboard view", () => {
   // Scene never runs a Command's real effect, only injects its resolved
   // message, so `<html>`'s dark class is covered in command.test.ts and e2e
   // instead — this only covers the model and view.
-  test("clicking the theme toggle switches to dark mode and persists it", () => {
+  test("flags paused auto-refresh in the status line", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({ ...initModel(defaultSettings()), isPaused: true }),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.text("Live updates paused")).toExist()
+    );
     Scene.scene(
       { update: boundUpdate, view },
       Scene.given(initModel(defaultSettings())),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.role("button", { name: "Dark mode" })).toExist(),
-      Scene.click(Scene.role("button", { name: "Dark mode" })),
+      Scene.expect(Scene.text("Live updates paused")).not.toExist()
+    );
+  });
+
+  test("keys the availability timeline with a pattern-backed legend", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(initModel(defaultSettings())),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.text("Up")).toExist(),
+      Scene.expect(Scene.text("Down")).toExist(),
+      Scene.expect(Scene.text("No data")).toExist(),
+      Scene.expect(Scene.selector("span.pattern-hatch")).toExist(),
+      Scene.expect(Scene.selector("span.pattern-dots")).toExist()
+    );
+  });
+
+  test("ends the speed tests card with the last test and the run button", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({
+          data: [
+            {
+              timestamp: "2026-07-26T00:01:00.000Z",
+              download_speed: 941.4,
+              upload_speed: 917.2,
+              latency: 8,
+              server_location: "Fremont, CA",
+            },
+          ],
+        }),
+      }),
+      acknowledgeAllChartMounts(),
+      resolveAllChartSyncs(),
+      Scene.expect(Scene.text("Fremont, CA", { exact: false })).toExist(),
+      Scene.expect(Scene.text("941 / 917")).toExist(),
+      Scene.expect(Scene.role("button", { name: "Run Speed Test" })).toExist()
+    );
+  });
+
+  test("the overflow menu offers Light, Dark and System, checking the active one", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(initModel(defaultSettings())),
+      acknowledgeAllChartMounts(),
+      Scene.click(Scene.role("button", { name: "Menu" })),
+      ...resolveMenuMounts(),
+      Scene.expect(Scene.role("menuitem", { name: "Light" })).toExist(),
+      Scene.expect(Scene.role("menuitem", { name: "Dark" })).toExist(),
+      Scene.expect(Scene.role("menuitem", { name: /^System/ })).toExist(),
+      Scene.expect(
+        Scene.role("menuitem", { name: "System (selected)" })
+      ).toExist(),
+      Scene.expect(
+        Scene.role("menuitem", { name: "Run speed test" })
+      ).toExist(),
+      Scene.expect(Scene.role("menuitem", { name: "Log out" })).toExist()
+    );
+  });
+
+  test("typing a letter in the open menu jumps to the item that starts with it", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(initModel(defaultSettings())),
+      acknowledgeAllChartMounts(),
+      Scene.click(Scene.role("button", { name: "Menu" })),
+      ...resolveMenuMounts(),
+      Scene.keydown(Scene.role("menu"), "d"),
+      Scene.Command.resolveAll([
+        Menu.DelayClearSearch,
+        Menu.Message.CompletedDelayClearSearch({ version: 1 }),
+      ]),
+      Scene.expect(Scene.role("menu")).toHaveAttr(
+        "aria-activedescendant",
+        "dashboard-menu-item-1"
+      ),
+      Scene.keydown(Scene.role("menu"), "l"),
+      Scene.Command.resolveAll([
+        Menu.DelayClearSearch,
+        Menu.Message.CompletedDelayClearSearch({ version: 2 }),
+      ]),
+      Scene.expect(Scene.role("menu")).toHaveAttr(
+        "aria-activedescendant",
+        "dashboard-menu-item-4"
+      )
+    );
+  });
+
+  test("choosing Dark from the menu applies it, persists it and checks it", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(initModel(defaultSettings())),
+      acknowledgeAllChartMounts(),
+      Scene.click(Scene.role("button", { name: "Menu" })),
+      ...resolveMenuMounts(),
+      Scene.click(Scene.role("menuitem", { name: "Dark" })),
+      Scene.Mount.expectEnded(Menu.AnchorMenu, Menu.PortalMenuBackdrop),
+      Scene.Command.expectHas(ApplyTheme({ theme: "dark" })),
       Scene.Command.resolveAll(
         [ApplyTheme, CompletedApplyTheme()],
+        [SaveSettings, CompletedSaveSettings()],
+        [Menu.FocusButton, Menu.Message.CompletedFocusButton()]
+      ),
+      Scene.click(Scene.role("button", { name: "Menu" })),
+      Scene.Mount.resolveAll(
+        [Menu.AnchorMenu, Menu.Message.CompletedAnchorMenu()],
+        [Menu.PortalMenuBackdrop, Menu.Message.CompletedPortalMenuBackdrop()]
+      ),
+      Scene.Command.resolveAll([
+        Menu.FocusItems,
+        Menu.Message.CompletedFocusItems(),
+      ]),
+      Scene.expect(
+        Scene.role("menuitem", { name: "Dark (selected)" })
+      ).toExist()
+    );
+  });
+
+  test("the quick range buttons mark the active preset and reload on a change", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(initModel(defaultSettings())),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.role("button", { name: "30d" })).toHaveAttr(
+        "aria-pressed",
+        "true"
+      ),
+      Scene.expect(Scene.role("button", { name: "24h" })).toHaveAttr(
+        "aria-pressed",
+        "false"
+      ),
+      Scene.click(Scene.role("button", { name: "24h" })),
+      Scene.Command.expectHas(
+        FetchMetrics({
+          token: "abc123",
+          dateRange: Preset({ preset: "last24h" }),
+          maybeEarliestDataMs: Option.none(),
+        })
+      ),
+      Scene.Command.expectHas(
+        SaveSettings({
+          settings: {
+            theme: "system",
+            dateRange: Preset({ preset: "last24h" }),
+            isPaused: false,
+          },
+        })
+      ),
+      Scene.Command.resolveAll(
+        [
+          FetchMetrics,
+          SucceededFetchMetrics({
+            metrics: [],
+            nowMs: NOW_MS,
+            ...METRICS_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [
+          FetchSpeedtestHistory,
+          SucceededFetchSpeedtestHistory({
+            history: [],
+            ...SPEEDTEST_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [
+          FetchConnectivityStatus,
+          FailedFetchConnectivityStatus({
+            error: "skip",
+            request: DEFAULT_REQUEST,
+          }),
+        ],
         [SaveSettings, CompletedSaveSettings()]
       ),
-      Scene.expect(Scene.role("button", { name: "Light mode" })).toExist()
+      resolveAllChartSyncs(),
+      Scene.expect(Scene.role("button", { name: "24h" })).toHaveAttr(
+        "aria-pressed",
+        "true"
+      )
+    );
+  });
+
+  test("shows one banner for every failed fetch, merging identical errors, with a Retry button", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        metrics: MetricsAsyncData.Failure({ error: "db down" }),
+        speedtestHistory: SpeedtestHistoryAsyncData.Failure({
+          error: "db down",
+        }),
+        connectivityStatus: ConnectivityStatusAsyncData.Failure({
+          error: "timeout",
+        }),
+      }),
+      acknowledgeAllChartMounts(),
+      Scene.expectAll(Scene.all.role("alert")).toHaveCount(1),
+      Scene.expect(Scene.role("alert")).toContainText(
+        "Metrics, Speed tests: db down"
+      ),
+      Scene.expect(Scene.role("alert")).toContainText("Availability: timeout"),
+      Scene.expect(Scene.role("button", { name: "Retry" })).toExist()
+    );
+  });
+
+  test("shows no banner when nothing failed", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(initModel(defaultSettings())),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.role("alert")).not.toExist()
+    );
+  });
+
+  test("Retry reloads every series", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        metrics: MetricsAsyncData.Failure({ error: "db down" }),
+      }),
+      acknowledgeAllChartMounts(),
+      Scene.click(Scene.role("button", { name: "Retry" })),
+      Scene.Command.expectHas(
+        FetchMetrics({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
+      ),
+      Scene.Command.resolveAll(
+        [
+          FetchMetrics,
+          SucceededFetchMetrics({
+            metrics: [],
+            nowMs: NOW_MS,
+            ...METRICS_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [
+          FetchSpeedtestHistory,
+          SucceededFetchSpeedtestHistory({
+            history: [],
+            ...SPEEDTEST_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [
+          FetchConnectivityStatus,
+          FailedFetchConnectivityStatus({
+            error: "skip",
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [FetchLiveConnectivity, FailedFetchLiveConnectivity({ error: "skip" })]
+      ),
+      resolveAllChartSyncs()
     );
   });
 
@@ -786,6 +1227,7 @@ describe("dashboard view", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -843,6 +1285,7 @@ describe("dashboard view", () => {
               metrics: [],
               nowMs: NOW_MS,
               ...METRICS_WINDOW,
+              request: DEFAULT_REQUEST,
             }),
           ],
           [
@@ -850,13 +1293,16 @@ describe("dashboard view", () => {
             SucceededFetchSpeedtestHistory({
               history: [],
               ...SPEEDTEST_WINDOW,
+              request: DEFAULT_REQUEST,
             }),
           ],
           [
             FetchConnectivityStatus,
             SucceededFetchConnectivityStatus({
+              request: DEFAULT_REQUEST,
               points: [],
               maybeUptimePercentage: Option.some(100),
+              maybeAvailabilityPercentage: Option.some(100),
               coveragePercentage: 100,
               startTimeMs: 0,
               endTimeMs: 3_600_000,

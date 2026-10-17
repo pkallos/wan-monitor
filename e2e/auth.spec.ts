@@ -10,6 +10,9 @@ const VALID_USERNAME = "admin";
 const VALID_PASSWORD = "test-password";
 const FAKE_TOKEN = "e2e-fake-jwt-token";
 
+const openMenu = (page: Page) =>
+  page.getByRole("button", { name: "Menu" }).click();
+
 async function mockAuthEnabled(page: Page): Promise<void> {
   await page.route("**/api/auth/status", (route) =>
     route.fulfill({
@@ -110,7 +113,7 @@ test.describe("Authentication flow (auth enabled)", () => {
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
 
     // The dashboard must not be reachable without authenticating.
-    await expect(page.getByRole("button", { name: /^Logout/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
   });
 
   test("shows an error message for invalid credentials", async ({ page }) => {
@@ -123,7 +126,7 @@ test.describe("Authentication flow (auth enabled)", () => {
 
     // We stay on the login page and never reach the dashboard.
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Logout/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
   });
 
   test("logs in with valid credentials and shows the dashboard", async ({
@@ -143,9 +146,10 @@ test.describe("Authentication flow (auth enabled)", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign In" })).toHaveCount(0);
 
-    // The logout control's accessible name carries the authenticated username.
+    // The Log out item in the overflow menu carries the authenticated username.
+    await openMenu(page);
     await expect(
-      page.getByRole("button", { name: `Logout (${VALID_USERNAME})` })
+      page.getByRole("menuitem", { name: `Log out (${VALID_USERNAME})` })
     ).toBeVisible();
   });
 
@@ -153,34 +157,39 @@ test.describe("Authentication flow (auth enabled)", () => {
     await page.goto("/");
     await login(page, VALID_USERNAME, VALID_PASSWORD);
 
-    const logoutButton = page.getByRole("button", {
-      name: `Logout (${VALID_USERNAME})`,
+    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible({
+      timeout: 10_000,
     });
-    await expect(logoutButton).toBeVisible({ timeout: 10_000 });
-
-    await logoutButton.click();
+    await openMenu(page);
+    await page
+      .getByRole("menuitem", { name: `Log out (${VALID_USERNAME})` })
+      .click();
 
     await expect(
       page.getByText("Sign in to access the dashboard")
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Logout/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
   });
 
   test("restores the authenticated session on reload", async ({ page }) => {
     await page.goto("/");
     await login(page, VALID_USERNAME, VALID_PASSWORD);
-    await expect(
-      page.getByRole("button", { name: `Logout (${VALID_USERNAME})` })
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible({
+      timeout: 10_000,
+    });
 
     // On reload the app re-checks status, finds the stored token, and verifies
     // it via /api/auth/me before restoring the dashboard.
     await page.reload();
 
+    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible({
+      timeout: 10_000,
+    });
+    await openMenu(page);
     await expect(
-      page.getByRole("button", { name: `Logout (${VALID_USERNAME})` })
-    ).toBeVisible({ timeout: 10_000 });
+      page.getByRole("menuitem", { name: `Log out (${VALID_USERNAME})` })
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign In" })).toHaveCount(0);
   });
 });

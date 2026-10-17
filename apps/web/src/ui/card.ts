@@ -5,7 +5,7 @@ export type CardOptions = Readonly<{
   className?: string;
 }>;
 
-const CARD_CLASS = "rounded-[18px] border border-rule bg-card p-6";
+const CARD_CLASS = "rounded-[18px] border border-rule bg-card p-4 lg:p-6";
 
 export const card = <Message>(
   h: HtmlBuilder<Message>,

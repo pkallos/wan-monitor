@@ -1,3 +1,4 @@
+import { Menu } from "@foldkit/ui";
 import { Option } from "effect";
 import { Scene } from "foldkit";
 import { describe, test } from "vitest";
@@ -41,6 +42,17 @@ const acknowledgeAllChartMounts = () =>
     ],
     [MountSpeedChart, SucceededMountSpeedChart({ hostId: SPEED_CHART_HOST_ID })]
   );
+
+const resolveMenuMounts = () => [
+  Scene.Mount.resolveAll(
+    [Menu.AnchorMenu, Menu.Message.CompletedAnchorMenu()],
+    [Menu.PortalMenuBackdrop, Menu.Message.CompletedPortalMenuBackdrop()]
+  ),
+  Scene.Command.resolveAll([
+    Menu.FocusItems,
+    Menu.Message.CompletedFocusItems(),
+  ]),
+];
 
 describe("auth view", () => {
   test("shows a loading indicator while checking auth status", () => {
@@ -99,7 +111,7 @@ describe("auth view", () => {
     );
   });
 
-  test("shows the dashboard shell and a logout button when logged in", () => {
+  test("shows the dashboard shell, with Log out in the overflow menu naming the user", () => {
     Scene.scene(
       { update, view },
       Scene.given(
@@ -111,12 +123,14 @@ describe("auth view", () => {
         })
       ),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.role("button", { name: "Logout (phil)" })).toExist(),
-      Scene.expect(Scene.role("heading", { name: "WAN Monitor" })).toExist()
+      Scene.expect(Scene.role("heading", { name: "WAN Monitor" })).toExist(),
+      Scene.click(Scene.role("button", { name: "Menu" })),
+      ...resolveMenuMounts(),
+      Scene.expect(Scene.role("menuitem", { name: "Log out (phil)" })).toExist()
     );
   });
 
-  test("shows a plain Logout label when auth is disabled and there is no session", () => {
+  test("shows a plain Log out label when auth is disabled and there is no session", () => {
     Scene.scene(
       { update, view },
       Scene.given(
@@ -126,11 +140,13 @@ describe("auth view", () => {
         })
       ),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.role("button", { name: "Logout" })).toExist()
+      Scene.click(Scene.role("button", { name: "Menu" })),
+      ...resolveMenuMounts(),
+      Scene.expect(Scene.role("menuitem", { name: "Log out" })).toExist()
     );
   });
 
-  test("clicking logout dispatches ClickedLogout and returns to the login form", () => {
+  test("choosing Log out from the menu returns to the login form", () => {
     Scene.scene(
       { update, view },
       Scene.given(
@@ -142,15 +158,20 @@ describe("auth view", () => {
         })
       ),
       acknowledgeAllChartMounts(),
-      Scene.click(Scene.role("button", { name: "Logout (phil)" })),
+      Scene.click(Scene.role("button", { name: "Menu" })),
+      ...resolveMenuMounts(),
+      Scene.click(Scene.role("menuitem", { name: "Log out (phil)" })),
       Scene.Command.resolveAll(
         [ClearSession, CompletedClearSession()],
-        [Logout, CompletedLogout()]
+        [Logout, CompletedLogout()],
+        [Menu.FocusButton, Menu.Message.CompletedFocusButton()]
       ),
       Scene.Mount.expectEnded(MountLatencyChart),
       Scene.Mount.expectEnded(MountPacketLossChart),
       Scene.Mount.expectEnded(MountJitterChart),
       Scene.Mount.expectEnded(MountSpeedChart),
+      Scene.Mount.expectEnded(Menu.AnchorMenu),
+      Scene.Mount.expectEnded(Menu.PortalMenuBackdrop),
       Scene.expect(Scene.role("button", { name: "Sign In" })).toExist()
     );
   });

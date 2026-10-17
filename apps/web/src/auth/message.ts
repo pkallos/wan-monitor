@@ -25,7 +25,6 @@ export const SucceededLogin = m("SucceededLogin", {
 });
 export const FailedLogin = m("FailedLogin", { error: S.String });
 
-export const ClickedLogout = m("ClickedLogout");
 export const CompletedLogout = m("CompletedLogout");
 
 export const CompletedSaveSession = m("CompletedSaveSession");
@@ -47,7 +46,6 @@ export const Message = S.Union([
   SubmittedLogin,
   SucceededLogin,
   FailedLogin,
-  ClickedLogout,
   CompletedLogout,
   CompletedSaveSession,
   FailedSaveSession,

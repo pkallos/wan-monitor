@@ -9,26 +9,18 @@ import {
   SaveSession,
 } from "@/auth/command";
 import { GotDashboardMessage, type Message } from "@/auth/message";
-import { initLoggedOut, LoggedIn, type Model, Session } from "@/auth/model";
+import {
+  currentSettings,
+  initLoggedOut,
+  LoggedIn,
+  type Model,
+  Session,
+} from "@/auth/model";
 import * as Dashboard from "@/dashboard";
 import type { Settings } from "@/storage";
 
 type UpdateReturn = Update.Return<Model, Message>;
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
-
-// Every state carries (or can derive) the chrome settings that survive a
-// reload, so this is the one place that reads them off whichever state the
-// model happens to be in — `LoggedIn` holds no separate copy, so its
-// settings come from the live dashboard via `settingsFromModel`.
-const currentSettings = (model: Model): Settings =>
-  M.value(model).pipe(
-    M.withReturnType<Settings>(),
-    M.tagsExhaustive({
-      Checking: (checking) => checking.settings,
-      LoggedOut: (loggedOut) => loggedOut.settings,
-      LoggedIn: (loggedIn) => Dashboard.settingsFromModel(loggedIn.dashboard),
-    })
-  );
 
 // A newly LoggedIn Model always starts its dashboard the same way regardless
 // of how it got here (auth disabled, a validated stored token, or a fresh
@@ -53,6 +45,61 @@ const enterLoggedIn = (
       GotDashboardMessage({ message })
     ),
   };
+};
+
+// Only the OS theme subscription runs outside the dashboard. It repaints
+// `<html>` so Checking and the login screen follow a `system` preference.
+const outsideDashboard = (
+  model: Model,
+  message: Dashboard.Message
+): UpdateReturn =>
+  M.value(message).pipe(
+    withUpdateReturn,
+    M.tag("ChangedSystemTheme", () => {
+      const { theme } = currentSettings(model);
+      return theme === "system"
+        ? {
+            model,
+            commands: Command.mapMessages(
+              [Dashboard.ApplyTheme({ theme })],
+              (message) => GotDashboardMessage({ message })
+            ),
+          }
+        : { model };
+    }),
+    M.orElse(() => ({ model }))
+  );
+
+const updateDashboard = (
+  model: LoggedIn,
+  message: Dashboard.Message
+): UpdateReturn => {
+  const token = Option.match(model.maybeSession, {
+    onNone: () => "",
+    onSome: (session) => session.token,
+  });
+  const {
+    model: dashboardModel,
+    commands: dashboardCommands,
+    outMessage,
+  } = Dashboard.update(model.dashboard, message, { token, now: Date.now });
+  const nextModel = modifyFields(model, { dashboard: () => dashboardModel });
+  const commands = Command.mapMessages(dashboardCommands ?? [], (message) =>
+    GotDashboardMessage({ message })
+  );
+
+  if (outMessage === undefined) return { model: nextModel, commands };
+
+  return M.value(outMessage).pipe(
+    withUpdateReturn,
+    // The theme and range survive logout, so the login screen stays
+    // themed and logging back in restores them.
+    M.tag("RequestedLogout", () => ({
+      model: initLoggedOut(currentSettings(nextModel)),
+      commands: [...commands, ClearSession(), Logout()],
+    })),
+    M.exhaustive
+  );
 };
 
 export const update = (model: Model, message: Message): UpdateReturn =>
@@ -128,32 +175,12 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         };
       },
 
-      // Settings come from the `LoggedIn` model's dashboard, not a default —
-      // the theme and range the user was looking at survive the logout, so
-      // the login screen stays themed and logging back in restores them.
-      ClickedLogout: () => ({
-        model: initLoggedOut(currentSettings(model)),
-        commands: [ClearSession(), Logout()],
-      }),
-
-      GotDashboardMessage: ({ message }) => {
-        if (model._tag !== "LoggedIn") return { model };
-        const token = Option.match(model.maybeSession, {
-          onNone: () => "",
-          onSome: (session) => session.token,
-        });
-        const { model: dashboardModel, commands: dashboardCommands } =
-          Dashboard.update(model.dashboard, message, {
-            token,
-            now: Date.now,
-          });
-        return {
-          model: modifyFields(model, { dashboard: () => dashboardModel }),
-          commands: Command.mapMessages(dashboardCommands ?? [], (message) =>
-            GotDashboardMessage({ message })
-          ),
-        };
-      },
+      GotDashboardMessage: ({ message }) =>
+        M.value(model).pipe(
+          withUpdateReturn,
+          M.tag("LoggedIn", (loggedIn) => updateDashboard(loggedIn, message)),
+          M.orElse((other) => outsideDashboard(other, message))
+        ),
     }),
     // Fire-and-forget acknowledgments: the effect already happened (session
     // saved/cleared, logout request sent), so there's nothing left to do
