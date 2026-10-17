@@ -109,10 +109,16 @@ export const QuestDBConnectionLive = Layer.effect(QuestDBConnection, make);
 
 ```ts
 // apps/server/src/infrastructure/database/questdb/service.ts
-export const QuestDBLive = Layer.effect(QuestDB, make).pipe(
+export const QuestDBOverConnection = Layer.effect(QuestDB, make);
+
+export const QuestDBLive = QuestDBOverConnection.pipe(
   Layer.provide(QuestDBConnectionLive)
 );
 ```
+
+`QuestDBOverConnection` is the service layer before its connection is provided, exported so
+`service.test.ts` can build the service over a stub `QuestDBConnection`. It is named for the
+connection it still requires rather than `*Live`, since only `QuestDBLive` is complete.
 
 ## Composing the dependency graph: `Layer.provide` / `Layer.mergeAll`
 

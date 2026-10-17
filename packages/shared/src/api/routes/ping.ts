@@ -32,6 +32,10 @@ const TriggerPingResponse = Schema.Struct({
 
 const GetHostsResponse = Schema.Struct({
   hosts: Schema.Array(Schema.String),
+  /** Configured seconds between ping cycles. */
+  pingIntervalSeconds: Schema.Number,
+  /** Configured seconds between scheduled speed tests. */
+  speedtestIntervalSeconds: Schema.Number,
 });
 
 export const PingApiGroup = HttpApiGroup.make("ping")

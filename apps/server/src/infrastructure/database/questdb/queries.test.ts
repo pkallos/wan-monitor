@@ -8,11 +8,16 @@ import type {
 } from "@/infrastructure/database/questdb/model";
 import {
   buildQueryConnectivityStatus,
+  buildQueryCyclePeriod,
   buildQueryEarliestTimestamp,
+  buildQueryHostStats,
   buildQueryLatestPingTimestamp,
   buildQueryLiveConnectivity,
   buildQueryMetrics,
+  buildQueryOutageHosts,
+  buildQueryOutageRuns,
   buildQuerySpeedtests,
+  buildQuerySummaryStats,
   CYCLE_STATUS_CASE,
 } from "@/infrastructure/database/questdb/queries";
 
@@ -704,6 +709,73 @@ describe("table name parameterization", () => {
       expect(metrics.query).toContain("FROM network_metrics");
       expect(speedtests.query).toContain("FROM network_metrics");
       expect(connectivity.query).toContain("FROM network_metrics");
+    });
+  });
+});
+
+const window = {
+  startTime: new Date("2024-01-01T00:00:00Z"),
+  endTime: new Date("2024-01-02T00:00:00Z"),
+};
+
+describe.each([
+  ["buildQuerySummaryStats", buildQuerySummaryStats],
+  ["buildQueryCyclePeriod", buildQueryCyclePeriod],
+] as const)("%s", (_name, build) => {
+  it.effect("binds the window as ISO timestamp parameters", () => {
+    return Effect.gen(function* () {
+      const result = yield* build(window);
+
+      expect(result.params).toEqual([
+        "2024-01-01T00:00:00.000Z",
+        "2024-01-02T00:00:00.000Z",
+      ]);
+    });
+  });
+});
+
+const outageWindow = { ...window, mergeGapMs: 75_000 };
+
+describe.each([
+  ["buildQueryOutageRuns", buildQueryOutageRuns],
+  ["buildQueryOutageHosts", buildQueryOutageHosts],
+] as const)("%s", (_name, build) => {
+  it.effect("binds the window and the merge gap in microseconds", () => {
+    return Effect.gen(function* () {
+      const result = yield* build(outageWindow);
+
+      expect(result.params).toEqual([
+        "2024-01-01T00:00:00.000Z",
+        "2024-01-02T00:00:00.000Z",
+        75_000_000,
+      ]);
+    });
+  });
+
+  it.effect("rounds a fractional merge gap to whole microseconds", () => {
+    return Effect.gen(function* () {
+      const result = yield* build({ ...window, mergeGapMs: 1000.0004 });
+
+      expect(result.params[2]).toBe(1_000_000);
+    });
+  });
+});
+
+describe("summary query table parameterization", () => {
+  it.effect("targets a custom table when provided", () => {
+    return Effect.gen(function* () {
+      const table = "network_metrics_test_2";
+      const specs = [
+        yield* buildQuerySummaryStats(window, table),
+        yield* buildQueryHostStats(window, table),
+        yield* buildQueryOutageRuns(outageWindow, table),
+        yield* buildQueryOutageHosts(outageWindow, table),
+        yield* buildQueryCyclePeriod(window, table),
+      ];
+
+      for (const spec of specs) {
+        expect(spec.query).toContain(`FROM ${table}`);
+      }
     });
   });
 });

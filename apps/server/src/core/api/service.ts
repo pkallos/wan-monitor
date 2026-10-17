@@ -7,6 +7,7 @@ import { HealthGroupLive } from "@/core/api/handlers/health";
 import { MetricsGroupLive } from "@/core/api/handlers/metrics";
 import { PingGroupLive } from "@/core/api/handlers/ping";
 import { SpeedTestGroupLive } from "@/core/api/handlers/speedtest";
+import { SummaryGroupLive } from "@/core/api/handlers/summary";
 import {
   AuthorizationLive,
   AuthServiceLive,
@@ -20,6 +21,7 @@ export const ApiServiceLayer = HttpApiBuilder.layer(WanMonitorApi).pipe(
     MetricsGroupLive,
     PingGroupLive,
     SpeedTestGroupLive,
+    SummaryGroupLive,
   ]),
   Layer.provide(AuthServiceLive),
   Layer.provide(AuthorizationLive)

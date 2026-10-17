@@ -164,6 +164,22 @@ describe("Ping Handlers", () => {
       }).pipe(Effect.provide(ConfigServiceTest));
     });
 
+    it.effect("reports the configured ping and speed test intervals", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        makeTestAppConfig({
+          ping: { intervalSeconds: 45 },
+          speedtest: { intervalSeconds: 1800 },
+        })
+      );
+
+      return Effect.gen(function* () {
+        const result = yield* getHostsHandler();
+        expect(result.pingIntervalSeconds).toBe(45);
+        expect(result.speedtestIntervalSeconds).toBe(1800);
+      }).pipe(Effect.provide(ConfigServiceTest));
+    });
+
     it.effect("returns empty list when no hosts configured", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,

@@ -30,6 +30,8 @@ export const getHostsHandler = () =>
     const config = yield* ConfigService;
     return {
       hosts: config.ping.hosts,
+      pingIntervalSeconds: config.ping.intervalSeconds,
+      speedtestIntervalSeconds: config.speedtest.intervalSeconds,
     };
   });
 

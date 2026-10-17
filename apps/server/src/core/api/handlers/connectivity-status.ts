@@ -1,13 +1,28 @@
 import { WanMonitorApi } from "@shared/api";
-import type { GetConnectivityStatusQuery } from "@shared/api/routes/connectivity-status";
+import type {
+  GetConnectivityStatusQuery,
+  GetOutagesQuery,
+} from "@shared/api/routes/connectivity-status";
 import {
   DEFAULT_GRANULARITY,
-  DEGRADED_BUCKET_MIN_SHARE,
-  expectedBucketCount,
   liveConnectivityWindowSeconds,
+  MAX_OUTAGE_SPAN_DAYS,
 } from "@wan-monitor/shared";
 import { Clock, Effect, type Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
+import {
+  MAX_OUTAGES,
+  outageMergeGapMs,
+  summarizeOutages,
+} from "@/core/analytics/outages";
+import { cyclePeriodMs } from "@/core/analytics/period";
+import { bucketStatus, summarizeConnectivity } from "@/core/analytics/rollup";
+import {
+  resolveWindow,
+  SUMMARY_WINDOWS_MS,
+  type TimeWindow,
+  validateWindow,
+} from "@/core/analytics/window";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
@@ -39,82 +54,30 @@ export const getConnectivityStatusHandler = ({
 
     const data = rows.map((row) => {
       const total = row.total_count || 1;
-      // A bucket only reads as "degraded" once a meaningful share of its
-      // cycles were degraded, not the instant a single cycle crosses the
-      // packet-loss floor — otherwise one blip inside a long-window, coarse
-      // rollup bucket (many cycles per bucket) paints the whole bucket
-      // orange.
-      const degradedShare = row.degraded_count / total;
       return {
         timestamp: row.timestamp,
-        status:
-          row.down_count > 0
-            ? ("down" as const)
-            : degradedShare >= DEGRADED_BUCKET_MIN_SHARE
-              ? ("degraded" as const)
-              : ("up" as const),
+        status: bucketStatus({
+          down: row.down_count,
+          degraded: row.degraded_count,
+          total: row.total_count,
+        }),
         upPercentage: (row.up_count / total) * 100,
         downPercentage: (row.down_count / total) * 100,
         degradedPercentage: (row.degraded_count / total) * 100,
       };
     });
 
-    // uptimePercentage is deliberately "clean up only": it counts strictly
-    // `up` cycles over all cycles. Degraded cycles count toward the
-    // denominator but NOT the numerator, so degradation lowers the uptime
-    // figure rather than being treated as full availability.
-    // availabilityPercentage counts `up` and `degraded` together, so a link
-    // that stayed reachable throughout (even if lossy) doesn't read as a total
-    // outage. Both are shipped so callers can pick which one to headline.
-    //
-    // Both are P(link in this state | the collector was running). Unmonitored
-    // stretches are excluded from the denominator entirely and reported through
-    // `coveragePercentage` instead, so a monitor that ran for one hour of a
-    // 24-hour window reports its real uptime over ~4% coverage rather than
-    // diluting uptime toward zero with time nobody was watching. With no cycles
-    // at all the ratio has no denominator, so it is null, not 0 — nothing was
-    // observed, which is not the same as observing a total outage.
-    const observedCycles = rows.reduce((sum, row) => sum + row.total_count, 0);
-    const totalUpPoints = rows.reduce((sum, row) => sum + row.up_count, 0);
-    const totalDegradedPoints = rows.reduce(
-      (sum, row) => sum + row.degraded_count,
-      0
-    );
-    const uptimePercentage =
-      observedCycles > 0 ? (totalUpPoints / observedCycles) * 100 : null;
-    const availabilityPercentage =
-      observedCycles > 0
-        ? ((totalUpPoints + totalDegradedPoints) / observedCycles) * 100
-        : null;
-
-    // A failed ping still writes a row (see `pingExecutor`'s failure path), so
-    // a bucket holding no rows at all means the collector wasn't running for
-    // it, not that the link was down. Every bucket with cycles is present in
-    // `rows`: `SAMPLE BY` without `FILL` emits nothing for an empty interval.
-    const expectedBuckets = expectedBucketCount(
+    const connectivity = summarizeConnectivity(
+      rows,
       startTime.getTime(),
       endTime.getTime(),
       granularity
     );
-    const observedBuckets = rows.length;
-    // The query's upper bound is inclusive while `expectedBucketCount` counts
-    // the half-open [start, end), so a window ending exactly on a boundary can
-    // observe one bucket more than expected. Clamping keeps coverage a
-    // percentage; widening the filter would drop a real bucket of data.
-    const coveragePercentage =
-      expectedBuckets > 0
-        ? Math.min(100, (observedBuckets / expectedBuckets) * 100)
-        : 0;
 
     return {
       data,
       meta: {
-        uptimePercentage,
-        availabilityPercentage,
-        expectedBuckets,
-        observedBuckets,
-        coveragePercentage,
-        observedCycles,
+        ...connectivity,
         expectedSampleIntervalSeconds: config.ping.intervalSeconds,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
@@ -155,6 +118,60 @@ export const getLiveConnectivityHandler = () =>
     return { status: "noInfo" as const, lastSampleAt, windowSeconds };
   }).pipe(Effect.catch(mapQueryError("Failed to query live connectivity")));
 
+const loadOutages = ({ startMs, endMs }: TimeWindow) =>
+  Effect.gen(function* () {
+    const db = yield* QuestDB;
+    const config = yield* ConfigService;
+
+    const window = {
+      startTime: new Date(startMs),
+      endTime: new Date(endMs),
+    };
+    const measuredPeriodMs = yield* db.queryCyclePeriod(window);
+    const periodMs = cyclePeriodMs(
+      measuredPeriodMs,
+      config.ping.intervalSeconds
+    );
+    const runs = yield* db.queryOutageRuns({
+      ...window,
+      mergeGapMs: outageMergeGapMs(periodMs),
+    });
+
+    const outages = summarizeOutages(runs, { periodMs, rangeEndMs: endMs });
+    const data = outages.slice(0, MAX_OUTAGES);
+
+    return {
+      data,
+      meta: {
+        startTime: window.startTime.toISOString(),
+        endTime: window.endTime.toISOString(),
+        count: data.length,
+        totalCount: outages.length,
+      },
+    };
+  }).pipe(Effect.catch(mapQueryError("Failed to query outages")));
+
+/**
+ * The outage log for a window: runs of non-up ping cycles (see
+ * `buildQueryOutageRuns` and `summarizeOutages`), newest first and capped at
+ * `MAX_OUTAGES`. Windows wider than `MAX_OUTAGE_SPAN_DAYS` are rejected before
+ * any query runs. `meta` carries the resolved window, which is the default
+ * trailing 24 hours when none was given.
+ */
+export const getOutagesHandler = ({
+  query,
+}: {
+  query: Schema.Schema.Type<typeof GetOutagesQuery>;
+}) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const window = yield* validateWindow(
+      resolveWindow(query, now, SUMMARY_WINDOWS_MS.last24h),
+      MAX_OUTAGE_SPAN_DAYS
+    );
+    return yield* loadOutages(window);
+  });
+
 export const ConnectivityStatusGroupLive = HttpApiBuilder.group(
   WanMonitorApi,
   "connectivityStatus",
@@ -162,4 +179,5 @@ export const ConnectivityStatusGroupLive = HttpApiBuilder.group(
     handlers
       .handle("getConnectivityStatus", getConnectivityStatusHandler)
       .handle("getLiveConnectivity", getLiveConnectivityHandler)
+      .handle("getOutages", getOutagesHandler)
 );

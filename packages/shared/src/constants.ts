@@ -68,3 +68,9 @@ export const liveConnectivityWindowSeconds = (
  * turns one transient blip into a wide orange region.
  */
 export const DEGRADED_BUCKET_MIN_SHARE = 0.05;
+
+/**
+ * Widest window, in days, the outage log accepts. The log reads every ping
+ * cycle in its window, so this bounds the query; a wider request is a 400.
+ */
+export const MAX_OUTAGE_SPAN_DAYS = 90;
