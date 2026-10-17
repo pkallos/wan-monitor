@@ -446,8 +446,9 @@ const outageParams = ({
  * to ($3 is the merge gap in microseconds). A non-up cycle starts a new outage
  * when it is the first cycle of the window, follows an up cycle, or sits more
  * than the merge gap after the previous cycle; `run_id` is the running count
- * of those starts. Up cycles are dropped after they have been looked at, so
- * this stays one pass over the window's cycles inside the database.
+ * of those starts. A cycle followed by an up cycle within the merge gap
+ * carries that up cycle's time as `recovered_at`. Up cycles are dropped only
+ * after `lag` and `lead` have read them.
  */
 const numberedOutageCycles = (table: string): string => `
           SELECT
@@ -455,6 +456,7 @@ const numberedOutageCycles = (table: string): string => `
             is_down,
             max_packet_loss,
             peak_latency,
+            recovered_at,
             sum(starts_run) OVER (ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as run_id
           FROM (
             SELECT
@@ -464,9 +466,13 @@ const numberedOutageCycles = (table: string): string => `
               peak_latency,
               CASE
                 WHEN previous_non_up IS NULL OR previous_non_up = 0
-                  OR cast(timestamp as long) - cast(previous_timestamp as long) > $3 THEN 1
+                  OR datediff('u', previous_timestamp, timestamp) > $3 THEN 1
                 ELSE 0
-              END as starts_run
+              END as starts_run,
+              CASE
+                WHEN next_non_up = 0
+                  AND datediff('u', timestamp, next_timestamp) <= $3 THEN next_timestamp
+              END as recovered_at
             FROM (
               SELECT
                 timestamp,
@@ -475,7 +481,9 @@ const numberedOutageCycles = (table: string): string => `
                 max_packet_loss,
                 peak_latency,
                 lag(non_up) OVER (ORDER BY timestamp) as previous_non_up,
-                lag(timestamp) OVER (ORDER BY timestamp) as previous_timestamp
+                lag(timestamp) OVER (ORDER BY timestamp) as previous_timestamp,
+                lead(non_up) OVER (ORDER BY timestamp) as next_non_up,
+                lead(timestamp) OVER (ORDER BY timestamp) as next_timestamp
               FROM (
                 SELECT
                   timestamp,
@@ -502,10 +510,11 @@ const numberedOutageCycles = (table: string): string => `
 
 /**
  * The outage runs in the window, oldest first: one row per maximal run of
- * non-up ping cycles, with its first and last cycle, whether any cycle was
- * down, and its worst loss and highest latency. The rows scale with the number
- * of outages rather than the number of cycles inside them. The hosts behind
- * each run come from `buildQueryOutageHosts`.
+ * non-up ping cycles, with its first and last cycle, the up cycle that
+ * followed it within the merge gap (null when none did), a flag for whether
+ * any cycle was down, and its worst loss and highest latency. The rows scale
+ * with the number of outages rather than the number of cycles inside them.
+ * The hosts behind each run come from `buildQueryOutageHosts`.
  */
 export const buildQueryOutageRuns = (
   params: QueryOutageParams,
@@ -517,6 +526,7 @@ export const buildQueryOutageRuns = (
           run_id,
           min(timestamp) as start_time,
           max(timestamp) as last_time,
+          max(recovered_at) as recovered_time,
           max(is_down) as had_down,
           max(max_packet_loss) as max_packet_loss,
           max(peak_latency) as peak_latency
@@ -575,7 +585,7 @@ export const buildQueryCyclePeriod = (
     query: `
         SELECT approx_percentile(gap, 0.5, ${MAX_PERCENTILE_PRECISION}) as period_micros
         FROM (
-          SELECT cast(timestamp as long) - cast(previous_timestamp as long) as gap
+          SELECT datediff('u', previous_timestamp, timestamp) as gap
           FROM (
             SELECT timestamp, lag(timestamp) OVER (ORDER BY timestamp) as previous_timestamp
             FROM (

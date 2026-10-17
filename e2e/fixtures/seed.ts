@@ -83,7 +83,7 @@ export const waitForQuestDb = async (
 export const resetSchema = async (baseUrl: string): Promise<void> => {
   await exec(baseUrl, `DROP TABLE IF EXISTS ${TABLE}`);
   // Recreate from the canonical schema so E2E, CI, integration tests, and the
-  // server bootstrap all share one identical table definition (no drift).
+  // server migrations all share one identical table definition (no drift).
   await exec(baseUrl, buildCreateTableSql());
 };
 

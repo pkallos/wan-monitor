@@ -253,8 +253,11 @@ Before committing, run `git status` and `git diff` to review ALL changes. Review
 
 WAN Monitor persists historical time-series metrics. Losing or corrupting that data is unacceptable.
 
-- **Schema changes must be additive**: Never drop, rename, truncate, or destructively alter existing tables or columns in migrations or startup code. Add new columns/tables instead, and backfill where needed.
-- **No destructive operations against production data**: Never run destructive migrations or ad hoc schema pushes against a live/production database.
+- **Every schema change is a new versioned migration**: Append it to `apps/server/src/infrastructure/database/questdb/migrations/registry.ts`. Never edit a shipped migration or the column list it freezes (such as `NETWORK_METRICS_V2_COLUMNS`). Changing `NETWORK_METRICS_COLUMNS` needs a new migration that brings existing tables to the new shape; the integration test "creates exactly the declared schema on an empty database" (`schema-migrator.integration.test.ts`) fails until there is one.
+- **Migrations are idempotent**: Each `up` must be safe to run again after a partial or repeated run.
+- **Prefer additive schema changes**: Add new columns or tables and backfill them. Never drop a column or table that still holds data, except the original table at the end of a verified rebuild or the rebuild's own unverified copy.
+- **Rewriting a table goes only through the verified rebuild**: Use `rebuildTable` (copy, prove the copy complete, swap, prove again, then drop the original). No production code outside `rebuildTable` and `recoverTableState` in `rebuild.ts` drops, renames or truncates a table.
+- **No destructive operations against production data**: Never run ad hoc schema changes or destructive SQL against a live/production database. Only registered migrations run there.
 - **Never hardcode secrets**: Do not commit API keys, tokens, webhook URLs, or credential-looking literals in source, docs, tests, fixtures, or generated content. Use environment variables and obviously fake placeholders in examples.
 
 ## Code Quality Standards

@@ -162,12 +162,14 @@ export const createMultiHostTestWindow = (
  * Query the current row count of network_metrics via the QuestDB HTTP API.
  * Used to detect when freshly seeded ILP writes have become queryable.
  */
-const countMetricRows = (): Effect.Effect<number, SeedError> =>
+const countMetricRows = (
+  table: string = TEST_TABLE
+): Effect.Effect<number, SeedError> =>
   Effect.tryPromise({
     try: async () => {
       const response = await fetch(
         `${QUESTDB_HTTP_URL}/exec?query=${encodeURIComponent(
-          `SELECT count() FROM ${TEST_TABLE}`
+          `SELECT count() FROM ${table}`
         )}`
       );
 
@@ -194,12 +196,13 @@ const countMetricRows = (): Effect.Effect<number, SeedError> =>
  * under CI load (the commit lag can exceed the sleep, yielding empty query
  * results); polling the actual row count makes seeding deterministic.
  */
-const waitForRowCount = (
+export const waitForRowCount = (
   expectedCount: number,
-  timeout: Duration.Input = "15 seconds"
+  timeout: Duration.Input = "15 seconds",
+  table: string = TEST_TABLE
 ): Effect.Effect<void, SeedError> =>
   Effect.gen(function* () {
-    const count = yield* countMetricRows();
+    const count = yield* countMetricRows(table);
 
     if (count < expectedCount) {
       return yield* Effect.fail(
@@ -261,16 +264,13 @@ const runSql = (query: string): Effect.Effect<void, SeedError> =>
       new SeedError({ message: `Failed to run seed SQL: ${error}` }),
   });
 
-const generatedPingSql = ({
-  host,
-  startMs,
-  count,
-  intervalMs,
-  kind,
-}: GeneratedPingSeries): string => {
+const generatedPingSql = (
+  { host, startMs, count, intervalMs, kind }: GeneratedPingSeries,
+  table: string
+): string => {
   const reading =
     kind === "down" ? "NULL, NULL, 100.0, 'down'" : "30.0, 2.0, 0.0, 'up'";
-  return `INSERT INTO ${TEST_TABLE} (timestamp, source, host, latency, jitter, packet_loss, connectivity_status)
+  return `INSERT INTO ${table} (timestamp, source, host, latency, jitter, packet_loss, connectivity_status)
     SELECT cast(${startMs * 1000}L + (x - 1) * ${intervalMs * 1000}L as timestamp), 'ping', '${host}', ${reading}
     FROM long_sequence(${count})`;
 };
@@ -281,15 +281,17 @@ const generatedPingSql = ({
  * was just truncated, so the row total converges to the sum of the series.
  */
 export const seedGeneratedPings = (
-  series: readonly GeneratedPingSeries[]
+  series: readonly GeneratedPingSeries[],
+  table: string = TEST_TABLE
 ): Effect.Effect<void, SeedError> =>
   Effect.gen(function* () {
     for (const one of series) {
-      yield* runSql(generatedPingSql(one));
+      yield* runSql(generatedPingSql(one, table));
     }
     yield* waitForRowCount(
       series.reduce((total, one) => total + one.count, 0),
-      "60 seconds"
+      "60 seconds",
+      table
     );
   });
 

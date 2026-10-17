@@ -62,6 +62,8 @@ export interface OutageRunRow {
   readonly run_id: number;
   readonly start_time: string;
   readonly last_time: string;
+  /** The up cycle recorded within the merge gap after the run, if there was one. */
+  readonly recovered_time: string | null;
   /** True when any cycle in the run was down rather than merely degraded. */
   readonly had_down: boolean;
   readonly max_packet_loss: number | null;

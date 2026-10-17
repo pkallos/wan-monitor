@@ -1,10 +1,25 @@
 import { types } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { configurePgTypeParsers } from "@/infrastructure/database/questdb/pgwire";
+import {
+  configurePgTypeParsers,
+  pgConnectionSettings,
+} from "@/infrastructure/database/questdb/pgwire";
 
 describe("pgwire integration tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe("pgConnectionSettings", () => {
+    it("addresses the qdb database on the configured host and pg port", () => {
+      expect(pgConnectionSettings({ host: "questdb", pgPort: 5432 })).toEqual({
+        host: "questdb",
+        port: 5432,
+        database: "qdb",
+        user: "admin",
+        password: "quest",
+      });
+    });
   });
 
   describe("configurePgTypeParsers", () => {

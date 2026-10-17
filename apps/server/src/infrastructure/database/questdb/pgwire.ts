@@ -8,3 +8,15 @@ export const configurePgTypeParsers = (): void => {
     val ? `${val.replace(" ", "T")}Z` : val
   );
 };
+
+/** The host, credentials and database every pgwire connection to QuestDB shares. */
+export const pgConnectionSettings = (database: {
+  readonly host: string;
+  readonly pgPort: number;
+}) => ({
+  host: database.host,
+  port: database.pgPort,
+  database: "qdb",
+  user: "admin",
+  password: "quest",
+});

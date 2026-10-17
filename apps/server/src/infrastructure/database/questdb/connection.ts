@@ -1,12 +1,16 @@
 import { Sender } from "@questdb/nodejs-client";
-import { Context, Duration, Effect, Layer, Option, Ref } from "effect";
+import { Context, Duration, Effect, Layer, Option, Ref, Result } from "effect";
 import { Pool } from "pg";
 import { ConfigService } from "@/infrastructure/config/config";
-import { bootstrapSchema } from "@/infrastructure/database/questdb/bootstrap";
 import {
   DatabaseConnectionError,
   DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
+import {
+  SchemaMigrator,
+  SchemaMigratorLive,
+} from "@/infrastructure/database/questdb/migrations/service";
+import { pgConnectionSettings } from "@/infrastructure/database/questdb/pgwire";
 import { errorMessage } from "@/infrastructure/database/questdb/util";
 
 export interface QuestDBRawConnection {
@@ -46,12 +50,18 @@ export class QuestDBConnection extends Context.Service<
 
 const make = Effect.gen(function* () {
   const config = yield* ConfigService;
+  const migrator = yield* SchemaMigrator;
 
   const connectTimeoutMs = 5000;
   const reconnectIntervalMs = 2000;
+  // Only an operator can fix a terminal migration error. Transient failures back
+  // off to the same wait because each retry of a rewrite copies the whole table.
+  const terminalMigrationRetryMs = 10 * 60 * 1000;
   const healthCheckIntervalMs = 5000;
 
   const stateRef = yield* Ref.make<QuestDBConnectionState>(initialState);
+  const failedMigrationsRef = yield* Ref.make(0);
+  const senderCreatedRef = yield* Ref.make(false);
 
   const buildSenderConnectionString = (): string => {
     const {
@@ -104,11 +114,7 @@ const make = Effect.gen(function* () {
     });
 
     const pgClient = new Pool({
-      host: config.database.host,
-      port: config.database.pgPort,
-      database: "qdb",
-      user: "admin",
-      password: "quest",
+      ...pgConnectionSettings(config.database),
       connectionTimeoutMillis: connectTimeoutMs,
       query_timeout: connectTimeoutMs,
       statement_timeout: connectTimeoutMs,
@@ -127,29 +133,6 @@ const make = Effect.gen(function* () {
           message: `Connection verification failed: ${errorMessage(error)}`,
         }),
     }).pipe(
-      Effect.catch((error) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(async () => {
-            try {
-              await sender.close();
-            } catch {
-              // ignore
-            }
-            try {
-              await pgClient.end();
-            } catch {
-              // ignore
-            }
-          });
-          return yield* Effect.fail(error);
-        })
-      )
-    );
-
-    // Bootstrap the canonical schema on every connection so production and
-    // local dev no longer depend on ILP schema-on-write (the source of missing
-    // columns and HTTP 500s). Idempotent and non-destructive.
-    yield* bootstrapSchema(pgClient, config.database.table).pipe(
       Effect.catch((error) =>
         Effect.gen(function* () {
           yield* Effect.promise(async () => {
@@ -198,6 +181,60 @@ const make = Effect.gen(function* () {
     });
   };
 
+  const setLastError = (message: string): Effect.Effect<void> =>
+    Ref.update(stateRef, (s) => ({
+      ...s,
+      lastError: Option.some({ message, timestamp: new Date() }),
+    }));
+
+  const migrationRetryMs = (failures: number): number =>
+    Math.min(
+      reconnectIntervalMs * 2 ** (failures - 1),
+      terminalMigrationRetryMs
+    );
+
+  // Runs on its own client, outside the connect timeout: a table rewrite takes
+  // far longer than a connection attempt.
+  const migrateSchema = Effect.gen(function* () {
+    const outcome = yield* migrator
+      .migrate({
+        canRewriteTables: !(yield* Ref.get(senderCreatedRef)),
+        onProgress: (step) =>
+          setLastError(`Migrating database schema (${step})`),
+      })
+      .pipe(Effect.result);
+    if (Result.isSuccess(outcome)) {
+      yield* Ref.set(failedMigrationsRef, 0);
+      return true;
+    }
+
+    const error = outcome.failure;
+    yield* Ref.update(stateRef, (s) => ({ ...s, isConnecting: false }));
+    yield* setLastError(error.message);
+
+    // A connect failure usually means QuestDB is still starting, so it neither
+    // counts toward the backoff nor logs as a migration error.
+    if (error.step === "connect") {
+      yield* Effect.logWarning(
+        `QuestDB connection attempt failed: ${error.message}`
+      );
+      yield* Effect.sleep(Duration.millis(reconnectIntervalMs));
+      return false;
+    }
+
+    const failures = yield* Ref.updateAndGet(failedMigrationsRef, (n) => n + 1);
+    const log = error.kind === "terminal" ? Effect.logError : Effect.logWarning;
+    yield* log(`QuestDB schema migration: ${error.message}`);
+    yield* Effect.sleep(
+      Duration.millis(
+        error.kind === "terminal"
+          ? terminalMigrationRetryMs
+          : migrationRetryMs(failures)
+      )
+    );
+    return false;
+  });
+
   const connectionLoop = Effect.gen(function* () {
     yield* Effect.logInfo("QuestDB connection loop started");
 
@@ -207,6 +244,10 @@ const make = Effect.gen(function* () {
       if (Option.isNone(state.connection)) {
         yield* Ref.update(stateRef, (s) => ({ ...s, isConnecting: true }));
 
+        if (!(yield* migrateSchema)) {
+          continue;
+        }
+
         const result = yield* createConnection.pipe(
           Effect.timeout(Duration.millis(connectTimeoutMs * 2)),
           Effect.option
@@ -214,6 +255,7 @@ const make = Effect.gen(function* () {
 
         if (Option.isSome(result)) {
           const conn = result.value;
+          yield* Ref.set(senderCreatedRef, true);
           attachPgErrorHandler(conn.pgClient);
 
           yield* Ref.set(stateRef, {
@@ -313,4 +355,11 @@ const make = Effect.gen(function* () {
   } satisfies QuestDBConnectionService;
 });
 
-export const QuestDBConnectionLive = Layer.effect(QuestDBConnection, make);
+export const QuestDBConnectionOverMigrator = Layer.effect(
+  QuestDBConnection,
+  make
+);
+
+export const QuestDBConnectionLive = QuestDBConnectionOverMigrator.pipe(
+  Layer.provide(SchemaMigratorLive)
+);

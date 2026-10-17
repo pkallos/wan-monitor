@@ -159,10 +159,10 @@ jobs:
           echo "QuestDB failed to start"
           exit 1
 
-      # Schema is bootstrapped by the QuestDB client on connect (see
-      # questdb/bootstrap.ts) and by the integration-test setup, both from the
-      # canonical definition in @wan-monitor/shared/db-schema. No manual
-      # CREATE TABLE step is needed here.
+      # The server's migrations (questdb/migrations/) create the schema on
+      # connect, and the integration-test setup creates it from the definition
+      # in @wan-monitor/shared/db-schema. No manual CREATE TABLE step is needed
+      # here.
 
       - name: Run tests with coverage
         run: pnpm test:coverage
