@@ -27,6 +27,9 @@ const fetchErrors = (model: Model) =>
       source: "Live status",
       maybeError: AsyncData.getError(model.liveConnectivity),
     },
+    { source: "Summary", maybeError: AsyncData.getError(model.summary) },
+    { source: "Incidents", maybeError: AsyncData.getError(model.outages) },
+    { source: "Hosts", maybeError: AsyncData.getError(model.pingHosts) },
   ]);
 
 /** One non-blocking alert for every failed fetch, with a way to try again. */

@@ -71,7 +71,7 @@ describe("auth view", () => {
       Scene.given(initLoggedOut(defaultSettings())),
       Scene.expect(Scene.label("Username")).toExist(),
       Scene.expect(Scene.label("Password")).toExist(),
-      Scene.expect(Scene.role("button", { name: "Sign In" })).toExist()
+      Scene.expect(Scene.role("button", { name: "Sign in" })).toExist()
     );
   });
 
@@ -102,11 +102,11 @@ describe("auth view", () => {
       Scene.given(
         initLoggedOut(
           defaultSettings(),
-          Option.some("Incorrect username or password. Please try again.")
+          Option.some("Incorrect username or password.")
         )
       ),
       Scene.expect(Scene.role("alert")).toHaveText(
-        "Incorrect username or password. Please try again."
+        "Incorrect username or password."
       )
     );
   });
@@ -172,7 +172,7 @@ describe("auth view", () => {
       Scene.Mount.expectEnded(MountSpeedChart),
       Scene.Mount.expectEnded(Menu.AnchorMenu),
       Scene.Mount.expectEnded(Menu.PortalMenuBackdrop),
-      Scene.expect(Scene.role("button", { name: "Sign In" })).toExist()
+      Scene.expect(Scene.role("button", { name: "Sign in" })).toExist()
     );
   });
 });

@@ -1,0 +1,5 @@
+---
+"wan-monitor": patch
+---
+
+Add a live status field, an availability ribbon with lettered incident chips, a stat rail, an incidents log, per-host stats, and 24h/7d/30d uptime to the dashboard.

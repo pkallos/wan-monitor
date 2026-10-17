@@ -105,7 +105,7 @@ test.describe("header controls", () => {
       "30d",
       "date picker",
       "Refresh now",
-      "Pause",
+      "Pause auto-refresh",
       "Menu",
     ]);
   });

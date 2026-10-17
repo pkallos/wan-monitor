@@ -10,6 +10,7 @@ import type {
   SpeedStats,
 } from "@/dashboard/charts/stats";
 import type { TimelineSlot } from "@/dashboard/charts/timeline";
+import type { Incident } from "@/dashboard/incidents";
 
 // Mirrors echarts' own `PrimaryTimeUnit` (scale/Time.js): every tick on a
 // time axis is classified into exactly one of these, and that classification
@@ -315,10 +316,72 @@ const toSeriesData = <A>(
     }),
   ]);
 
+const incidentColor = (
+  palette: ChartPalette,
+  status: Incident["status"]
+): string => (status === "down" ? palette.down : palette.degraded);
+
+const incidentMarkArea = (
+  incidents: ReadonlyArray<Incident>,
+  palette: ChartPalette
+) =>
+  incidents.length === 0
+    ? undefined
+    : {
+        silent: true,
+        data: Array_.map(
+          incidents,
+          (
+            incident
+          ): [{ xAxis: number; itemStyle: object }, { xAxis: number }] => [
+            {
+              xAxis: incident.startMs,
+              itemStyle: {
+                color: incidentColor(palette, incident.status),
+                opacity: 0.16,
+              },
+            },
+            { xAxis: incident.endMs },
+          ]
+        ),
+      };
+
+/**
+ * A lettered line at each incident's start. It is what stays visible when the
+ * shaded span is narrower than a pixel, as a minutes-long outage is on a
+ * week-wide chart; the letter matches the ref in the incident log.
+ */
+const incidentMarkLines = (
+  incidents: ReadonlyArray<Incident>,
+  palette: ChartPalette
+) =>
+  Array_.map(incidents, (incident) => ({
+    xAxis: incident.startMs,
+    lineStyle: {
+      color: incidentColor(palette, incident.status),
+      width: 1.5,
+      type: "solid" as const,
+    },
+    label: {
+      show: true,
+      position: "end" as const,
+      formatter: incident.ref,
+      color: palette.ink,
+      fontSize: 11,
+      fontWeight: 600,
+      backgroundColor: palette.card,
+      borderColor: incidentColor(palette, incident.status),
+      borderWidth: 1,
+      borderRadius: 4,
+      padding: [1, 4],
+    },
+  }));
+
 export const makeLatencyChartOption = ({
   slots,
   stats,
   palette,
+  incidents,
   startMs,
   endMs,
   splitNumber,
@@ -326,6 +389,7 @@ export const makeLatencyChartOption = ({
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "latency">>>;
   stats: LatencyStats;
   palette: ChartPalette;
+  incidents: ReadonlyArray<Incident>;
   startMs: number;
   endMs: number;
   splitNumber: number;
@@ -344,11 +408,13 @@ export const makeLatencyChartOption = ({
       areaStyle: { color: palette.band },
       itemStyle: { color: palette.accent },
       connectNulls: false,
+      markArea: incidentMarkArea(incidents, palette),
       markLine:
-        stats.avg === "-"
+        stats.avg === "-" && incidents.length === 0
           ? undefined
           : {
               symbol: "none",
+              silent: true,
               lineStyle: { color: palette.inkSecondary, type: "dashed" },
               label: {
                 position: "insideEndTop",
@@ -356,7 +422,10 @@ export const makeLatencyChartOption = ({
                 color: palette.inkSecondary,
                 padding: [2, 4],
               },
-              data: [{ yAxis: Number(stats.avg) }],
+              data: [
+                ...(stats.avg === "-" ? [] : [{ yAxis: Number(stats.avg) }]),
+                ...incidentMarkLines(incidents, palette),
+              ],
             },
     },
   ],
@@ -365,6 +434,7 @@ export const makeLatencyChartOption = ({
 export const makePacketLossChartOption = ({
   slots,
   palette,
+  incidents,
   startMs,
   endMs,
   splitNumber,
@@ -372,6 +442,7 @@ export const makePacketLossChartOption = ({
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "packet_loss">>>;
   stats: PacketLossStats;
   palette: ChartPalette;
+  incidents: ReadonlyArray<Incident>;
   startMs: number;
   endMs: number;
   splitNumber: number;
@@ -382,7 +453,7 @@ export const makePacketLossChartOption = ({
   series: [
     {
       type: "line",
-      name: "Packet Loss",
+      name: "Packet loss",
       data: toSeriesData(slots, (point) => point.packet_loss ?? null),
       // A flat 0% run draws as a real line on the axis baseline; a gap in
       // the data (no slot) draws nothing, since connectNulls is false.
@@ -392,6 +463,15 @@ export const makePacketLossChartOption = ({
       areaStyle: { color: palette.down, opacity: 0.15 },
       itemStyle: { color: palette.down },
       connectNulls: false,
+      markArea: incidentMarkArea(incidents, palette),
+      markLine:
+        incidents.length === 0
+          ? undefined
+          : {
+              symbol: "none",
+              silent: true,
+              data: incidentMarkLines(incidents, palette),
+            },
     },
   ],
 });
@@ -401,6 +481,7 @@ const ACCEPTABLE_JITTER_THRESHOLD_MS = 10;
 export const makeJitterChartOption = ({
   slots,
   palette,
+  incidents,
   startMs,
   endMs,
   splitNumber,
@@ -408,6 +489,7 @@ export const makeJitterChartOption = ({
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "jitter">>>;
   stats: JitterStats;
   palette: ChartPalette;
+  incidents: ReadonlyArray<Incident>;
   startMs: number;
   endMs: number;
   splitNumber: number;
@@ -426,15 +508,20 @@ export const makeJitterChartOption = ({
       areaStyle: { color: palette.inkSecondary, opacity: 0.12 },
       itemStyle: { color: palette.inkSecondary },
       connectNulls: false,
+      markArea: incidentMarkArea(incidents, palette),
       markLine: {
         symbol: "none",
+        silent: true,
         lineStyle: { color: palette.degraded, type: "dashed" },
         label: {
           position: "insideStartTop",
-          formatter: "Acceptable",
+          formatter: `${ACCEPTABLE_JITTER_THRESHOLD_MS} ms`,
           color: palette.inkSecondary,
         },
-        data: [{ yAxis: ACCEPTABLE_JITTER_THRESHOLD_MS }],
+        data: [
+          { yAxis: ACCEPTABLE_JITTER_THRESHOLD_MS },
+          ...incidentMarkLines(incidents, palette),
+        ],
       },
     },
   ],

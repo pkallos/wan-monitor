@@ -1,50 +1,30 @@
-import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
+import type { GetSummaryResponseType } from "@shared/api/routes/summary";
 import { Array as Array_, Match as M, Option, Order } from "effect";
-import {
-  calculateJitterStats,
-  calculateLatencyStats,
-  calculatePacketLossStats,
-} from "@/dashboard/charts/stats";
 import type { ConnectivityStatus } from "@/dashboard/connectivity";
 import type { DateRangeSelection, PresetKey } from "@/dashboard/dateRange";
-import type { StatusTone } from "@/ui/statusBadge";
-
-export const formatDurationAgo = (elapsedMs: number): string => {
-  const seconds = Math.floor(elapsedMs / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
-};
+import {
+  counted,
+  fixed,
+  formatClock,
+  formatDurationAgo,
+  formatLongDuration,
+  formatMonthDay,
+} from "@/dashboard/format";
 
 export type ConnectionState = ConnectivityStatus | "checking";
 
-export type ConnectionSummary = Readonly<{
-  headline: string;
-  label: string;
-  tone: StatusTone;
-}>;
+export type ConnectionStatus = Readonly<{ label: string }>;
 
-// The label speaks in reachability ("Online"), not in the timeline tooltip's
-// per-cycle vocabulary ("Up"). A silent monitor tones neutral, never as an
-// outage: it says nothing about the WAN itself.
-export const CONNECTION_SUMMARIES: Record<ConnectionState, ConnectionSummary> =
-  {
-    up: { headline: "Connection is healthy.", label: "Online", tone: "good" },
-    degraded: {
-      headline: "Connection is degraded.",
-      label: "Degraded",
-      tone: "warning",
-    },
-    down: { headline: "Connection is down.", label: "Offline", tone: "error" },
-    noInfo: { headline: "No recent data.", label: "No Data", tone: "neutral" },
-    checking: {
-      headline: "Checking connection…",
-      label: "Checking…",
-      tone: "neutral",
-    },
-  };
+// The label speaks in reachability ("Online"), not in the history ribbon's
+// per-cycle vocabulary ("Up").
+export const CONNECTION_STATUS: Record<ConnectionState, ConnectionStatus> = {
+  up: { label: "Online" },
+  degraded: { label: "Degraded" },
+  down: { label: "Offline" },
+  noInfo: { label: "No data" },
+  checking: { label: "Checking…" },
+};
 
 export const lastSampleText = (
   state: ConnectionState,
@@ -55,15 +35,15 @@ export const lastSampleText = (
   if (state === "noInfo") {
     return Option.some(
       Option.match(maybeLastSampleAtMs, {
-        onNone: () => "no monitoring data",
+        onNone: () => "No samples yet",
         onSome: (sampleAtMs) =>
-          `last seen ${formatDurationAgo(nowMs - sampleAtMs)}`,
+          `Last checked ${formatDurationAgo(nowMs - sampleAtMs)}`,
       })
     );
   }
   return Option.map(
     maybeLastSampleAtMs,
-    (sampleAtMs) => `last sample ${formatDurationAgo(nowMs - sampleAtMs)}`
+    (sampleAtMs) => `Last checked ${formatDurationAgo(nowMs - sampleAtMs)}`
   );
 };
 
@@ -79,119 +59,162 @@ const PRESET_PHRASES: Record<PresetKey, string> = {
   allTime: "all time",
 };
 
+const UTC_DAY_FORMAT: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+};
+
+const utcDayText = (
+  iso: string,
+  options: Intl.DateTimeFormatOptions = UTC_DAY_FORMAT
+): string => new Date(iso).toLocaleDateString([], options);
+
+/**
+ * A custom range as it reads mid-sentence, in the UTC days its picker label
+ * uses: "Oct 4 to Oct 10, 2026", or the one day when it starts and ends on it.
+ */
+const describeCustomRange = ({
+  startTime,
+  endTime,
+}: {
+  startTime: string;
+  endTime: string;
+}): string => {
+  const withYear = { ...UTC_DAY_FORMAT, year: "numeric" } as const;
+  const start = utcDayText(startTime, withYear);
+  const end = utcDayText(endTime, withYear);
+  if (start === end) return end;
+  const isSameYear =
+    new Date(startTime).getUTCFullYear() === new Date(endTime).getUTCFullYear();
+  return `${isSameYear ? utcDayText(startTime) : start} to ${end}`;
+};
+
+/** The range as it reads mid-sentence: "the last 30 days", "all time", "Oct 4 to Oct 10, 2026". */
 export const describeRange = (selection: DateRangeSelection): string =>
   M.value(selection).pipe(
     M.tag("Preset", ({ preset }) => PRESET_PHRASES[preset]),
-    M.orElse(() => "the selected range")
+    M.orElse(describeCustomRange)
   );
 
-export const uptimeSummary = (
-  maybeUptimePercentage: Option.Option<number>,
-  rangePhrase: string
-): string =>
-  Option.match(maybeUptimePercentage, {
-    onNone: () => "No uptime data for this period.",
-    onSome: (uptime) => `${uptime.toFixed(1)}% uptime over ${rangePhrase}.`,
-  });
+/**
+ * What the uptime figure rests on when the monitor did not observe the whole
+ * range: the covered time, taken as the coverage share of the range's span.
+ */
+export const coverageNote = (
+  coveragePercentage: number,
+  spanMs: number
+): Option.Option<string> => {
+  if (coveragePercentage >= 100) return Option.none();
+  if (coveragePercentage <= 0) {
+    return Option.some("The monitor has no data for this period.");
+  }
+  const coveredSeconds = Math.round(
+    (spanMs / 1000) * (coveragePercentage / 100)
+  );
+  return Option.some(
+    `The monitor has data for ${formatLongDuration(coveredSeconds)} of this period, and uptime covers only that time.`
+  );
+};
 
-/** One headline number with its unit, a caption, and the series behind its sparkline. */
-export type Figure = Readonly<{
-  label: string;
-  value: string;
-  unit: string;
-  caption: string;
-  series: ReadonlyArray<number | null>;
-}>;
+export const percentText = (value: number | null): string =>
+  value === null ? "-" : value.toFixed(2);
 
 const chronological = <A extends { readonly timestamp: string }>(
   rows: ReadonlyArray<A>
 ): ReadonlyArray<A> =>
   Array_.sortWith(rows, (row) => Date.parse(row.timestamp), Order.Number);
 
-const seriesOf = <A extends { readonly timestamp: string }>(
-  rows: ReadonlyArray<A>,
-  pick: (row: A) => number | undefined
-): ReadonlyArray<number | null> =>
-  Array_.map(chronological(rows), (row) => pick(row) ?? null);
-
-export const availabilityFigure = (
-  maybeAvailabilityPercentage: Option.Option<number>,
-  points: ReadonlyArray<{ readonly downPercentage: number }>
-): Figure => ({
-  label: "Availability",
-  value: Option.match(maybeAvailabilityPercentage, {
-    onNone: () => "-",
-    onSome: (availability) => availability.toFixed(1),
-  }),
-  unit: "%",
-  caption: "up or degraded",
-  series: Array_.map(points, (point) => 100 - point.downPercentage),
-});
-
-type MetricRow = Pick<
-  Metric,
-  "timestamp" | "latency" | "packet_loss" | "jitter"
->;
-
-export const latencyFigure = (metrics: ReadonlyArray<MetricRow>): Figure => ({
-  label: "Latency",
-  value: calculateLatencyStats(metrics).avg,
-  unit: "ms",
-  caption: "avg",
-  series: seriesOf(metrics, (row) => row.latency),
-});
-
-export const packetLossFigure = (
-  metrics: ReadonlyArray<MetricRow>
-): Figure => ({
-  label: "Packet loss",
-  value: calculatePacketLossStats(metrics).avg,
-  unit: "%",
-  caption: "avg",
-  series: seriesOf(metrics, (row) => row.packet_loss),
-});
-
-export const jitterFigure = (metrics: ReadonlyArray<MetricRow>): Figure => ({
-  label: "Jitter",
-  value: calculateJitterStats(metrics).avg,
-  unit: "ms",
-  caption: "avg",
-  series: seriesOf(metrics, (row) => row.jitter),
-});
-
 // A test can exist without one of its two measurements, and a genuine zero is
 // a reading, so each half falls back to "-" on its own. Triple-digit speeds
-// drop the decimal so the pair still fits a hero tile at display size.
-const formatSpeed = (value: number | undefined): string =>
-  value === undefined
+// drop the decimal so the figures stay compact.
+const formatSpeed = (value: number | null | undefined): string =>
+  value === null || value === undefined
     ? "-"
     : value >= 100
       ? value.toFixed(0)
       : value.toFixed(1);
 
-export const speedFigure = (
-  history: ReadonlyArray<
-    Pick<SpeedMetric, "timestamp" | "download_speed" | "upload_speed">
-  >,
-  nowMs: number
-): Figure => {
-  const ordered = chronological(history);
-  return {
-    label: "Download / Upload",
-    value: Option.match(Array_.last(ordered), {
-      onNone: () => "-",
-      onSome: (latest) =>
-        `${formatSpeed(latest.download_speed)} / ${formatSpeed(latest.upload_speed)}`,
-    }),
+/** One figure of the stat rail: a labelled number and the line under it. */
+export type RailStat = Readonly<{
+  key: "latency" | "loss" | "jitter" | "download" | "upload";
+  label: string;
+  value: string;
+  unit: string;
+  sub: string;
+}>;
+
+/** The figures the rail reads; a null count is a summary that never reported one. */
+type RailFigures = Readonly<{
+  range: Pick<
+    GetSummaryResponseType["range"],
+    "latencyP50" | "latencyP95" | "avgPacketLoss" | "avgJitter"
+  >;
+  speed: Readonly<{
+    downloadMedian: number | null;
+    uploadMedian: number | null;
+    count: number | null;
+  }>;
+}>;
+
+const testCountText = (count: number | null): string =>
+  count === null
+    ? "Median"
+    : count === 0
+      ? "No tests in this range."
+      : `Median of ${counted(count, "test")}`;
+
+export const railStats = ({
+  range,
+  speed,
+}: RailFigures): ReadonlyArray<RailStat> => [
+  {
+    key: "latency",
+    label: "Latency p50",
+    value: fixed(range.latencyP50, 1),
+    unit: "ms",
+    sub: `95th percentile ${range.latencyP95 === null ? "-" : `${range.latencyP95.toFixed(1)} ms`}`,
+  },
+  {
+    key: "loss",
+    label: "Packet loss",
+    value: fixed(range.avgPacketLoss, 2),
+    unit: "%",
+    sub: "Averaged over all checks",
+  },
+  {
+    key: "jitter",
+    label: "Jitter",
+    value: fixed(range.avgJitter, 1),
+    unit: "ms",
+    sub: "Averaged over all checks",
+  },
+  {
+    key: "download",
+    label: "Download",
+    value: formatSpeed(speed.downloadMedian),
     unit: "Mbps",
-    caption: Option.match(Array_.last(ordered), {
-      onNone: () => "no tests yet",
-      onSome: (latest) =>
-        `latest test, ${formatDurationAgo(nowMs - Date.parse(latest.timestamp))}`,
-    }),
-    series: Array_.map(ordered, (row) => row.download_speed ?? null),
-  };
-};
+    sub: testCountText(speed.count),
+  },
+  {
+    key: "upload",
+    label: "Upload",
+    value: formatSpeed(speed.uploadMedian),
+    unit: "Mbps",
+    sub: testCountText(speed.count),
+  },
+];
+
+/** The rail of a summary that has no figures: every cell reads "-" under its usual label. */
+export const unreportedRailStats: ReadonlyArray<RailStat> = railStats({
+  range: {
+    latencyP50: null,
+    latencyP95: null,
+    avgPacketLoss: null,
+    avgJitter: null,
+  },
+  speed: { downloadMedian: null, uploadMedian: null, count: null },
+});
 
 export interface NetworkInfo {
   readonly isp: string;
@@ -209,32 +232,49 @@ export const networkInfo = (
       (sample) => sample.isp !== undefined && sample.isp.length > 0
     ),
     {
-      onNone: () => ({ isp: "Unknown ISP", maybeExternalIp: Option.none() }),
+      onNone: () => ({ isp: "ISP unknown", maybeExternalIp: Option.none() }),
       onSome: (latest) => ({
-        isp: latest.isp ?? "Unknown ISP",
+        isp: latest.isp ?? "ISP unknown",
         maybeExternalIp: Option.fromNullishOr(latest.external_ip),
       }),
     }
   );
 
-const LAST_TEST_TIME_FORMAT: Intl.DateTimeFormatOptions = {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-};
+/** The ISP, with the public IP when the speed tests recorded one: "TestISP, public IP 1.2.3.4". */
+export const networkText = ({ isp, maybeExternalIp }: NetworkInfo): string =>
+  Option.match(maybeExternalIp, {
+    onNone: () => isp,
+    onSome: (externalIp) => `${isp}, public IP ${externalIp}`,
+  });
 
-/** "Last test · Oct 15, 2:00 PM · Fremont, CA"; the server clause drops out when unknown. */
+const speedClause = (
+  value: number | null | undefined,
+  direction: "down" | "up"
+): string =>
+  value === null || value === undefined
+    ? `no ${direction === "down" ? "download" : "upload"} reading`
+    : `${formatSpeed(value)} Mbps ${direction}`;
+
+/**
+ * The newest test as a sentence: "Last test, Oct 15 at 2:00 PM: 100 Mbps down,
+ * 10.0 Mbps up (Fremont, CA).". The server clause drops out when unknown.
+ */
 export const lastTestLabel = (
-  history: ReadonlyArray<Pick<SpeedMetric, "timestamp" | "server_location">>
+  history: ReadonlyArray<
+    Pick<
+      SpeedMetric,
+      "timestamp" | "download_speed" | "upload_speed" | "server_location"
+    >
+  >
 ): Option.Option<string> =>
-  Option.map(Array_.last(chronological(history)), (latest) =>
-    [
-      "Last test",
-      new Date(latest.timestamp).toLocaleString([], LAST_TEST_TIME_FORMAT),
-      ...(latest.server_location === undefined ? [] : [latest.server_location]),
-    ].join(" · ")
-  );
+  Option.map(Array_.last(chronological(history)), (latest) => {
+    const at = Date.parse(latest.timestamp);
+    const server =
+      latest.server_location === undefined
+        ? ""
+        : ` (${latest.server_location})`;
+    return `Last test, ${formatMonthDay(at)} at ${formatClock(at)}: ${speedClause(latest.download_speed, "down")}, ${speedClause(latest.upload_speed, "up")}${server}.`;
+  });
 
 export type FetchErrorEntry = Readonly<{
   source: string;
@@ -243,8 +283,8 @@ export type FetchErrorEntry = Readonly<{
 
 /**
  * One line per distinct error, naming every source that hit it, so an outage
- * that fails all three fetches with the same message reads once instead of
- * three times.
+ * that fails several fetches with the same message reads once instead of once
+ * per source.
  */
 export const describeFetchErrors = (
   entries: ReadonlyArray<FetchErrorEntry>

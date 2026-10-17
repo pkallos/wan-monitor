@@ -1,3 +1,4 @@
+import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
 import { Array as Array_, Match as M, Option } from "effect";
 import { AsyncData } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -7,6 +8,7 @@ import {
   Check,
   EllipsisVertical,
   Gauge,
+  Globe,
   LogOut,
   Monitor,
   Moon,
@@ -17,6 +19,11 @@ import {
 } from "lucide";
 import type { PresetKey } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
+import {
+  describeOutageLine,
+  openIncidentSentence,
+  outageTotals,
+} from "@/dashboard/incidents";
 import {
   DashboardMenu,
   isThemeItem,
@@ -35,25 +42,34 @@ import {
 } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
 import {
-  availabilityFigure,
-  CONNECTION_SUMMARIES,
+  CONNECTION_STATUS,
   type ConnectionState,
+  coverageNote,
   describeRange,
-  type Figure,
-  lastSampleText,
-  latencyFigure,
   networkInfo,
-  speedFigure,
-  uptimeSummary,
+  networkText,
+  percentText,
 } from "@/dashboard/overview";
 import type { ViewInputs } from "@/dashboard/view";
+import {
+  configuredHosts,
+  connectionOf,
+  currentConnectivity,
+  currentOutages,
+  lastSampleOf,
+  openIncidentOf,
+  summaryOf,
+  trailingWindowsOf,
+} from "@/dashboard/view/derived";
 import { WRAP_CLASS } from "@/dashboard/view/layout";
 import { isAwaitingData } from "@/dashboard/view/loading";
+import { ribbonCard } from "@/dashboard/view/ribbon";
+import { statRail } from "@/dashboard/view/statRail";
 import { FIELD_ICON_BUTTON_CLASS } from "@/ui/controls";
-import { figureTile } from "@/ui/figureTile";
+import { failedLine } from "@/ui/failedLine";
 import { icon } from "@/ui/icon";
 import { skeleton } from "@/ui/skeleton";
-import { statusBadge } from "@/ui/statusBadge";
+import { type GlyphKind, statusGlyph } from "@/ui/statusGlyph";
 
 const QUICK_RANGES: ReadonlyArray<readonly [PresetKey, string]> = [
   ["last1h", "1h"],
@@ -249,7 +265,6 @@ const topBar = (
               h.OnClick(ClickedRefreshNow()),
               h.Disabled(AsyncData.isPending(model.metrics)),
               h.AriaLabel("Refresh now"),
-              h.Title("Refresh now"),
               h.Class(FIELD_ICON_BUTTON_CLASS),
             ],
             [icon(h, RefreshCw, { size: 18, strokeWidth: 1.75 })]
@@ -260,16 +275,9 @@ const topBar = (
               h.OnClick(model.isIdle ? Interacted() : ClickedTogglePause()),
               h.AriaLabel(
                 model.isPaused
-                  ? "Resume"
-                  : model.isIdle
-                    ? "Resume (paused, inactive)"
-                    : "Pause"
-              ),
-              h.Title(
-                model.isPaused
                   ? "Resume auto-refresh"
                   : model.isIdle
-                    ? "Auto-refresh paused after inactivity. Click to resume"
+                    ? "Paused after inactivity. Resume auto-refresh"
                     : "Pause auto-refresh"
               ),
               h.Class(FIELD_ICON_BUTTON_CLASS),
@@ -287,189 +295,349 @@ const topBar = (
     ]
   );
 
-const connectionState = (
-  model: Model
-): Readonly<{
-  state: ConnectionState;
-  maybeLastSampleAtMs: Option.Option<number>;
-}> =>
-  // A failed fetch says nothing about the WAN, so it reads as the same grey
-  // "No Data" the server reports for a silent monitor, never as an outage.
-  AsyncData.matchData(model.liveConnectivity, {
-    onEmpty: () => ({ state: "checking", maybeLastSampleAtMs: Option.none() }),
-    onFailure: () => ({ state: "noInfo", maybeLastSampleAtMs: Option.none() }),
-    onData: (live) => ({
-      state: live.status,
-      maybeLastSampleAtMs: live.maybeLastSampleAtMs,
-    }),
-  });
+const PILL_CLASSES: Record<ConnectionState, string> = {
+  up: "border-up bg-card text-ink",
+  degraded: "border-deg bg-deg-bg text-deg-text",
+  down: "border-down bg-card text-down",
+  noInfo: "border-nodata bg-card text-ink-2",
+  checking: "border-nodata bg-card text-ink-2",
+};
 
-const dotSeparated = (
-  h: HtmlBuilder<Message>,
-  parts: ReadonlyArray<Html>
-): ReadonlyArray<Html> =>
-  Array_.flatMap(parts, (part, index) =>
-    index === 0
-      ? [part]
-      : [h.span([h.Class("text-ink-2"), h.AriaHidden(true)], ["·"]), part]
+const PILL_GLYPHS: Record<ConnectionState, GlyphKind> = {
+  up: "healthy",
+  degraded: "degraded",
+  down: "outage",
+  noInfo: "noData",
+  checking: "noData",
+};
+
+const PAUSED_CHIP_CLASS =
+  "inline-flex h-[26px] items-center rounded-full border border-field-rule bg-card px-2.5 text-[13px] font-semibold text-ink";
+
+const statusPill = (h: HtmlBuilder<Message>, state: ConnectionState): Html =>
+  h.span(
+    [
+      h.DataAttribute("testid", "connection-status"),
+      h.Class(
+        `inline-flex h-9 items-center gap-2 rounded-full border-[1.5px] pl-3 pr-3.5 text-[15px] lg:h-[34px] ${PILL_CLASSES[state]}`
+      ),
+    ],
+    [
+      statusGlyph(h, PILL_GLYPHS[state]),
+      h.span([h.Class("font-bold")], [CONNECTION_STATUS[state].label]),
+    ]
   );
 
-const statusBlockText = (
+const pausedChip = (h: HtmlBuilder<Message>, model: Model): Html =>
+  model.isPaused
+    ? h.span([h.Class(PAUSED_CHIP_CLASS)], ["Auto-refresh paused"])
+    : model.isIdle
+      ? h.span([h.Class(PAUSED_CHIP_CLASS)], ["Paused after inactivity"])
+      : h.empty;
+
+const openIncidentLine = (
   h: HtmlBuilder<Message>,
   model: Model,
   nowMs: number
-): Html => {
-  const { state, maybeLastSampleAtMs } = connectionState(model);
-  const summary = CONNECTION_SUMMARIES[state];
-  const network = networkInfo(
-    AsyncData.getOrElse(model.speedtestHistory, () => [])
+): Html =>
+  Option.match(openIncidentOf(model), {
+    onNone: () => h.empty,
+    onSome: (outage) => {
+      const { since, rest } = openIncidentSentence(
+        outage,
+        configuredHosts(model),
+        nowMs
+      );
+      return h.p(
+        [
+          h.DataAttribute("testid", "open-incident"),
+          h.Class("mt-2.5 text-sm leading-[1.45] text-ink"),
+        ],
+        [h.strong([h.Class("font-semibold")], [since]), rest]
+      );
+    },
+  });
+
+const uptimeFigure = (model: Model): Option.Option<number> =>
+  Option.orElse(
+    Option.flatMap(summaryOf(model), ({ range }) =>
+      Option.fromNullishOr(range.uptimePercentage)
+    ),
+    () =>
+      Option.flatMap(
+        currentConnectivity(model),
+        (status) => status.maybeUptimePercentage
+      )
   );
-  const sampleText = lastSampleText(state, maybeLastSampleAtMs, nowMs);
+
+// A figure waits for an answer to the selected range; a failed fetch is not
+// waited for, since its figures read "-" and the banner says why.
+const areFiguresLoading = (model: Model): boolean =>
+  Option.isNone(summaryOf(model)) &&
+  Option.isNone(currentConnectivity(model)) &&
+  !AsyncData.hasError(model.summary) &&
+  !AsyncData.hasError(model.connectivityStatus);
+
+// The outage log answers separately from the summary, so its line waits on its
+// own fetch; a failed fetch says so instead of reading as a clean range.
+const outageSummary = (h: HtmlBuilder<Message>, model: Model): Html =>
+  Option.match(currentOutages(model), {
+    onSome: ({ log, isClamped }) =>
+      h.p(
+        [
+          h.DataAttribute("testid", "outage-summary"),
+          h.Class("mt-3 text-sm leading-[1.45] text-ink"),
+        ],
+        [describeOutageLine(outageTotals(log.data), isClamped)]
+      ),
+    onNone: () =>
+      AsyncData.hasError(model.outages)
+        ? failedLine(h, "Could not load incidents.", "mt-3 text-sm text-ink-2")
+        : h.div(
+            [
+              h.Role("status"),
+              h.AriaLabel("Loading outage summary"),
+              h.Class("mt-3"),
+            ],
+            [skeleton(h, "h-5 w-72 max-w-full")]
+          ),
+  });
+
+const coverageLine = (h: HtmlBuilder<Message>, model: Model): Html =>
+  Option.match(
+    Option.flatMap(currentConnectivity(model), (status) =>
+      coverageNote(
+        status.coveragePercentage,
+        status.endTimeMs - status.startTimeMs
+      )
+    ),
+    {
+      onNone: () => h.empty,
+      onSome: (text) =>
+        h.p(
+          [
+            h.DataAttribute("testid", "coverage-note"),
+            h.Class("mt-1.5 text-[13px] leading-[1.45] text-ink-2"),
+          ],
+          [text]
+        ),
+    }
+  );
+
+const rangeFigures = (h: HtmlBuilder<Message>, model: Model): Html => {
+  const uptime = uptimeFigure(model);
+
+  if (areFiguresLoading(model)) {
+    return h.div(
+      [
+        h.Role("status"),
+        h.AriaLabel("Loading status"),
+        h.Class("mt-5 flex flex-col gap-3 lg:mt-[22px]"),
+      ],
+      [
+        skeleton(h, "h-14 w-56"),
+        skeleton(h, "h-4 w-48"),
+        skeleton(h, "h-6 w-52"),
+      ]
+    );
+  }
 
   return h.div(
-    [h.Class("min-w-0")],
+    [],
     [
-      h.h2(
+      h.p(
         [
+          h.DataAttribute("testid", "uptime-figure"),
           h.Class(
-            "text-[44px] font-semibold leading-[1.02] tracking-[-0.025em] lg:text-[68px]"
-          ),
-        ],
-        [summary.headline]
-      ),
-      h.div(
-        [
-          h.Class(
-            "mt-[18px] flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[15px] text-ink-2 lg:text-[17px]"
+            "mt-[18px] whitespace-nowrap text-[52px] font-semibold leading-none tracking-[-0.03em] lg:mt-[22px] lg:text-[68px]"
           ),
         ],
         [
-          ...dotSeparated(h, [
-            statusBadge(h, { tone: summary.tone, label: summary.label }),
-            ...Option.match(sampleText, {
-              onNone: () => [],
-              onSome: (text) => [h.span([], [text])],
-            }),
-            h.span([], [network.isp]),
-            ...Option.match(network.maybeExternalIp, {
-              onNone: () => [],
-              onSome: (externalIp) => [h.span([], [externalIp])],
-            }),
-          ]),
-          model.isPaused
+          percentText(Option.getOrNull(uptime)),
+          Option.isSome(uptime)
             ? h.span(
                 [
                   h.Class(
-                    "inline-flex h-6 items-center rounded-full border border-field-rule bg-card px-2.5 text-[13px] font-semibold text-ink"
+                    "text-xl font-semibold tracking-[-0.01em] text-ink-2 lg:text-[22px]"
                   ),
                 ],
-                ["Live updates paused"]
+                ["%"]
               )
             : h.empty,
         ]
       ),
-      isAwaitingData(model.connectivityStatus)
-        ? h.div([h.Class("mt-3")], [skeleton(h, "h-6 w-72 max-w-full")])
-        : h.p(
-            [
-              h.Class(
-                "mt-3 max-w-[36ch] text-[17px] leading-[1.4] text-ink lg:text-xl"
-              ),
-            ],
-            [
-              uptimeSummary(
-                Option.flatMap(
-                  AsyncData.getData(model.connectivityStatus),
-                  (status) => status.maybeUptimePercentage
-                ),
-                describeRange(model.dateRange)
-              ),
-            ]
-          ),
+      h.p(
+        [
+          h.DataAttribute("testid", "uptime-label"),
+          h.Class("mt-1.5 text-[15px] text-ink-2"),
+        ],
+        [`uptime over ${describeRange(model.dateRange)}`]
+      ),
+      outageSummary(h, model),
+      coverageLine(h, model),
+      uptimeWindows(h, model),
     ]
   );
 };
 
-const heroFigures = (
-  model: Model,
-  nowMs: number
-): ReadonlyArray<
-  Readonly<{
-    figure: Figure;
-    isLoading: boolean;
-    testId: string;
-    className?: string;
-  }>
-> => {
-  const metrics = AsyncData.getOrElse(model.metrics, () => []);
-  const connectivity = AsyncData.getData(model.connectivityStatus);
-  const speedtests = AsyncData.getOrElse(model.speedtestHistory, () => []);
-  return [
-    {
-      figure: availabilityFigure(
-        Option.flatMap(
-          connectivity,
-          (status) => status.maybeAvailabilityPercentage
-        ),
-        Option.match(connectivity, {
-          onNone: () => [],
-          onSome: (status) => status.points,
-        })
-      ),
-      isLoading: isAwaitingData(model.connectivityStatus),
-      testId: "hero-availability",
-    },
-    {
-      figure: latencyFigure(metrics),
-      isLoading: isAwaitingData(model.metrics),
-      testId: "hero-latency",
-    },
-    {
-      figure: speedFigure(speedtests, nowMs),
-      isLoading: isAwaitingData(model.speedtestHistory),
-      testId: "hero-speed",
-      className: "col-span-2 sm:col-span-1",
-    },
-  ];
+const UPTIME_NOTE = `A check counts as up when every host answers with under ${PACKET_LOSS_THRESHOLDS.degradedFloor}% packet loss, down when no host answers, and degraded otherwise.`;
+
+const WINDOWS = [
+  ["last24h", "24h"],
+  ["last7d", "7d"],
+  ["last30d", "30d"],
+] as const;
+
+/** Uptime over the fixed trailing windows, with what the figure counts spelled out. */
+const uptimeWindows = (h: HtmlBuilder<Message>, model: Model): Html => {
+  const windows = trailingWindowsOf(model);
+  return h.div(
+    [h.Class("mt-3 border-t border-field-rule pt-3")],
+    [
+      isAwaitingData(model.summary)
+        ? h.div(
+            [
+              h.Role("status"),
+              h.AriaLabel("Loading uptime windows"),
+              h.Class("grid grid-cols-3 gap-3"),
+            ],
+            Array_.map(WINDOWS, () => skeleton(h, "h-9 w-full"))
+          )
+        : h.div(
+            [h.Class("grid grid-cols-3")],
+            Array_.map(WINDOWS, ([key, label], index) =>
+              h.div(
+                [
+                  h.DataAttribute("testid", `uptime-${key}`),
+                  h.Class(
+                    index === 0
+                      ? "min-w-0"
+                      : "min-w-0 border-l border-field-rule pl-3"
+                  ),
+                ],
+                [
+                  h.p([h.Class("text-xs font-semibold text-ink-2")], [label]),
+                  h.p(
+                    [
+                      h.Class(
+                        "mt-0.5 whitespace-nowrap text-lg font-semibold leading-none tracking-[-0.01em]"
+                      ),
+                    ],
+                    [
+                      percentText(
+                        Option.match(windows, {
+                          onNone: () => null,
+                          onSome: (all) => all[key].uptimePercentage,
+                        })
+                      ),
+                      h.span(
+                        [h.Class("text-[13px] font-medium text-ink-2")],
+                        ["%"]
+                      ),
+                    ]
+                  ),
+                ]
+              )
+            )
+          ),
+      h.p([h.Class("mt-2 text-[13px] text-ink-2")], [UPTIME_NOTE]),
+    ]
+  );
 };
 
-/**
- * The status-tinted field that opens the page: top bar, a plain-sentence
- * answer to "is my connection OK?", and the three hero figures.
- */
-export const statusField = (
+const networkLine = (h: HtmlBuilder<Message>, model: Model): Html => {
+  if (isAwaitingData(model.speedtestHistory)) {
+    return h.div([h.Class("mt-3")], [skeleton(h, "h-5 w-44")]);
+  }
+  const network = networkInfo(
+    AsyncData.getOrElse(model.speedtestHistory, () => [])
+  );
+  return h.p(
+    [
+      h.DataAttribute("testid", "network-info"),
+      h.Class(
+        "mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2"
+      ),
+    ],
+    [
+      icon(h, Globe, { size: 15, strokeWidth: 1.75 }),
+      h.span([], [networkText(network)]),
+    ]
+  );
+};
+
+const statusColumn = (
+  h: HtmlBuilder<Message>,
+  model: Model,
+  nowMs: number
+): Html => {
+  const state = connectionOf(model);
+  return h.section(
+    [
+      h.AriaLabel("Live status and range uptime"),
+      h.Class(
+        "flex min-w-0 flex-col lg:justify-center xl:row-span-2 xl:justify-start xl:self-stretch"
+      ),
+    ],
+    [
+      // One polite region, always mounted, so a change of status or a new
+      // incident is announced instead of replacing a node a screen reader
+      // is not watching.
+      h.div(
+        [h.Role("status"), h.DataAttribute("testid", "live-status")],
+        [
+          h.div(
+            [h.Class("flex flex-wrap items-center gap-2")],
+            [statusPill(h, state), pausedChip(h, model)]
+          ),
+          openIncidentLine(h, model, nowMs),
+        ]
+      ),
+      ...Option.match(lastSampleOf(model, nowMs), {
+        onNone: () => [],
+        onSome: (text) => [
+          h.p(
+            [
+              h.DataAttribute("testid", "last-sample"),
+              h.Class("mt-0.5 text-sm leading-[1.45] text-ink-2"),
+            ],
+            [text]
+          ),
+        ],
+      }),
+      rangeFigures(h, model),
+      networkLine(h, model),
+    ]
+  );
+};
+
+/** The page banner: the brand and the controls, on the same tint as the status field below it. */
+export const pageHeader = (
   h: HtmlBuilder<Message>,
   model: Model,
   viewInputs: ViewInputs
-): Html => {
+): Html =>
+  h.header(
+    [h.Class("bg-field")],
+    [h.div([h.Class(WRAP_CLASS)], [topBar(h, model, viewInputs)])]
+  );
+
+/** The status-tinted field under the top bar: the live status with the range's uptime, the history ribbon, and the stat rail. */
+export const statusField = (h: HtmlBuilder<Message>, model: Model): Html => {
   const nowMs = Date.now();
-  return h.header(
+  return h.div(
     [h.Class("border-b border-field-rule bg-field")],
     [
       h.div(
-        [h.Class(WRAP_CLASS)],
         [
-          topBar(h, model, viewInputs),
-          h.div(
-            [
-              h.Class(
-                "pb-6 pt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-10 lg:pb-10 lg:pt-6"
-              ),
-            ],
-            [
-              statusBlockText(h, model, nowMs),
-              h.div(
-                [
-                  h.Class(
-                    "mt-6 grid grid-cols-2 gap-3 sm:grid-cols-[1fr_1fr_1.3fr] sm:gap-4 lg:mt-0 lg:grid-cols-[228px_228px_272px]"
-                  ),
-                ],
-                Array_.map(heroFigures(model, nowMs), (hero) =>
-                  figureTile(h, { ...hero, variant: "hero" })
-                )
-              ),
-            ]
+          h.Class(
+            `${WRAP_CLASS} grid gap-5 pt-4 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-stretch lg:gap-x-10 lg:pt-2 xl:items-start`
           ),
+        ],
+        [
+          statusColumn(h, model, nowMs),
+          ribbonCard(h, model, nowMs),
+          statRail(h, model),
         ]
       ),
     ]

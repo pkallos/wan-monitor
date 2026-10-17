@@ -2,76 +2,65 @@ import { Option } from "effect";
 import { describe, expect, test } from "vitest";
 import { Custom, Preset } from "@/dashboard/dateRange";
 import {
-  availabilityFigure,
-  CONNECTION_SUMMARIES,
+  CONNECTION_STATUS,
+  coverageNote,
   describeFetchErrors,
   describeRange,
-  formatDurationAgo,
-  jitterFigure,
   lastSampleText,
   lastTestLabel,
-  latencyFigure,
   networkInfo,
-  packetLossFigure,
-  speedFigure,
-  uptimeSummary,
+  networkText,
+  percentText,
+  railStats,
+  unreportedRailStats,
 } from "@/dashboard/overview";
+import {
+  rangeSummary,
+  summaryResponse,
+  withTimeZone,
+} from "@/dashboard/testFixtures";
 
 const NOW_MS = Date.parse("2026-01-01T12:00:00.000Z");
 const THIRTY_SECONDS_AGO = Option.some(NOW_MS - 30_000);
 
-describe("CONNECTION_SUMMARIES", () => {
-  test("states each live status as a plain sentence", () => {
-    expect(CONNECTION_SUMMARIES.up.headline).toBe("Connection is healthy.");
-    expect(CONNECTION_SUMMARIES.degraded.headline).toBe(
-      "Connection is degraded."
-    );
-    expect(CONNECTION_SUMMARIES.down.headline).toBe("Connection is down.");
-    expect(CONNECTION_SUMMARIES.noInfo.headline).toBe("No recent data.");
-    expect(CONNECTION_SUMMARIES.checking.headline).toBe("Checking connection…");
-  });
+const CUSTOM_RANGE = Custom({
+  startTime: "2026-01-01T00:00:00.000Z",
+  endTime: "2026-01-08T00:00:00.000Z",
+});
 
-  test("keeps the reachability vocabulary for the status word", () => {
-    expect(CONNECTION_SUMMARIES.up.label).toBe("Online");
-    expect(CONNECTION_SUMMARIES.degraded.label).toBe("Degraded");
-    expect(CONNECTION_SUMMARIES.down.label).toBe("Offline");
-    expect(CONNECTION_SUMMARIES.noInfo.label).toBe("No Data");
-  });
-
-  // A quiet monitor and a down link are different facts, so noInfo must never
-  // borrow the red treatment an outage gets.
-  test("tones an outage as an error and a silent monitor as neutral", () => {
-    expect(CONNECTION_SUMMARIES.down.tone).toBe("error");
-    expect(CONNECTION_SUMMARIES.noInfo.tone).toBe("neutral");
-    expect(CONNECTION_SUMMARIES.checking.tone).toBe("neutral");
-    expect(CONNECTION_SUMMARIES.up.tone).toBe("good");
-    expect(CONNECTION_SUMMARIES.degraded.tone).toBe("warning");
+describe("CONNECTION_STATUS", () => {
+  test("uses the live vocabulary for the status word", () => {
+    expect(CONNECTION_STATUS.up.label).toBe("Online");
+    expect(CONNECTION_STATUS.degraded.label).toBe("Degraded");
+    expect(CONNECTION_STATUS.down.label).toBe("Offline");
+    expect(CONNECTION_STATUS.noInfo.label).toBe("No data");
+    expect(CONNECTION_STATUS.checking.label).toBe("Checking…");
   });
 });
 
 describe("lastSampleText", () => {
   test("says how long ago a live status was sampled", () => {
     expect(lastSampleText("up", THIRTY_SECONDS_AGO, NOW_MS)).toEqual(
-      Option.some("last sample 30s ago")
+      Option.some("Last checked 30 seconds ago")
     );
     expect(lastSampleText("down", THIRTY_SECONDS_AGO, NOW_MS)).toEqual(
-      Option.some("last sample 30s ago")
+      Option.some("Last checked 30 seconds ago")
     );
   });
 
-  test("omits the clause when a reachable cycle carries no sample time", () => {
+  test("omits the line when a reachable cycle carries no sample time", () => {
     expect(lastSampleText("up", Option.none(), NOW_MS)).toEqual(Option.none());
   });
 
   test("says when a silent monitor last reported", () => {
     expect(
       lastSampleText("noInfo", Option.some(NOW_MS - 4 * 60 * 60 * 1000), NOW_MS)
-    ).toEqual(Option.some("last seen 4h ago"));
+    ).toEqual(Option.some("Last checked 4 hours ago"));
   });
 
-  test("says there is no monitoring data when nothing was ever recorded", () => {
+  test("says there are no samples when nothing was ever recorded", () => {
     expect(lastSampleText("noInfo", Option.none(), NOW_MS)).toEqual(
-      Option.some("no monitoring data")
+      Option.some("No samples yet")
     );
   });
 
@@ -97,200 +86,48 @@ describe("describeRange", () => {
     expect(describeRange(Preset({ preset }))).toBe(phrase);
   });
 
-  test("falls back to a neutral phrase for a custom range", () => {
+  test("names the dates of a custom range with 'to', the year once", () => {
+    expect(describeRange(CUSTOM_RANGE)).toBe("Jan 1 to Jan 8, 2026");
+  });
+
+  test("names both years when a custom range crosses a year boundary", () => {
     expect(
       describeRange(
         Custom({
-          startTime: "2026-01-01T00:00:00.000Z",
-          endTime: "2026-01-08T00:00:00.000Z",
+          startTime: "2025-12-28T00:00:00.000Z",
+          endTime: "2026-01-03T23:59:59.999Z",
         })
       )
-    ).toBe("the selected range");
-  });
-});
-
-describe("uptimeSummary", () => {
-  test("reports uptime with one decimal over the range", () => {
-    expect(uptimeSummary(Option.some(99.64), "the last 24 hours")).toBe(
-      "99.6% uptime over the last 24 hours."
-    );
+    ).toBe("Dec 28, 2025 to Jan 3, 2026");
   });
 
-  test("says so when the window held no ping cycles, rather than claiming 0%", () => {
-    expect(uptimeSummary(Option.none(), "the last 24 hours")).toBe(
-      "No uptime data for this period."
-    );
-  });
-});
-
-describe("availabilityFigure", () => {
-  const points = [
-    { downPercentage: 0 },
-    { downPercentage: 40 },
-    { downPercentage: 100 },
-  ];
-
-  test("reports availability (up or degraded), not uptime", () => {
-    const figure = availabilityFigure(Option.some(99.64), points);
-
-    expect(figure.label).toBe("Availability");
-    expect(figure.value).toBe("99.6");
-    expect(figure.unit).toBe("%");
-    expect(figure.caption).toBe("up or degraded");
+  test("names the one day of a custom range that starts and ends on it", () => {
+    expect(
+      describeRange(
+        Custom({
+          startTime: "2026-10-16T05:00:00.000Z",
+          endTime: "2026-10-16T05:30:00.000Z",
+        })
+      )
+    ).toBe("Oct 16, 2026");
   });
 
-  test("plots the share of each bucket that was reachable", () => {
-    expect(availabilityFigure(Option.some(50), points).series).toEqual([
-      100, 60, 0,
-    ]);
-  });
-
-  test("shows a placeholder when the window held no ping cycles", () => {
-    expect(availabilityFigure(Option.none(), []).value).toBe("-");
-  });
-});
-
-describe("latencyFigure", () => {
-  const metrics = [
-    { timestamp: "2026-01-01T00:02:00.000Z", latency: 30 },
-    { timestamp: "2026-01-01T00:01:00.000Z", latency: 10 },
-    { timestamp: "2026-01-01T00:03:00.000Z" },
-  ];
-
-  test("labels the figure as an average, in ms", () => {
-    const figure = latencyFigure(metrics);
-
-    expect(figure.label).toBe("Latency");
-    expect(figure.value).toBe("20.0");
-    expect(figure.unit).toBe("ms");
-    expect(figure.caption).toBe("avg");
-  });
-
-  test("plots readings in time order, leaving a gap for a missing one", () => {
-    expect(latencyFigure(metrics).series).toEqual([10, 30, null]);
-  });
-
-  test("shows a placeholder with no readings", () => {
-    expect(latencyFigure([]).value).toBe("-");
-  });
-});
-
-describe("packetLossFigure and jitterFigure", () => {
-  test("report the average with their own unit", () => {
-    const metrics = [
-      { timestamp: "2026-01-01T00:01:00.000Z", packet_loss: 0, jitter: 2 },
-      { timestamp: "2026-01-01T00:02:00.000Z", packet_loss: 1, jitter: 4 },
-    ];
-
-    expect(packetLossFigure(metrics)).toMatchObject({
-      label: "Packet loss",
-      value: "0.5",
-      unit: "%",
-      caption: "avg",
-      series: [0, 1],
-    });
-    expect(jitterFigure(metrics)).toMatchObject({
-      label: "Jitter",
-      value: "3.0",
-      unit: "ms",
-      caption: "avg",
-      series: [2, 4],
+  test("reads a custom range in UTC days, whatever the viewer's zone", () => {
+    withTimeZone("America/Los_Angeles", () => {
+      expect(describeRange(CUSTOM_RANGE)).toBe("Jan 1 to Jan 8, 2026");
     });
   });
-
-  test("keep a genuine zero distinct from a missing reading", () => {
-    const metrics = [
-      { timestamp: "2026-01-01T00:01:00.000Z", packet_loss: 0 },
-      { timestamp: "2026-01-01T00:02:00.000Z" },
-    ];
-
-    expect(packetLossFigure(metrics).value).toBe("0.0");
-    expect(packetLossFigure(metrics).series).toEqual([0, null]);
-  });
 });
 
-describe("speedFigure", () => {
-  test("reports the most recent test's download and upload together", () => {
-    const figure = speedFigure(
-      [
-        {
-          timestamp: "2026-01-01T11:00:00.000Z",
-          download_speed: 100,
-          upload_speed: 10,
-        },
-        {
-          timestamp: "2026-01-01T11:59:30.000Z",
-          download_speed: 123.44,
-          upload_speed: 12.3,
-        },
-      ],
-      NOW_MS
-    );
-
-    expect(figure.label).toBe("Download / Upload");
-    expect(figure.value).toBe("123 / 12.3");
-    expect(figure.unit).toBe("Mbps");
-    expect(figure.caption).toBe("latest test, 30s ago");
+describe("percentText", () => {
+  test("keeps two decimals", () => {
+    expect(percentText(99.414)).toBe("99.41");
+    expect(percentText(100)).toBe("100.00");
   });
 
-  test("sparkles the download series in time order", () => {
-    const figure = speedFigure(
-      [
-        { timestamp: "2026-01-01T11:59:30.000Z", download_speed: 3 },
-        { timestamp: "2026-01-01T11:00:00.000Z", download_speed: 1 },
-        { timestamp: "2026-01-01T11:30:00.000Z" },
-      ],
-      NOW_MS
-    );
-
-    expect(figure.series).toEqual([1, null, 3]);
-  });
-
-  test("shows a placeholder with no tests", () => {
-    const figure = speedFigure([], NOW_MS);
-
-    expect(figure.value).toBe("-");
-    expect(figure.caption).toBe("no tests yet");
-    expect(figure.series).toEqual([]);
-  });
-
-  test("renders each half of the pair independently when one measurement is missing", () => {
-    const figure = speedFigure(
-      [{ timestamp: "2026-01-01T11:59:30.000Z", download_speed: 50 }],
-      NOW_MS
-    );
-
-    expect(figure.value).toBe("50.0 / -");
-  });
-
-  test("rounds triple-digit speeds to whole numbers and keeps one decimal below 100", () => {
-    const figure = speedFigure(
-      [
-        {
-          timestamp: "2026-01-01T11:59:30.000Z",
-          download_speed: 941.4,
-          upload_speed: 99.94,
-        },
-      ],
-      NOW_MS
-    );
-
-    expect(figure.value).toBe("941 / 99.9");
-  });
-
-  test("keeps a genuine zero reading distinct from a missing one", () => {
-    const figure = speedFigure(
-      [
-        {
-          timestamp: "2026-01-01T11:59:30.000Z",
-          download_speed: 0,
-          upload_speed: 0,
-        },
-      ],
-      NOW_MS
-    );
-
-    expect(figure.value).toBe("0.0 / 0.0");
+  test("keeps a genuine zero distinct from no data", () => {
+    expect(percentText(0)).toBe("0.00");
+    expect(percentText(null)).toBe("-");
   });
 });
 
@@ -304,16 +141,16 @@ describe("networkInfo", () => {
     ).toEqual({ isp: "Comcast", maybeExternalIp: Option.some("1.2.3.4") });
   });
 
-  test("falls back to Unknown ISP with no external IP when the field is missing", () => {
+  test("falls back to ISP unknown with no external IP when the field is missing", () => {
     expect(networkInfo([{ isp: undefined, external_ip: undefined }])).toEqual({
-      isp: "Unknown ISP",
+      isp: "ISP unknown",
       maybeExternalIp: Option.none(),
     });
   });
 
-  test("falls back to Unknown ISP with no samples", () => {
+  test("falls back to ISP unknown with no samples", () => {
     expect(networkInfo([])).toEqual({
-      isp: "Unknown ISP",
+      isp: "ISP unknown",
       maybeExternalIp: Option.none(),
     });
   });
@@ -338,13 +175,65 @@ describe("networkInfo", () => {
     ).toEqual({ isp: "Comcast", maybeExternalIp: Option.some("1.2.3.4") });
   });
 
-  test("falls back to Unknown ISP when no sample has one", () => {
+  test("falls back to ISP unknown when no sample has one", () => {
     expect(
       networkInfo([
         { isp: undefined, external_ip: "1.2.3.4" },
         { isp: undefined, external_ip: "5.6.7.8" },
       ])
-    ).toEqual({ isp: "Unknown ISP", maybeExternalIp: Option.none() });
+    ).toEqual({ isp: "ISP unknown", maybeExternalIp: Option.none() });
+  });
+});
+
+describe("networkText", () => {
+  test("names the ISP and its public IP in a phrase", () => {
+    expect(
+      networkText({
+        isp: "TestISP",
+        maybeExternalIp: Option.some("1.2.3.4"),
+      })
+    ).toBe("TestISP, public IP 1.2.3.4");
+  });
+
+  test("is just the ISP when the IP is unknown", () => {
+    expect(
+      networkText({ isp: "TestISP", maybeExternalIp: Option.none() })
+    ).toBe("TestISP");
+  });
+});
+
+describe("coverageNote", () => {
+  const DAY_MS = 86_400_000;
+
+  test("says nothing when the monitor covered the whole range", () => {
+    expect(coverageNote(100, DAY_MS)).toEqual(Option.none());
+  });
+
+  test("gives the covered time as the coverage share of the range, in long words", () => {
+    expect(coverageNote((23 / 24) * 100, DAY_MS)).toEqual(
+      Option.some(
+        "The monitor has data for 23 hours of this period, and uptime covers only that time."
+      )
+    );
+  });
+
+  test("works in minutes and days too", () => {
+    expect(coverageNote(50, 2 * 3_600_000)).toEqual(
+      Option.some(
+        "The monitor has data for 1 hour of this period, and uptime covers only that time."
+      )
+    );
+    expect(coverageNote(25, 30 * DAY_MS)).toEqual(
+      Option.some(
+        "The monitor has data for 7 days 12 hours of this period, and uptime covers only that time."
+      )
+    );
+  });
+
+  test("says there is no data when nothing was covered", () => {
+    expect(coverageNote(0, DAY_MS)).toEqual(
+      Option.some("The monitor has no data for this period.")
+    );
   });
 });
 
@@ -388,49 +277,186 @@ describe("describeFetchErrors", () => {
   });
 });
 
-describe("formatDurationAgo", () => {
-  test.each([
-    [5_000, "5s ago"],
-    [59_999, "59s ago"],
-    [60_000, "1m ago"],
-    [3_599_000, "59m ago"],
-    [3_600_000, "1h ago"],
-    [86_400_000, "1d ago"],
-  ])("renders %ims as %s", (elapsedMs, expected) => {
-    expect(formatDurationAgo(elapsedMs)).toBe(expected);
-  });
-});
-
 describe("lastTestLabel", () => {
-  const TIME_OPTIONS: Intl.DateTimeFormatOptions = {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  };
+  const AT = "2026-01-01T11:00:00.000Z";
 
-  test("names the newest test's time and server", () => {
-    const label = lastTestLabel([
-      { timestamp: "2026-01-01T09:00:00.000Z", server_location: "Old" },
-      { timestamp: "2026-01-01T11:00:00.000Z", server_location: "Fremont, CA" },
-    ]);
-
-    expect(label).toEqual(
-      Option.some(
-        `Last test · ${new Date("2026-01-01T11:00:00.000Z").toLocaleString([], TIME_OPTIONS)} · Fremont, CA`
-      )
-    );
+  test("names the newest test's time, speeds and server as a sentence", () => {
+    withTimeZone("UTC", () => {
+      expect(
+        lastTestLabel([
+          {
+            timestamp: "2026-01-01T09:00:00.000Z",
+            download_speed: 1,
+            upload_speed: 1,
+            server_location: "Old",
+          },
+          {
+            timestamp: AT,
+            download_speed: 100.4,
+            upload_speed: 10,
+            server_location: "Fremont, CA",
+          },
+        ])
+      ).toEqual(
+        Option.some(
+          "Last test, Jan 1 at 11:00 AM: 100 Mbps down, 10.0 Mbps up (Fremont, CA)."
+        )
+      );
+    });
   });
 
   test("drops the server clause when the test recorded none", () => {
-    expect(lastTestLabel([{ timestamp: "2026-01-01T11:00:00.000Z" }])).toEqual(
-      Option.some(
-        `Last test · ${new Date("2026-01-01T11:00:00.000Z").toLocaleString([], TIME_OPTIONS)}`
-      )
-    );
+    withTimeZone("UTC", () => {
+      expect(
+        lastTestLabel([{ timestamp: AT, download_speed: 50, upload_speed: 5 }])
+      ).toEqual(
+        Option.some(
+          "Last test, Jan 1 at 11:00 AM: 50.0 Mbps down, 5.0 Mbps up."
+        )
+      );
+    });
+  });
+
+  test("says which measurement a test is missing instead of printing a dash", () => {
+    withTimeZone("UTC", () => {
+      expect(lastTestLabel([{ timestamp: AT, download_speed: 50 }])).toEqual(
+        Option.some(
+          "Last test, Jan 1 at 11:00 AM: 50.0 Mbps down, no upload reading."
+        )
+      );
+    });
+  });
+
+  test("keeps a genuine zero reading distinct from a missing one", () => {
+    withTimeZone("UTC", () => {
+      expect(
+        lastTestLabel([{ timestamp: AT, download_speed: 0, upload_speed: 0 }])
+      ).toEqual(
+        Option.some("Last test, Jan 1 at 11:00 AM: 0.0 Mbps down, 0.0 Mbps up.")
+      );
+    });
   });
 
   test("is absent with no tests", () => {
     expect(lastTestLabel([])).toEqual(Option.none());
+  });
+});
+
+describe("unreportedRailStats", () => {
+  test("names the same figures as a reported rail, so a failed summary keeps its layout", () => {
+    expect(
+      unreportedRailStats.map(({ key, label, unit }) => [key, label, unit])
+    ).toEqual(
+      railStats(summaryResponse()).map(({ key, label, unit }) => [
+        key,
+        label,
+        unit,
+      ])
+    );
+  });
+
+  test("dashes every figure, with no claim about tests run", () => {
+    expect(unreportedRailStats.map((stat) => stat.value)).toEqual(
+      Array(5).fill("-")
+    );
+    expect(unreportedRailStats.map((stat) => stat.sub)).toEqual([
+      "95th percentile -",
+      "Averaged over all checks",
+      "Averaged over all checks",
+      "Median",
+      "Median",
+    ]);
+  });
+});
+
+describe("railStats", () => {
+  const stats = (summary = summaryResponse()) => railStats(summary);
+  const byKey = (summary = summaryResponse()) =>
+    Object.fromEntries(stats(summary).map((stat) => [stat.key, stat]));
+
+  test("lists latency, loss, jitter, download and upload in that order", () => {
+    expect(stats().map((stat) => stat.label)).toEqual([
+      "Latency p50",
+      "Packet loss",
+      "Jitter",
+      "Download",
+      "Upload",
+    ]);
+  });
+
+  test("headlines the median latency and names the 95th percentile", () => {
+    expect(byKey().latency).toMatchObject({
+      value: "14.2",
+      unit: "ms",
+      sub: "95th percentile 31.8 ms",
+    });
+  });
+
+  test("reports loss and jitter as averages with their own units", () => {
+    expect(byKey().loss).toMatchObject({
+      value: "0.50",
+      unit: "%",
+      sub: "Averaged over all checks",
+    });
+    expect(byKey().jitter).toMatchObject({
+      value: "2.1",
+      unit: "ms",
+      sub: "Averaged over all checks",
+    });
+  });
+
+  test("shows the median speed with the number of tests behind it", () => {
+    expect(byKey().download).toMatchObject({
+      value: "941",
+      unit: "Mbps",
+      sub: "Median of 24 tests",
+    });
+    expect(byKey().upload).toMatchObject({
+      value: "917",
+      sub: "Median of 24 tests",
+    });
+  });
+
+  test("uses the singular for a single test", () => {
+    const one = summaryResponse({
+      speed: { ...summaryResponse().speed, count: 1 },
+    });
+
+    expect(byKey(one).download.sub).toBe("Median of 1 test");
+  });
+
+  test("says so when the range has no speed tests", () => {
+    const none = summaryResponse({
+      speed: {
+        ...summaryResponse().speed,
+        downloadMedian: null,
+        uploadMedian: null,
+        count: 0,
+      },
+    });
+
+    expect(byKey(none).download).toMatchObject({
+      value: "-",
+      sub: "No tests in this range.",
+    });
+  });
+
+  test("dashes a range that recorded no latency", () => {
+    const quiet = summaryResponse({
+      range: rangeSummary({ latencyP50: null, latencyP95: null }),
+    });
+
+    expect(byKey(quiet).latency).toMatchObject({
+      value: "-",
+      sub: "95th percentile -",
+    });
+  });
+
+  test("keeps a genuine zero loss distinct from no data", () => {
+    const clean = summaryResponse({
+      range: rangeSummary({ avgPacketLoss: 0 }),
+    });
+
+    expect(byKey(clean).loss.value).toBe("0.00");
   });
 });

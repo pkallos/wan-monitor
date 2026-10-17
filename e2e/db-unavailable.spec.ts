@@ -11,7 +11,7 @@ import { expect, type Page, test } from "@playwright/test";
  * covered by unit tests (server `mapQueryError`, web `command.test.ts`).
  */
 
-const BANNER_TEXT = /Database temporarily unavailable/;
+const BANNER_TEXT = /Database unavailable/;
 const METRICS_ROUTE = "**/api/metrics*";
 const latencyChartCanvas = (page: Page) =>
   page.locator('[aria-label="Latency chart"] canvas');

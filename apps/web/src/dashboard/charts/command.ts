@@ -24,6 +24,7 @@ import {
   calculateSpeedStats,
 } from "@/dashboard/charts/stats";
 import { fillTimeline } from "@/dashboard/charts/timeline";
+import { Incident } from "@/dashboard/incidents";
 import {
   CompletedSyncJitterChart,
   CompletedSyncLatencyChart,
@@ -239,6 +240,7 @@ const TimelineChartArgs = {
   startTimeMs: S.Number,
   endTimeMs: S.Number,
   granularity: GranularitySchema,
+  incidents: S.Array(Incident),
 };
 
 export const LATENCY_CHART_HOST_ID = "latency-chart";
@@ -258,7 +260,14 @@ export const MountLatencyChart = Mount.define("MountLatencyChart", {
 export const SyncLatencyChart = Command.define("SyncLatencyChart", {
   args: TimelineChartArgs,
   messages: [CompletedSyncLatencyChart, FailedSyncLatencyChart],
-  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity }) =>
+  execute: ({
+    hostId,
+    metrics,
+    startTimeMs,
+    endTimeMs,
+    granularity,
+    incidents,
+  }) =>
     syncChart(
       hostId,
       (reason) => FailedSyncLatencyChart({ reason }),
@@ -275,6 +284,7 @@ export const SyncLatencyChart = Command.define("SyncLatencyChart", {
             slots,
             stats: calculateLatencyStats(metrics),
             palette,
+            incidents,
             startMs: startTimeMs,
             endMs: endTimeMs,
             splitNumber: computeSplitNumberForWidth(chart.getWidth()),
@@ -302,7 +312,14 @@ export const MountPacketLossChart = Mount.define("MountPacketLossChart", {
 export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
   args: TimelineChartArgs,
   messages: [CompletedSyncPacketLossChart, FailedSyncPacketLossChart],
-  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity }) =>
+  execute: ({
+    hostId,
+    metrics,
+    startTimeMs,
+    endTimeMs,
+    granularity,
+    incidents,
+  }) =>
     syncChart(
       hostId,
       (reason) => FailedSyncPacketLossChart({ reason }),
@@ -319,6 +336,7 @@ export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
             slots,
             stats: calculatePacketLossStats(metrics),
             palette,
+            incidents,
             startMs: startTimeMs,
             endMs: endTimeMs,
             splitNumber: computeSplitNumberForWidth(chart.getWidth()),
@@ -346,7 +364,14 @@ export const MountJitterChart = Mount.define("MountJitterChart", {
 export const SyncJitterChart = Command.define("SyncJitterChart", {
   args: TimelineChartArgs,
   messages: [CompletedSyncJitterChart, FailedSyncJitterChart],
-  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity }) =>
+  execute: ({
+    hostId,
+    metrics,
+    startTimeMs,
+    endTimeMs,
+    granularity,
+    incidents,
+  }) =>
     syncChart(
       hostId,
       (reason) => FailedSyncJitterChart({ reason }),
@@ -363,6 +388,7 @@ export const SyncJitterChart = Command.define("SyncJitterChart", {
             slots,
             stats: calculateJitterStats(metrics),
             palette,
+            incidents,
             startMs: startTimeMs,
             endMs: endTimeMs,
             splitNumber: computeSplitNumberForWidth(chart.getWidth()),

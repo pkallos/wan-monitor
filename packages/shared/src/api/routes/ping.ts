@@ -30,7 +30,7 @@ const TriggerPingResponse = Schema.Struct({
   results: Schema.Array(PingExecutionResult),
 });
 
-const GetHostsResponse = Schema.Struct({
+export const GetHostsResponse = Schema.Struct({
   hosts: Schema.Array(Schema.String),
   /** Configured seconds between ping cycles. */
   pingIntervalSeconds: Schema.Number,
@@ -54,3 +54,5 @@ export const PingApiGroup = HttpApiGroup.make("ping")
     })
   )
   .middleware(Authorization);
+
+export type GetHostsResponseType = Schema.Schema.Type<typeof GetHostsResponse>;

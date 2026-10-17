@@ -92,7 +92,7 @@ async function login(
 ): Promise<void> {
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign In" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
 }
 
 test.describe("Authentication flow (auth enabled)", () => {
@@ -107,10 +107,7 @@ test.describe("Authentication flow (auth enabled)", () => {
   }) => {
     await page.goto("/");
 
-    await expect(
-      page.getByText("Sign in to access the dashboard")
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 
     // The dashboard must not be reachable without authenticating.
     await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
@@ -118,14 +115,14 @@ test.describe("Authentication flow (auth enabled)", () => {
 
   test("shows an error message for invalid credentials", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 
     await login(page, VALID_USERNAME, "wrong-password");
 
     await expect(page.getByRole("alert")).toBeVisible();
 
     // We stay on the login page and never reach the dashboard.
-    await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
   });
 
@@ -133,7 +130,7 @@ test.describe("Authentication flow (auth enabled)", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 
     await login(page, VALID_USERNAME, VALID_PASSWORD);
 
@@ -144,7 +141,7 @@ test.describe("Authentication flow (auth enabled)", () => {
     await expect(
       page.getByRole("button", { name: "Refresh now" })
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign In" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
 
     // The Log out item in the overflow menu carries the authenticated username.
     await openMenu(page);
@@ -165,10 +162,7 @@ test.describe("Authentication flow (auth enabled)", () => {
       .getByRole("menuitem", { name: `Log out (${VALID_USERNAME})` })
       .click();
 
-    await expect(
-      page.getByText("Sign in to access the dashboard")
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
   });
 
@@ -190,6 +184,6 @@ test.describe("Authentication flow (auth enabled)", () => {
     await expect(
       page.getByRole("menuitem", { name: `Log out (${VALID_USERNAME})` })
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign In" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
   });
 });

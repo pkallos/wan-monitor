@@ -37,11 +37,17 @@ import {
   ChangedSystemTheme,
   CompletedApplyTheme,
   type DateRangeSelection,
+  FailedFetchOutages,
+  FailedFetchPingHosts,
+  FailedFetchSummary,
   FetchConnectivityStatus,
   FetchEarliestData,
   FetchLiveConnectivity,
   FetchMetrics,
+  FetchOutages,
+  FetchPingHosts,
   FetchSpeedtestHistory,
+  FetchSummary,
   GotMenuMessage,
   initModel as initDashboardModel,
   Preset,
@@ -55,14 +61,11 @@ import {
   settingsFromModel,
 } from "@/dashboard";
 import { MENU_ITEMS } from "@/dashboard/menu";
+import { DEFAULT_REQUEST } from "@/dashboard/testFixtures";
 import { ToastTest } from "@/dashboard/toast";
 import { defaultSettings, type Settings } from "@/storage";
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
-const DEFAULT_REQUEST = {
-  dateRange: DEFAULT_DATE_RANGE,
-  maybeEarliestDataMs: Option.none<number>(),
-};
 
 // Each fetch resolves its window once and reports it back, so the dashboard's
 // charts paint the range that was actually requested.
@@ -148,7 +151,24 @@ const resolveDashboardEntry = (
     [
       FetchEarliestData({ token }),
       SucceededFetchEarliestData({ earliestMs: Option.none() }),
-    ]
+    ],
+    [
+      FetchSummary({
+        token,
+        dateRange,
+        maybeEarliestDataMs: Option.none(),
+      }),
+      FailedFetchSummary({ error: "skip", request: DEFAULT_REQUEST }),
+    ],
+    [
+      FetchOutages({
+        token,
+        dateRange,
+        maybeEarliestDataMs: Option.none(),
+      }),
+      FailedFetchOutages({ error: "skip", request: DEFAULT_REQUEST }),
+    ],
+    [FetchPingHosts({ token }), FailedFetchPingHosts({ error: "skip" })]
   );
 
 const chooseLogoutFromMenu = () =>
@@ -361,14 +381,14 @@ describe("auth update", () => {
       ),
       Story.message(
         FailedLogin({
-          error: "Incorrect username or password. Please try again.",
+          error: "Incorrect username or password.",
         })
       ),
       Story.model((model) => {
         const loggedOut = assertLoggedOut(model);
         expect(loggedOut.isSubmitting).toBe(false);
         expect(Option.getOrThrow(loggedOut.maybeError)).toBe(
-          "Incorrect username or password. Please try again."
+          "Incorrect username or password."
         );
       })
     );
@@ -511,6 +531,14 @@ describe("auth update", () => {
             ...SPEEDTEST_WINDOW,
             request: DEFAULT_REQUEST,
           }),
+        ],
+        [
+          FetchSummary({
+            token: "abc123",
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+          }),
+          FailedFetchSummary({ error: "skip", request: DEFAULT_REQUEST }),
         ]
       ),
       ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
