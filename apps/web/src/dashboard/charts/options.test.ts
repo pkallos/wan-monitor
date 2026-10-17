@@ -2,6 +2,7 @@ import EchartsTimeScale, {
   calcNiceForTimeScale,
 } from "echarts/lib/scale/Time.js";
 import { describe, expect, test } from "vitest";
+import type { ChartPalette } from "@/dashboard/charts/chartTheme";
 import {
   type AxisTickInfo,
   computeSplitNumberForWidth,
@@ -24,6 +25,20 @@ import { fillTimeline } from "@/dashboard/charts/timeline";
 const startMs = Date.parse("2026-07-26T10:00:00.000Z");
 const endMs = Date.parse("2026-07-26T10:15:00.000Z");
 const DEFAULT_SPLIT_NUMBER = 6;
+
+// Deliberately not the app's real token values: every assertion below proves
+// a colour is threaded through from the palette, never hardcoded.
+const PALETTE: ChartPalette = {
+  card: "#c0",
+  ink: "#c1",
+  inkSecondary: "#c2",
+  rule: "#c3",
+  accent: "#c4",
+  degraded: "#c5",
+  down: "#c6",
+  band: "rgba(1, 2, 3, 0.4)",
+  fontFamily: "Test Sans",
+};
 
 // Every case below builds its ticks from local constructors — `new Date(y, m,
 // d, ...)` — rather than UTC ISO strings, and asserts against the same
@@ -364,7 +379,7 @@ describe("makeLatencyChartOption", () => {
     const option = makeLatencyChartOption({
       slots,
       stats,
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -384,7 +399,7 @@ describe("makeLatencyChartOption", () => {
     const option = makeLatencyChartOption({
       slots,
       stats,
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -396,12 +411,29 @@ describe("makeLatencyChartOption", () => {
     expect(series[0].markLine?.data[0].yAxis).toBe(20);
   });
 
+  test("anchors the average label at the line's end so it clears the y-axis ticks", () => {
+    const option = makeLatencyChartOption({
+      slots,
+      stats,
+      palette: PALETTE,
+      startMs,
+      endMs,
+      splitNumber: DEFAULT_SPLIT_NUMBER,
+    });
+    const series = option.series as Array<{
+      markLine?: { label: { position: string; color: string } };
+    }>;
+
+    expect(series[0].markLine?.label.position).toBe("insideEndTop");
+    expect(series[0].markLine?.label.color).toBe(PALETTE.inkSecondary);
+  });
+
   test("omits the reference line when there is no data", () => {
     const emptySlots = fillTimeline([], startMs, endMs, "5m");
     const option = makeLatencyChartOption({
       slots: emptySlots,
       stats: calculateLatencyStats([]),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -415,7 +447,7 @@ describe("makeLatencyChartOption", () => {
     const option = makeLatencyChartOption({
       slots,
       stats,
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: 8,
@@ -435,7 +467,7 @@ describe("makeLatencyChartOption", () => {
     const option = makeLatencyChartOption({
       slots,
       stats,
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -460,7 +492,7 @@ describe("makeLatencyChartOption", () => {
     const option = makeLatencyChartOption({
       slots,
       stats,
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -490,7 +522,7 @@ describe("makePacketLossChartOption", () => {
     const option = makePacketLossChartOption({
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculatePacketLossStats(metrics),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -500,7 +532,7 @@ describe("makePacketLossChartOption", () => {
       markArea?: unknown;
     }>;
 
-    expect(series[0].lineStyle.color).toBe("#e53e3e");
+    expect(series[0].lineStyle.color).toBe(PALETTE.down);
     expect(series[0].markArea).toBeUndefined();
   });
 
@@ -508,7 +540,7 @@ describe("makePacketLossChartOption", () => {
     const option = makePacketLossChartOption({
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculatePacketLossStats(metrics),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -526,7 +558,7 @@ describe("makePacketLossChartOption", () => {
     const option = makePacketLossChartOption({
       slots: fillTimeline(zeroLossMetrics, startMs, endMs, "5m"),
       stats: calculatePacketLossStats(zeroLossMetrics),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -554,7 +586,7 @@ describe("makeJitterChartOption", () => {
     const option = makeJitterChartOption({
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculateJitterStats(metrics),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -572,7 +604,7 @@ describe("makeJitterChartOption", () => {
     const option = makeJitterChartOption({
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculateJitterStats(metrics),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -602,7 +634,7 @@ describe("makeSpeedChartOption", () => {
     const option = makeSpeedChartOption({
       metrics,
       stats: calculateSpeedStats(metrics),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -625,7 +657,7 @@ describe("makeSpeedChartOption", () => {
     const option = makeSpeedChartOption({
       metrics: [],
       stats: calculateSpeedStats([]),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -641,7 +673,7 @@ describe("makeSpeedChartOption", () => {
     const option = makeSpeedChartOption({
       metrics: [],
       stats: calculateSpeedStats([]),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -656,7 +688,7 @@ describe("makeSpeedChartOption", () => {
     const option = makeSpeedChartOption({
       metrics: [],
       stats: calculateSpeedStats([]),
-      theme: "light",
+      palette: PALETTE,
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -678,5 +710,121 @@ describe("makeSpeedChartOption", () => {
     expect(xAxis.axisLabel.formatter(startMs, 0, extra)).toMatch(
       /^\d{1,2}:\d{2}/
     );
+  });
+});
+
+describe("chart palette", () => {
+  const latency = (palette: ChartPalette) => {
+    const metrics = [{ timestamp: "2026-07-26T10:05:30.000Z", latency: 20 }];
+    return makeLatencyChartOption({
+      slots: fillTimeline(metrics, startMs, endMs, "5m"),
+      stats: calculateLatencyStats(metrics),
+      palette,
+      startMs,
+      endMs,
+      splitNumber: DEFAULT_SPLIT_NUMBER,
+    });
+  };
+
+  const OTHER_PALETTE: ChartPalette = {
+    card: "#d0",
+    ink: "#d1",
+    inkSecondary: "#d2",
+    rule: "#d3",
+    accent: "#d4",
+    degraded: "#d5",
+    down: "#d6",
+    band: "rgba(4, 5, 6, 0.4)",
+    fontFamily: "Other Sans",
+  };
+
+  test("colors the latency series with the accent and its area with the band", () => {
+    const series = latency(PALETTE).series as Array<{
+      lineStyle: { color: string };
+      areaStyle: { color: string };
+    }>;
+
+    expect(series[0].lineStyle.color).toBe(PALETTE.accent);
+    expect(series[0].areaStyle.color).toBe(PALETTE.band);
+  });
+
+  test("draws axis text in secondary ink and gridlines as rules", () => {
+    const option = latency(PALETTE);
+    const xAxis = option.xAxis as {
+      axisLabel: { color: string };
+      splitLine: { lineStyle: { color: string } };
+    };
+    const yAxis = option.yAxis as {
+      axisLabel: { color: string };
+      splitLine: { lineStyle: { color: string } };
+    };
+
+    expect(xAxis.axisLabel.color).toBe(PALETTE.inkSecondary);
+    expect(xAxis.splitLine.lineStyle.color).toBe(PALETTE.rule);
+    expect(yAxis.axisLabel.color).toBe(PALETTE.inkSecondary);
+    expect(yAxis.splitLine.lineStyle.color).toBe(PALETTE.rule);
+  });
+
+  test("themes the tooltip as a card with a rule border and ink text", () => {
+    const tooltip = latency(PALETTE).tooltip as {
+      backgroundColor: string;
+      borderColor: string;
+      textStyle: { color: string; fontFamily: string };
+      extraCssText: string;
+    };
+
+    expect(tooltip.backgroundColor).toBe(PALETTE.card);
+    expect(tooltip.borderColor).toBe(PALETTE.rule);
+    expect(tooltip.textStyle.color).toBe(PALETTE.ink);
+    expect(tooltip.textStyle.fontFamily).toBe(PALETTE.fontFamily);
+    expect(tooltip.extraCssText).toContain("tabular-nums");
+  });
+
+  test("colors jitter in secondary ink with a degraded-colored threshold", () => {
+    const metrics = [{ timestamp: "2026-07-26T10:05:00.000Z", jitter: 3 }];
+    const option = makeJitterChartOption({
+      slots: fillTimeline(metrics, startMs, endMs, "5m"),
+      stats: calculateJitterStats(metrics),
+      palette: PALETTE,
+      startMs,
+      endMs,
+      splitNumber: DEFAULT_SPLIT_NUMBER,
+    });
+    const series = option.series as Array<{
+      lineStyle: { color: string };
+      markLine: { lineStyle: { color: string } };
+    }>;
+
+    expect(series[0].lineStyle.color).toBe(PALETTE.inkSecondary);
+    expect(series[0].markLine.lineStyle.color).toBe(PALETTE.degraded);
+  });
+
+  test("draws download in the accent and upload as a hollow secondary-ink series", () => {
+    const option = makeSpeedChartOption({
+      metrics: [],
+      stats: calculateSpeedStats([]),
+      palette: PALETTE,
+      startMs,
+      endMs,
+      splitNumber: DEFAULT_SPLIT_NUMBER,
+    });
+    const [download, upload] = option.series as Array<{
+      lineStyle: { color: string };
+      itemStyle: { color: string; borderColor?: string };
+    }>;
+
+    expect(download.lineStyle.color).toBe(PALETTE.accent);
+    expect(upload.lineStyle.color).toBe(PALETTE.inkSecondary);
+    expect(upload.itemStyle.color).toBe(PALETTE.card);
+    expect(upload.itemStyle.borderColor).toBe(PALETTE.inkSecondary);
+  });
+
+  test("a different palette yields different colors, with nothing left from the first", () => {
+    const first = JSON.stringify(latency(PALETTE).series);
+    const second = JSON.stringify(latency(OTHER_PALETTE).series);
+
+    expect(second).not.toBe(first);
+    expect(second).not.toContain(PALETTE.accent);
+    expect(second).not.toContain(PALETTE.band);
   });
 });

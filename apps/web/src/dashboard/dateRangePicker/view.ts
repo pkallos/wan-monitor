@@ -2,6 +2,7 @@ import { Popover } from "@foldkit/ui";
 import { Array as Array_, Option } from "effect";
 import { Submodel } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
+import { Calendar, ChevronLeft, ChevronRight } from "lucide";
 import { buildMonthGrid, type CalendarDay } from "@/dashboard/calendarGrid";
 import {
   type DateRangeSelection,
@@ -23,6 +24,8 @@ import {
   type Message,
 } from "@/dashboard/dateRangePicker/message";
 import type { Model } from "@/dashboard/dateRangePicker/model";
+import { PRIMARY_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from "@/ui/controls";
+import { icon } from "@/ui/icon";
 
 const MONTHS_PER_YEAR = 12;
 const WEEKDAY_LABELS: ReadonlyArray<string> = [
@@ -35,8 +38,7 @@ const WEEKDAY_LABELS: ReadonlyArray<string> = [
   "Sa",
 ];
 
-const TRIGGER_BUTTON_CLASS =
-  "flex cursor-pointer items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700";
+const TRIGGER_BUTTON_CLASS = `flex items-center gap-2 ${SECONDARY_BUTTON_CLASS}`;
 
 // Absolutely-positioned with no explicit width, this shrinks to whatever
 // space Floating UI leaves on the constrained side of the anchor rather than
@@ -49,35 +51,27 @@ const TRIGGER_BUTTON_CLASS =
 // second month. max-w guards the rest since Floating UI's shift/flip
 // middleware repositions the panel but never shrinks it.
 const PANEL_CLASS =
-  "z-20 flex max-w-[calc(100vw-2rem)] flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-800 lg:max-w-none lg:min-w-[50rem] lg:flex-row lg:gap-6";
+  "z-20 flex max-w-[calc(100vw-2rem)] flex-col gap-4 rounded-[18px] border border-rule bg-card p-4 shadow-lg dark:shadow-none lg:max-w-none lg:min-w-[50rem] lg:flex-row lg:gap-6";
 
 const BACKDROP_CLASS = "fixed inset-0 z-10";
 
 const PRESET_ROW_BASE_CLASS =
-  "w-full cursor-pointer rounded-md px-3 py-2 text-left text-sm";
-const PRESET_ROW_ACTIVE_CLASS = "bg-blue-600 font-semibold text-white";
-const PRESET_ROW_INACTIVE_CLASS =
-  "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700";
+  "w-full cursor-pointer rounded-xl px-3 py-2 text-left text-sm";
+const PRESET_ROW_ACTIVE_CLASS = "bg-accent font-semibold text-on-accent";
+const PRESET_ROW_INACTIVE_CLASS = "text-ink hover:bg-field";
 
 const NAV_BUTTON_CLASS =
-  "cursor-pointer rounded-md p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700";
+  "cursor-pointer rounded-lg p-1 text-ink-2 hover:bg-field hover:text-ink";
 const NAV_PLACEHOLDER_CLASS = "h-6 w-6";
 
 const DAY_BASE_CLASS =
-  "flex h-9 w-9 items-center justify-center rounded-md text-sm";
-const DAY_OUT_OF_MONTH_CLASS = "text-gray-300 dark:text-gray-600";
-const DAY_DEFAULT_CLASS =
-  "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700";
-const DAY_PREVIEW_CLASS =
-  "bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-200";
+  "flex h-9 w-9 items-center justify-center rounded-lg text-sm";
+const DAY_OUT_OF_MONTH_CLASS = "text-ink-2/50";
+const DAY_DEFAULT_CLASS = "cursor-pointer hover:bg-field";
+const DAY_PREVIEW_CLASS = "bg-field text-ink";
 const DAY_COMMITTED_CLASS =
-  "cursor-pointer bg-blue-600 text-white hover:bg-blue-600 dark:hover:bg-blue-600";
-const DAY_TODAY_CLASS = "font-bold ring-1 ring-inset ring-blue-500";
-
-const PRIMARY_BUTTON_CLASS =
-  "cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700";
-const SECONDARY_BUTTON_CLASS =
-  "cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700";
+  "cursor-pointer bg-accent text-on-accent hover:bg-accent";
+const DAY_TODAY_CLASS = "font-bold ring-1 ring-inset ring-accent";
 
 export type ViewInputs = Readonly<{
   appliedSelection: DateRangeSelection;
@@ -131,91 +125,6 @@ const highlightFor = (model: Model, dateMs: number): Highlight =>
       }),
   });
 
-const chevronIcon = (
-  h: HtmlBuilder<Message>,
-  direction: "left" | "right"
-): Html => {
-  const points = direction === "left" ? "15 18 9 12 15 6" : "9 18 15 12 9 6";
-  return h.svg(
-    [
-      h.Attribute("viewBox", "0 0 24 24"),
-      h.Attribute("fill", "none"),
-      h.Class("h-4 w-4"),
-    ],
-    [
-      h.polyline(
-        [
-          h.Attribute("points", points),
-          h.Attribute("stroke", "currentColor"),
-          h.Attribute("stroke-width", "2"),
-          h.Attribute("stroke-linecap", "round"),
-          h.Attribute("stroke-linejoin", "round"),
-        ],
-        []
-      ),
-    ]
-  );
-};
-
-const calendarIcon = (h: HtmlBuilder<Message>): Html => {
-  return h.svg(
-    [
-      h.Attribute("viewBox", "0 0 24 24"),
-      h.Attribute("fill", "none"),
-      h.Class("h-4 w-4"),
-    ],
-    [
-      h.rect(
-        [
-          h.Attribute("x", "3"),
-          h.Attribute("y", "4"),
-          h.Attribute("width", "18"),
-          h.Attribute("height", "18"),
-          h.Attribute("rx", "2"),
-          h.Attribute("stroke", "currentColor"),
-          h.Attribute("stroke-width", "1.5"),
-        ],
-        []
-      ),
-      h.line(
-        [
-          h.Attribute("x1", "3"),
-          h.Attribute("y1", "10"),
-          h.Attribute("x2", "21"),
-          h.Attribute("y2", "10"),
-          h.Attribute("stroke", "currentColor"),
-          h.Attribute("stroke-width", "1.5"),
-        ],
-        []
-      ),
-      h.line(
-        [
-          h.Attribute("x1", "8"),
-          h.Attribute("y1", "2"),
-          h.Attribute("x2", "8"),
-          h.Attribute("y2", "6"),
-          h.Attribute("stroke", "currentColor"),
-          h.Attribute("stroke-width", "1.5"),
-          h.Attribute("stroke-linecap", "round"),
-        ],
-        []
-      ),
-      h.line(
-        [
-          h.Attribute("x1", "16"),
-          h.Attribute("y1", "2"),
-          h.Attribute("x2", "16"),
-          h.Attribute("y2", "6"),
-          h.Attribute("stroke", "currentColor"),
-          h.Attribute("stroke-width", "1.5"),
-          h.Attribute("stroke-linecap", "round"),
-        ],
-        []
-      ),
-    ]
-  );
-};
-
 const navButton = (
   h: HtmlBuilder<Message>,
   direction: "previous" | "next"
@@ -229,7 +138,11 @@ const navButton = (
       h.AriaLabel(direction === "previous" ? "Previous month" : "Next month"),
       h.Class(NAV_BUTTON_CLASS),
     ],
-    [chevronIcon(h, direction === "previous" ? "left" : "right")]
+    [
+      icon(h, direction === "previous" ? ChevronLeft : ChevronRight, {
+        size: 16,
+      }),
+    ]
   );
 };
 
@@ -301,11 +214,7 @@ const monthGridView = (
         ]
       ),
       h.div(
-        [
-          h.Class(
-            "grid grid-cols-7 gap-1 text-center text-xs text-gray-500 dark:text-gray-400"
-          ),
-        ],
+        [h.Class("grid grid-cols-7 gap-1 text-center text-xs text-ink-2")],
         Array_.map(WEEKDAY_LABELS, (label) => h.span([], [label]))
       ),
       h.div(
@@ -417,7 +326,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
             [
               h.button(
                 [...button, h.Class(TRIGGER_BUTTON_CLASS)],
-                [calendarIcon(h), triggerLabel]
+                [icon(h, Calendar, { size: 16 }), triggerLabel]
               ),
               ...(isVisible
                 ? [

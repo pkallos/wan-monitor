@@ -7,6 +7,10 @@ import { Effect, Option, Schema as S } from "effect";
 import { Command, Mount } from "foldkit";
 import { getChart, removeChart, setChart } from "@/dashboard/charts/chartHost";
 import {
+  type ChartPalette,
+  readChartPalette,
+} from "@/dashboard/charts/chartTheme";
+import {
   computeSplitNumberForWidth,
   makeJitterChartOption,
   makeLatencyChartOption,
@@ -38,7 +42,6 @@ import {
   SucceededMountPacketLossChart,
   SucceededMountSpeedChart,
 } from "@/dashboard/message";
-import { Theme } from "@/dashboard/theme";
 
 // The latency/packet-loss/jitter charts share one hover cursor: hovering any
 // one of them shows a synced vertical line on the others. echarts.connect()
@@ -55,23 +58,26 @@ const crosshairs = new Map<
   InstanceType<typeof echarts.graphic.Line>
 >();
 
-const CROSSHAIR_STYLE = { stroke: "#4a5568", lineDash: [4, 4], lineWidth: 1 };
-
-const setCrosshair = (chart: EChartsType, pixelX: number | undefined): void => {
-  const zr = chart.getZr();
+const clearCrosshair = (chart: EChartsType): void => {
   const existing = crosshairs.get(chart);
-  if (existing !== undefined) {
-    zr.remove(existing);
-    crosshairs.delete(chart);
-  }
-  if (pixelX === undefined) return;
+  if (existing === undefined) return;
+  chart.getZr().remove(existing);
+  crosshairs.delete(chart);
+};
+
+const drawCrosshair = (
+  chart: EChartsType,
+  pixelX: number,
+  stroke: string
+): void => {
+  clearCrosshair(chart);
   const line = new echarts.graphic.Line({
     shape: { x1: pixelX, y1: 0, x2: pixelX, y2: chart.getHeight() },
-    style: CROSSHAIR_STYLE,
+    style: { stroke, lineDash: [4, 4], lineWidth: 1 },
     silent: true,
     z: 1000,
   });
-  zr.add(line);
+  chart.getZr().add(line);
   crosshairs.set(chart, line);
 };
 
@@ -105,16 +111,18 @@ const linkAxisPointer = (chart: EChartsType, group: string): (() => void) => {
           (info) => info.axisDim === "x"
         );
         if (xAxisInfo === undefined) return;
+        const { inkSecondary } = readChartPalette();
         for (const sibling of members) {
           if (sibling === chart) continue;
           const pixelX = sibling.convertToPixel(
             { xAxisIndex: xAxisInfo.axisIndex },
             xAxisInfo.value
           );
-          setCrosshair(
-            sibling,
-            typeof pixelX === "number" ? pixelX : undefined
-          );
+          if (typeof pixelX === "number") {
+            drawCrosshair(sibling, pixelX, inkSecondary);
+          } else {
+            clearCrosshair(sibling);
+          }
         }
       },
     });
@@ -123,7 +131,7 @@ const linkAxisPointer = (chart: EChartsType, group: string): (() => void) => {
   const onGlobalOut = () => {
     for (const sibling of members) {
       if (sibling === chart) continue;
-      setCrosshair(sibling, undefined);
+      clearCrosshair(sibling);
     }
   };
 
@@ -133,7 +141,7 @@ const linkAxisPointer = (chart: EChartsType, group: string): (() => void) => {
   return () => {
     chart.off("updateAxisPointer", onUpdateAxisPointer);
     chart.getZr().off("globalout", onGlobalOut);
-    setCrosshair(chart, undefined);
+    clearCrosshair(chart);
     members.delete(chart);
   };
 };
@@ -197,13 +205,14 @@ const mountEchartsInstance = (
   });
 
 // Shared across every chart Sync: looks up the live chart, runs the given
-// (synchronous, third-party) paint step, and maps the outcome to whichever
-// chart-specific result message the caller supplies.
+// (synchronous, third-party) paint step with the palette resolved from
+// `<html>`'s current theme, and maps the outcome to whichever chart-specific
+// result message the caller supplies.
 const syncChart = <F, Sc>(
   hostId: string,
   onFailure: (reason: string) => F,
   onSuccess: () => Sc,
-  paint: (chart: EChartsType) => void
+  paint: (chart: EChartsType, palette: ChartPalette) => void
 ): Effect.Effect<F | Sc> =>
   Option.match(getChart(hostId), {
     onNone: () =>
@@ -213,7 +222,7 @@ const syncChart = <F, Sc>(
     onSome: (chart) =>
       Effect.try({
         try: () => {
-          paint(chart);
+          paint(chart, readChartPalette());
           return onSuccess();
         },
         catch: (error) =>
@@ -230,7 +239,6 @@ const TimelineChartArgs = {
   startTimeMs: S.Number,
   endTimeMs: S.Number,
   granularity: GranularitySchema,
-  theme: Theme,
 };
 
 export const LATENCY_CHART_HOST_ID = "latency-chart";
@@ -250,12 +258,12 @@ export const MountLatencyChart = Mount.define("MountLatencyChart", {
 export const SyncLatencyChart = Command.define("SyncLatencyChart", {
   args: TimelineChartArgs,
   messages: [CompletedSyncLatencyChart, FailedSyncLatencyChart],
-  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity, theme }) =>
+  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity }) =>
     syncChart(
       hostId,
       (reason) => FailedSyncLatencyChart({ reason }),
       CompletedSyncLatencyChart,
-      (chart) => {
+      (chart, palette) => {
         const slots = fillTimeline(
           metrics,
           startTimeMs,
@@ -266,7 +274,7 @@ export const SyncLatencyChart = Command.define("SyncLatencyChart", {
           makeLatencyChartOption({
             slots,
             stats: calculateLatencyStats(metrics),
-            theme,
+            palette,
             startMs: startTimeMs,
             endMs: endTimeMs,
             splitNumber: computeSplitNumberForWidth(chart.getWidth()),
@@ -294,12 +302,12 @@ export const MountPacketLossChart = Mount.define("MountPacketLossChart", {
 export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
   args: TimelineChartArgs,
   messages: [CompletedSyncPacketLossChart, FailedSyncPacketLossChart],
-  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity, theme }) =>
+  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity }) =>
     syncChart(
       hostId,
       (reason) => FailedSyncPacketLossChart({ reason }),
       CompletedSyncPacketLossChart,
-      (chart) => {
+      (chart, palette) => {
         const slots = fillTimeline(
           metrics,
           startTimeMs,
@@ -310,7 +318,7 @@ export const SyncPacketLossChart = Command.define("SyncPacketLossChart", {
           makePacketLossChartOption({
             slots,
             stats: calculatePacketLossStats(metrics),
-            theme,
+            palette,
             startMs: startTimeMs,
             endMs: endTimeMs,
             splitNumber: computeSplitNumberForWidth(chart.getWidth()),
@@ -338,12 +346,12 @@ export const MountJitterChart = Mount.define("MountJitterChart", {
 export const SyncJitterChart = Command.define("SyncJitterChart", {
   args: TimelineChartArgs,
   messages: [CompletedSyncJitterChart, FailedSyncJitterChart],
-  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity, theme }) =>
+  execute: ({ hostId, metrics, startTimeMs, endTimeMs, granularity }) =>
     syncChart(
       hostId,
       (reason) => FailedSyncJitterChart({ reason }),
       CompletedSyncJitterChart,
-      (chart) => {
+      (chart, palette) => {
         const slots = fillTimeline(
           metrics,
           startTimeMs,
@@ -354,7 +362,7 @@ export const SyncJitterChart = Command.define("SyncJitterChart", {
           makeJitterChartOption({
             slots,
             stats: calculateJitterStats(metrics),
-            theme,
+            palette,
             startMs: startTimeMs,
             endMs: endTimeMs,
             splitNumber: computeSplitNumberForWidth(chart.getWidth()),
@@ -385,20 +393,19 @@ export const SyncSpeedChart = Command.define("SyncSpeedChart", {
     metrics: S.Array(SpeedMetricSchema),
     startTimeMs: S.Number,
     endTimeMs: S.Number,
-    theme: Theme,
   },
   messages: [CompletedSyncSpeedChart, FailedSyncSpeedChart],
-  execute: ({ hostId, metrics, startTimeMs, endTimeMs, theme }) =>
+  execute: ({ hostId, metrics, startTimeMs, endTimeMs }) =>
     syncChart(
       hostId,
       (reason) => FailedSyncSpeedChart({ reason }),
       CompletedSyncSpeedChart,
-      (chart) => {
+      (chart, palette) => {
         chart.setOption(
           makeSpeedChartOption({
             metrics,
             stats: calculateSpeedStats(metrics),
-            theme,
+            palette,
             startMs: startTimeMs,
             endMs: endTimeMs,
             splitNumber: computeSplitNumberForWidth(chart.getWidth()),

@@ -191,6 +191,51 @@ describe("dashboard view", () => {
     );
   });
 
+  test.each([
+    ["up", "text-up"],
+    ["degraded", "text-deg-text"],
+    ["down", "text-down"],
+    ["noInfo", "text-ink-2"],
+  ] as const)(
+    "pairs the %s live status word with an icon in the %s tone",
+    (status, toneClass) => {
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given({
+          ...initModel(defaultSettings()),
+          liveConnectivity: liveConnectivity(status),
+        }),
+        acknowledgeAllChartMounts(),
+        Scene.expect(
+          Scene.selector(`p.text-3xl span.${toneClass} svg[aria-hidden="true"]`)
+        ).toExist()
+      );
+    }
+  );
+
+  test("renders the speed cards without a status icon", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({
+          data: [
+            {
+              timestamp: "2026-07-26T00:01:00.000Z",
+              download_speed: 123.4,
+              upload_speed: 12.3,
+              latency: 8,
+            },
+          ],
+        }),
+      }),
+      acknowledgeAllChartMounts(),
+      resolveAllChartSyncs(),
+      Scene.expect(Scene.text("123.4 Mbps")).toExist(),
+      Scene.expect(Scene.selector("p.text-3xl svg")).not.toExist()
+    );
+  });
+
   test("shows Checking… until the first live response lands", () => {
     Scene.scene(
       { update: boundUpdate, view },
@@ -451,8 +496,10 @@ describe("dashboard view", () => {
       { update: boundUpdate, view },
       Scene.given(model),
       acknowledgeAllChartMounts(),
-      Scene.expect(Scene.testId("connectivity-segment-0")).toExist(),
-      Scene.expect(Scene.testId("connectivity-segment-1")).toExist(),
+      Scene.expect(Scene.testId("connectivity-segment-0")).toHaveClass("bg-up"),
+      Scene.expect(Scene.testId("connectivity-segment-1")).toHaveClass(
+        "bg-down"
+      ),
       Scene.expect(Scene.role("tooltip")).not.toExist(),
       Scene.hover(Scene.testId("connectivity-segment-1")),
       Scene.expect(Scene.role("tooltip")).toHaveText(/Down/)

@@ -33,7 +33,6 @@ const syncLatency = (hostId: string) =>
       hostId,
       metrics: [],
       ...ONE_DAY_WINDOW,
-      theme: "dark",
     }).effect
   );
 
@@ -61,7 +60,6 @@ describe("syncChart", () => {
         metrics: [],
         startTimeMs: ONE_DAY_WINDOW.startTimeMs,
         endTimeMs: ONE_DAY_WINDOW.endTimeMs,
-        theme: "light",
       }).effect
     );
 
@@ -83,6 +81,34 @@ describe("syncChart", () => {
     const [option, notMerge] = setOption.mock.calls[0] ?? [];
     expect(option).toHaveProperty("series");
     expect(notMerge).toBe(true);
+  });
+
+  test("paints with the palette of whichever theme `<html>` carries when it runs", async () => {
+    const style = document.createElement("style");
+    style.textContent =
+      ":root { --accent: #111111; } .dark { --accent: #eeeeee; }";
+    document.head.appendChild(style);
+    const lineColors: unknown[] = [];
+    setChart(
+      "themed-latency-chart",
+      stubChart((option) => {
+        const { series } = option as {
+          series: Array<{ lineStyle: { color: unknown } }>;
+        };
+        lineColors.push(series[0]?.lineStyle.color);
+      })
+    );
+
+    try {
+      await syncLatency("themed-latency-chart");
+      document.documentElement.classList.add("dark");
+      await syncLatency("themed-latency-chart");
+    } finally {
+      document.documentElement.classList.remove("dark");
+      style.remove();
+    }
+
+    expect(lineColors).toEqual(["#111111", "#eeeeee"]);
   });
 
   // Re-applying an unchanged date range re-runs the paint step. It has to
@@ -110,7 +136,6 @@ describe("syncChart", () => {
           hostId: "idempotent-latency-chart",
           metrics,
           ...ONE_DAY_WINDOW,
-          theme: "dark",
         }).effect
       );
 

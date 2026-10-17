@@ -19,12 +19,12 @@ export type ConnectivityStatus = LiveConnectivityStatus;
  */
 export type SegmentStatus = ConnectivityStatus | "notMonitored";
 
-export const CONNECTIVITY_COLORS: Record<SegmentStatus, string> = {
-  up: "#38a169",
-  degraded: "#d69e2e",
-  down: "#e53e3e",
-  noInfo: "#718096",
-  notMonitored: "#cbd5e0",
+export const CONNECTIVITY_SEGMENT_CLASSES: Record<SegmentStatus, string> = {
+  up: "bg-up",
+  degraded: "bg-deg pattern-hatch",
+  down: "bg-down",
+  noInfo: "bg-nodata pattern-dots",
+  notMonitored: "bg-track",
 };
 
 export const CONNECTIVITY_LABELS: Record<SegmentStatus, string> = {

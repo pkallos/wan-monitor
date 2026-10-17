@@ -3,10 +3,32 @@ import { describe, expect, test } from "vitest";
 import {
   buildSegments,
   CONNECTIVITY_LABELS,
+  CONNECTIVITY_SEGMENT_CLASSES,
   formatSegmentLabel,
   formatUptimeSummary,
   mergeSegments,
 } from "@/dashboard/connectivity";
+
+describe("CONNECTIVITY_SEGMENT_CLASSES", () => {
+  test("gives every segment status its own fill", () => {
+    const fills = Object.values(CONNECTIVITY_SEGMENT_CLASSES).map(
+      (classes) => classes.split(" ")[0]
+    );
+
+    expect(new Set(fills).size).toBe(fills.length);
+  });
+
+  test("never leaves a status carried by colour alone where the contract promises a pattern", () => {
+    expect(CONNECTIVITY_SEGMENT_CLASSES.degraded).toContain("pattern-hatch");
+    expect(CONNECTIVITY_SEGMENT_CLASSES.noInfo).toContain("pattern-dots");
+  });
+
+  test("draws no status from a raw colour, only the semantic tokens", () => {
+    for (const classes of Object.values(CONNECTIVITY_SEGMENT_CLASSES)) {
+      expect(classes).toMatch(/^bg-(up|deg|down|nodata|track)\b/);
+    }
+  });
+});
 
 describe("buildSegments", () => {
   const startMs = Date.parse("2026-07-26T10:00:00.000Z");

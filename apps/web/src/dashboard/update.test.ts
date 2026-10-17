@@ -1153,7 +1153,7 @@ describe("dashboard update — toast messages", () => {
 });
 
 describe("dashboard update — theme toggle", () => {
-  test("toggling theme saves it and re-syncs every mounted chart with the new theme's colors", () => {
+  test("toggling theme applies and saves it, then re-syncs every mounted chart", () => {
     const model = {
       ...withLoadedWindows(initModel(defaultSettings())),
       metrics: MetricsAsyncData.Success({ data: [] }),
@@ -1186,7 +1186,6 @@ describe("dashboard update — theme toggle", () => {
           hostId: "latency-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "dark",
         })
       ),
       Story.Command.expectHas(
@@ -1194,7 +1193,6 @@ describe("dashboard update — theme toggle", () => {
           hostId: "packet-loss-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "dark",
         })
       ),
       Story.Command.expectHas(
@@ -1202,7 +1200,6 @@ describe("dashboard update — theme toggle", () => {
           hostId: "jitter-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "dark",
         })
       ),
       Story.Command.expectHas(
@@ -1210,7 +1207,6 @@ describe("dashboard update — theme toggle", () => {
           hostId: "speed-chart",
           metrics: [],
           ...SPEEDTEST_WINDOW,
-          theme: "dark",
         })
       ),
       Story.Command.resolveAll(
@@ -1351,7 +1347,6 @@ describe("dashboard update — latency chart", () => {
           hostId: "latency-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncLatencyChart, CompletedSyncLatencyChart())
@@ -1374,7 +1369,6 @@ describe("dashboard update — latency chart", () => {
           hostId: "latency-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncLatencyChart, CompletedSyncLatencyChart())
@@ -1436,7 +1430,6 @@ describe("dashboard update — packet loss chart", () => {
           hostId: "packet-loss-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncPacketLossChart, CompletedSyncPacketLossChart())
@@ -1459,7 +1452,6 @@ describe("dashboard update — packet loss chart", () => {
           hostId: "packet-loss-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncPacketLossChart, CompletedSyncPacketLossChart())
@@ -1504,7 +1496,6 @@ describe("dashboard update — jitter chart", () => {
           hostId: "jitter-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncJitterChart, CompletedSyncJitterChart())
@@ -1527,7 +1518,6 @@ describe("dashboard update — jitter chart", () => {
           hostId: "jitter-chart",
           metrics: [],
           ...METRICS_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncJitterChart, CompletedSyncJitterChart())
@@ -1572,7 +1562,6 @@ describe("dashboard update — speed chart", () => {
           hostId: "speed-chart",
           metrics: [],
           ...SPEEDTEST_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncSpeedChart, CompletedSyncSpeedChart())
@@ -1595,7 +1584,6 @@ describe("dashboard update — speed chart", () => {
           hostId: "speed-chart",
           metrics: [],
           ...SPEEDTEST_WINDOW,
-          theme: "light",
         })
       ),
       Story.Command.resolve(SyncSpeedChart, CompletedSyncSpeedChart())
