@@ -106,6 +106,7 @@ const loadSummary = (range: TimeWindow) =>
         last30d: uptimeOver(SUMMARY_WINDOWS_MS.last30d),
         hosts: db.queryHostStats(toDates(range)),
         speedRows: db.querySpeedtests(toDates(range)),
+        previousSpeedRows: db.querySpeedtests(toDates(previous)),
       },
       { concurrency: "unbounded" }
     );
@@ -120,6 +121,7 @@ const loadSummary = (range: TimeWindow) =>
       },
       hosts: results.hosts.map(toHostSummary),
       speed: summarizeSpeed(results.speedRows),
+      previousSpeed: summarizeSpeed(results.previousSpeedRows),
       meta: {
         startTime: new Date(range.startMs).toISOString(),
         endTime: new Date(range.endMs).toISOString(),

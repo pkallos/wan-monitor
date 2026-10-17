@@ -1,6 +1,11 @@
 import { Option } from "effect";
 import { describe, expect, test } from "vitest";
-import { Custom, Preset } from "@/dashboard/dateRange";
+import {
+  Custom,
+  formatCustomRangeLabel,
+  formatDateRangeLabel,
+  Preset,
+} from "@/dashboard/dateRange";
 import { summaryDeltas } from "@/dashboard/deltas";
 import {
   CONNECTION_STATUS,
@@ -15,6 +20,7 @@ import {
   railStats,
   rangeTag,
   rangeTitle,
+  speedAveragesNote,
   unreportedRailStats,
 } from "@/dashboard/overview";
 import { rangeSummary, summaryResponse } from "@/dashboard/testFixtures";
@@ -23,8 +29,8 @@ const NOW_MS = Date.parse("2026-01-01T12:00:00.000Z");
 const THIRTY_SECONDS_AGO = Option.some(NOW_MS - 30_000);
 
 const CUSTOM_RANGE = Custom({
-  startTime: "2026-01-01T00:00:00.000Z",
-  endTime: "2026-01-08T00:00:00.000Z",
+  startTime: new Date(2026, 0, 1).toISOString(),
+  endTime: new Date(new Date(2026, 0, 9).getTime() - 1).toISOString(),
 });
 
 describe("CONNECTION_STATUS", () => {
@@ -86,7 +92,19 @@ describe("describeRange", () => {
   });
 
   test("names the dates of a custom range", () => {
-    expect(describeRange(CUSTOM_RANGE)).toMatch(/Jan 1.* - .*Jan 8/);
+    expect(describeRange(CUSTOM_RANGE)).toBe(
+      formatDateRangeLabel(CUSTOM_RANGE)
+    );
+  });
+
+  test("names a custom range shorter than a day by its local times", () => {
+    const brushed = Custom({
+      startTime: new Date(2026, 9, 16, 9, 12).toISOString(),
+      endTime: new Date(2026, 9, 16, 12, 40).toISOString(),
+    });
+
+    expect(describeRange(brushed)).toBe(formatCustomRangeLabel(brushed));
+    expect(rangeTitle(brushed)).toBe(formatCustomRangeLabel(brushed));
   });
 });
 
@@ -295,10 +313,16 @@ describe("lastTestLabel", () => {
   };
 
   test("names the newest test's time and server", () => {
-    const label = lastTestLabel([
-      { timestamp: "2026-01-01T09:00:00.000Z", server_location: "Old" },
-      { timestamp: "2026-01-01T11:00:00.000Z", server_location: "Fremont, CA" },
-    ]);
+    const label = lastTestLabel(
+      [
+        { timestamp: "2026-01-01T09:00:00.000Z", server_location: "Old" },
+        {
+          timestamp: "2026-01-01T11:00:00.000Z",
+          server_location: "Fremont, CA",
+        },
+      ],
+      Option.none()
+    );
 
     expect(label).toEqual(
       Option.some(
@@ -308,7 +332,9 @@ describe("lastTestLabel", () => {
   });
 
   test("drops the server clause when the test recorded none", () => {
-    expect(lastTestLabel([{ timestamp: "2026-01-01T11:00:00.000Z" }])).toEqual(
+    expect(
+      lastTestLabel([{ timestamp: "2026-01-01T11:00:00.000Z" }], Option.none())
+    ).toEqual(
       Option.some(
         `Last test · ${new Date("2026-01-01T11:00:00.000Z").toLocaleString([], TIME_OPTIONS)}`
       )
@@ -316,7 +342,40 @@ describe("lastTestLabel", () => {
   });
 
   test("is absent with no tests", () => {
-    expect(lastTestLabel([])).toEqual(Option.none());
+    expect(lastTestLabel([], Option.none())).toEqual(Option.none());
+    expect(lastTestLabel([], Option.some("1h"))).toEqual(Option.none());
+  });
+
+  test.each([
+    ["1h", "Latest hourly average"],
+    ["6h", "Latest 6-hour average"],
+    ["1d", "Latest daily average"],
+  ] as const)("calls a %s bucket the %s, never a test", (bucket, expected) => {
+    expect(
+      lastTestLabel(
+        [
+          {
+            timestamp: "2026-01-01T11:00:00.000Z",
+            server_location: "Fremont, CA",
+          },
+        ],
+        Option.some(bucket)
+      )
+    ).toEqual(
+      Option.some(
+        `${expected} · ${new Date("2026-01-01T11:00:00.000Z").toLocaleString([], TIME_OPTIONS)} · Fremont, CA`
+      )
+    );
+  });
+});
+
+describe("speedAveragesNote", () => {
+  test.each([
+    ["1h", "Hourly averages, not single tests."],
+    ["6h", "6-hour averages, not single tests."],
+    ["1d", "Daily averages, not single tests."],
+  ] as const)("says what a %s bucket holds", (bucket, expected) => {
+    expect(speedAveragesNote(bucket)).toBe(expected);
   });
 });
 
@@ -352,7 +411,14 @@ describe("railStats", () => {
   const stats = (summary = summaryResponse()) =>
     railStats(
       summary,
-      Option.some(summaryDeltas(summary.range, summary.previous))
+      Option.some(
+        summaryDeltas(
+          summary.range,
+          summary.previous,
+          summary.speed,
+          summary.previousSpeed
+        )
+      )
     );
   const byKey = (summary = summaryResponse()) =>
     Object.fromEntries(stats(summary).map((stat) => [stat.key, stat]));
@@ -388,14 +454,24 @@ describe("railStats", () => {
     });
   });
 
-  test("carries the change since the previous window for latency, loss and jitter only", () => {
-    const { latency, loss, jitter, download, upload } = byKey();
+  test("carries the change since the previous window on every stat", () => {
+    for (const stat of stats()) {
+      expect(Option.isSome(stat.delta)).toBe(true);
+    }
+  });
 
-    expect(Option.isSome(latency.delta)).toBe(true);
-    expect(Option.isSome(loss.delta)).toBe(true);
-    expect(Option.isSome(jitter.delta)).toBe(true);
-    expect(download.delta).toEqual(Option.none());
-    expect(upload.delta).toEqual(Option.none());
+  test("words the speed changes in Mbps against the previous median", () => {
+    const { download, upload } = byKey();
+
+    expect(Option.getOrThrow(download.delta)).toMatchObject({
+      text: "+41 Mbps",
+      word: "better",
+      rest: "vs 900 Mbps prev.",
+    });
+    expect(Option.getOrThrow(upload.delta)).toMatchObject({
+      word: "steady",
+      rest: "vs 920 Mbps prev.",
+    });
   });
 
   test("shows the median speed with the number of tests behind it", () => {

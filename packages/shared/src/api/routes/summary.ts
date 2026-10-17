@@ -63,6 +63,8 @@ export const GetSummaryResponse = Schema.Struct({
   }),
   hosts: Schema.Array(HostSummarySchema),
   speed: SpeedSummarySchema,
+  /** The same figures over the window before the range, for the speed deltas. */
+  previousSpeed: SpeedSummarySchema,
   meta: Schema.Struct({
     startTime: Schema.String,
     endTime: Schema.String,

@@ -10,3 +10,18 @@ export const FIELD_ICON_BUTTON_CLASS =
   "inline-flex size-11 flex-none cursor-pointer items-center justify-center rounded-xl border border-field-rule bg-card text-ink transition-colors hover:bg-bg disabled:cursor-not-allowed disabled:opacity-50 lg:size-10";
 
 export const INPUT_CLASS = `w-full rounded-xl border border-rule bg-card px-3 text-sm text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent ${TARGET}`;
+
+const SEGMENTED_GROUP =
+  "inline-flex items-center gap-0.5 rounded-xl border bg-card p-[3px]";
+
+export const SEGMENTED_GROUP_CLASS = `${SEGMENTED_GROUP} border-rule`;
+
+// The top bar sits on the tinted status field, so its controls are outlined
+// in the field's own rule, like FIELD_ICON_BUTTON_CLASS.
+export const FIELD_SEGMENTED_GROUP_CLASS = `${SEGMENTED_GROUP} border-field-rule`;
+
+/** The state colours of one segment of a segmented control: the chosen one is filled in the accent. */
+export const segmentStateClass = (isChosen: boolean): string =>
+  isChosen
+    ? "bg-accent text-on-accent"
+    : "text-ink-2 hover:bg-field hover:text-ink";

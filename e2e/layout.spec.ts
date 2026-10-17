@@ -324,6 +324,7 @@ const summaryBody = (hosts: ReadonlyArray<string>) => {
       lastStatus: "up",
     })),
     speed: { downloadMedian: 941, uploadMedian: 917, count: 24 },
+    previousSpeed: { downloadMedian: 930, uploadMedian: 910, count: 24 },
     meta: {
       startTime: new Date(Date.now() - 30 * DAY_MS).toISOString(),
       endTime: new Date().toISOString(),

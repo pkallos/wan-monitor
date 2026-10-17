@@ -1,4 +1,4 @@
-import type { RangeSummary } from "@shared/api/routes/summary";
+import type { RangeSummary, SpeedSummary } from "@shared/api/routes/summary";
 import { Option } from "effect";
 
 export type DeltaTone = "good" | "bad" | "neutral";
@@ -68,13 +68,37 @@ export type SummaryDeltas = Readonly<{
   latency: Option.Option<Delta>;
   loss: Option.Option<Delta>;
   jitter: Option.Option<Delta>;
+  download: Option.Option<Delta>;
+  upload: Option.Option<Delta>;
 }>;
+
+const STEADY_SPEED_FRACTION = 0.02;
+const SPEED_DECIMALS_FROM_MBPS = 100;
+
+// Speeds read to whole Mbps from 100 up and to a tenth below, and a change
+// under 2% of where it started reads as steady.
+const speedDelta = (
+  current: number | null,
+  previous: number | null
+): Option.Option<Delta> =>
+  makeDelta({
+    current,
+    previous,
+    higherIsBetter: true,
+    unit: "Mbps",
+    decimals: (current ?? 0) >= SPEED_DECIMALS_FROM_MBPS ? 0 : 1,
+    steadyBelow: (previous ?? 0) * STEADY_SPEED_FRACTION,
+  });
 
 /** Each figure's change against the same figure of the equal-length window before it. */
 export const summaryDeltas = (
   range: RangeSummary,
-  previous: RangeSummary
+  previous: RangeSummary,
+  speed: SpeedSummary,
+  previousSpeed: SpeedSummary
 ): SummaryDeltas => ({
+  download: speedDelta(speed.downloadMedian, previousSpeed.downloadMedian),
+  upload: speedDelta(speed.uploadMedian, previousSpeed.uploadMedian),
   availability: makeDelta({
     current: range.availabilityPercentage,
     previous: previous.availabilityPercentage,

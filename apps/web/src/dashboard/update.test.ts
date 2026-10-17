@@ -1,4 +1,4 @@
-import { Menu, Toast as UiToast } from "@foldkit/ui";
+import { Menu, RadioGroup, Toast as UiToast } from "@foldkit/ui";
 import { Option } from "effect";
 import { AsyncData, Story } from "foldkit";
 import { describe, expect, test } from "vitest";
@@ -12,6 +12,7 @@ import {
   ApplyTheme,
   FetchConnectivityStatus,
   FetchEarliestData,
+  FetchHostLatency,
   FetchLiveConnectivity,
   FetchMetrics,
   FetchOutages,
@@ -23,11 +24,15 @@ import {
 } from "@/dashboard/command";
 import { Custom, Preset, type PresetKey } from "@/dashboard/dateRange";
 import { ClickedApply, ClickedPreset } from "@/dashboard/dateRangePicker";
+import type { LatencyView } from "@/dashboard/latencyView";
+import { LATENCY_VIEWS } from "@/dashboard/latencyViewRadioGroup";
 import { MENU_ITEMS, type MenuItem } from "@/dashboard/menu";
 import {
+  BrushedChartRange,
   ChangedSystemTheme,
   ClearedConnectivitySelection,
   ClickedRefreshNow,
+  ClickedResetRange,
   ClickedTogglePause,
   ClickedTriggerSpeedtest,
   CompletedApplyTheme,
@@ -39,6 +44,7 @@ import {
   EnteredDashboard,
   FailedFetchConnectivityStatus,
   FailedFetchEarliestData,
+  FailedFetchHostLatency,
   FailedFetchLiveConnectivity,
   FailedFetchMetrics,
   FailedFetchOutages,
@@ -55,6 +61,7 @@ import {
   FailedSyncSpeedChart,
   FailedTriggerSpeedtest,
   GotDateRangePickerMessage,
+  GotLatencyViewMessage,
   GotMenuMessage,
   GotToastMessage,
   HoveredConnectivitySegment,
@@ -67,6 +74,7 @@ import {
   SelectedQuickRange,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
+  SucceededFetchHostLatency,
   SucceededFetchLiveConnectivity,
   SucceededFetchMetrics,
   SucceededFetchOutages,
@@ -85,6 +93,7 @@ import {
 } from "@/dashboard/message";
 import {
   ConnectivityStatusAsyncData,
+  HostLatencyAsyncData,
   initModel,
   LiveConnectivityAsyncData,
   MetricsAsyncData,
@@ -141,8 +150,14 @@ const succeededFetchSpeedtestHistory = () =>
 // was fetched for, which is what gates a chart sync.
 const withLoadedWindows = (model: ReturnType<typeof initModel>) => ({
   ...model,
-  maybeMetricsWindow: Option.some(METRICS_WINDOW),
-  maybeSpeedtestWindow: Option.some(SPEEDTEST_WINDOW),
+  maybeMetricsWindow: Option.some({
+    ...METRICS_WINDOW,
+    request: DEFAULT_REQUEST,
+  }),
+  maybeSpeedtestWindow: Option.some({
+    ...SPEEDTEST_WINDOW,
+    request: DEFAULT_REQUEST,
+  }),
 });
 
 const context = { token: "abc123", now: () => NOW_MS };
@@ -1443,6 +1458,7 @@ describe("dashboard update — date range", () => {
             theme: "system",
             dateRange: appliedRange,
             isPaused: false,
+            latencyView: "all",
           },
         })
       ),
@@ -1624,6 +1640,7 @@ describe("dashboard update — pause toggle", () => {
             theme: "system",
             dateRange: DEFAULT_DATE_RANGE,
             isPaused: true,
+            latencyView: "all",
           },
         })
       ),
@@ -1957,6 +1974,7 @@ const expectEveryChartResynced = () => [
       hostId: "latency-chart",
       metrics: [],
       ...METRICS_WINDOW,
+      hostSeries: [],
       incidents: [],
     })
   ),
@@ -1984,6 +2002,14 @@ const expectEveryChartResynced = () => [
     })
   ),
 ];
+
+const selectLatencyView = (view: LatencyView) =>
+  GotLatencyViewMessage({
+    message: RadioGroup.Message.SelectedOption({
+      index: LATENCY_VIEWS.indexOf(view),
+      value: view,
+    }),
+  });
 
 const selectMenuItem = (item: MenuItem) =>
   GotMenuMessage({
@@ -2021,6 +2047,7 @@ describe("dashboard update: theme preference", () => {
               theme: preference,
               dateRange: DEFAULT_DATE_RANGE,
               isPaused: false,
+              latencyView: "all",
             },
           })
         ),
@@ -2178,6 +2205,7 @@ describe("dashboard update: quick range", () => {
             theme: "system",
             dateRange: Preset({ preset: "last24h" }),
             isPaused: false,
+            latencyView: "all",
           },
         })
       ),
@@ -2344,6 +2372,7 @@ describe("dashboard update — latency chart", () => {
           hostId: "latency-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          hostSeries: [],
           incidents: [],
         })
       ),
@@ -2367,6 +2396,7 @@ describe("dashboard update — latency chart", () => {
           hostId: "latency-chart",
           metrics: [],
           ...METRICS_WINDOW,
+          hostSeries: [],
           incidents: [],
         })
       ),
@@ -2593,6 +2623,20 @@ describe("dashboard update — speed chart", () => {
     );
   });
 
+  test("a successful fetch keeps the range the stored window answers", () => {
+    const { model } = withContext(
+      {
+        ...initModel(defaultSettings()),
+        speedtestHistory: SpeedtestHistoryAsyncData.Loading(),
+      },
+      succeededFetchSpeedtestHistory()
+    );
+
+    expect(model.maybeSpeedtestWindow).toEqual(
+      Option.some({ ...SPEEDTEST_WINDOW, request: DEFAULT_REQUEST })
+    );
+  });
+
   test("a successful fetch dispatches nothing when the chart isn't mounted", () => {
     Story.story(
       withContext,
@@ -2790,6 +2834,7 @@ describe("dashboard update: responses for a replaced range", () => {
         startTimeMs: EARLIEST_MS,
         endTimeMs: NOW_MS,
         granularity: "1m",
+        request: sinceEarliest,
       })
     );
   });
@@ -2999,6 +3044,7 @@ describe("dashboard update: insight fetches", () => {
             hostId: "latency-chart",
             metrics: [],
             ...METRICS_WINDOW,
+            hostSeries: [],
             incidents,
           })
         ),
@@ -3246,5 +3292,679 @@ describe("dashboard update: insight fetches", () => {
         ).model.summary._tag
       ).toBe("Success");
     });
+  });
+});
+
+// A Command carries a closure, which never equals another's, so Commands are
+// compared by name and arguments.
+const summarize = (command: { name: string; args?: unknown }) => ({
+  name: command.name,
+  args: command.args,
+});
+const summarized = (
+  commands: ReadonlyArray<{ name: string; args?: unknown }> | undefined
+) => (commands ?? []).map(summarize);
+
+describe("dashboard update: per-host latency", () => {
+  const HOSTS = ["8.8.8.8", "1.1.1.1"];
+  const perHost = {
+    ...mountedChartsModel(),
+    latencyView: "perHost" as const,
+    pingHosts: PingHostsAsyncData.Success({ data: hostsResponse(HOSTS) }),
+  };
+  const hostWindow = {
+    startTimeMs: METRICS_WINDOW.startTimeMs,
+    endTimeMs: METRICS_WINDOW.endTimeMs,
+    granularity: METRICS_WINDOW.granularity,
+  };
+  const answeredWindow = { ...hostWindow, request: DEFAULT_REQUEST };
+  const hostMetric = {
+    timestamp: "2026-07-28T11:00:00.000Z",
+    source: "ping" as const,
+    latency: 12,
+  };
+  const names = (commands: ReadonlyArray<{ name: string }> | undefined) =>
+    (commands ?? []).map((command) => command.name);
+
+  test("choosing the per-host view saves it, fetches every host's series and keeps the chart as it is until they arrive", () => {
+    const model = {
+      ...mountedChartsModel(),
+      pingHosts: PingHostsAsyncData.Success({ data: hostsResponse(HOSTS) }),
+    };
+    const { model: next, commands } = withContext(
+      model,
+      selectLatencyView("perHost")
+    );
+
+    expect(next.latencyView).toBe("perHost");
+    expect(next.hostLatency._tag).toBe("Loading");
+    expect(summarized(commands)).toContainEqual(
+      summarize(
+        FetchHostLatency({
+          token: "abc123",
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+          hosts: HOSTS,
+        })
+      )
+    );
+    expect(names(commands)).toContain("SaveSettings");
+  });
+
+  test("choosing the view already showing changes nothing and refetches nothing", () => {
+    const loaded = {
+      ...perHost,
+      hostLatency: HostLatencyAsyncData.Success({
+        data: { series: [], window: answeredWindow },
+      }),
+    };
+
+    const { model, commands } = withContext(
+      loaded,
+      selectLatencyView("perHost")
+    );
+
+    expect(model.hostLatency).toEqual(loaded.hostLatency);
+    expect(names(commands)).not.toContain("SaveSettings");
+    expect(names(commands)).not.toContain("FetchHostLatency");
+  });
+
+  test("choosing the per-host view before the hosts are known fetches nothing yet", () => {
+    const { model, commands } = withContext(
+      mountedChartsModel(),
+      selectLatencyView("perHost")
+    );
+
+    expect(model.latencyView).toBe("perHost");
+    expect(names(commands)).not.toContain("FetchHostLatency");
+  });
+
+  test("the hosts arriving while the per-host view is open start the fetch", () => {
+    const { model, commands } = withContext(
+      {
+        ...mountedChartsModel(),
+        latencyView: "perHost" as const,
+        pingHosts: PingHostsAsyncData.Loading(),
+      },
+      SucceededFetchPingHosts({ hosts: hostsResponse(HOSTS) })
+    );
+
+    expect(model.hostLatency._tag).toBe("Loading");
+    expect(names(commands)).toContain("FetchHostLatency");
+  });
+
+  test("the hosts arriving while the all-hosts view is open fetch no series", () => {
+    const { commands } = withContext(
+      { ...mountedChartsModel(), pingHosts: PingHostsAsyncData.Loading() },
+      SucceededFetchPingHosts({ hosts: hostsResponse(HOSTS) })
+    );
+
+    expect(names(commands)).not.toContain("FetchHostLatency");
+  });
+
+  test("going back to all hosts drops the per-host data and repaints the single line", () => {
+    const { model, commands } = withContext(
+      {
+        ...perHost,
+        hostLatency: HostLatencyAsyncData.Success({
+          data: {
+            series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+            window: answeredWindow,
+          },
+        }),
+      },
+      selectLatencyView("all")
+    );
+
+    expect(model.latencyView).toBe("all");
+    expect(model.hostLatency._tag).toBe("Idle");
+    expect(summarized(commands)).toContainEqual(
+      summarize(
+        SyncLatencyChart({
+          hostId: "latency-chart",
+          metrics: [],
+          hostSeries: [],
+          ...METRICS_WINDOW,
+          incidents: [],
+        })
+      )
+    );
+    expect(names(commands)).toContain("SaveSettings");
+  });
+
+  test("the series landing for the current range are stored and painted, one line per host", () => {
+    const { model, commands } = withContext(
+      { ...perHost, hostLatency: HostLatencyAsyncData.Loading() },
+      SucceededFetchHostLatency({
+        series: [
+          { host: "8.8.8.8", metrics: [hostMetric] },
+          { host: "1.1.1.1", metrics: [] },
+        ],
+        ...hostWindow,
+        request: DEFAULT_REQUEST,
+      })
+    );
+
+    expect(model.hostLatency._tag).toBe("Success");
+    expect(summarized(commands)).toContainEqual(
+      summarize(
+        SyncLatencyChart({
+          hostId: "latency-chart",
+          metrics: [],
+          hostSeries: [
+            { host: "8.8.8.8", metrics: [hostMetric] },
+            { host: "1.1.1.1", metrics: [] },
+          ],
+          ...hostWindow,
+          incidents: [],
+        })
+      )
+    );
+  });
+
+  describe("when the all-hosts metrics have not answered", () => {
+    const hostData = HostLatencyAsyncData.Success({
+      data: {
+        series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+        window: answeredWindow,
+      },
+    });
+    const withoutAllHosts = (metrics: Model["metrics"]) => ({
+      ...perHost,
+      metrics,
+      maybeMetricsWindow: Option.none(),
+    });
+    const hostLinesPainted = {
+      name: "SyncLatencyChart",
+      args: expect.objectContaining({
+        hostId: "latency-chart",
+        metrics: [],
+        hostSeries: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+        ...hostWindow,
+      }),
+    };
+
+    test("the series landing while the all-hosts metrics are loading are painted", () => {
+      const { commands } = withContext(
+        {
+          ...withoutAllHosts(MetricsAsyncData.Loading()),
+          hostLatency: HostLatencyAsyncData.Loading(),
+        },
+        SucceededFetchHostLatency({
+          series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+          ...hostWindow,
+          request: DEFAULT_REQUEST,
+        })
+      );
+
+      expect(summarized(commands)).toContainEqual(hostLinesPainted);
+    });
+
+    test("the series are painted when the all-hosts metrics failed", () => {
+      const { commands } = withContext(
+        {
+          ...withoutAllHosts(MetricsAsyncData.Failure({ error: "timeout" })),
+          hostLatency: HostLatencyAsyncData.Loading(),
+        },
+        SucceededFetchHostLatency({
+          series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+          ...hostWindow,
+          request: DEFAULT_REQUEST,
+        })
+      );
+
+      expect(summarized(commands)).toContainEqual(hostLinesPainted);
+    });
+
+    test("a theme change repaints the series without the all-hosts metrics", () => {
+      const { commands } = withContext(
+        {
+          ...withoutAllHosts(MetricsAsyncData.Loading()),
+          hostLatency: hostData,
+        },
+        ChangedSystemTheme()
+      );
+
+      expect(summarized(commands)).toContainEqual(hostLinesPainted);
+    });
+
+    test("mounting the chart paints the series without the all-hosts metrics", () => {
+      const { commands } = withContext(
+        {
+          ...withoutAllHosts(MetricsAsyncData.Failure({ error: "timeout" })),
+          maybeLatencyChartHostId: Option.none(),
+          hostLatency: hostData,
+        },
+        SucceededMountLatencyChart({ hostId: "latency-chart" })
+      );
+
+      expect(summarized(commands)).toContainEqual(hostLinesPainted);
+    });
+
+    test("the all-hosts view still waits for its metrics and their window", () => {
+      const { commands } = withContext(
+        {
+          ...withoutAllHosts(MetricsAsyncData.Loading()),
+          latencyView: "all" as const,
+          maybeLatencyChartHostId: Option.none(),
+        },
+        SucceededMountLatencyChart({ hostId: "latency-chart" })
+      );
+
+      expect(names(commands)).not.toContain("SyncLatencyChart");
+    });
+  });
+
+  test("series for a range the viewer has left are dropped", () => {
+    const { model, commands } = withContext(
+      { ...perHost, hostLatency: HostLatencyAsyncData.Loading() },
+      SucceededFetchHostLatency({
+        series: [],
+        ...hostWindow,
+        request: {
+          dateRange: Preset({ preset: "last1h" }),
+          maybeEarliestDataMs: Option.none(),
+        },
+      })
+    );
+
+    expect(model.hostLatency._tag).toBe("Loading");
+    expect(commands).toBeUndefined();
+  });
+
+  test("a failed fetch settles as a failure the banner can name, and a stale one is ignored", () => {
+    const loading = { ...perHost, hostLatency: HostLatencyAsyncData.Loading() };
+
+    expect(
+      withContext(
+        loading,
+        FailedFetchHostLatency({ error: "db down", request: DEFAULT_REQUEST })
+      ).model.hostLatency
+    ).toEqual(HostLatencyAsyncData.Failure({ error: "db down" }));
+    expect(
+      withContext(
+        loading,
+        FailedFetchHostLatency({
+          error: "db down",
+          request: {
+            dateRange: Preset({ preset: "last1h" }),
+            maybeEarliestDataMs: Option.none(),
+          },
+        })
+      ).model.hostLatency._tag
+    ).toBe("Loading");
+  });
+
+  test("series and failures landing after the viewer is back on all hosts are dropped", () => {
+    const backOnAll = { ...mountedChartsModel(), latencyView: "all" as const };
+
+    const succeeded = withContext(
+      backOnAll,
+      SucceededFetchHostLatency({
+        series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+        ...hostWindow,
+        request: DEFAULT_REQUEST,
+      })
+    );
+    const failed = withContext(
+      backOnAll,
+      FailedFetchHostLatency({ error: "db down", request: DEFAULT_REQUEST })
+    );
+
+    expect(succeeded.model.hostLatency._tag).toBe("Idle");
+    expect(succeeded.commands).toBeUndefined();
+    expect(failed.model.hostLatency._tag).toBe("Idle");
+    expect(failed.commands).toBeUndefined();
+  });
+
+  test("a range change reloads the series in the per-host view only", () => {
+    const changed = withContext(
+      perHost,
+      SelectedQuickRange({ preset: "last7d" })
+    );
+    const all = withContext(
+      { ...perHost, latencyView: "all" as const },
+      SelectedQuickRange({ preset: "last7d" })
+    );
+
+    expect(names(changed.commands)).toContain("FetchHostLatency");
+    expect(names(all.commands)).not.toContain("FetchHostLatency");
+  });
+
+  test("a refresh tick and a manual refresh reload the series in the per-host view only", () => {
+    const loaded = {
+      ...perHost,
+      hostLatency: HostLatencyAsyncData.Success({
+        data: { series: [], window: answeredWindow },
+      }),
+    };
+
+    expect(names(withContext(loaded, TickedRefresh()).commands)).toContain(
+      "FetchHostLatency"
+    );
+    expect(names(withContext(loaded, ClickedRefreshNow()).commands)).toContain(
+      "FetchHostLatency"
+    );
+    expect(
+      names(
+        withContext({ ...loaded, latencyView: "all" as const }, TickedRefresh())
+          .commands
+      )
+    ).not.toContain("FetchHostLatency");
+  });
+
+  const loadedSeries = {
+    ...perHost,
+    hostLatency: HostLatencyAsyncData.Success({
+      data: {
+        series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+        window: answeredWindow,
+      },
+    }),
+  };
+
+  test("the landed series keep the range they answer", () => {
+    const { model } = withContext(
+      { ...perHost, hostLatency: HostLatencyAsyncData.Loading() },
+      SucceededFetchHostLatency({
+        series: [],
+        ...hostWindow,
+        request: DEFAULT_REQUEST,
+      })
+    );
+
+    expect(
+      Option.map(
+        AsyncData.getData(model.hostLatency),
+        ({ window }) => window.request
+      )
+    ).toEqual(Option.some(DEFAULT_REQUEST));
+  });
+
+  test("a refresh tick asks again after a failed fetch and keeps the failure until the retry answers", () => {
+    const retried = withContext(
+      {
+        ...perHost,
+        hostLatency: HostLatencyAsyncData.Failure({ error: "db down" }),
+      },
+      TickedRefresh()
+    );
+
+    expect(retried.model.hostLatency._tag).toBe("Failure");
+    expect(names(retried.commands)).toContain("FetchHostLatency");
+
+    const answered = withContext(
+      retried.model,
+      SucceededFetchHostLatency({
+        series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+        ...answeredWindow,
+      })
+    );
+
+    expect(answered.model.hostLatency._tag).toBe("Success");
+  });
+
+  test("a range change shows the per-host chart loading, and a repaint then draws no old series", () => {
+    const changed = withContext(
+      loadedSeries,
+      SelectedQuickRange({ preset: "last7d" })
+    );
+    const repaint = withContext(changed.model, ChangedSystemTheme());
+
+    expect(changed.model.hostLatency._tag).toBe("Loading");
+    expect(
+      summarized(repaint.commands).find(
+        ({ name }) => name === "SyncLatencyChart"
+      )?.args
+    ).toEqual(expect.objectContaining({ hostSeries: [] }));
+  });
+
+  test("the hosts arriving after the series have loaded fetch nothing again", () => {
+    const { model, commands } = withContext(
+      loadedSeries,
+      SucceededFetchPingHosts({ hosts: hostsResponse(HOSTS) })
+    );
+
+    expect(model.hostLatency._tag).toBe("Success");
+    expect(names(commands)).not.toContain("FetchHostLatency");
+  });
+
+  describe("on an 'All time' range whose start is not known yet", () => {
+    const EARLIEST_MS = Date.parse("2025-01-01T00:00:00.000Z");
+    const epochRequest: RangeRequest = {
+      dateRange: Preset({ preset: "allTime" }),
+      maybeEarliestDataMs: Option.none(),
+    };
+    const resolvedRequest: RangeRequest = {
+      dateRange: Preset({ preset: "allTime" }),
+      maybeEarliestDataMs: Option.some(EARLIEST_MS),
+    };
+    const allTimePerHost = {
+      ...perHost,
+      dateRange: Preset({ preset: "allTime" }),
+      maybeEarliestDataMs: Option.none(),
+    };
+    const hostFetches = (
+      commands: ReadonlyArray<{ name: string; args?: unknown }> | undefined
+    ) => summarized(commands).filter(({ name }) => name === "FetchHostLatency");
+    const hostFetchFor = (request: RangeRequest) =>
+      summarize(
+        FetchHostLatency({ token: "abc123", ...request, hosts: HOSTS })
+      );
+    const landed = (request: RangeRequest) =>
+      SucceededFetchHostLatency({
+        series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+        ...hostWindow,
+        request,
+      });
+
+    test("holds the host series back until the earliest datapoint lands, then asks on the resolved window", () => {
+      const asked = withContext(
+        { ...allTimePerHost, pingHosts: PingHostsAsyncData.Loading() },
+        SucceededFetchPingHosts({ hosts: hostsResponse(HOSTS) })
+      );
+      expect(hostFetches(asked.commands)).toEqual([]);
+
+      const resolved = withContext(
+        asked.model,
+        SucceededFetchEarliestData({ earliestMs: Option.some(EARLIEST_MS) })
+      );
+
+      expect(hostFetches(resolved.commands)).toEqual([
+        hostFetchFor(resolvedRequest),
+      ]);
+      expect(resolved.model.hostLatency._tag).toBe("Loading");
+    });
+
+    test("the series fetched on the epoch window are dropped, and the resolved ones settle the chart", () => {
+      const asked = withContext(
+        allTimePerHost,
+        SucceededFetchEarliestData({ earliestMs: Option.some(EARLIEST_MS) })
+      );
+
+      const stale = withContext(asked.model, landed(epochRequest));
+      const fresh = withContext(stale.model, landed(resolvedRequest));
+
+      expect(stale.model.hostLatency._tag).toBe("Loading");
+      expect(stale.commands).toBeUndefined();
+      expect(fresh.model.hostLatency._tag).toBe("Success");
+    });
+
+    test("a refresh tick retrying a failed fetch waits for the start too", () => {
+      const { commands } = withContext(
+        {
+          ...allTimePerHost,
+          hostLatency: HostLatencyAsyncData.Failure({ error: "db down" }),
+        },
+        TickedRefresh()
+      );
+
+      expect(hostFetches(commands)).toEqual([]);
+    });
+
+    test("the all-hosts view asks for no host series when the start is learned", () => {
+      const resolved = withContext(
+        { ...allTimePerHost, latencyView: "all" as const },
+        SucceededFetchEarliestData({ earliestMs: Option.some(EARLIEST_MS) })
+      );
+
+      expect(hostFetches(resolved.commands)).toEqual([]);
+      expect(resolved.model.hostLatency._tag).toBe("Idle");
+    });
+  });
+
+  test("a repaint in the per-host view draws the host lines on the host window", () => {
+    const { commands } = withContext(
+      {
+        ...perHost,
+        hostLatency: HostLatencyAsyncData.Success({
+          data: {
+            series: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+            window: {
+              ...answeredWindow,
+              endTimeMs: hostWindow.endTimeMs + 60_000,
+            },
+          },
+        }),
+      },
+      ChangedSystemTheme()
+    );
+
+    expect(summarized(commands)).toContainEqual(
+      summarize(
+        SyncLatencyChart({
+          hostId: "latency-chart",
+          metrics: [],
+          hostSeries: [{ host: "8.8.8.8", metrics: [hostMetric] }],
+          ...hostWindow,
+          endTimeMs: hostWindow.endTimeMs + 60_000,
+          incidents: [],
+        })
+      )
+    );
+  });
+});
+
+describe("dashboard update: brushing a range", () => {
+  const HOUR_MS = 3_600_000;
+  const T0 = Date.parse("2026-07-28T06:00:00.000Z");
+  const brushed = Custom({
+    startTime: "2026-07-28T06:00:00.000Z",
+    endTime: "2026-07-28T08:00:00.000Z",
+  });
+  const names = (commands: ReadonlyArray<{ name: string }> | undefined) =>
+    (commands ?? []).map((command) => command.name);
+
+  test("a committed brush becomes the custom range for the whole page, and reloads and saves it", () => {
+    const { model, commands } = withContext(
+      initModel(defaultSettings()),
+      BrushedChartRange({ startMs: T0, endMs: T0 + 2 * HOUR_MS })
+    );
+
+    expect(model.dateRange).toEqual(brushed);
+    expect(names(commands)).toEqual(
+      expect.arrayContaining([
+        "FetchMetrics",
+        "FetchSpeedtestHistory",
+        "FetchConnectivityStatus",
+        "FetchSummary",
+        "FetchOutages",
+        "SaveSettings",
+      ])
+    );
+  });
+
+  test("saves the range it narrowed, so a reload does not open on the brushed span", () => {
+    const { commands } = withContext(
+      initModel(defaultSettings()),
+      BrushedChartRange({ startMs: T0, endMs: T0 + 2 * HOUR_MS })
+    );
+
+    expect(summarized(commands)).toContainEqual(
+      summarize(
+        SaveSettings({
+          settings: { ...defaultSettings(), dateRange: DEFAULT_DATE_RANGE },
+        })
+      )
+    );
+  });
+
+  test("remembers the range it narrowed, so it can be restored", () => {
+    const { model } = withContext(
+      initModel(defaultSettings()),
+      BrushedChartRange({ startMs: T0, endMs: T0 + 2 * HOUR_MS })
+    );
+
+    expect(model.maybeRangeBeforeBrush).toEqual(
+      Option.some(DEFAULT_DATE_RANGE)
+    );
+  });
+
+  test("brushing again keeps the range the first brush narrowed, not the previous brush", () => {
+    const first = withContext(
+      initModel(defaultSettings()),
+      BrushedChartRange({ startMs: T0, endMs: T0 + 2 * HOUR_MS })
+    ).model;
+    const second = withContext(
+      first,
+      BrushedChartRange({ startMs: T0 + HOUR_MS, endMs: T0 + 2 * HOUR_MS })
+    ).model;
+
+    expect(second.maybeRangeBeforeBrush).toEqual(
+      Option.some(DEFAULT_DATE_RANGE)
+    );
+    expect(second.dateRange).toEqual(
+      Custom({
+        startTime: "2026-07-28T07:00:00.000Z",
+        endTime: "2026-07-28T08:00:00.000Z",
+      })
+    );
+  });
+
+  test("a brush too short to chart changes nothing", () => {
+    const { model, commands } = withContext(
+      initModel(defaultSettings()),
+      BrushedChartRange({ startMs: T0, endMs: T0 + 5_000 })
+    );
+
+    expect(model.dateRange).toEqual(DEFAULT_DATE_RANGE);
+    expect(model.maybeRangeBeforeBrush).toEqual(Option.none());
+    expect(commands).toBeUndefined();
+  });
+
+  test("resetting restores the range before the brush and forgets it", () => {
+    const narrowed = withContext(
+      initModel(defaultSettings()),
+      BrushedChartRange({ startMs: T0, endMs: T0 + 2 * HOUR_MS })
+    ).model;
+    const { model, commands } = withContext(narrowed, ClickedResetRange());
+
+    expect(model.dateRange).toEqual(DEFAULT_DATE_RANGE);
+    expect(model.maybeRangeBeforeBrush).toEqual(Option.none());
+    expect(names(commands)).toEqual(
+      expect.arrayContaining(["FetchMetrics", "SaveSettings"])
+    );
+  });
+
+  test("resetting with nothing narrowed does nothing", () => {
+    const { model, commands } = withContext(
+      initModel(defaultSettings()),
+      ClickedResetRange()
+    );
+
+    expect(model.dateRange).toEqual(DEFAULT_DATE_RANGE);
+    expect(commands).toBeUndefined();
+  });
+
+  test("choosing a range yourself ends the narrowing, whether from the buttons or the picker", () => {
+    const narrowed = withContext(
+      initModel(defaultSettings()),
+      BrushedChartRange({ startMs: T0, endMs: T0 + 2 * HOUR_MS })
+    ).model;
+
+    expect(
+      withContext(narrowed, SelectedQuickRange({ preset: "last7d" })).model
+        .maybeRangeBeforeBrush
+    ).toEqual(Option.none());
   });
 });

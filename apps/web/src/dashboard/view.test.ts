@@ -1,4 +1,4 @@
-import { Menu, Popover } from "@foldkit/ui";
+import { Menu, Popover, RadioGroup } from "@foldkit/ui";
 import { Option } from "effect";
 import { Scene } from "foldkit";
 import { describe, test, vi } from "vitest";
@@ -20,6 +20,7 @@ import {
   ApplyTheme,
   FetchConnectivityStatus,
   FetchEarliestData,
+  FetchHostLatency,
   FetchLiveConnectivity,
   FetchMetrics,
   FetchOutages,
@@ -29,6 +30,7 @@ import {
   SaveSettings,
 } from "@/dashboard/command";
 import {
+  Custom,
   formatDateRangeLabel,
   getDateRangeWindow,
   Preset,
@@ -43,6 +45,7 @@ import {
   CompletedSyncPacketLossChart,
   CompletedSyncSpeedChart,
   FailedFetchConnectivityStatus,
+  FailedFetchHostLatency,
   FailedFetchLiveConnectivity,
   FailedFetchOutages,
   FailedFetchPingHosts,
@@ -61,6 +64,7 @@ import {
 } from "@/dashboard/message";
 import {
   ConnectivityStatusAsyncData,
+  HostLatencyAsyncData,
   initModel,
   LiveConnectivityAsyncData,
   MetricsAsyncData,
@@ -102,6 +106,17 @@ const METRICS_WINDOW = {
 const SPEEDTEST_WINDOW = {
   startTimeMs: METRICS_WINDOW.startTimeMs,
   endTimeMs: METRICS_WINDOW.endTimeMs,
+};
+
+const LOADED_WINDOWS = {
+  maybeMetricsWindow: Option.some({
+    ...METRICS_WINDOW,
+    request: DEFAULT_REQUEST,
+  }),
+  maybeSpeedtestWindow: Option.some({
+    ...SPEEDTEST_WINDOW,
+    request: DEFAULT_REQUEST,
+  }),
 };
 
 const context = { token: "abc123", now: () => NOW_MS };
@@ -241,6 +256,7 @@ describe("dashboard view", () => {
       Scene.given({
         ...initModel(defaultSettings()),
         ...loadedInsights(),
+        ...LOADED_WINDOWS,
         metrics: MetricsAsyncData.Success({ data: [] }),
         speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
         connectivityStatus: ConnectivityStatusAsyncData.Success({
@@ -276,6 +292,7 @@ describe("dashboard view", () => {
       { update: boundUpdate, view },
       Scene.given({
         ...initModel(defaultSettings()),
+        ...LOADED_WINDOWS,
         speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
       }),
       acknowledgeAllChartMounts(),
@@ -1128,9 +1145,245 @@ describe("dashboard view", () => {
     );
   });
 
+  describe("the charts as assistive technology reads them", () => {
+    const point = (minute: number, fields: object) => ({
+      timestamp: new Date(Date.UTC(2026, 6, 28, 10, minute)).toISOString(),
+      source: "ping" as const,
+      ...fields,
+    });
+    const loaded = (overrides: Partial<Model>): Model => ({
+      ...initModel(defaultSettings()),
+      ...loadedInsights(),
+      ...LOADED_WINDOWS,
+      ...overrides,
+    });
+
+    test("each canvas is an image named by what it plots, with its figures for the range", () => {
+      const model = loaded({
+        metrics: MetricsAsyncData.Success({
+          data: [
+            point(0, {
+              latency: 30,
+              latency_p50: 20,
+              latency_p95: 80,
+              packet_loss: 0,
+              jitter: 1,
+            }),
+            point(5, {
+              latency: 50,
+              latency_p50: 40,
+              latency_p95: 120,
+              packet_loss: 1,
+              jitter: 3,
+            }),
+          ],
+        }),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({
+          data: [
+            {
+              timestamp: "2026-07-26T00:01:00.000Z",
+              download_speed: 100,
+              upload_speed: 20,
+            },
+            {
+              timestamp: "2026-07-26T00:02:00.000Z",
+              download_speed: 200,
+              upload_speed: 40,
+            },
+          ],
+        }),
+      });
+
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given(model),
+        acknowledgeAllChartMounts(),
+        resolveAllChartSyncs(),
+        Scene.expect(
+          Scene.role("img", {
+            name: "For the last 30 days. Bucket median latency averages 30.0 ms and the highest 95th percentile is 120.0 ms.",
+          })
+        ).toExist(),
+        Scene.expect(
+          Scene.role("img", {
+            name: "For the last 30 days. Bucket packet loss averages 0.50% and is highest at 1.00%.",
+          })
+        ).toExist(),
+        Scene.expect(
+          Scene.role("img", {
+            name: "For the last 30 days. Bucket jitter averages 2.00 ms and is highest at 3.00 ms.",
+          })
+        ).toExist(),
+        Scene.expect(
+          Scene.role("img", {
+            name: "For the last 30 days. Download averages 150.0 Mbps and peaks at 200.0 Mbps. Upload averages 30.0 Mbps and peaks at 40.0 Mbps.",
+          })
+        ).toExist(),
+        Scene.expectAll(Scene.all.testId("chart-notice")).toHaveCount(0)
+      );
+    });
+
+    const noticeIn = (chart: string, text: string) =>
+      Scene.inside(
+        Scene.label(chart),
+        Scene.expect(Scene.testId("chart-notice")).toContainText(text)
+      );
+
+    test("with nothing to plot, each chart says so in its name and over its plot", () => {
+      const model = loaded({
+        metrics: MetricsAsyncData.Success({ data: [] }),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+      });
+
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given(model),
+        acknowledgeAllChartMounts(),
+        resolveAllChartSyncs(),
+        Scene.expect(
+          Scene.role("img", {
+            name: "For the last 30 days. No data in this range.",
+          })
+        ).toExist(),
+        Scene.expect(
+          Scene.role("img", {
+            name: "For the last 30 days. No data in this range.",
+          })
+        ).toExist(),
+        noticeIn("Latency chart", "No data in this range."),
+        noticeIn("Packet loss chart", "No data in this range."),
+        noticeIn("Jitter chart", "No data in this range."),
+        noticeIn("Speed chart", "No data in this range.")
+      );
+    });
+
+    test("one bucket is too little for the line and bar charts to draw", () => {
+      const model = loaded({
+        metrics: MetricsAsyncData.Success({
+          data: [point(0, { latency: 30, packet_loss: 0, jitter: 1 })],
+        }),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+      });
+
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given(model),
+        acknowledgeAllChartMounts(),
+        resolveAllChartSyncs(),
+        noticeIn("Latency chart", "Not enough data to draw a line."),
+        noticeIn("Packet loss chart", "Not enough data to draw a chart."),
+        noticeIn("Jitter chart", "Not enough data to draw a line.")
+      );
+    });
+
+    test("a failed load replaces the plot's axes with a message", () => {
+      const model = loaded({
+        metrics: MetricsAsyncData.Failure({ error: "db down" }),
+        speedtestHistory: SpeedtestHistoryAsyncData.Failure({
+          error: "db down",
+        }),
+      });
+
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given(model),
+        acknowledgeAllChartMounts(),
+        noticeIn("Latency chart", "Could not load the chart."),
+        noticeIn("Packet loss chart", "Could not load the chart."),
+        noticeIn("Jitter chart", "Could not load the chart."),
+        noticeIn("Speed chart", "Could not load the chart.")
+      );
+    });
+
+    describe("with another range's data left in place", () => {
+      const rows = [
+        point(0, { latency: 30, packet_loss: 0, jitter: 1 }),
+        point(5, { latency: 50, packet_loss: 1, jitter: 3 }),
+      ];
+      const tests = [
+        {
+          timestamp: "2026-07-26T00:01:00.000Z",
+          download_speed: 100,
+          upload_speed: 20,
+        },
+      ];
+      const last24h = Preset({ preset: "last24h" });
+
+      test("a failed fetch for the new range covers the charts instead of labelling the old figures", () => {
+        const model = loaded({
+          dateRange: last24h,
+          metrics: MetricsAsyncData.Stale({ data: rows, error: "db down" }),
+          speedtestHistory: SpeedtestHistoryAsyncData.Stale({
+            data: tests,
+            error: "db down",
+          }),
+        });
+
+        Scene.scene(
+          { update: boundUpdate, view },
+          Scene.given(model),
+          acknowledgeAllChartMounts(),
+          resolveAllChartSyncs(),
+          Scene.expect(
+            Scene.role("img", {
+              name: "For the last 24 hours. Could not load the chart.",
+            })
+          ).toExist(),
+          noticeIn("Latency chart", "Could not load the chart."),
+          noticeIn("Packet loss chart", "Could not load the chart."),
+          noticeIn("Jitter chart", "Could not load the chart."),
+          noticeIn("Speed chart", "Could not load the chart."),
+          Scene.expect(Scene.text("Could not load speed tests.")).not.toExist(),
+          Scene.expect(Scene.text(/100(\.0)? Mbps/)).not.toExist()
+        );
+      });
+
+      test("a fetch still running for the new range puts the skeleton over the charts", () => {
+        const model = loaded({
+          dateRange: last24h,
+          metrics: MetricsAsyncData.Refreshing({ data: rows }),
+          speedtestHistory: SpeedtestHistoryAsyncData.Refreshing({
+            data: tests,
+          }),
+        });
+
+        Scene.scene(
+          { update: boundUpdate, view },
+          Scene.given(model),
+          acknowledgeAllChartMounts(),
+          resolveAllChartSyncs(),
+          Scene.expect(
+            Scene.role("img", { name: "For the last 24 hours. Loading." })
+          ).toExist(),
+          Scene.expect(
+            Scene.role("status", { name: "Loading latency chart" })
+          ).toExist(),
+          Scene.expect(
+            Scene.role("status", { name: "Loading packet loss chart" })
+          ).toExist(),
+          Scene.expect(
+            Scene.role("status", { name: "Loading speed chart" })
+          ).toExist(),
+          Scene.expect(Scene.text(/100(\.0)? Mbps/)).not.toExist(),
+          Scene.expectAll(Scene.all.testId("chart-notice")).toHaveCount(0)
+        );
+      });
+    });
+
+    test("no message is drawn over a chart while its first load is pending", () => {
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given(initModel(defaultSettings())),
+        acknowledgeAllChartMounts(),
+        Scene.expectAll(Scene.all.testId("chart-notice")).toHaveCount(0)
+      );
+    });
+  });
+
   test("shows average/max download and upload speed stats", () => {
     const model = {
       ...initModel(defaultSettings()),
+      ...LOADED_WINDOWS,
       speedtestHistory: SpeedtestHistoryAsyncData.Success({
         data: [
           {
@@ -1342,6 +1595,7 @@ describe("dashboard view", () => {
       { update: boundUpdate, view },
       Scene.given({
         ...initModel(defaultSettings()),
+        ...LOADED_WINDOWS,
         speedtestHistory: SpeedtestHistoryAsyncData.Success({
           data: [
             {
@@ -1467,6 +1721,7 @@ describe("dashboard view", () => {
             theme: "system",
             dateRange: Preset({ preset: "last24h" }),
             isPaused: false,
+            latencyView: "all",
           },
         })
       ),
@@ -1714,6 +1969,7 @@ describe("dashboard view", () => {
 describe("dashboard view: insights", () => {
   const settled = (overrides: Record<string, unknown> = {}) => ({
     ...initModel(defaultSettings()),
+    ...LOADED_WINDOWS,
     metrics: MetricsAsyncData.Success({ data: [] }),
     speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
     connectivityStatus: ConnectivityStatusAsyncData.Success({
@@ -1841,7 +2097,7 @@ describe("dashboard view: insights", () => {
       );
     });
 
-    test("download and upload show the median with the test count and no change", () => {
+    test("download and upload show the median with the test count and how it moved", () => {
       show(
         settled(),
         Scene.expect(Scene.testId("rail-download")).toContainText("941"),
@@ -1849,12 +2105,15 @@ describe("dashboard view: insights", () => {
           "median · 24 tests"
         ),
         Scene.expect(Scene.testId("rail-upload")).toContainText("917"),
+        Scene.expect(Scene.testId("rail-download")).toContainText(
+          "+41 Mbps better"
+        ),
+        Scene.expect(Scene.testId("rail-download")).toContainText(
+          "vs 900 Mbps prev."
+        ),
         Scene.expect(
-          Scene.selector('[data-testid="rail-download"] p[data-delta]')
-        ).not.toExist(),
-        Scene.expect(
-          Scene.selector('[data-testid="rail-upload"] p[data-delta]')
-        ).not.toExist()
+          Scene.selector('[data-testid="rail-upload"] p[data-delta="steady"]')
+        ).toExist()
       );
     });
 
@@ -2629,12 +2888,18 @@ describe("dashboard view: insights", () => {
       );
     });
 
-    test("the speed card says it could not load, not that there are no tests", () => {
+    test("the speed card says once, over its chart, that it could not load, not that there are no tests", () => {
       show(
         settled({
           speedtestHistory: SpeedtestHistoryAsyncData.Failure(failed),
         }),
-        Scene.expect(Scene.text("Could not load speed tests.")).toExist(),
+        Scene.inside(
+          Scene.label("Speed chart"),
+          Scene.expect(Scene.testId("chart-notice")).toContainText(
+            "Could not load the chart."
+          )
+        ),
+        Scene.expect(Scene.text("Could not load speed tests.")).not.toExist(),
         Scene.expect(Scene.text("No tests in this range.")).not.toExist(),
         Scene.expect(Scene.text(/- Mbps/)).not.toExist()
       );
@@ -3119,6 +3384,277 @@ describe("dashboard view: insights", () => {
           }),
         }),
         Scene.expect(Scene.text("No host data in this range.")).toExist()
+      );
+    });
+  });
+
+  describe("network quality", () => {
+    test("offers the latency chart as all hosts or per host, with the current view checked", () => {
+      show(
+        settled(),
+        Scene.expect(
+          Scene.role("radiogroup", { name: "Latency view" })
+        ).toExist(),
+        Scene.expect(Scene.role("radio", { name: "All hosts" })).toHaveAttr(
+          "aria-checked",
+          "true"
+        ),
+        Scene.expect(Scene.role("radio", { name: "Per host" })).toHaveAttr(
+          "aria-checked",
+          "false"
+        )
+      );
+    });
+
+    test("the card has no subtitle under its heading", () => {
+      show(
+        settled(),
+        Scene.expect(Scene.text("Ping results from all hosts")).not.toExist()
+      );
+    });
+
+    test("the latency row says what its lines are", () => {
+      show(settled(), Scene.expect(Scene.text("p50 line, p95 band")).toExist());
+      show(
+        settled({
+          latencyView: "perHost",
+          hostLatency: HostLatencyAsyncData.Success({
+            data: {
+              series: [],
+              window: {
+                startTimeMs: METRICS_WINDOW.startTimeMs,
+                endTimeMs: METRICS_WINDOW.endTimeMs,
+                granularity: METRICS_WINDOW.granularity,
+                request: DEFAULT_REQUEST,
+              },
+            },
+          }),
+        }),
+        Scene.expect(Scene.text("p50 per host")).toExist(),
+        Scene.expect(Scene.text("p50 line, p95 band")).not.toExist()
+      );
+    });
+
+    test("the latency heading reads as one phrase, with a space before what its lines are", () => {
+      show(
+        settled(),
+        Scene.expect(Scene.text(/^Latency · ms p50 line, p95 band$/)).toExist()
+      );
+    });
+
+    test("the latency row keeps describing the all-hosts lines until the host series arrive", () => {
+      show(
+        settled({ latencyView: "perHost" }),
+        Scene.expect(Scene.text("p50 line, p95 band")).toExist()
+      );
+    });
+
+    test("choosing per host switches the view and saves the choice", () => {
+      show(
+        settled(),
+        Scene.click(Scene.role("radio", { name: "Per host" })),
+        Scene.Command.expectHas(
+          SaveSettings({
+            settings: {
+              theme: "system",
+              dateRange: DEFAULT_DATE_RANGE,
+              isPaused: false,
+              latencyView: "perHost",
+            },
+          })
+        ),
+        Scene.Command.expectHas(
+          FetchHostLatency({
+            token: "abc123",
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+            hosts: ["1.1.1.1", "8.8.8.8"],
+          })
+        ),
+        Scene.Command.resolveAll(
+          [SaveSettings, CompletedSaveSettings()],
+          [RadioGroup.FocusOption, RadioGroup.Message.CompletedFocusOption()],
+          [
+            FetchHostLatency,
+            FailedFetchHostLatency({
+              error: "skip",
+              request: DEFAULT_REQUEST,
+            }),
+          ]
+        ),
+        resolveAllChartSyncs(),
+        Scene.expect(Scene.role("radio", { name: "Per host" })).toHaveAttr(
+          "aria-checked",
+          "true"
+        )
+      );
+    });
+
+    test("shows a skeleton over the latency chart while the per-host lines load", () => {
+      show(
+        settled({
+          latencyView: "perHost",
+          hostLatency: HostLatencyAsyncData.Loading(),
+        }),
+        Scene.expect(
+          Scene.role("status", { name: "Loading latency chart" })
+        ).toExist()
+      );
+    });
+
+    test("shows no skeleton over the latency chart when there are no hosts to fetch", () => {
+      show(
+        settled({
+          latencyView: "perHost",
+          pingHosts: PingHostsAsyncData.Success({
+            data: hostsResponse([]),
+          }),
+        }),
+        Scene.expect(
+          Scene.role("status", { name: "Loading latency chart" })
+        ).not.toExist()
+      );
+    });
+
+    test("shows no skeleton over the latency chart when the host list failed", () => {
+      show(
+        settled({
+          latencyView: "perHost",
+          pingHosts: PingHostsAsyncData.Failure({ error: "db down" }),
+        }),
+        Scene.expect(
+          Scene.role("status", { name: "Loading latency chart" })
+        ).not.toExist()
+      );
+    });
+
+    test("names a per-host fetch that failed in the banner", () => {
+      show(
+        settled({
+          latencyView: "perHost",
+          hostLatency: HostLatencyAsyncData.Failure({ error: "db down" }),
+        }),
+        Scene.expect(Scene.role("alert")).toContainText("Host latency: db down")
+      );
+    });
+
+    test("offers Reset range only while a brush has narrowed the range", () => {
+      show(
+        settled(),
+        Scene.expect(
+          Scene.role("button", { name: "Reset range" })
+        ).not.toExist()
+      );
+      show(
+        settled({ maybeRangeBeforeBrush: Option.some(DEFAULT_DATE_RANGE) }),
+        Scene.expect(Scene.role("button", { name: "Reset range" })).toExist()
+      );
+    });
+
+    test("resetting restores the range from before the brush", () => {
+      show(
+        settled({
+          dateRange: Custom({
+            startTime: "2026-07-28T06:00:00.000Z",
+            endTime: "2026-07-28T08:00:00.000Z",
+          }),
+          maybeRangeBeforeBrush: Option.some(DEFAULT_DATE_RANGE),
+        }),
+        Scene.click(Scene.role("button", { name: "Reset range" })),
+        Scene.Command.expectHas(
+          FetchMetrics({
+            token: "abc123",
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+          })
+        ),
+        Scene.Command.resolveAll(
+          ...RANGE_INSIGHT_RESOLVERS,
+          [
+            FetchMetrics,
+            SucceededFetchMetrics({
+              request: DEFAULT_REQUEST,
+              metrics: [],
+              nowMs: NOW_MS,
+              ...METRICS_WINDOW,
+            }),
+          ],
+          [
+            FetchSpeedtestHistory,
+            SucceededFetchSpeedtestHistory({
+              request: DEFAULT_REQUEST,
+              history: [],
+              ...SPEEDTEST_WINDOW,
+            }),
+          ],
+          [
+            FetchConnectivityStatus,
+            FailedFetchConnectivityStatus({
+              error: "skip",
+              request: DEFAULT_REQUEST,
+            }),
+          ],
+          [SaveSettings, CompletedSaveSettings()]
+        ),
+        resolveRibbonMeasure(DEFAULT_RIBBON_WIDTH_PX),
+        resolveAllChartSyncs(),
+        Scene.expect(
+          Scene.role("button", { name: "Reset range" })
+        ).not.toExist()
+      );
+    });
+  });
+
+  describe("speed card", () => {
+    const test509 = {
+      timestamp: "2026-07-28T11:00:00.000Z",
+      download_speed: 509.1,
+      upload_speed: 466,
+      server_location: "Fremont, CA",
+    };
+    const last24h = Preset({ preset: "last24h" });
+    const last24hWindow = {
+      startTimeMs: NOW_MS - 24 * 60 * 60 * 1000,
+      endTimeMs: NOW_MS,
+      request: { ...DEFAULT_REQUEST, dateRange: last24h },
+    };
+
+    test("a range fetched in hourly buckets calls the newest row an average, not a test", () => {
+      show(
+        settled({
+          speedtestHistory: SpeedtestHistoryAsyncData.Success({
+            data: [test509],
+          }),
+        }),
+        Scene.expect(Scene.text(/^Latest hourly average · /)).toExist(),
+        Scene.expect(Scene.text(/^Last test/)).not.toExist(),
+        Scene.expect(Scene.text("Hourly averages, not single tests.")).toExist()
+      );
+    });
+
+    test("a range fetched as raw tests calls the newest row the last test", () => {
+      show(
+        settled({
+          dateRange: last24h,
+          maybeSpeedtestWindow: Option.some(last24hWindow),
+          speedtestHistory: SpeedtestHistoryAsyncData.Success({
+            data: [test509],
+          }),
+        }),
+        Scene.expect(Scene.text(/^Last test · /)).toExist(),
+        Scene.expect(Scene.text(/Latest .* average/)).not.toExist(),
+        Scene.expect(Scene.text(/averages, not single tests/)).not.toExist()
+      );
+    });
+
+    test("reads the newest pair with a space before its unit", () => {
+      show(
+        settled({
+          speedtestHistory: SpeedtestHistoryAsyncData.Success({
+            data: [test509],
+          }),
+        }),
+        Scene.expect(Scene.text(/509 \/ 466 Mbps down \/ up/)).toExist()
       );
     });
   });

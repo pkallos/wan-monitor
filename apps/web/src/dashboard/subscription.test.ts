@@ -1,11 +1,12 @@
 import { Effect, Fiber, Stream } from "effect";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { chartEvents } from "@/dashboard/charts/chartHost";
 import { initModel } from "@/dashboard/model";
 import {
+  chartBrushStream,
   dependenciesToStream,
   modelToDependencies,
   systemThemeDependenciesToStream,
-  systemThemeModelToDependencies,
 } from "@/dashboard/subscription";
 import { defaultSettings } from "@/storage";
 
@@ -40,22 +41,6 @@ describe("dependenciesToStream", () => {
     ).pipe(Effect.runPromise);
 
     expect(Array.from(events)).toEqual([]);
-  });
-});
-
-describe("systemThemeModelToDependencies", () => {
-  test("is active only for the system preference", () => {
-    const base = initModel(defaultSettings());
-
-    expect(
-      systemThemeModelToDependencies({ ...base, theme: "system" })
-    ).toEqual({ isSystemTheme: true });
-    expect(systemThemeModelToDependencies({ ...base, theme: "dark" })).toEqual({
-      isSystemTheme: false,
-    });
-    expect(systemThemeModelToDependencies({ ...base, theme: "light" })).toEqual(
-      { isSystemTheme: false }
-    );
   });
 });
 
@@ -142,5 +127,28 @@ describe("systemThemeDependenciesToStream", () => {
       { _tag: "ChangedSystemTheme" },
     ]);
     expect(matchMedia).toHaveBeenCalledWith("(prefers-color-scheme: dark)");
+  });
+});
+
+describe("chartBrushStream", () => {
+  test("turns each stroke reported by a chart into the range it covers", async () => {
+    const events = await Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(chartBrushStream.pipe(Stream.take(2)))
+      );
+      yield* Effect.sleep("10 millis");
+      chartEvents.dispatchEvent(
+        new CustomEvent("brush", { detail: { startMs: 1000, endMs: 5000 } })
+      );
+      chartEvents.dispatchEvent(
+        new CustomEvent("brush", { detail: { startMs: 7000, endMs: 9000 } })
+      );
+      return yield* Fiber.join(fiber);
+    }).pipe(Effect.runPromise);
+
+    expect(Array.from(events)).toEqual([
+      { _tag: "BrushedChartRange", startMs: 1000, endMs: 5000 },
+      { _tag: "BrushedChartRange", startMs: 7000, endMs: 9000 },
+    ]);
   });
 });

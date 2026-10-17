@@ -23,6 +23,8 @@ const CHANGE_KEYS: ReadonlyArray<RailStat["key"]> = [
   "latency",
   "loss",
   "jitter",
+  "download",
+  "upload",
 ];
 
 const cell = (h: HtmlBuilder<Message>, stat: RailStat): Html =>
@@ -77,7 +79,14 @@ const loadingCell = (h: HtmlBuilder<Message>, { key, label }: RailStat): Html =>
           skeleton(h, "h-[29px] w-24 lg:h-[33px]"),
           skeleton(h, "mt-0.5 h-5 w-20"),
           ...(CHANGE_KEYS.includes(key)
-            ? [skeleton(h, "mt-2 h-5 w-32 lg:h-[41px]")]
+            ? [
+                skeleton(
+                  h,
+                  key === "latency"
+                    ? "mt-2 h-5 w-32 lg:h-[41px]"
+                    : "mt-2 h-[41px] w-32 sm:h-5 lg:h-[41px]"
+                ),
+              ]
             : []),
         ]
       ),

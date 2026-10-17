@@ -232,6 +232,147 @@ describe("Metrics Aggregation Integration Tests", () => {
       }
     );
 
+    it.skipIf(skipTests)(
+      "should return each bucket's p50 and p95 latency beside the average",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          const dataset = createSeedDataset();
+          const { window, pingMetrics } = dataset.standardWindow;
+          yield* seedDatabase(db, pingMetrics);
+
+          const aggregated = yield* db.queryMetrics({
+            startTime: window.startTime,
+            endTime: window.endTime,
+            host: "8.8.8.8",
+            granularity: "15m",
+            source: "ping",
+          });
+          const raw = yield* db.queryMetrics({
+            startTime: window.startTime,
+            endTime: window.endTime,
+            host: "8.8.8.8",
+          });
+
+          expect(aggregated.length).toBeGreaterThan(0);
+          for (const bucket of aggregated) {
+            expect(bucket.latency_p50).toBeDefined();
+            expect(bucket.latency_p95).toBeDefined();
+            expect(bucket.latency_p95 ?? 0).toBeGreaterThanOrEqual(
+              bucket.latency_p50 ?? Number.POSITIVE_INFINITY
+            );
+          }
+          const latencies = raw.flatMap((row) => row.latency ?? []);
+          for (const bucket of aggregated) {
+            expect(bucket.latency_p95 ?? 0).toBeLessThanOrEqual(
+              Math.max(...latencies) * 1.01
+            );
+          }
+          // A raw row is one reading, so it carries no percentile.
+          expect(raw.every((row) => row.latency_p50 === undefined)).toBe(true);
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "should return the same median for a host whether or not the 95th percentile is asked for",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          const dataset = createSeedDataset();
+          const { window, pingMetrics } = dataset.standardWindow;
+          yield* seedDatabase(db, pingMetrics);
+          const query = {
+            startTime: window.startTime,
+            endTime: window.endTime,
+            host: "8.8.8.8",
+            granularity: "15m",
+            source: "ping" as const,
+          };
+
+          const both = yield* db.queryMetrics(query);
+          const medianOnly = yield* db.queryMetrics({
+            ...query,
+            percentiles: "p50",
+          });
+
+          expect(medianOnly.length).toBeGreaterThan(0);
+          expect(medianOnly.map((row) => row.latency_p50)).toEqual(
+            both.map((row) => row.latency_p50)
+          );
+          expect(medianOnly.map((row) => row.latency)).toEqual(
+            both.map((row) => row.latency)
+          );
+          expect(medianOnly.every((row) => row.latency_p50 !== undefined)).toBe(
+            true
+          );
+          expect(medianOnly.every((row) => row.latency_p95 === undefined)).toBe(
+            true
+          );
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "should take bucket percentiles over per-cycle means, as the summary does",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+
+          const startTime = new Date("2026-01-01T00:00:00.000Z");
+          const cycleCount = 20;
+          const readings: NetworkMetric[] = Array.from(
+            { length: cycleCount },
+            (_, cycle) => {
+              const timestamp = new Date(startTime.getTime() + cycle * 10_000);
+              return [
+                { host: "8.8.8.8", latency: 10 },
+                { host: "1.1.1.1", latency: 90 },
+              ].map(({ host, latency }) => ({
+                timestamp,
+                source: "ping" as const,
+                host,
+                latency,
+                jitter: 1,
+                packetLoss: 0,
+                connectivityStatus: "up" as const,
+              }));
+            }
+          ).flat();
+          yield* seedDatabase(db, readings);
+
+          const buckets = yield* db.queryMetrics({
+            startTime,
+            endTime: new Date(startTime.getTime() + cycleCount * 10_000),
+            granularity: "15m",
+            source: "ping",
+          });
+
+          // Every cycle averages to 50 ms. Over the raw rows the median would
+          // land on 10 or 90 ms instead.
+          expect(buckets.length).toBeGreaterThan(0);
+          for (const bucket of buckets) {
+            expect(Math.abs((bucket.latency_p50 ?? 0) - 50)).toBeLessThan(1);
+            expect(Math.abs((bucket.latency_p95 ?? 0) - 50)).toBeLessThan(1);
+          }
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
     // `source` is projected un-aggregated beside SAMPLE BY, so QuestDB groups
     // by it, so a window holding both sources returns each bucket twice on the
     // same timestamp. `createStandardTestWindow` deliberately seeds ping and

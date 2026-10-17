@@ -1,8 +1,9 @@
-import { Effect, Option, Stream } from "effect";
+import { Effect, Fiber, Option, Stream } from "effect";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { GotDashboardMessage } from "@/auth/message";
 import { Checking, initLoggedOut, LoggedIn } from "@/auth/model";
 import {
+  chartBrushDependenciesToStream,
   dependenciesToStream,
   modelToDependencies,
   systemThemeDependenciesToStream,
@@ -12,6 +13,7 @@ import {
   ChangedSystemTheme,
   initModel as initDashboardModel,
 } from "@/dashboard";
+import { chartEvents } from "@/dashboard/charts/chartHost";
 import { defaultSettings } from "@/storage";
 
 describe("modelToDependencies", () => {
@@ -139,6 +141,48 @@ describe("systemThemeDependenciesToStream", () => {
 
     expect(Array.from(events)).toEqual([
       GotDashboardMessage({ message: ChangedSystemTheme() }),
+    ]);
+  });
+});
+
+describe("chartBrushDependenciesToStream", () => {
+  test("is empty while not logged in, so a stroke on a chart nobody can see goes nowhere", async () => {
+    const fiber = Effect.runFork(
+      Stream.runCollect(
+        chartBrushDependenciesToStream({ isLoggedIn: false }).pipe(
+          Stream.take(1)
+        )
+      )
+    );
+    chartEvents.dispatchEvent(
+      new CustomEvent("brush", { detail: { startMs: 1000, endMs: 5000 } })
+    );
+    const events = await Effect.runPromise(Fiber.join(fiber));
+
+    expect(Array.from(events)).toEqual([]);
+  });
+
+  test("wraps each stroke for the dashboard while logged in", async () => {
+    const events = await Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(
+          chartBrushDependenciesToStream({ isLoggedIn: true }).pipe(
+            Stream.take(1)
+          )
+        )
+      );
+      yield* Effect.sleep("10 millis");
+      chartEvents.dispatchEvent(
+        new CustomEvent("brush", { detail: { startMs: 1000, endMs: 5000 } })
+      );
+      return yield* Fiber.join(fiber);
+    }).pipe(Effect.runPromise);
+
+    expect(Array.from(events)).toEqual([
+      {
+        _tag: "GotDashboardMessage",
+        message: { _tag: "BrushedChartRange", startMs: 1000, endMs: 5000 },
+      },
     ]);
   });
 });

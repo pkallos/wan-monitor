@@ -1,7 +1,9 @@
-import { Duration, Effect, Schema as S, Stream } from "effect";
-import { Dom, Subscription } from "foldkit";
+import { Duration, Effect, Stream } from "effect";
+import { Dom } from "foldkit";
+import { chartEvents } from "@/dashboard/charts/chartHost";
 import type { Message } from "@/dashboard/message";
 import {
+  BrushedChartRange,
   ChangedSystemTheme,
   Interacted,
   TickedRefresh,
@@ -66,16 +68,19 @@ const idleStream: Stream.Stream<Message> = Stream.concat(
   Stream.map(() => WentIdle())
 );
 
-// Exported standalone (rather than only living inside `subscriptions` below)
-// so the auth layer — which owns the actual `isLoggedIn` gate the dashboard
-// has no way to know about — can wrap it the same way it wraps `refresh`.
+// Exported so the auth layer, which owns the `isLoggedIn` gate the dashboard
+// has no way to know about, can wrap it the same way it wraps the refresh tick.
 export const activityAndIdleStream: Stream.Stream<Message> = Stream.merge(
   activityStream(),
   idleStream
 );
 
-export const systemThemeModelToDependencies = (model: Model) => ({
-  isSystemTheme: model.theme === "system",
+/** A drag across the latency chart, as the range of time it covers. */
+export const chartBrushStream: Stream.Stream<Message> = Dom.streamFromEvent({
+  target: chartEvents,
+  type: "brush",
+  mapEvent: ({ detail }) =>
+    BrushedChartRange({ startMs: detail.startMs, endMs: detail.endMs }),
 });
 
 // Only a `system` preference tracks the OS: an explicit light or dark choice
@@ -92,18 +97,3 @@ export const systemThemeDependenciesToStream = ({
     }),
     Effect.sync(() => isSystemTheme)
   );
-
-export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
-  refresh: entry(
-    { isPaused: S.Boolean, isIdle: S.Boolean },
-    { modelToDependencies, dependenciesToStream }
-  ),
-  activity: Subscription.persistentEntry(activityAndIdleStream),
-  systemTheme: entry(
-    { isSystemTheme: S.Boolean },
-    {
-      modelToDependencies: systemThemeModelToDependencies,
-      dependenciesToStream: systemThemeDependenciesToStream,
-    }
-  ),
-}));

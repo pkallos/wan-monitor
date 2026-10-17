@@ -5,6 +5,9 @@ export interface MetricRow {
   readonly source: MetricSource;
   readonly host?: string;
   readonly latency?: number;
+  /** Per bucket, in aggregated queries only. */
+  readonly latency_p50?: number;
+  readonly latency_p95?: number;
   readonly jitter?: number;
   readonly packet_loss?: number;
   readonly connectivity_status?: string;
@@ -96,6 +99,8 @@ export interface QueryMetricsParams {
   readonly limit?: number;
   readonly granularity?: string;
   readonly source?: MetricSource;
+  /** `p50` leaves the 95th percentile out of aggregated rows, which is a pass over the window of its own. */
+  readonly percentiles?: "p50" | "p50-p95";
 }
 
 export interface QuerySpeedtestsParams {

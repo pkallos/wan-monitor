@@ -12,8 +12,19 @@ export type ChartPalette = Readonly<{
   degraded: string;
   down: string;
   band: string;
+  /** Categorical colours for telling series apart, such as one line per host. */
+  series: ReadonlyArray<string>;
   fontFamily: string;
 }>;
+
+const SERIES_TOKENS = [
+  "series-1",
+  "series-2",
+  "series-3",
+  "series-4",
+  "series-5",
+  "series-6",
+] as const;
 
 /**
  * Reads the palette for whichever theme `<html>` currently carries, so it
@@ -38,6 +49,7 @@ export const readChartPalette = (
     degraded: token("deg"),
     down: token("down"),
     band: token("chart-band"),
+    series: SERIES_TOKENS.map(token),
     fontFamily: token("font-sans"),
   };
 };

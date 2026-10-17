@@ -1,3 +1,5 @@
+import type { Granularity } from "@shared/api/routes/metrics";
+import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import { Array as Array_, Option } from "effect";
 import { AsyncData } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -9,12 +11,20 @@ import {
 import { calculateSpeedStats } from "@/dashboard/charts/stats";
 import { ClickedTriggerSpeedtest, type Message } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
-import { lastTestLabel, latestSpeedPair } from "@/dashboard/overview";
+import {
+  lastTestLabel,
+  latestSpeedPair,
+  speedAveragesNote,
+} from "@/dashboard/overview";
 import { chartHost } from "@/dashboard/view/chartHost";
+import { speedReadout } from "@/dashboard/view/chartReadout";
+import {
+  speedtestBucketFor,
+  speedtestHistoryFor,
+} from "@/dashboard/view/derived";
 import { isAwaitingData } from "@/dashboard/view/loading";
 import { card } from "@/ui/card";
 import { PRIMARY_BUTTON_CLASS } from "@/ui/controls";
-import { failedLine } from "@/ui/failedLine";
 import { icon } from "@/ui/icon";
 import { sectionHeader } from "@/ui/sectionHeader";
 import { skeleton } from "@/ui/skeleton";
@@ -42,14 +52,21 @@ const statItem = (
 
 const lastTest = (
   h: HtmlBuilder<Message>,
-  model: Model,
-  isLoading: boolean,
-  hasFailed: boolean
-): Html => {
-  const history = AsyncData.getOrElse(model.speedtestHistory, () => []);
-  const isRunning = AsyncData.isPending(model.speedtestTrigger);
-
-  return h.div(
+  {
+    history,
+    maybeBucket,
+    isRunning,
+    isLoading,
+    hasFailed,
+  }: {
+    history: ReadonlyArray<SpeedMetric>;
+    maybeBucket: Option.Option<Granularity>;
+    isRunning: boolean;
+    isLoading: boolean;
+    hasFailed: boolean;
+  }
+): Html =>
+  h.div(
     [
       h.Class(
         "mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-rule pt-[18px]"
@@ -71,7 +88,7 @@ const lastTest = (
                     ],
                     [
                       Option.getOrElse(
-                        lastTestLabel(history),
+                        lastTestLabel(history, maybeBucket),
                         () => "No tests in this range."
                       ),
                     ]
@@ -89,10 +106,10 @@ const lastTest = (
                       h.span(
                         [
                           h.Class(
-                            "ml-1 text-sm font-medium text-ink-2 lg:text-base"
+                            "text-sm font-medium text-ink-2 lg:text-base"
                           ),
                         ],
-                        ["Mbps down / up"]
+                        [" Mbps down / up"]
                       ),
                     ]
                   ),
@@ -114,14 +131,14 @@ const lastTest = (
       ),
     ]
   );
-};
 
 export const speedCard = (h: HtmlBuilder<Message>, model: Model): Html => {
-  const isLoading = isAwaitingData(model.speedtestHistory);
-  const hasFailed = AsyncData.isFailure(model.speedtestHistory);
-  const stats = calculateSpeedStats(
-    AsyncData.getOrElse(model.speedtestHistory, () => [])
-  );
+  const speedtestHistory = speedtestHistoryFor(model);
+  const isLoading = isAwaitingData(speedtestHistory);
+  const hasFailed = AsyncData.isFailure(speedtestHistory);
+  const history = AsyncData.getOrElse(speedtestHistory, () => []);
+  const maybeBucket = speedtestBucketFor(model);
+  const stats = calculateSpeedStats(history);
 
   return card(h, { as: "section", className: "min-w-0" }, [
     sectionHeader(h, {
@@ -129,28 +146,45 @@ export const speedCard = (h: HtmlBuilder<Message>, model: Model): Html => {
     }),
     chartHost(h, {
       label: "Speed chart",
+      readout: speedReadout(model),
       mountAction: MountSpeedChart({ hostId: SPEED_CHART_HOST_ID }),
       heightClass: "h-[260px]",
-      isLoading,
     }),
     hasFailed
-      ? failedLine(
-          h,
-          "Could not load speed tests.",
-          "mt-4 text-[15px] text-ink-2"
-        )
+      ? h.empty
       : h.div(
-          [h.Class("mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4")],
-          Array_.map(
-            [
-              ["Avg download", stats.avgDownload],
-              ["Avg upload", stats.avgUpload],
-              ["Max download", stats.maxDownload],
-              ["Max upload", stats.maxUpload],
-            ] as const,
-            ([label, value]) => statItem(h, label, value, isLoading)
-          )
+          [h.Class("mt-4")],
+          [
+            h.div(
+              [h.Class("grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4")],
+              Array_.map(
+                [
+                  ["Avg download", stats.avgDownload],
+                  ["Avg upload", stats.avgUpload],
+                  ["Max download", stats.maxDownload],
+                  ["Max upload", stats.maxUpload],
+                ] as const,
+                ([label, value]) => statItem(h, label, value, isLoading)
+              )
+            ),
+            isLoading
+              ? h.empty
+              : Option.match(maybeBucket, {
+                  onNone: () => h.empty,
+                  onSome: (bucket) =>
+                    h.p(
+                      [h.Class("mt-2 text-xs text-ink-2")],
+                      [speedAveragesNote(bucket)]
+                    ),
+                }),
+          ]
         ),
-    lastTest(h, model, isLoading, hasFailed),
+    lastTest(h, {
+      history,
+      maybeBucket,
+      isRunning: AsyncData.isPending(model.speedtestTrigger),
+      isLoading,
+      hasFailed,
+    }),
   ]);
 };

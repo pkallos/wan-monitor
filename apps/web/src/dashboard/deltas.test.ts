@@ -172,8 +172,15 @@ describe("summaryDeltas", () => {
     availabilityPercentage: 99.95,
   };
 
+  const speed = {
+    downloadMedian: 941,
+    uploadMedian: 917,
+    count: 24,
+  };
+  const previousSpeed = { ...speed, downloadMedian: 900, uploadMedian: 950 };
+
   test("compares each figure with the same figure of the previous window", () => {
-    const deltas = summaryDeltas(range, previous);
+    const deltas = summaryDeltas(range, previous, speed, previousSpeed);
 
     expect(deltas.latency).toMatchObject({ value: { word: "worse" } });
     expect(deltas.loss).toMatchObject({
@@ -189,11 +196,12 @@ describe("summaryDeltas", () => {
   });
 
   describe("at each figure's steady threshold", () => {
+    const noSpeed = { downloadMedian: null, uploadMedian: null, count: 0 };
     const steadyWords = (overrides: Partial<typeof range>) =>
       Object.fromEntries(
-        Object.entries(summaryDeltas({ ...range, ...overrides }, range)).map(
-          ([name, delta]) => [name, Option.map(delta, (d) => d.word)]
-        )
+        Object.entries(
+          summaryDeltas({ ...range, ...overrides }, range, noSpeed, noSpeed)
+        ).map(([name, delta]) => [name, Option.map(delta, (d) => d.word)])
       );
 
     test("calls jitter 0.35 ms over the previous window worse, and 0.25 ms steady", () => {
@@ -253,9 +261,93 @@ describe("summaryDeltas", () => {
       uptimePercentage: null,
       availabilityPercentage: null,
     };
-    const deltas = summaryDeltas(range, empty);
+    const deltas = summaryDeltas(range, empty, speed, previousSpeed);
 
     expect(deltas.latency).toEqual(Option.none());
     expect(deltas.availability).toEqual(Option.none());
+  });
+
+  test("compares the median speeds, a faster download better and a slower upload worse", () => {
+    const deltas = summaryDeltas(range, previous, speed, previousSpeed);
+
+    expect(deltas.download).toMatchObject({
+      value: { word: "better", text: "+41 Mbps", rest: "vs 900 Mbps prev." },
+    });
+    expect(deltas.upload).toMatchObject({
+      value: {
+        word: "worse",
+        text: "\u221233 Mbps",
+        rest: "vs 950 Mbps prev.",
+      },
+    });
+  });
+
+  test("reads a speed change under 2% as steady", () => {
+    const deltas = summaryDeltas(range, previous, speed, {
+      ...previousSpeed,
+      downloadMedian: 935,
+    });
+
+    expect(deltas.download).toMatchObject({ value: { word: "steady" } });
+  });
+
+  test("keeps a decimal for speeds under 100 Mbps", () => {
+    const deltas = summaryDeltas(
+      range,
+      previous,
+      { ...speed, downloadMedian: 54.3 },
+      { ...previousSpeed, downloadMedian: 50.1 }
+    );
+
+    expect(deltas.download).toMatchObject({
+      value: { text: "+4.2 Mbps", rest: "vs 50.1 Mbps prev." },
+    });
+  });
+
+  describe("at the speed thresholds", () => {
+    const downloadChange = (previousMbps: number, currentMbps: number) =>
+      summaryDeltas(
+        range,
+        previous,
+        { ...speed, downloadMedian: currentMbps },
+        { ...previousSpeed, downloadMedian: previousMbps }
+      ).download;
+
+    test("a change of more than 2% of the previous figure is a verdict", () => {
+      expect(downloadChange(50, 51.01)).toMatchObject({
+        value: {
+          word: "better",
+          text: "+1.0 Mbps",
+          rest: "vs 50.0 Mbps prev.",
+        },
+      });
+    });
+
+    test("a change of less than 2% of the previous figure is steady", () => {
+      expect(downloadChange(50, 50.99)).toMatchObject({
+        value: { word: "steady", text: "+1.0 Mbps" },
+      });
+    });
+
+    test("whole Mbps start at 100 and follow the current figure", () => {
+      expect(downloadChange(90, 100)).toMatchObject({
+        value: { text: "+10 Mbps", rest: "vs 90 Mbps prev." },
+      });
+      expect(downloadChange(90, 99.9)).toMatchObject({
+        value: { text: "+9.9 Mbps", rest: "vs 90.0 Mbps prev." },
+      });
+    });
+  });
+
+  test("has no speed change when the previous window held no tests", () => {
+    const deltas = summaryDeltas(range, previous, speed, {
+      ...previousSpeed,
+      downloadMedian: null,
+      uploadMedian: null,
+      count: 0,
+    });
+
+    expect(deltas.download).toEqual(Option.none());
+    expect(deltas.upload).toEqual(Option.none());
   });
 });

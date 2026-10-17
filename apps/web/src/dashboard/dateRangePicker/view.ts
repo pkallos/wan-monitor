@@ -1,11 +1,12 @@
 import { Popover } from "@foldkit/ui";
-import { Array as Array_, Option } from "effect";
+import { Array as Array_, Match as M, Option } from "effect";
 import { Submodel } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide";
 import { buildMonthGrid, type CalendarDay } from "@/dashboard/calendarGrid";
 import {
   type DateRangeSelection,
+  formatCustomRangeLabel,
   formatDateRangeLabel,
   getDateRangeWindow,
   PRESET_LABELS,
@@ -40,9 +41,10 @@ const WEEKDAY_LABELS: ReadonlyArray<string> = [
 
 // Sits on the tinted status field, so it borders in the field's own rule.
 // At lg the width is fixed so the controls beside it do not shift when the
-// label changes; 16rem fits the widest label, "May 28, 2025 - May 28, 2026".
+// label changes; 20rem fits the widest labels in a 12-hour locale, such as
+// "May 28, 12:59 PM–May 29, 12:59 PM", and `truncate` covers any wider one.
 const TRIGGER_BUTTON_CLASS =
-  "flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-field-rule bg-card px-3.5 text-left text-sm font-semibold text-ink transition-colors hover:bg-bg lg:min-h-10 lg:w-64";
+  "flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-field-rule bg-card px-3.5 text-left text-sm font-semibold text-ink transition-colors hover:bg-bg lg:min-h-10 lg:w-80";
 
 // Absolutely-positioned with no explicit width, this shrinks to whatever
 // space Floating UI leaves on the constrained side of the anchor rather than
@@ -236,12 +238,18 @@ const monthGridView = (
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>(
   (model, viewInputs, h) => {
-    const triggerLabel = formatDateRangeLabel(
-      getDateRangeWindow(
-        viewInputs.appliedSelection,
-        viewInputs.nowMs,
-        viewInputs.maybeEarliestDataMs
-      )
+    const triggerLabel = M.value(viewInputs.appliedSelection).pipe(
+      M.tag("Custom", (custom) => formatCustomRangeLabel(custom)),
+      M.tag("Preset", (preset) =>
+        formatDateRangeLabel(
+          getDateRangeWindow(
+            preset,
+            viewInputs.nowMs,
+            viewInputs.maybeEarliestDataMs
+          )
+        )
+      ),
+      M.exhaustive
     );
 
     const presetRow = (preset: PresetKey, index: number): Html => {
@@ -332,7 +340,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                 [...button, h.Class(TRIGGER_BUTTON_CLASS)],
                 [
                   icon(h, Calendar, { size: 16 }),
-                  h.span([h.Class("truncate")], [triggerLabel]),
+                  h.span(
+                    [
+                      h.DataAttribute("testid", "date-range-label"),
+                      h.Class("truncate"),
+                    ],
+                    [triggerLabel]
+                  ),
                 ]
               ),
               ...(isVisible

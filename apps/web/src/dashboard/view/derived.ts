@@ -1,9 +1,12 @@
 import type { Outage } from "@shared/api/routes/connectivity-status";
+import type { Granularity } from "@shared/api/routes/metrics";
 import type { GetSummaryResponseType } from "@shared/api/routes/summary";
 import { Array as Array_, Option } from "effect";
 import { AsyncData } from "foldkit";
+import { speedtestBucketOf } from "@/dashboard/dateRange";
 import { type SummaryDeltas, summaryDeltas } from "@/dashboard/deltas";
 import { openIncident } from "@/dashboard/incidents";
+import type { RangeRequest } from "@/dashboard/message";
 import {
   answersCurrentRange,
   type ConnectivityStatusData,
@@ -34,8 +37,8 @@ export const trailingWindowsOf = (
   );
 
 export const deltasOf = (model: Model): Option.Option<SummaryDeltas> =>
-  Option.map(summaryOf(model), ({ range, previous }) =>
-    summaryDeltas(range, previous)
+  Option.map(summaryOf(model), ({ range, previous, speed, previousSpeed }) =>
+    summaryDeltas(range, previous, speed, previousSpeed)
   );
 
 /** The connectivity window, once it answers the selected range. */
@@ -143,4 +146,53 @@ export const openIncidentOf = (model: Model): Option.Option<Outage> =>
     currentOutages(model),
     model.liveConnectivity,
     model.pingHosts
+  );
+
+/**
+ * Data fetched for the selected range. While a newer range loads, or after its
+ * fetch failed, what the model still holds belongs to an older range: it reads
+ * as loading, or as failed once the fetch for the selected range has failed.
+ */
+const answeringRange = <A>(
+  scope: RangeScope,
+  data: AsyncData.AsyncData<A, string>,
+  maybeAnswered: Option.Option<RangeRequest>
+): AsyncData.AsyncData<A, string> =>
+  Option.exists(maybeAnswered, (request) => answersCurrentRange(scope, request))
+    ? data
+    : AsyncData.match(data, {
+        onIdle: () => data,
+        onLoading: () => data,
+        onFailure: () => data,
+        onRefreshing: () => AsyncData.Loading(),
+        onSuccess: () => AsyncData.Loading(),
+        onStale: ({ error }) => AsyncData.Failure({ error }),
+      });
+
+export const metricsFor = (model: Model): Model["metrics"] =>
+  answeringRange(
+    model,
+    model.metrics,
+    Option.map(model.maybeMetricsWindow, ({ request }) => request)
+  );
+
+export const speedtestHistoryFor = (model: Model): Model["speedtestHistory"] =>
+  answeringRange(
+    model,
+    model.speedtestHistory,
+    Option.map(model.maybeSpeedtestWindow, ({ request }) => request)
+  );
+
+/** The bucket size the speed history came in; none when it holds raw tests. */
+export const speedtestBucketFor = (model: Model): Option.Option<Granularity> =>
+  Option.flatMap(model.maybeSpeedtestWindow, speedtestBucketOf);
+
+export const hostLatencyFor = (model: Model): Model["hostLatency"] =>
+  answeringRange(
+    model,
+    model.hostLatency,
+    Option.map(
+      AsyncData.getData(model.hostLatency),
+      ({ window }) => window.request
+    )
   );

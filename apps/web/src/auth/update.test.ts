@@ -201,6 +201,7 @@ describe("auth update", () => {
       theme: "dark",
       dateRange: Preset({ preset: "last7d" }),
       isPaused: true,
+      latencyView: "all",
     };
 
     Story.story(
@@ -423,6 +424,7 @@ describe("auth update", () => {
       theme: "dark",
       dateRange: DEFAULT_DATE_RANGE,
       isPaused: true,
+      latencyView: "all",
     };
     const dashboard = {
       ...initDashboardModel(defaultSettings()),
