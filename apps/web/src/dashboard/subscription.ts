@@ -1,8 +1,14 @@
 import { Duration, Effect, Schema as S, Stream } from "effect";
 import { Dom, Subscription } from "foldkit";
 import type { Message } from "@/dashboard/message";
-import { Interacted, TickedRefresh, WentIdle } from "@/dashboard/message";
+import {
+  ChangedSystemTheme,
+  Interacted,
+  TickedRefresh,
+  WentIdle,
+} from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
+import { DARK_SCHEME_QUERY } from "@/dashboard/theme";
 
 const REFRESH_INTERVAL = Duration.seconds(30);
 const IDLE_TIMEOUT = Duration.minutes(2);
@@ -68,10 +74,36 @@ export const activityAndIdleStream: Stream.Stream<Message> = Stream.merge(
   idleStream
 );
 
+export const systemThemeModelToDependencies = (model: Model) => ({
+  isSystemTheme: model.theme === "system",
+});
+
+// Only a `system` preference tracks the OS: an explicit light or dark choice
+// must not repaint when the OS flips.
+export const systemThemeDependenciesToStream = ({
+  isSystemTheme,
+}: {
+  isSystemTheme: boolean;
+}): Stream.Stream<Message> =>
+  Stream.when(
+    Dom.streamFromMediaQuery({
+      query: DARK_SCHEME_QUERY,
+      mapMatches: () => ChangedSystemTheme(),
+    }),
+    Effect.sync(() => isSystemTheme)
+  );
+
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
   refresh: entry(
     { isPaused: S.Boolean, isIdle: S.Boolean },
     { modelToDependencies, dependenciesToStream }
   ),
   activity: Subscription.persistentEntry(activityAndIdleStream),
+  systemTheme: entry(
+    { isSystemTheme: S.Boolean },
+    {
+      modelToDependencies: systemThemeModelToDependencies,
+      dependenciesToStream: systemThemeDependenciesToStream,
+    }
+  ),
 }));

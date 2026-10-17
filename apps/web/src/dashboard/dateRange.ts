@@ -1,5 +1,5 @@
 import type { Granularity } from "@shared/api/routes/metrics";
-import { Option, Schema as S } from "effect";
+import { Match as M, Option, Schema as S } from "effect";
 import { taggedStruct as ts } from "foldkit/schema";
 
 export const PresetKey = S.Literals([
@@ -50,6 +50,14 @@ export type Custom = typeof Custom.Type;
 
 export const DateRangeSelection = S.Union([Preset, Custom]);
 export type DateRangeSelection = typeof DateRangeSelection.Type;
+
+export const sameDateRange = S.toEquivalence(DateRangeSelection);
+
+export const isAllTime = (selection: DateRangeSelection): boolean =>
+  M.value(selection).pipe(
+    M.tag("Preset", ({ preset }) => preset === "allTime"),
+    M.orElse(() => false)
+  );
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;

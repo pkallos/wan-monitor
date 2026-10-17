@@ -1,8 +1,17 @@
 import { Effect, Option, Stream } from "effect";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { GotDashboardMessage } from "@/auth/message";
 import { Checking, initLoggedOut, LoggedIn } from "@/auth/model";
-import { dependenciesToStream, modelToDependencies } from "@/auth/subscription";
-import { initModel as initDashboardModel } from "@/dashboard";
+import {
+  dependenciesToStream,
+  modelToDependencies,
+  systemThemeDependenciesToStream,
+  systemThemeModelToDependencies,
+} from "@/auth/subscription";
+import {
+  ChangedSystemTheme,
+  initModel as initDashboardModel,
+} from "@/dashboard";
 import { defaultSettings } from "@/storage";
 
 describe("modelToDependencies", () => {
@@ -54,5 +63,82 @@ describe("dependenciesToStream", () => {
     ).pipe(Effect.runPromise);
 
     expect(Array.from(events)).toEqual([]);
+  });
+});
+
+describe("systemThemeModelToDependencies", () => {
+  const withTheme = (theme: "system" | "dark") => ({
+    ...defaultSettings(),
+    theme,
+  });
+
+  test("tracks the OS theme in every auth state whose theme is system", () => {
+    const states = [
+      Checking({ maybeToken: Option.none(), settings: withTheme("system") }),
+      initLoggedOut(withTheme("system")),
+      LoggedIn({
+        maybeSession: Option.none(),
+        dashboard: {
+          ...initDashboardModel(defaultSettings()),
+          theme: "system",
+        },
+      }),
+    ];
+
+    for (const state of states) {
+      expect(systemThemeModelToDependencies(state)).toEqual({
+        isSystemTheme: true,
+      });
+    }
+  });
+
+  test("ignores the OS theme in every auth state with an explicit theme", () => {
+    const states = [
+      Checking({ maybeToken: Option.none(), settings: withTheme("dark") }),
+      initLoggedOut(withTheme("dark")),
+      LoggedIn({
+        maybeSession: Option.none(),
+        dashboard: { ...initDashboardModel(defaultSettings()), theme: "dark" },
+      }),
+    ];
+
+    for (const state of states) {
+      expect(systemThemeModelToDependencies(state)).toEqual({
+        isSystemTheme: false,
+      });
+    }
+  });
+});
+
+describe("systemThemeDependenciesToStream", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("is empty, and never touches matchMedia, for an explicit theme", async () => {
+    const matchMedia = vi.fn();
+    vi.stubGlobal("matchMedia", matchMedia);
+
+    const events = await Stream.runCollect(
+      systemThemeDependenciesToStream({ isSystemTheme: false })
+    ).pipe(Effect.runPromise);
+
+    expect(Array.from(events)).toEqual([]);
+    expect(matchMedia).not.toHaveBeenCalled();
+  });
+
+  test("wraps the OS theme change for the dashboard", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => Object.assign(new EventTarget(), { matches: true }))
+    );
+
+    const events = await Stream.runCollect(
+      systemThemeDependenciesToStream({ isSystemTheme: true }).pipe(
+        Stream.take(1)
+      )
+    ).pipe(Effect.runPromise);
+
+    expect(Array.from(events)).toEqual([
+      GotDashboardMessage({ message: ChangedSystemTheme() }),
+    ]);
   });
 });

@@ -1,6 +1,6 @@
-import { Toast as UiToast } from "@foldkit/ui";
+import { Menu, Toast as UiToast } from "@foldkit/ui";
 import { Option } from "effect";
-import { Story } from "foldkit";
+import { AsyncData, Story } from "foldkit";
 import { describe, expect, test } from "vitest";
 import {
   SyncJitterChart,
@@ -18,12 +18,13 @@ import {
   SaveSettings,
   TriggerSpeedtest,
 } from "@/dashboard/command";
-import { Preset } from "@/dashboard/dateRange";
+import { Preset, type PresetKey } from "@/dashboard/dateRange";
 import { ClickedApply, ClickedPreset } from "@/dashboard/dateRangePicker";
+import { MENU_ITEMS, type MenuItem } from "@/dashboard/menu";
 import {
+  ChangedSystemTheme,
   ClickedRefreshNow,
   ClickedTogglePause,
-  ClickedToggleTheme,
   ClickedTriggerSpeedtest,
   CompletedApplyTheme,
   CompletedSaveSettings,
@@ -47,9 +48,14 @@ import {
   FailedSyncSpeedChart,
   FailedTriggerSpeedtest,
   GotDateRangePickerMessage,
+  GotMenuMessage,
   GotToastMessage,
   HoveredConnectivitySegment,
   Interacted,
+  type Message,
+  type RangeRequest,
+  RequestedLogout,
+  SelectedQuickRange,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
   SucceededFetchLiveConnectivity,
@@ -69,6 +75,7 @@ import {
   initModel,
   LiveConnectivityAsyncData,
   MetricsAsyncData,
+  type Model,
   SpeedtestHistoryAsyncData,
   SpeedtestTriggerAsyncData,
 } from "@/dashboard/model";
@@ -78,6 +85,10 @@ import { defaultSettings } from "@/storage";
 
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
+const DEFAULT_REQUEST = {
+  dateRange: DEFAULT_DATE_RANGE,
+  maybeEarliestDataMs: Option.none<number>(),
+};
 
 // A fetch resolves its window once and carries the result on its success
 // message, so a chart sync is driven by that stored window rather than by
@@ -93,9 +104,18 @@ const SPEEDTEST_WINDOW = {
 };
 
 const succeededFetchMetrics = () =>
-  SucceededFetchMetrics({ metrics: [], nowMs: 0, ...METRICS_WINDOW });
+  SucceededFetchMetrics({
+    metrics: [],
+    nowMs: 0,
+    ...METRICS_WINDOW,
+    request: DEFAULT_REQUEST,
+  });
 const succeededFetchSpeedtestHistory = () =>
-  SucceededFetchSpeedtestHistory({ history: [], ...SPEEDTEST_WINDOW });
+  SucceededFetchSpeedtestHistory({
+    history: [],
+    ...SPEEDTEST_WINDOW,
+    request: DEFAULT_REQUEST,
+  });
 
 // A model that has already settled a metrics fetch: data plus the window it
 // was fetched for, which is what gates a chart sync.
@@ -156,8 +176,10 @@ describe("dashboard update — metrics", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -180,6 +202,7 @@ describe("dashboard update — metrics", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -196,7 +219,7 @@ describe("dashboard update — metrics", () => {
       Story.message(EnteredDashboard()),
       // ApplyTheme is the one exception: it re-fires every entry as an
       // idempotent re-assert against `<html>`, regardless of what's loaded.
-      Story.Command.expectExact(ApplyTheme({ theme: "light" })),
+      Story.Command.expectExact(ApplyTheme({ theme: "system" })),
       resolveApplyTheme()
     );
   });
@@ -233,6 +256,7 @@ describe("dashboard update — metrics", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -268,8 +292,10 @@ describe("dashboard update — metrics", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -331,7 +357,9 @@ describe("dashboard update — metrics", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(FailedFetchMetrics({ error: "network error" })),
+      Story.message(
+        FailedFetchMetrics({ error: "network error", request: DEFAULT_REQUEST })
+      ),
       Story.model((model) => {
         expect(model.metrics).toEqual(
           MetricsAsyncData.Stale({ error: "network error", data: [] })
@@ -349,7 +377,9 @@ describe("dashboard update — metrics", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(FailedFetchMetrics({ error: "network error" })),
+      Story.message(
+        FailedFetchMetrics({ error: "network error", request: DEFAULT_REQUEST })
+      ),
       Story.model((model) => {
         expect(model.metrics).toEqual(
           MetricsAsyncData.Failure({ error: "network error" })
@@ -372,8 +402,10 @@ describe("dashboard update — earliest data", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -406,6 +438,7 @@ describe("dashboard update — earliest data", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -422,7 +455,7 @@ describe("dashboard update — earliest data", () => {
       Story.message(EnteredDashboard()),
       // ApplyTheme is the one exception: it re-fires every entry as an
       // idempotent re-assert against `<html>`, regardless of what's loaded.
-      Story.Command.expectExact(ApplyTheme({ theme: "light" })),
+      Story.Command.expectExact(ApplyTheme({ theme: "system" })),
       resolveApplyTheme()
     );
   });
@@ -490,8 +523,10 @@ describe("dashboard update — earliest data", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -575,8 +610,10 @@ describe("dashboard update — speedtest history", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -599,7 +636,12 @@ describe("dashboard update — speedtest history", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(FailedFetchSpeedtestHistory({ error: "network error" })),
+      Story.message(
+        FailedFetchSpeedtestHistory({
+          error: "network error",
+          request: DEFAULT_REQUEST,
+        })
+      ),
       Story.model((model) => {
         expect(model.speedtestHistory).toEqual(
           SpeedtestHistoryAsyncData.Stale({ error: "network error", data: [] })
@@ -621,8 +663,10 @@ describe("dashboard update — connectivity status", () => {
       Story.given(model),
       Story.message(
         SucceededFetchConnectivityStatus({
+          request: DEFAULT_REQUEST,
           points: [],
           maybeUptimePercentage: Option.some(99.9),
+          maybeAvailabilityPercentage: Option.some(99.9),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -635,6 +679,7 @@ describe("dashboard update — connectivity status", () => {
             data: {
               points: [],
               maybeUptimePercentage: Option.some(99.9),
+              maybeAvailabilityPercentage: Option.some(99.9),
               coveragePercentage: 100,
               startTimeMs: 0,
               endTimeMs: 3_600_000,
@@ -655,7 +700,12 @@ describe("dashboard update — connectivity status", () => {
     Story.story(
       withContext,
       Story.given(model),
-      Story.message(FailedFetchConnectivityStatus({ error: "network error" })),
+      Story.message(
+        FailedFetchConnectivityStatus({
+          error: "network error",
+          request: DEFAULT_REQUEST,
+        })
+      ),
       Story.model((model) => {
         expect(model.connectivityStatus).toEqual(
           ConnectivityStatusAsyncData.Failure({ error: "network error" })
@@ -681,8 +731,10 @@ describe("dashboard update — live connectivity", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -773,6 +825,7 @@ describe("dashboard update — live connectivity", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -812,6 +865,7 @@ describe("dashboard update — date range", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -860,7 +914,7 @@ describe("dashboard update — date range", () => {
       Story.Command.expectHas(
         SaveSettings({
           settings: {
-            theme: "light",
+            theme: "system",
             dateRange: appliedRange,
             isPaused: false,
           },
@@ -872,8 +926,10 @@ describe("dashboard update — date range", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -929,8 +985,10 @@ describe("dashboard update — date range with no prior data", () => {
             maybeEarliestDataMs: Option.none(),
           }),
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -955,6 +1013,7 @@ describe("dashboard update — manual refresh", () => {
         data: {
           points: [],
           maybeUptimePercentage: Option.some(100),
+          maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
@@ -1003,8 +1062,10 @@ describe("dashboard update — manual refresh", () => {
         [
           FetchConnectivityStatus,
           SucceededFetchConnectivityStatus({
+            request: DEFAULT_REQUEST,
             points: [],
             maybeUptimePercentage: Option.some(100),
+            maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
@@ -1029,7 +1090,7 @@ describe("dashboard update — pause toggle", () => {
       Story.Command.expectHas(
         SaveSettings({
           settings: {
-            theme: "light",
+            theme: "system",
             dateRange: DEFAULT_DATE_RANGE,
             isPaused: true,
           },
@@ -1152,71 +1213,265 @@ describe("dashboard update — toast messages", () => {
   });
 });
 
-describe("dashboard update — theme toggle", () => {
-  test("toggling theme applies and saves it, then re-syncs every mounted chart", () => {
-    const model = {
-      ...withLoadedWindows(initModel(defaultSettings())),
-      metrics: MetricsAsyncData.Success({ data: [] }),
-      speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
-      maybeLatencyChartHostId: Option.some("latency-chart"),
-      maybePacketLossChartHostId: Option.some("packet-loss-chart"),
-      maybeJitterChartHostId: Option.some("jitter-chart"),
-      maybeSpeedChartHostId: Option.some("speed-chart"),
-    };
+const mountedChartsModel = () => ({
+  ...withLoadedWindows(initModel(defaultSettings())),
+  metrics: MetricsAsyncData.Success({ data: [] }),
+  speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+  maybeLatencyChartHostId: Option.some("latency-chart"),
+  maybePacketLossChartHostId: Option.some("packet-loss-chart"),
+  maybeJitterChartHostId: Option.some("jitter-chart"),
+  maybeSpeedChartHostId: Option.some("speed-chart"),
+});
 
+const expectEveryChartResynced = () => [
+  Story.Command.expectHas(
+    SyncLatencyChart({
+      hostId: "latency-chart",
+      metrics: [],
+      ...METRICS_WINDOW,
+    })
+  ),
+  Story.Command.expectHas(
+    SyncPacketLossChart({
+      hostId: "packet-loss-chart",
+      metrics: [],
+      ...METRICS_WINDOW,
+    })
+  ),
+  Story.Command.expectHas(
+    SyncJitterChart({
+      hostId: "jitter-chart",
+      metrics: [],
+      ...METRICS_WINDOW,
+    })
+  ),
+  Story.Command.expectHas(
+    SyncSpeedChart({
+      hostId: "speed-chart",
+      metrics: [],
+      ...SPEEDTEST_WINDOW,
+    })
+  ),
+];
+
+const selectMenuItem = (item: MenuItem) =>
+  GotMenuMessage({
+    message: Menu.Message.SelectedItem({
+      index: MENU_ITEMS.indexOf(item),
+      item,
+    }),
+  });
+
+describe("dashboard update: theme preference", () => {
+  test.each([
+    ["ThemeDark", "dark"],
+    ["ThemeLight", "light"],
+    ["ThemeSystem", "system"],
+  ] as const)(
+    "choosing %s from the menu applies and saves %s, then re-syncs every mounted chart",
+    (item, preference) => {
+      const model = {
+        ...mountedChartsModel(),
+        theme: preference === "light" ? ("dark" as const) : ("light" as const),
+      };
+
+      Story.story(
+        withContext,
+        Story.given(model),
+        Story.message(selectMenuItem(item)),
+        Story.model((updatedModel) => {
+          expect(updatedModel.theme).toBe(preference);
+          expect(updatedModel.menu.isOpen).toBe(false);
+        }),
+        Story.Command.expectHas(ApplyTheme({ theme: preference })),
+        Story.Command.expectHas(
+          SaveSettings({
+            settings: {
+              theme: preference,
+              dateRange: DEFAULT_DATE_RANGE,
+              isPaused: false,
+            },
+          })
+        ),
+        ...expectEveryChartResynced(),
+        Story.Command.resolveAll(
+          [ApplyTheme, CompletedApplyTheme()],
+          [SaveSettings, CompletedSaveSettings()],
+          [SyncLatencyChart, CompletedSyncLatencyChart()],
+          [SyncPacketLossChart, CompletedSyncPacketLossChart()],
+          [SyncJitterChart, CompletedSyncJitterChart()],
+          [SyncSpeedChart, CompletedSyncSpeedChart()]
+        ),
+        Story.expectNoOutMessage()
+      );
+    }
+  );
+
+  test("an OS theme change on the system preference re-applies the theme and re-syncs the charts, without saving", () => {
     Story.story(
       withContext,
-      Story.given(model),
-      Story.message(ClickedToggleTheme()),
-      Story.model((updatedModel) => {
-        expect(updatedModel.theme).toBe("dark");
-      }),
-      Story.Command.expectHas(ApplyTheme({ theme: "dark" })),
-      Story.Command.expectHas(
-        SaveSettings({
-          settings: {
-            theme: "dark",
-            dateRange: DEFAULT_DATE_RANGE,
-            isPaused: false,
-          },
-        })
-      ),
-      Story.Command.expectHas(
-        SyncLatencyChart({
-          hostId: "latency-chart",
-          metrics: [],
-          ...METRICS_WINDOW,
-        })
-      ),
-      Story.Command.expectHas(
-        SyncPacketLossChart({
-          hostId: "packet-loss-chart",
-          metrics: [],
-          ...METRICS_WINDOW,
-        })
-      ),
-      Story.Command.expectHas(
-        SyncJitterChart({
-          hostId: "jitter-chart",
-          metrics: [],
-          ...METRICS_WINDOW,
-        })
-      ),
-      Story.Command.expectHas(
-        SyncSpeedChart({
-          hostId: "speed-chart",
-          metrics: [],
-          ...SPEEDTEST_WINDOW,
-        })
-      ),
+      Story.given({ ...mountedChartsModel(), theme: "system" as const }),
+      Story.message(ChangedSystemTheme()),
+      Story.Command.expectHas(ApplyTheme({ theme: "system" })),
+      ...expectEveryChartResynced(),
       Story.Command.resolveAll(
         [ApplyTheme, CompletedApplyTheme()],
-        [SaveSettings, CompletedSaveSettings()],
         [SyncLatencyChart, CompletedSyncLatencyChart()],
         [SyncPacketLossChart, CompletedSyncPacketLossChart()],
         [SyncJitterChart, CompletedSyncJitterChart()],
         [SyncSpeedChart, CompletedSyncSpeedChart()]
       )
+    );
+  });
+
+  test.each(["light", "dark"] as const)(
+    "an OS theme change is ignored under an explicit %s choice",
+    (theme) => {
+      Story.story(
+        withContext,
+        Story.given({ ...mountedChartsModel(), theme }),
+        Story.message(ChangedSystemTheme()),
+        Story.Command.expectNone(),
+        Story.model((updatedModel) => {
+          expect(updatedModel.theme).toBe(theme);
+        })
+      );
+    }
+  );
+
+  test("entering the dashboard re-asserts the stored preference onto <html>", () => {
+    const { commands = [] } = withContext(
+      { ...initModel(defaultSettings()), theme: "system" },
+      EnteredDashboard()
+    );
+
+    expect(commands.map((command) => command.name)).toContain("ApplyTheme");
+    expect(commands).toContainEqual(
+      expect.objectContaining({ name: "ApplyTheme", args: { theme: "system" } })
+    );
+  });
+});
+
+describe("dashboard update: overflow menu", () => {
+  test("choosing Run speed test starts the speed test like the card button does", () => {
+    Story.story(
+      withContext,
+      Story.given(initModel(defaultSettings())),
+      Story.message(selectMenuItem("RunSpeedTest")),
+      Story.model((updatedModel) => {
+        expect(AsyncData.isLoading(updatedModel.speedtestTrigger)).toBe(true);
+        expect(updatedModel.menu.isOpen).toBe(false);
+      }),
+      Story.Command.expectHas(TriggerSpeedtest({ token: "abc123" })),
+      Story.Command.resolve(
+        TriggerSpeedtest,
+        SucceededTriggerSpeedtest({
+          downloadMbps: 500,
+          uploadMbps: 50,
+          pingMs: 8,
+        })
+      ),
+      Story.Command.resolveAll(
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
+      ),
+      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
+    );
+  });
+
+  test("choosing Log out asks the parent to log out, leaving the dashboard model as it was", () => {
+    const model = initModel(defaultSettings());
+
+    Story.story(
+      withContext,
+      Story.given(model),
+      Story.message(selectMenuItem("Logout")),
+      Story.expectOutMessage(RequestedLogout()),
+      Story.model((updatedModel) => {
+        expect(updatedModel.theme).toBe(model.theme);
+        expect(updatedModel.dateRange).toEqual(model.dateRange);
+      })
+    );
+  });
+
+  test("opening the menu emits no OutMessage", () => {
+    const { model: opened, outMessage } = withContext(
+      initModel(defaultSettings()),
+      GotMenuMessage({
+        message: Menu.Message.Opened({ maybeActiveItemIndex: Option.none() }),
+      })
+    );
+
+    expect(opened.menu.isOpen).toBe(true);
+    expect(outMessage).toBeUndefined();
+  });
+});
+
+describe("dashboard update: quick range", () => {
+  test("picking a quick range applies it, reloads the range-bound data and saves it", () => {
+    Story.story(
+      withContext,
+      Story.given({
+        ...initModel(defaultSettings()),
+        maybeEarliestDataMs: Option.some(0),
+      }),
+      Story.message(SelectedQuickRange({ preset: "last24h" })),
+      Story.model((updatedModel) => {
+        expect(updatedModel.dateRange).toEqual(Preset({ preset: "last24h" }));
+      }),
+      Story.Command.expectHas(
+        FetchMetrics({
+          token: "abc123",
+          dateRange: Preset({ preset: "last24h" }),
+          maybeEarliestDataMs: Option.some(0),
+        })
+      ),
+      Story.Command.expectHas(
+        FetchSpeedtestHistory({
+          token: "abc123",
+          dateRange: Preset({ preset: "last24h" }),
+          maybeEarliestDataMs: Option.some(0),
+        })
+      ),
+      Story.Command.expectHas(
+        FetchConnectivityStatus({
+          token: "abc123",
+          dateRange: Preset({ preset: "last24h" }),
+          maybeEarliestDataMs: Option.some(0),
+        })
+      ),
+      Story.Command.expectHas(
+        SaveSettings({
+          settings: {
+            theme: "system",
+            dateRange: Preset({ preset: "last24h" }),
+            isPaused: false,
+          },
+        })
+      ),
+      Story.Command.resolveAll(
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
+        [
+          FetchConnectivityStatus,
+          FailedFetchConnectivityStatus({
+            error: "skip",
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [SaveSettings, CompletedSaveSettings()]
+      )
+    );
+  });
+
+  test("never reloads the live indicator, which no range can change", () => {
+    const { commands = [] } = withContext(
+      initModel(defaultSettings()),
+      SelectedQuickRange({ preset: "last1h" })
+    );
+
+    expect(commands.map((command) => command.name)).not.toContain(
+      "FetchLiveConnectivity"
     );
   });
 });
@@ -1621,5 +1876,186 @@ describe("dashboard update — speed chart", () => {
       Story.message(FailedSyncSpeedChart({ reason: "chart disposed" })),
       Story.Command.expectNone()
     );
+  });
+});
+
+describe("dashboard update: responses for a replaced range", () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const EARLIEST_MS = Date.parse("2025-01-01T00:00:00.000Z");
+
+  const requestFor = (
+    preset: PresetKey,
+    maybeEarliestDataMs = Option.none<number>()
+  ): RangeRequest => ({ dateRange: Preset({ preset }), maybeEarliestDataMs });
+
+  const metricsAnswering = (
+    request: RangeRequest,
+    startTimeMs: number
+  ): Message =>
+    SucceededFetchMetrics({
+      request,
+      metrics: [],
+      nowMs: NOW_MS,
+      startTimeMs,
+      endTimeMs: NOW_MS,
+      granularity: "1m",
+    });
+  const speedtestsAnswering = (
+    request: RangeRequest,
+    startTimeMs: number
+  ): Message =>
+    SucceededFetchSpeedtestHistory({
+      request,
+      history: [],
+      startTimeMs,
+      endTimeMs: NOW_MS,
+    });
+  const connectivityAnswering = (
+    request: RangeRequest,
+    startTimeMs: number
+  ): Message =>
+    SucceededFetchConnectivityStatus({
+      request,
+      points: [],
+      maybeUptimePercentage: Option.some(100),
+      maybeAvailabilityPercentage: Option.some(100),
+      coveragePercentage: 100,
+      startTimeMs,
+      endTimeMs: NOW_MS,
+      granularity: "1m",
+    });
+
+  const send = (model: Model, ...messages: ReadonlyArray<Message>): Model =>
+    messages.reduce(
+      (current, message) => update(current, message, context).model,
+      model
+    );
+
+  const LAST_24H = requestFor("last24h");
+  const LAST_1H = requestFor("last1h");
+  const START_24H = NOW_MS - 24 * HOUR_MS;
+  const START_1H = NOW_MS - HOUR_MS;
+
+  const clickedBothRanges = () =>
+    send(
+      initModel(defaultSettings()),
+      SelectedQuickRange({ preset: "last24h" }),
+      SelectedQuickRange({ preset: "last1h" })
+    );
+
+  const answersFor = (request: RangeRequest, startTimeMs: number) => [
+    metricsAnswering(request, startTimeMs),
+    speedtestsAnswering(request, startTimeMs),
+    connectivityAnswering(request, startTimeMs),
+  ];
+
+  const startsOf = (model: Model) => ({
+    metrics: Option.map(model.maybeMetricsWindow, (w) => w.startTimeMs),
+    speedtests: Option.map(model.maybeSpeedtestWindow, (w) => w.startTimeMs),
+    connectivity: Option.map(
+      AsyncData.getData(model.connectivityStatus),
+      (status) => status.startTimeMs
+    ),
+  });
+
+  test("a slow response for the previous range does not overwrite the current range's data", () => {
+    const model = send(
+      clickedBothRanges(),
+      ...answersFor(LAST_1H, START_1H),
+      ...answersFor(LAST_24H, START_24H)
+    );
+
+    expect(startsOf(model)).toEqual({
+      metrics: Option.some(START_1H),
+      speedtests: Option.some(START_1H),
+      connectivity: Option.some(START_1H),
+    });
+  });
+
+  test("a response for the previous range is dropped even when it arrives first", () => {
+    const afterStale = send(
+      clickedBothRanges(),
+      ...answersFor(LAST_24H, START_24H)
+    );
+
+    expect(startsOf(afterStale)).toEqual({
+      metrics: Option.none(),
+      speedtests: Option.none(),
+      connectivity: Option.none(),
+    });
+    expect(afterStale.metrics._tag).toBe("Loading");
+
+    expect(
+      startsOf(send(afterStale, ...answersFor(LAST_1H, START_1H)))
+    ).toEqual({
+      metrics: Option.some(START_1H),
+      speedtests: Option.some(START_1H),
+      connectivity: Option.some(START_1H),
+    });
+  });
+
+  test("a failure for the previous range leaves the current range loading without an error", () => {
+    const model = send(
+      clickedBothRanges(),
+      FailedFetchMetrics({ request: LAST_24H, error: "timeout" }),
+      FailedFetchSpeedtestHistory({ request: LAST_24H, error: "timeout" }),
+      FailedFetchConnectivityStatus({ request: LAST_24H, error: "timeout" })
+    );
+
+    expect(model.metrics._tag).toBe("Loading");
+    expect(model.speedtestHistory._tag).toBe("Loading");
+    expect(model.connectivityStatus._tag).toBe("Loading");
+  });
+
+  test("a failure answering the current range still settles the data", () => {
+    const model = send(
+      clickedBothRanges(),
+      FailedFetchMetrics({ request: LAST_1H, error: "timeout" })
+    );
+
+    expect(model.metrics).toEqual(
+      MetricsAsyncData.Failure({ error: "timeout" })
+    );
+  });
+
+  test("an 'All time' response issued before the earliest datapoint was known is dropped", () => {
+    const loadingAllTime = {
+      ...initModel(defaultSettings()),
+      dateRange: Preset({ preset: "allTime" }),
+      maybeEarliestDataMs: Option.some(EARLIEST_MS),
+      metrics: MetricsAsyncData.Refreshing({ data: [] }),
+    };
+    const epochWide = requestFor("allTime");
+    const sinceEarliest = requestFor("allTime", Option.some(EARLIEST_MS));
+
+    const afterEpochWide = send(loadingAllTime, metricsAnswering(epochWide, 0));
+    expect(afterEpochWide.metrics._tag).toBe("Refreshing");
+    expect(afterEpochWide.maybeMetricsWindow).toEqual(Option.none());
+
+    const afterSinceEarliest = send(
+      afterEpochWide,
+      metricsAnswering(sinceEarliest, EARLIEST_MS)
+    );
+    expect(afterSinceEarliest.metrics._tag).toBe("Success");
+    expect(afterSinceEarliest.maybeMetricsWindow).toEqual(
+      Option.some({
+        startTimeMs: EARLIEST_MS,
+        endTimeMs: NOW_MS,
+        granularity: "1m",
+      })
+    );
+  });
+
+  test("a rolling preset keeps accepting responses after the earliest datapoint resolves", () => {
+    const model = send(
+      {
+        ...initModel(defaultSettings()),
+        maybeEarliestDataMs: Option.some(EARLIEST_MS),
+        metrics: MetricsAsyncData.Loading(),
+      },
+      succeededFetchMetrics()
+    );
+
+    expect(model.metrics._tag).toBe("Success");
   });
 });

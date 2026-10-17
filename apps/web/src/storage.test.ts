@@ -1,6 +1,6 @@
 import { Effect, Layer, Option } from "effect";
 import { KeyValueStore } from "effect/persistence";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { Custom, Preset } from "@/dashboard/dateRange";
 import {
   clearToken,
@@ -13,11 +13,6 @@ import {
   writeSettings,
   writeToken,
 } from "@/storage";
-
-const stubSystemTheme = (prefersDark: boolean) =>
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: prefersDark && query === "(prefers-color-scheme: dark)",
-  }));
 
 const failingKeyValueStore = Layer.succeed(
   KeyValueStore.KeyValueStore,
@@ -44,22 +39,12 @@ const failingKeyValueStore = Layer.succeed(
 );
 
 describe("defaultSettings", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  test("follows the OS dark preference", () => {
-    stubSystemTheme(true);
-    expect(defaultSettings().theme).toBe("dark");
-  });
-
-  test("follows the OS light preference", () => {
-    stubSystemTheme(false);
-    expect(defaultSettings().theme).toBe("light");
+  test("follows the OS theme until the user picks one", () => {
+    expect(defaultSettings().theme).toBe("system");
   });
 });
 
 describe("readSettings", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   test("falls back to defaultSettings() when nothing is stored", async () => {
     const result = await readSettings.pipe(
       Effect.provide(KeyValueStore.layerMemory),
@@ -82,6 +67,55 @@ describe("readSettings", () => {
     }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
 
     expect(result).toEqual(settings);
+  });
+
+  test("round-trips the system theme preference", async () => {
+    const settings: Settings = {
+      theme: "system",
+      dateRange: Preset({ preset: "last24h" }),
+      isPaused: false,
+    };
+
+    const result = await Effect.gen(function* () {
+      yield* writeSettings(settings);
+      return yield* readSettings;
+    }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
+
+    expect(result).toEqual(settings);
+  });
+
+  test.each(["light", "dark"] as const)(
+    "reads a stored %s theme unchanged",
+    async (theme) => {
+      const result = await Effect.gen(function* () {
+        const store = yield* KeyValueStore.KeyValueStore;
+        yield* store.set(
+          SETTINGS_STORAGE_KEY,
+          JSON.stringify({
+            version: SETTINGS_VERSION,
+            theme,
+            dateRange: Preset({ preset: "last7d" }),
+            isPaused: false,
+          })
+        );
+        return yield* readSettings;
+      }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
+
+      expect(result.theme).toBe(theme);
+    }
+  );
+
+  test("a blob with no theme defaults to system", async () => {
+    const result = await Effect.gen(function* () {
+      const store = yield* KeyValueStore.KeyValueStore;
+      yield* store.set(
+        SETTINGS_STORAGE_KEY,
+        JSON.stringify({ version: SETTINGS_VERSION, isPaused: true })
+      );
+      return yield* readSettings;
+    }).pipe(Effect.provide(KeyValueStore.layerMemory), Effect.runPromise);
+
+    expect(result.theme).toBe("system");
   });
 
   test("round-trips a Custom date range, preserving its _tag", async () => {

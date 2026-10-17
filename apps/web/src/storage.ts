@@ -1,7 +1,7 @@
 import { Effect, Option, Schema as S } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { DateRangeSelection, Preset } from "@/dashboard/dateRange";
-import { systemTheme, Theme } from "@/dashboard/theme";
+import { ThemePreference } from "@/dashboard/theme";
 
 // Every localStorage key this app owns is declared here. `index.html`'s
 // pre-hydration boot script duplicates SETTINGS_STORAGE_KEY by necessity
@@ -20,15 +20,17 @@ export const SESSION_STORAGE_KEY = "wan_monitor_token";
 // missing/invalid field to its default without disturbing the rest.
 export const SETTINGS_VERSION = 1;
 
+const SYSTEM_THEME: ThemePreference = "system";
+
 export const Settings = S.Struct({
-  theme: Theme,
+  theme: ThemePreference,
   dateRange: DateRangeSelection,
   isPaused: S.Boolean,
 });
 export type Settings = typeof Settings.Type;
 
 export const defaultSettings = (): Settings => ({
-  theme: systemTheme(),
+  theme: SYSTEM_THEME,
   dateRange: Preset({ preset: "last30d" }),
   isPaused: false,
 });
@@ -45,9 +47,9 @@ const StoredSettings = S.Struct({
     S.catchDecoding(() => Effect.succeed(Option.some(0))),
     S.withDecodingDefaultTypeKey(Effect.succeed(0))
   ),
-  theme: Theme.pipe(
-    S.catchDecoding(() => Effect.succeed(Option.some(systemTheme()))),
-    S.withDecodingDefaultTypeKey(Effect.sync(systemTheme))
+  theme: ThemePreference.pipe(
+    S.catchDecoding(() => Effect.succeed(Option.some(SYSTEM_THEME))),
+    S.withDecodingDefaultTypeKey(Effect.succeed(SYSTEM_THEME))
   ),
   dateRange: DateRangeSelection.pipe(
     S.catchDecoding(() =>
