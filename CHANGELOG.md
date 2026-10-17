@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.0
+
+### Minor Changes
+
+- [#352](https://github.com/pkallos/wan-monitor/pull/352) [`708c6b3`](https://github.com/pkallos/wan-monitor/commit/708c6b34f846408a937425b801e10bc78182b0da) Thanks [@pkallos](https://github.com/pkallos)! - Add read-only summary and outage log endpoints, and report the ping and speed test intervals from `/api/ping/hosts`.
+
+### Patch Changes
+
+- [#353](https://github.com/pkallos/wan-monitor/pull/353) [`5968f59`](https://github.com/pkallos/wan-monitor/commit/5968f59250e9b1d8145c3d5a7720adbfe799937a) Thanks [@pkallos](https://github.com/pkallos)! - Add a live status field, an availability ribbon with lettered incident chips, a stat rail, an incidents log, per-host stats, and 24h/7d/30d uptime to the dashboard.
+
+- [#351](https://github.com/pkallos/wan-monitor/pull/351) [`6387bb8`](https://github.com/pkallos/wan-monitor/commit/6387bb84ed3f2f8be6b43fa14a14f9809f90fa4b) Thanks [@pkallos](https://github.com/pkallos)! - Add quick range buttons, an overflow menu with Light, Dark and System themes, loading skeletons, and a single error banner with Retry to the dashboard.
+
+- [#354](https://github.com/pkallos/wan-monitor/pull/354) [`12960fd`](https://github.com/pkallos/wan-monitor/commit/12960fdb7841eb360e3a2cc01971deedf164d7ea) Thanks [@pkallos](https://github.com/pkallos)! - Draw packet loss as bars, show the latency p50 with a p95 band and an optional line per host, brush the latency chart to narrow the page's range, plot speed tests as points with medians and describe the newest speed test or bucket average as a sentence, describe each chart to screen readers and say so when it has no data, and compute the /api/metrics bucket averages for latency, jitter and packet loss as means of per-cycle means, which changes the figures aggregated rows return.
+
+- [#350](https://github.com/pkallos/wan-monitor/pull/350) [`9e4556f`](https://github.com/pkallos/wan-monitor/commit/9e4556fe33f89d3a89ba1ff70d3d58bf2aad3880) Thanks [@pkallos](https://github.com/pkallos)! - Refresh the dashboard look with a new light and dark palette, Figtree typography, lucide icons, and charts themed from the same color tokens.
+
 ## 1.2.5
 
 ### Patch Changes
