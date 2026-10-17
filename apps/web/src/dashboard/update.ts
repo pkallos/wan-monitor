@@ -266,7 +266,6 @@ const syncLatencyChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
-          theme: model.theme,
         }),
       ],
     }
@@ -290,7 +289,6 @@ const syncPacketLossChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
-          theme: model.theme,
         }),
       ],
     }
@@ -314,7 +312,6 @@ const syncJitterChart = (
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
           granularity: window.granularity,
-          theme: model.theme,
         }),
       ],
     }
@@ -337,7 +334,6 @@ const syncSpeedChart = (
           metrics,
           startTimeMs: window.startTimeMs,
           endTimeMs: window.endTimeMs,
-          theme: model.theme,
         }),
       ],
     }
@@ -576,6 +572,8 @@ export const update = (
       ClickedToggleTheme: () => {
         const nextTheme = toggleTheme(model.theme);
         const nextModel = modifyFields(model, { theme: () => nextTheme });
+        // ApplyTheme goes first: the chart syncs resolve their palette from
+        // `<html>`'s class, so it has to be current when they run.
         return {
           model: nextModel,
           commands: [

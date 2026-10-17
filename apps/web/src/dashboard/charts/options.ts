@@ -2,6 +2,7 @@ import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import type { EChartsOption } from "echarts/types/dist/shared";
 import { Array as Array_, Option, Order } from "effect";
+import type { ChartPalette } from "@/dashboard/charts/chartTheme";
 import type {
   JitterStats,
   LatencyStats,
@@ -9,20 +10,6 @@ import type {
   SpeedStats,
 } from "@/dashboard/charts/stats";
 import type { TimelineSlot } from "@/dashboard/charts/timeline";
-import type { Theme } from "@/dashboard/theme";
-
-const COLORS = {
-  primary: "#3182ce",
-  success: "#38a169",
-  warning: "#d69e2e",
-  danger: "#e53e3e",
-  info: "#4299e1",
-} as const;
-
-const THEME_COLORS: Record<Theme, { grid: string; text: string }> = {
-  light: { grid: "#e2e8f0", text: "#4a5568" },
-  dark: { grid: "#2d3748", text: "#a0aec0" },
-};
 
 // Mirrors echarts' own `PrimaryTimeUnit` (scale/Time.js): every tick on a
 // time axis is classified into exactly one of these, and that classification
@@ -192,13 +179,14 @@ const makeSplitLine = (color: string) => ({
 });
 
 const makeBaseAxes = (
-  theme: Theme,
+  palette: ChartPalette,
   startMs: number,
   endMs: number,
   splitNumber: number
 ) => {
-  const { grid, text } = THEME_COLORS[theme];
+  const text = palette.inkSecondary;
   return {
+    textStyle: { fontFamily: palette.fontFamily },
     grid: { left: 55, right: 16, top: 16, bottom: 28 },
     // Known echarts limitation, not fixable from this option set: when the
     // window crosses a month boundary, the day-tier ticks on the far side of
@@ -240,7 +228,7 @@ const makeBaseAxes = (
         type: "line" as const,
         lineStyle: { color: text, type: "dashed" as const },
       },
-      splitLine: makeSplitLine(grid),
+      splitLine: makeSplitLine(palette.rule),
     },
     // Declares that this chart's axis pointer should move in step with
     // every other chart in the same echarts.connect() group when either is
@@ -258,9 +246,28 @@ const makeBaseAxes = (
 // `valueFormatter`) is required to control the header text; `params[i]`'s
 // `marker`/`seriesName` are supplied by echarts itself, so only the header
 // and value text need building here.
-const makeTooltip = (formatValue: (value: number) => string) => ({
+const makeTooltip = (
+  palette: ChartPalette,
+  formatValue: (value: number) => string
+) => ({
   trigger: "axis" as const,
-  axisPointer: { type: "line" as const },
+  axisPointer: {
+    type: "line" as const,
+    lineStyle: { color: palette.inkSecondary },
+  },
+  backgroundColor: palette.card,
+  borderColor: palette.rule,
+  borderWidth: 1,
+  borderRadius: 12,
+  padding: [8, 12],
+  shadowBlur: 0,
+  shadowColor: "transparent",
+  textStyle: {
+    color: palette.ink,
+    fontSize: 12,
+    fontFamily: palette.fontFamily,
+  },
+  extraCssText: "font-variant-numeric: tabular-nums;",
   formatter: (params: unknown): string => {
     if (!Array.isArray(params) || params.length === 0) return "";
     const [first] = params as Array<{ axisValue: unknown }>;
@@ -279,6 +286,17 @@ const makeTooltip = (formatValue: (value: number) => string) => ({
       .join("<br/>");
     return `${header}<br/>${rows}`;
   },
+});
+
+const makeValueAxis = (palette: ChartPalette, formatter: string) => ({
+  type: "value" as const,
+  min: 0,
+  axisLabel: {
+    color: palette.inkSecondary,
+    fontSize: 11,
+    formatter,
+  },
+  splitLine: makeSplitLine(palette.rule),
 });
 
 // ECharts' own types declare `data` as a mutable array, so this boundary
@@ -300,30 +318,21 @@ const toSeriesData = <A>(
 export const makeLatencyChartOption = ({
   slots,
   stats,
-  theme,
+  palette,
   startMs,
   endMs,
   splitNumber,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "latency">>>;
   stats: LatencyStats;
-  theme: Theme;
+  palette: ChartPalette;
   startMs: number;
   endMs: number;
   splitNumber: number;
 }): EChartsOption => ({
-  ...makeBaseAxes(theme, startMs, endMs, splitNumber),
-  yAxis: {
-    type: "value",
-    min: 0,
-    axisLabel: {
-      color: THEME_COLORS[theme].text,
-      fontSize: 11,
-      formatter: "{value} ms",
-    },
-    splitLine: makeSplitLine(THEME_COLORS[theme].grid),
-  },
-  tooltip: makeTooltip((value) => `${value.toFixed(1)} ms`),
+  ...makeBaseAxes(palette, startMs, endMs, splitNumber),
+  yAxis: makeValueAxis(palette, "{value} ms"),
+  tooltip: makeTooltip(palette, (value) => `${value.toFixed(1)} ms`),
   series: [
     {
       type: "line",
@@ -331,19 +340,21 @@ export const makeLatencyChartOption = ({
       data: toSeriesData(slots, (point) => point.latency ?? null),
       showSymbol: false,
       smooth: true,
-      lineStyle: { color: COLORS.primary, width: 2 },
-      areaStyle: { color: COLORS.primary, opacity: 0.15 },
+      lineStyle: { color: palette.accent, width: 2 },
+      areaStyle: { color: palette.band },
+      itemStyle: { color: palette.accent },
       connectNulls: false,
       markLine:
         stats.avg === "-"
           ? undefined
           : {
               symbol: "none",
-              lineStyle: { color: COLORS.info, type: "dashed" },
+              lineStyle: { color: palette.inkSecondary, type: "dashed" },
               label: {
-                position: "insideStartTop",
+                position: "insideEndTop",
                 formatter: "Avg",
-                color: THEME_COLORS[theme].text,
+                color: palette.inkSecondary,
+                padding: [2, 4],
               },
               data: [{ yAxis: Number(stats.avg) }],
             },
@@ -353,30 +364,21 @@ export const makeLatencyChartOption = ({
 
 export const makePacketLossChartOption = ({
   slots,
-  theme,
+  palette,
   startMs,
   endMs,
   splitNumber,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "packet_loss">>>;
   stats: PacketLossStats;
-  theme: Theme;
+  palette: ChartPalette;
   startMs: number;
   endMs: number;
   splitNumber: number;
 }): EChartsOption => ({
-  ...makeBaseAxes(theme, startMs, endMs, splitNumber),
-  yAxis: {
-    type: "value",
-    min: 0,
-    axisLabel: {
-      color: THEME_COLORS[theme].text,
-      fontSize: 11,
-      formatter: "{value}%",
-    },
-    splitLine: makeSplitLine(THEME_COLORS[theme].grid),
-  },
-  tooltip: makeTooltip((value) => `${value.toFixed(2)}%`),
+  ...makeBaseAxes(palette, startMs, endMs, splitNumber),
+  yAxis: makeValueAxis(palette, "{value}%"),
+  tooltip: makeTooltip(palette, (value) => `${value.toFixed(2)}%`),
   series: [
     {
       type: "line",
@@ -386,8 +388,9 @@ export const makePacketLossChartOption = ({
       // the data (no slot) draws nothing, since connectNulls is false.
       showSymbol: false,
       smooth: true,
-      lineStyle: { color: COLORS.danger, width: 2 },
-      areaStyle: { color: COLORS.danger, opacity: 0.15 },
+      lineStyle: { color: palette.down, width: 2 },
+      areaStyle: { color: palette.down, opacity: 0.15 },
+      itemStyle: { color: palette.down },
       connectNulls: false,
     },
   ],
@@ -397,30 +400,21 @@ const ACCEPTABLE_JITTER_THRESHOLD_MS = 10;
 
 export const makeJitterChartOption = ({
   slots,
-  theme,
+  palette,
   startMs,
   endMs,
   splitNumber,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "jitter">>>;
   stats: JitterStats;
-  theme: Theme;
+  palette: ChartPalette;
   startMs: number;
   endMs: number;
   splitNumber: number;
 }): EChartsOption => ({
-  ...makeBaseAxes(theme, startMs, endMs, splitNumber),
-  yAxis: {
-    type: "value",
-    min: 0,
-    axisLabel: {
-      color: THEME_COLORS[theme].text,
-      fontSize: 11,
-      formatter: "{value} ms",
-    },
-    splitLine: makeSplitLine(THEME_COLORS[theme].grid),
-  },
-  tooltip: makeTooltip((value) => `${value.toFixed(2)} ms`),
+  ...makeBaseAxes(palette, startMs, endMs, splitNumber),
+  yAxis: makeValueAxis(palette, "{value} ms"),
+  tooltip: makeTooltip(palette, (value) => `${value.toFixed(2)} ms`),
   series: [
     {
       type: "line",
@@ -428,16 +422,17 @@ export const makeJitterChartOption = ({
       data: toSeriesData(slots, (point) => point.jitter ?? null),
       showSymbol: false,
       smooth: true,
-      lineStyle: { color: COLORS.info, width: 2 },
-      areaStyle: { color: COLORS.info, opacity: 0.2 },
+      lineStyle: { color: palette.inkSecondary, width: 2 },
+      areaStyle: { color: palette.inkSecondary, opacity: 0.12 },
+      itemStyle: { color: palette.inkSecondary },
       connectNulls: false,
       markLine: {
         symbol: "none",
-        lineStyle: { color: COLORS.warning, type: "dashed" },
+        lineStyle: { color: palette.degraded, type: "dashed" },
         label: {
           position: "insideStartTop",
           formatter: "Acceptable",
-          color: COLORS.warning,
+          color: palette.inkSecondary,
         },
         data: [{ yAxis: ACCEPTABLE_JITTER_THRESHOLD_MS }],
       },
@@ -447,7 +442,7 @@ export const makeJitterChartOption = ({
 
 export const makeSpeedChartOption = ({
   metrics,
-  theme,
+  palette,
   startMs,
   endMs,
   splitNumber,
@@ -456,7 +451,7 @@ export const makeSpeedChartOption = ({
     Pick<SpeedMetric, "timestamp" | "download_speed" | "upload_speed">
   >;
   stats: SpeedStats;
-  theme: Theme;
+  palette: ChartPalette;
   startMs: number;
   endMs: number;
   splitNumber: number;
@@ -476,7 +471,7 @@ export const makeSpeedChartOption = ({
       getValue(metric),
     ]);
 
-  const base = makeBaseAxes(theme, startMs, endMs, splitNumber);
+  const base = makeBaseAxes(palette, startMs, endMs, splitNumber);
 
   return {
     ...base,
@@ -484,34 +479,38 @@ export const makeSpeedChartOption = ({
     // x-axis labels — echarts lays out the legend and grid independently, so
     // without this the legend's default bottom position overlaps the axis.
     grid: { ...base.grid, bottom: 52 },
-    yAxis: {
-      type: "value",
-      min: 0,
-      axisLabel: {
-        color: THEME_COLORS[theme].text,
-        fontSize: 11,
-        formatter: "{value} Mbps",
+    yAxis: makeValueAxis(palette, "{value} Mbps"),
+    tooltip: makeTooltip(palette, (value) => `${value.toFixed(1)} Mbps`),
+    legend: {
+      bottom: 4,
+      textStyle: {
+        color: palette.inkSecondary,
+        fontFamily: palette.fontFamily,
       },
-      splitLine: makeSplitLine(THEME_COLORS[theme].grid),
     },
-    tooltip: makeTooltip((value) => `${value.toFixed(1)} Mbps`),
-    legend: { bottom: 4, textStyle: { color: THEME_COLORS[theme].text } },
     series: [
       {
         type: "line",
         name: "Download",
         data: toPair((metric) => metric.download_speed ?? null),
         smooth: true,
-        lineStyle: { color: COLORS.primary, width: 2 },
-        areaStyle: { color: COLORS.primary, opacity: 0.1 },
+        lineStyle: { color: palette.accent, width: 2 },
+        areaStyle: { color: palette.band },
+        itemStyle: { color: palette.accent },
       },
       {
         type: "line",
         name: "Upload",
         data: toPair((metric) => metric.upload_speed ?? null),
         smooth: true,
-        lineStyle: { color: COLORS.success, width: 2 },
-        areaStyle: { color: COLORS.success, opacity: 0.1 },
+        symbol: "circle",
+        symbolSize: 7,
+        lineStyle: { color: palette.inkSecondary, width: 2 },
+        itemStyle: {
+          color: palette.card,
+          borderColor: palette.inkSecondary,
+          borderWidth: 2,
+        },
       },
     ],
   };
