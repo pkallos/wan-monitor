@@ -16,24 +16,12 @@ import {
   type OutMessage,
 } from "@/dashboard/dateRangePicker/message";
 import type { Model } from "@/dashboard/dateRangePicker/model";
+import { startOfLocalDay } from "@/dashboard/format";
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>;
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
 
 const MONTHS_PER_YEAR = 12;
-
-/** `maybeRangeStart`/`maybeDraftRange` always hold local midnights, matching
- *  the `dateMs` the calendar grid renders, so day arithmetic stays exact
- *  across DST transitions and `startOfLocalDay` round-trips an applied
- *  window back to the same draft it was built from. */
-const startOfLocalDay = (ms: number): number => {
-  const date = new Date(ms);
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-  ).getTime();
-};
 
 const endOfLocalDay = (ms: number): number => {
   const date = new Date(ms);
@@ -46,6 +34,10 @@ const endOfLocalDay = (ms: number): number => {
   );
 };
 
+/** `maybeRangeStart`/`maybeDraftRange` always hold local midnights, matching
+ *  the `dateMs` the calendar grid renders, so day arithmetic stays exact
+ *  across DST transitions and `startOfLocalDay` round-trips an applied
+ *  window back to the same draft it was built from. */
 const selectionToCustomWindow = (
   range: Readonly<{ start: number; end: number }>
 ): Readonly<{ startTime: string; endTime: string }> => ({

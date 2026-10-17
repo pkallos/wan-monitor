@@ -3,14 +3,15 @@ import { Submodel } from "foldkit";
 import { GotToastMessage, type Message } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
 import { Toast } from "@/dashboard/toast";
-import { availabilityCard } from "@/dashboard/view/availability";
 import { errorBanner } from "@/dashboard/view/banner";
 import { footer } from "@/dashboard/view/footer";
-import { statusField } from "@/dashboard/view/header";
-import { kpiTiles } from "@/dashboard/view/kpis";
+import { pageHeader, statusField } from "@/dashboard/view/header";
+import { hostsCard } from "@/dashboard/view/hosts";
+import { incidentsCard } from "@/dashboard/view/incidents";
 import { WRAP_CLASS } from "@/dashboard/view/layout";
 import { qualityCard } from "@/dashboard/view/quality";
 import { speedCard } from "@/dashboard/view/speed";
+import { hatchDefinitions } from "@/ui/statusGlyph";
 
 export type ViewInputs = Readonly<{ maybeUsername: Option.Option<string> }>;
 
@@ -73,39 +74,30 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
 
     return h.div(
       [
-        h.Class("min-h-screen bg-bg text-ink"),
+        h.Class("relative min-h-screen bg-bg text-ink"),
         h.DataAttribute("testid", "dashboard-root"),
       ],
       [
-        statusField(h, model, viewInputs),
+        hatchDefinitions(h),
+        pageHeader(h, model, viewInputs),
         h.main(
+          [],
           [
-            h.Class(
-              `${WRAP_CLASS} grid gap-4 pb-6 pt-4 lg:gap-6 lg:pb-10 lg:pt-8`
-            ),
-          ],
-          [
-            errorBanner(h, model),
+            statusField(h, model),
             h.div(
               [
                 h.Class(
-                  "grid items-start gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-6"
+                  `${WRAP_CLASS} grid gap-4 pb-6 pt-4 lg:gap-6 lg:pb-10 lg:pt-8`
                 ),
               ],
               [
-                h.div(
-                  [
-                    h.Class(
-                      "grid grid-cols-2 gap-3 lg:order-2 lg:grid-cols-1 lg:gap-6"
-                    ),
-                  ],
-                  kpiTiles(h, model)
-                ),
-                h.div([h.Class("lg:order-1")], [availabilityCard(h, model)]),
+                errorBanner(h, model),
+                incidentsCard(h, model),
+                qualityCard(h, model),
+                hostsCard(h, model),
+                speedCard(h, model),
               ]
             ),
-            qualityCard(h, model),
-            speedCard(h, model),
           ]
         ),
         footer(h, model),

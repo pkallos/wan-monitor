@@ -1,3 +1,5 @@
+import { isSameLocalDay } from "@/dashboard/format";
+
 export interface CalendarDay {
   readonly dateMs: number;
   readonly inMonth: boolean;
@@ -5,16 +7,6 @@ export interface CalendarDay {
 }
 
 const DAYS_PER_WEEK = 7;
-
-const isSameLocalDay = (aMs: number, bMs: number): boolean => {
-  const a = new Date(aMs);
-  const b = new Date(bMs);
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-};
 
 /**
  * Builds a Sun-Sat month grid in local calendar time, padded with

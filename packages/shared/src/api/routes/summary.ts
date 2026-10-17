@@ -52,7 +52,7 @@ const SpeedSummarySchema = Schema.Struct({
   count: Schema.Number,
 });
 
-const GetSummaryResponse = Schema.Struct({
+export const GetSummaryResponse = Schema.Struct({
   range: RangeSummarySchema,
   /** The window of equal length immediately before the range, for deltas. */
   previous: RangeSummarySchema,

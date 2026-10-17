@@ -1,13 +1,11 @@
 import { Array as Array_, Option } from "effect";
 import { AsyncData } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
-import {
-  formatDateRangeLabel,
-  getDateRangeWindow,
-} from "@/dashboard/dateRange";
+import { everyInterval } from "@/dashboard/format";
 import type { Message } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
 import { formatDurationAgo } from "@/dashboard/overview";
+import { currentConnectivity } from "@/dashboard/view/derived";
 import { WRAP_CLASS } from "@/dashboard/view/layout";
 
 const lastUpdatedIndicator = (h: HtmlBuilder<Message>, model: Model): Html =>
@@ -37,28 +35,49 @@ const lastUpdatedIndicator = (h: HtmlBuilder<Message>, model: Model): Html =>
     ]
   );
 
+const speedtestText = (model: Model): ReadonlyArray<string> =>
+  Option.match(AsyncData.getData(model.pingHosts), {
+    onNone: () => [],
+    onSome: ({ speedtestIntervalSeconds }) => [
+      `speed test ${everyInterval(speedtestIntervalSeconds)}`,
+    ],
+  });
+
 const coverageText = (model: Model): Option.Option<string> =>
   Option.map(
-    AsyncData.getData(model.connectivityStatus),
-    ({ coveragePercentage }) =>
-      `data coverage ${coveragePercentage.toFixed(1)}% of the selected range`
+    currentConnectivity(model),
+    ({ coveragePercentage }) => `Coverage ${coveragePercentage.toFixed(1)}%`
+  );
+
+// A paused or idle dashboard is already flagged by the header chip.
+const autoRefreshText = (model: Model): ReadonlyArray<string> =>
+  model.isPaused || model.isIdle ? [] : ["auto-refresh on"];
+
+// Separators sit between the items of a group, and the groups wrap as whole
+// units, so a narrow screen breaks between groups and never strands a dot at
+// the end or start of a line.
+const group = (h: HtmlBuilder<Message>, items: ReadonlyArray<Html>): Html =>
+  h.span(
+    [h.Class("flex flex-wrap items-center gap-x-2.5 gap-y-1")],
+    Array_.flatMap(items, (item, index) =>
+      index === 0 ? [item] : [h.span([h.AriaHidden(true)], ["·"]), item]
+    )
   );
 
 export const footer = (h: HtmlBuilder<Message>, model: Model): Html => {
-  const rangeLabel = formatDateRangeLabel(
-    getDateRangeWindow(model.dateRange, Date.now(), model.maybeEarliestDataMs)
-  );
-  const details: ReadonlyArray<Html> = [
+  const freshness: ReadonlyArray<Html> = [
     ...(Option.isSome(model.maybeLastUpdatedMs) ||
     AsyncData.isRefreshing(model.metrics)
       ? [lastUpdatedIndicator(h, model)]
       : []),
+    ...Array_.map(autoRefreshText(model), (text) => h.span([], [text])),
+  ];
+  const scope: ReadonlyArray<Html> = [
+    ...Array_.map(speedtestText(model), (text) => h.span([], [text])),
     ...Option.match(coverageText(model), {
       onNone: () => [],
       onSome: (text) => [h.span([], [text])],
     }),
-    h.span([], [rangeLabel]),
-    h.span([], [model.isPaused ? "auto-refresh paused" : "auto-refresh on"]),
   ];
 
   return h.footer(
@@ -67,20 +86,13 @@ export const footer = (h: HtmlBuilder<Message>, model: Model): Html => {
       h.div(
         [
           h.Class(
-            `${WRAP_CLASS} flex flex-wrap justify-between gap-x-6 gap-y-2 pb-7 pt-5 text-sm text-ink-2`
+            `${WRAP_CLASS} flex flex-wrap gap-x-6 gap-y-2 pb-7 pt-5 text-sm text-ink-2`
           ),
         ],
-        [
-          h.span([h.Class("font-semibold text-ink")], ["WAN Monitor"]),
-          h.span(
-            [h.Class("flex flex-wrap items-center gap-x-2.5 gap-y-1")],
-            Array_.flatMap(details, (detail, index) =>
-              index === 0
-                ? [detail]
-                : [h.span([h.AriaHidden(true)], ["·"]), detail]
-            )
-          ),
-        ]
+        Array_.map(
+          Array_.filter([freshness, scope], Array_.isReadonlyArrayNonEmpty),
+          (items) => group(h, items)
+        )
       ),
     ]
   );

@@ -8,11 +8,19 @@ import {
   fetchEarliestData,
   fetchLiveConnectivity,
   fetchMetrics,
+  fetchOutages,
+  fetchPingHosts,
   fetchSpeedtestHistory,
+  fetchSummary,
   saveSettings,
   triggerSpeedtest,
 } from "@/dashboard/command";
 import { Custom, Preset } from "@/dashboard/dateRange";
+import {
+  hostsResponse,
+  outagesResponse,
+  summaryResponse,
+} from "@/dashboard/testFixtures";
 import { defaultSettings, readSettings, type Settings } from "@/storage";
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
@@ -196,7 +204,7 @@ describe("fetchMetrics", () => {
     expect(result).toEqual({
       _tag: "FailedFetchMetrics",
       request: DEFAULT_REQUEST,
-      error: "Database temporarily unavailable. Retrying automatically.",
+      error: "Database unavailable.",
     });
   });
 
@@ -398,7 +406,7 @@ describe("fetchSpeedtestHistory", () => {
     expect(result).toEqual({
       _tag: "FailedFetchSpeedtestHistory",
       request: DEFAULT_REQUEST,
-      error: "Database temporarily unavailable. Retrying automatically.",
+      error: "Database unavailable.",
     });
   });
 
@@ -618,7 +626,7 @@ describe("fetchConnectivityStatus", () => {
     expect(result).toEqual({
       _tag: "FailedFetchConnectivityStatus",
       request: DEFAULT_REQUEST,
-      error: "Database temporarily unavailable. Retrying automatically.",
+      error: "Database unavailable.",
     });
   });
 
@@ -701,7 +709,7 @@ describe("fetchLiveConnectivity", () => {
 
     expect(result).toEqual({
       _tag: "FailedFetchLiveConnectivity",
-      error: "Database temporarily unavailable. Retrying automatically.",
+      error: "Database unavailable.",
     });
   });
 
@@ -779,7 +787,7 @@ describe("fetchEarliestData", () => {
 
     expect(result).toEqual({
       _tag: "FailedFetchEarliestData",
-      error: "Database temporarily unavailable. Retrying automatically.",
+      error: "Database unavailable.",
     });
   });
 });
@@ -835,7 +843,7 @@ describe("triggerSpeedtest", () => {
 
     expect(result).toEqual({
       _tag: "FailedTriggerSpeedtest",
-      message: "Something went wrong running the speed test.",
+      message: "Speed test request failed.",
       isAlreadyRunning: false,
     });
   });
@@ -925,5 +933,220 @@ describe("saveSettings", () => {
     }).pipe(Effect.provide(failingKeyValueStore), Effect.runPromise);
 
     expect(result._tag).toBe("FailedSaveSettings");
+  });
+});
+
+describe("fetchSummary", () => {
+  test("asks for the resolved range and decodes the summary", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+    const result = await fetchSummary({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+    }).pipe(
+      Effect.provide(capturingHttpClient(capturedParams, summaryResponse())),
+      Effect.runPromise
+    );
+
+    expect(capturedParams[0]).toContainEqual([
+      "startTime",
+      "2026-07-26T00:00:00.000Z",
+    ]);
+    expect(capturedParams[0]).toContainEqual([
+      "endTime",
+      "2026-07-27T00:00:00.000Z",
+    ]);
+    expect(result).toEqual({
+      _tag: "SucceededFetchSummary",
+      summary: summaryResponse(),
+      request: { dateRange: ONE_DAY_RANGE, maybeEarliestDataMs: Option.none() },
+    });
+  });
+
+  test("words a 503 DB_UNAVAILABLE as Database unavailable", async () => {
+    const result = await fetchSummary({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(503, {
+          error: "DB_UNAVAILABLE",
+          message: "Database temporarily unavailable",
+          timestamp: "2026-07-26T00:00:00.000Z",
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "FailedFetchSummary",
+      error: "Database unavailable.",
+      request: { dateRange: ONE_DAY_RANGE, maybeEarliestDataMs: Option.none() },
+    });
+  });
+});
+
+describe("the range request echoed back on results", () => {
+  test("carries the earliest datapoint the window was resolved with", async () => {
+    const result = await fetchSummary({
+      token: "abc",
+      dateRange: ALL_TIME_RANGE,
+      maybeEarliestDataMs: Option.some(1_000),
+    }).pipe(
+      Effect.provide(mockHttpClient(200, summaryResponse())),
+      Effect.runPromise
+    );
+
+    expect(result).toMatchObject({
+      request: {
+        dateRange: ALL_TIME_RANGE,
+        maybeEarliestDataMs: Option.some(1_000),
+      },
+    });
+  });
+
+  test("rides back on a failure as well, so a stale failure can be told apart", async () => {
+    const result = await fetchOutages({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+    }).pipe(Effect.provide(mockHttpClient(500, "boom")), Effect.runPromise);
+
+    expect(result).toMatchObject({
+      _tag: "FailedFetchOutages",
+      request: { dateRange: ONE_DAY_RANGE },
+    });
+  });
+});
+
+describe("fetchOutages", () => {
+  test("asks for the selected window as is when the log accepts it", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+    const result = await fetchOutages({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+    }).pipe(
+      Effect.provide(capturingHttpClient(capturedParams, outagesResponse())),
+      Effect.runPromise
+    );
+
+    expect(capturedParams[0]).toContainEqual([
+      "startTime",
+      "2026-07-26T00:00:00.000Z",
+    ]);
+    expect(result).toEqual({
+      _tag: "SucceededFetchOutages",
+      outages: outagesResponse(),
+      isClamped: false,
+      fetchedAtMs: expect.any(Number),
+      request: { dateRange: ONE_DAY_RANGE, maybeEarliestDataMs: Option.none() },
+    });
+  });
+
+  test("records the clock reading the window was resolved with as the fetch time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-07-28T09:30:00.000Z"));
+    try {
+      const result = await fetchOutages({
+        token: "abc",
+        dateRange: DEFAULT_DATE_RANGE,
+      }).pipe(
+        Effect.provide(mockHttpClient(200, outagesResponse())),
+        Effect.runPromise
+      );
+
+      expect(result).toMatchObject({
+        fetchedAtMs: Date.parse("2026-07-28T09:30:00.000Z"),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("keeps only the newest 90 days of a wider range, and says it did", async () => {
+    const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
+    const wide = Custom({
+      startTime: "2025-01-01T00:00:00.000Z",
+      endTime: "2026-07-27T00:00:00.000Z",
+    });
+    const result = await fetchOutages({ token: "abc", dateRange: wide }).pipe(
+      Effect.provide(capturingHttpClient(capturedParams, outagesResponse())),
+      Effect.runPromise
+    );
+
+    expect(capturedParams[0]).toContainEqual([
+      "startTime",
+      "2026-04-28T00:00:00.000Z",
+    ]);
+    expect(capturedParams[0]).toContainEqual([
+      "endTime",
+      "2026-07-27T00:00:00.000Z",
+    ]);
+    expect(result).toMatchObject({
+      _tag: "SucceededFetchOutages",
+      isClamped: true,
+    });
+  });
+
+  test("shows the server's own message when it rejects the time range", async () => {
+    const result = await fetchOutages({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(400, {
+          _tag: "InvalidTimeRange",
+          message: "startTime must be before endTime",
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toMatchObject({
+      _tag: "FailedFetchOutages",
+      error: "startTime must be before endTime",
+    });
+  });
+
+  test("reports a failed request as FailedFetchOutages", async () => {
+    const result = await fetchOutages({
+      token: "abc",
+      dateRange: ONE_DAY_RANGE,
+    }).pipe(Effect.provide(mockHttpClient(500, "boom")), Effect.runPromise);
+
+    expect(result._tag).toBe("FailedFetchOutages");
+  });
+});
+
+describe("fetchPingHosts", () => {
+  test("decodes the hosts and their intervals", async () => {
+    const result = await fetchPingHosts({ token: "abc" }).pipe(
+      Effect.provide(mockHttpClient(200, hostsResponse())),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "SucceededFetchPingHosts",
+      hosts: hostsResponse(),
+    });
+  });
+
+  test("reports a failed request as FailedFetchPingHosts", async () => {
+    const result = await fetchPingHosts({ token: "abc" }).pipe(
+      Effect.provide(mockHttpClient(500, "boom")),
+      Effect.runPromise
+    );
+
+    expect(result._tag).toBe("FailedFetchPingHosts");
+  });
+
+  test("words an unrecognised failure as a plain Request failed, not the raw error", async () => {
+    const result = await fetchPingHosts({ token: "abc" }).pipe(
+      Effect.provide(mockHttpClient(500, "boom")),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "FailedFetchPingHosts",
+      error: "Request failed",
+    });
   });
 });

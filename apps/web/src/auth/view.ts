@@ -24,18 +24,13 @@ const loginView = (model: LoggedOut, h: HtmlBuilder<Message>): Html => {
         h.form(
           [h.OnSubmit(SubmittedLogin())],
           [
-            h.div(
-              [h.Class("mb-6 text-center")],
+            h.h1(
               [
-                h.h1(
-                  [h.Class("text-3xl font-semibold tracking-tight")],
-                  ["WAN Monitor"]
+                h.Class(
+                  "mb-6 text-center text-3xl font-semibold tracking-tight"
                 ),
-                h.p(
-                  [h.Class("mt-1 text-sm text-ink-2")],
-                  ["Sign in to access the dashboard"]
-                ),
-              ]
+              ],
+              ["WAN Monitor"]
             ),
             Option.match(model.maybeError, {
               onNone: () => h.empty,
@@ -88,7 +83,7 @@ const loginView = (model: LoggedOut, h: HtmlBuilder<Message>): Html => {
                 h.Disabled(model.isSubmitting),
                 h.Class(`w-full ${PRIMARY_BUTTON_CLASS}`),
               ],
-              [model.isSubmitting ? "Signing in…" : "Sign In"]
+              [model.isSubmitting ? "Signing in…" : "Sign in"]
             ),
           ]
         ),

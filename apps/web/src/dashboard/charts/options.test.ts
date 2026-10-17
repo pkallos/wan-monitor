@@ -380,6 +380,7 @@ describe("makeLatencyChartOption", () => {
       slots,
       stats,
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -400,6 +401,7 @@ describe("makeLatencyChartOption", () => {
       slots,
       stats,
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -416,6 +418,7 @@ describe("makeLatencyChartOption", () => {
       slots,
       stats,
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -434,6 +437,7 @@ describe("makeLatencyChartOption", () => {
       slots: emptySlots,
       stats: calculateLatencyStats([]),
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -448,6 +452,7 @@ describe("makeLatencyChartOption", () => {
       slots,
       stats,
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: 8,
@@ -468,6 +473,7 @@ describe("makeLatencyChartOption", () => {
       slots,
       stats,
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -493,6 +499,7 @@ describe("makeLatencyChartOption", () => {
       slots,
       stats,
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -523,6 +530,7 @@ describe("makePacketLossChartOption", () => {
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculatePacketLossStats(metrics),
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -541,6 +549,7 @@ describe("makePacketLossChartOption", () => {
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculatePacketLossStats(metrics),
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -559,6 +568,7 @@ describe("makePacketLossChartOption", () => {
       slots: fillTimeline(zeroLossMetrics, startMs, endMs, "5m"),
       stats: calculatePacketLossStats(zeroLossMetrics),
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -587,6 +597,7 @@ describe("makeJitterChartOption", () => {
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculateJitterStats(metrics),
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -605,6 +616,7 @@ describe("makeJitterChartOption", () => {
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculateJitterStats(metrics),
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -720,6 +732,7 @@ describe("chart palette", () => {
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculateLatencyStats(metrics),
       palette,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -786,6 +799,7 @@ describe("chart palette", () => {
       slots: fillTimeline(metrics, startMs, endMs, "5m"),
       stats: calculateJitterStats(metrics),
       palette: PALETTE,
+      incidents: [],
       startMs,
       endMs,
       splitNumber: DEFAULT_SPLIT_NUMBER,
@@ -826,5 +840,167 @@ describe("chart palette", () => {
     expect(second).not.toBe(first);
     expect(second).not.toContain(PALETTE.accent);
     expect(second).not.toContain(PALETTE.band);
+  });
+});
+
+describe("incident marks", () => {
+  const incidents = [
+    {
+      ref: "B",
+      startMs: startMs + 5 * 60_000,
+      endMs: startMs + 10 * 60_000,
+      status: "degraded" as const,
+    },
+    {
+      ref: "A",
+      startMs: startMs + 60_000,
+      endMs: startMs + 2 * 60_000,
+      status: "down" as const,
+    },
+  ];
+  const metrics = [
+    {
+      timestamp: "2026-07-26T10:05:30.000Z",
+      latency: 20,
+      packet_loss: 1,
+      jitter: 2,
+    },
+  ];
+  const slots = fillTimeline(metrics, startMs, endMs, "5m");
+  const base = { startMs, endMs, splitNumber: DEFAULT_SPLIT_NUMBER };
+
+  type Marked = {
+    markArea?: {
+      silent: boolean;
+      data: Array<
+        [
+          { xAxis: number; itemStyle: { color: string; opacity: number } },
+          { xAxis: number },
+        ]
+      >;
+    };
+    markLine?: {
+      data: Array<{
+        xAxis?: number;
+        yAxis?: number;
+        lineStyle?: { color: string };
+        label?: { formatter: string; color: string };
+      }>;
+    };
+  };
+
+  const builders = {
+    latency: () =>
+      makeLatencyChartOption({
+        ...base,
+        slots,
+        stats: calculateLatencyStats(metrics),
+        palette: PALETTE,
+        incidents,
+      }),
+    "packet loss": () =>
+      makePacketLossChartOption({
+        ...base,
+        slots,
+        stats: calculatePacketLossStats(metrics),
+        palette: PALETTE,
+        incidents,
+      }),
+    jitter: () =>
+      makeJitterChartOption({
+        ...base,
+        slots,
+        stats: calculateJitterStats(metrics),
+        palette: PALETTE,
+        incidents,
+      }),
+  };
+
+  test.each(Object.entries(builders))(
+    "%s shades each incident span in its status color",
+    (_name, build) => {
+      const [series] = build().series as Array<Marked>;
+
+      expect(series.markArea?.silent).toBe(true);
+      expect(
+        series.markArea?.data.map(([from, to]) => [
+          from.xAxis,
+          to.xAxis,
+          from.itemStyle.color,
+        ])
+      ).toEqual([
+        [incidents[0].startMs, incidents[0].endMs, PALETTE.degraded],
+        [incidents[1].startMs, incidents[1].endMs, PALETTE.down],
+      ]);
+    }
+  );
+
+  test.each(Object.entries(builders))(
+    "%s letters a line at each incident's start with the log's ref",
+    (_name, build) => {
+      const [series] = build().series as Array<Marked>;
+      const lines = series.markLine?.data.filter(
+        (datum) => datum.xAxis !== undefined
+      );
+
+      expect(lines?.map((line) => [line.xAxis, line.label?.formatter])).toEqual(
+        [
+          [incidents[0].startMs, "B"],
+          [incidents[1].startMs, "A"],
+        ]
+      );
+      expect(lines?.map((line) => line.lineStyle?.color)).toEqual([
+        PALETTE.degraded,
+        PALETTE.down,
+      ]);
+      expect(lines?.every((line) => line.label?.color === PALETTE.ink)).toBe(
+        true
+      );
+    }
+  );
+
+  test("keeps the average and acceptable-jitter reference lines alongside the marks", () => {
+    const [latency] = builders.latency().series as Array<Marked>;
+    const [jitter] = builders.jitter().series as Array<Marked>;
+
+    expect(latency.markLine?.data[0]).toEqual({ yAxis: 20 });
+    expect(jitter.markLine?.data[0]).toEqual({ yAxis: 10 });
+  });
+
+  test("adds no marks when there are no incidents", () => {
+    const [latency] = makeLatencyChartOption({
+      ...base,
+      slots,
+      stats: calculateLatencyStats(metrics),
+      palette: PALETTE,
+      incidents: [],
+    }).series as Array<Marked>;
+    const [loss] = makePacketLossChartOption({
+      ...base,
+      slots,
+      stats: calculatePacketLossStats(metrics),
+      palette: PALETTE,
+      incidents: [],
+    }).series as Array<Marked>;
+
+    expect(latency.markArea).toBeUndefined();
+    expect(latency.markLine?.data).toEqual([{ yAxis: 20 }]);
+    expect(loss.markArea).toBeUndefined();
+    expect(loss.markLine).toBeUndefined();
+  });
+
+  test("marks incidents on the latency chart even before any latency was recorded", () => {
+    const [latency] = makeLatencyChartOption({
+      ...base,
+      slots: fillTimeline([], startMs, endMs, "5m"),
+      stats: calculateLatencyStats([]),
+      palette: PALETTE,
+      incidents,
+    }).series as Array<Marked>;
+
+    expect(latency.markLine?.data.map((datum) => datum.xAxis)).toEqual([
+      incidents[0].startMs,
+      incidents[1].startMs,
+    ]);
   });
 });
