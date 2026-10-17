@@ -39,6 +39,7 @@ describe("init", () => {
       theme: "dark",
       dateRange: defaultSettings().dateRange,
       isPaused: true,
+      latencyView: "all",
     };
 
     const { model } = init(Flags.make({ maybeToken: Option.none(), settings }));

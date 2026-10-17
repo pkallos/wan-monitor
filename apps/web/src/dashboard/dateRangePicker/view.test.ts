@@ -313,6 +313,21 @@ describe("dateRangePicker view — applied custom range", () => {
   });
 });
 
+describe("dateRangePicker view: brushed range", () => {
+  const BRUSHED = Custom({
+    startTime: new Date(2026, 9, 16, 9, 12).toISOString(),
+    endTime: new Date(2026, 9, 16, 12, 40).toISOString(),
+  });
+
+  test("labels the trigger with the local start and end times of a range under a day", () => {
+    Scene.scene(
+      { update: boundUpdate(BRUSHED), view: boundView(BRUSHED) },
+      Scene.given(init({ id: "picker" })),
+      Scene.expect(Scene.role("button", { name: /^Oct 16, .+–.+$/ })).toExist()
+    );
+  });
+});
+
 describe("dateRangePicker view — month navigation", () => {
   test("shows exactly one previous chevron (left grid) and one next chevron (right grid)", () => {
     Scene.scene(

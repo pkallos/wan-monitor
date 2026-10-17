@@ -27,6 +27,12 @@
   --nodata: #8496a9;
   --pattern-hatch: rgba(255, 255, 255, 0.45);
   --chart-band: rgba(37, 99, 166, 0.18);
+  --series-1: #0a96db;
+  --series-2: #9d4972;
+  --series-3: #938b38;
+  --series-4: #4851ea;
+  --series-5: #01869a;
+  --series-6: #7f7f7e;
 }
 
 .dark {
@@ -49,6 +55,12 @@
   --nodata: #8496a9;
   --pattern-hatch: rgba(255, 255, 255, 0.45);
   --chart-band: rgba(125, 179, 240, 0.22);
+  --series-1: #15affe;
+  --series-2: #c6799c;
+  --series-3: #d7cd94;
+  --series-4: #a395ee;
+  --series-5: #3fc0d8;
+  --series-6: #919191;
 }
 
 /* Dropping Tailwind's default palette makes any leftover `gray-*` or
@@ -64,6 +76,7 @@
   --color-rule: var(--rule);
   --color-track: var(--track);
   --color-accent: var(--accent);
+  --color-chart-band: var(--chart-band);
   --color-on-accent: var(--on-accent);
   --color-up: var(--up);
   --color-deg: var(--deg);

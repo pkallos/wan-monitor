@@ -32,6 +32,30 @@ const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
 
 describe("Metrics Handlers", () => {
   describe("getMetrics", () => {
+    it.effect("passes a bucket's latency percentiles through", () => {
+      const QuestDBTest = Layer.succeed(
+        QuestDB,
+        createMockQuestDB([
+          {
+            timestamp: "2024-01-01T00:00:00Z",
+            source: "ping",
+            latency: 12,
+            latency_p50: 11,
+            latency_p95: 30,
+          },
+        ])
+      );
+
+      return Effect.gen(function* () {
+        const result = yield* getMetricsHandler({ query: {} });
+
+        expect(result.data[0]).toMatchObject({
+          latency_p50: 11,
+          latency_p95: 30,
+        });
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
     it.effect("returns metrics data with metadata", () => {
       const mockData: MetricRow[] = [
         {
@@ -168,6 +192,56 @@ describe("Metrics Handlers", () => {
         expect(seenParams[1].source).toBeUndefined();
       }).pipe(Effect.provide(QuestDBTest));
     });
+
+    it.effect("passes the requested percentiles down to the query", () => {
+      const seenParams: QueryMetricsParams[] = [];
+      const QuestDBTest = Layer.succeed(QuestDB, {
+        ...createMockQuestDB([]),
+        queryMetrics: (params: QueryMetricsParams) => {
+          seenParams.push(params);
+          return Effect.succeed([]);
+        },
+      });
+
+      return Effect.gen(function* () {
+        yield* getMetricsHandler({ query: { percentiles: "p50" } });
+        yield* getMetricsHandler({ query: { percentiles: "p50-p95" } });
+        yield* getMetricsHandler({ query: {} });
+
+        expect(seenParams.map(({ percentiles }) => percentiles)).toEqual([
+          "p50",
+          "p50-p95",
+          undefined,
+        ]);
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect(
+      "passes the host, limit and granularity down to the query",
+      () => {
+        const seenParams: QueryMetricsParams[] = [];
+        const QuestDBTest = Layer.succeed(QuestDB, {
+          ...createMockQuestDB([]),
+          queryMetrics: (params: QueryMetricsParams) => {
+            seenParams.push(params);
+            return Effect.succeed([]);
+          },
+        });
+
+        return Effect.gen(function* () {
+          yield* getMetricsHandler({
+            query: { host: "8.8.8.8", limit: 5, granularity: "5m" },
+          });
+
+          expect(seenParams).toHaveLength(1);
+          expect(seenParams[0]).toMatchObject({
+            host: "8.8.8.8",
+            limit: 5,
+            granularity: "5m",
+          });
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
 
     it.effect(
       "default time window uses Clock.currentTimeMillis (TestClock)",

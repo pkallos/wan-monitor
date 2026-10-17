@@ -10,6 +10,9 @@ import type {
   SummaryStatsRow,
 } from "@/infrastructure/database/questdb/model";
 
+const toNumberOrNull = (value: unknown): number | null =>
+  value === null || value === undefined ? null : Number(value);
+
 export const mapMetricRow = (row: Record<string, unknown>): MetricRow =>
   ({
     timestamp: row.timestamp as string,
@@ -19,6 +22,8 @@ export const mapMetricRow = (row: Record<string, unknown>): MetricRow =>
       row.latency !== null && row.latency !== undefined
         ? (row.latency as number)
         : undefined,
+    latency_p50: toNumberOrNull(row.latency_p50) ?? undefined,
+    latency_p95: toNumberOrNull(row.latency_p95) ?? undefined,
     jitter:
       row.jitter !== null && row.jitter !== undefined
         ? (row.jitter as number)
@@ -75,9 +80,6 @@ export const mapConnectivityStatusRow = (
   degraded_count: Number(row.degraded_count ?? 0),
   total_count: Number(row.total_count ?? 0),
 });
-
-const toNumberOrNull = (value: unknown): number | null =>
-  value === null || value === undefined ? null : Number(value);
 
 export const mapSummaryStatsRow = (
   row: Record<string, unknown>

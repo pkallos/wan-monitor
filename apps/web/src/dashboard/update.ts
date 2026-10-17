@@ -11,6 +11,7 @@ import {
   ApplyTheme,
   FetchConnectivityStatus,
   FetchEarliestData,
+  FetchHostLatency,
   FetchLiveConnectivity,
   FetchMetrics,
   FetchOutages,
@@ -30,9 +31,12 @@ import {
   type DateRangeSelection,
   isAllTime,
   Preset,
+  rangeFromBrush,
 } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
 import { assignIncidents } from "@/dashboard/incidents";
+import type { LatencyView } from "@/dashboard/latencyView";
+import { LatencyViewRadioGroup } from "@/dashboard/latencyViewRadioGroup";
 import {
   DashboardMenu,
   isThemeItem,
@@ -41,6 +45,7 @@ import {
 } from "@/dashboard/menu";
 import {
   GotDateRangePickerMessage,
+  GotLatencyViewMessage,
   GotMenuMessage,
   GotToastMessage,
   type Message,
@@ -50,6 +55,7 @@ import {
 } from "@/dashboard/message";
 import {
   answersCurrentRange,
+  HostLatencyAsyncData,
   isAwaitingEarliestData,
   type Model,
   settingsFromModel,
@@ -57,6 +63,7 @@ import {
 import { segmentForKey } from "@/dashboard/ribbon";
 import type { ThemePreference } from "@/dashboard/theme";
 import { Toast } from "@/dashboard/toast";
+import { hostLatencyFor } from "@/dashboard/view/derived";
 
 // `now` is injected (rather than read via `Date.now()` here) so `update`
 // stays pure with respect to its inputs — the app boundary (auth/update.ts)
@@ -386,6 +393,62 @@ const reloadLiveConnectivity =
     commands: [FetchLiveConnectivity({ token: context.token })],
   });
 
+// The per-host latency lines need the host list, and are only fetched while
+// the latency chart is in that view.
+const configuredHostNames = (model: Model): ReadonlyArray<string> =>
+  Option.match(AsyncData.getData(model.pingHosts), {
+    onNone: () => [],
+    onSome: ({ hosts }) => hosts,
+  });
+
+const fetchHostLatencyCommand = (context: Context, model: Model) =>
+  FetchHostLatency({
+    token: context.token,
+    ...rangeRequest(model),
+    hosts: configuredHostNames(model),
+  });
+
+const canFetchHostLatency = (model: Model): boolean =>
+  model.latencyView === "perHost" && configuredHostNames(model).length > 0;
+
+const loadHostLatency =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    canFetchHostLatency(model)
+      ? {
+          model: modifyFields(model, {
+            hostLatency: () => forceReload(model.hostLatency),
+          }),
+          commands: rangeFetches(model, [
+            fetchHostLatencyCommand(context, model),
+          ]),
+        }
+      : { model };
+
+const revalidateHostLatency =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(
+      canFetchHostLatency(model)
+        ? revalidateOrRetry(model.hostLatency)
+        : Option.none(),
+      {
+        onNone: () => ({ model }),
+        onSome: (next) => ({
+          model: modifyFields(model, { hostLatency: () => next }),
+          commands: rangeFetches(model, [
+            fetchHostLatencyCommand(context, model),
+          ]),
+        }),
+      }
+    );
+
+// Per-host results that land after the viewer switched back to all hosts have
+// nothing left to feed, and a stale failure would raise a banner Retry can't
+// clear.
+const answersPerHostView = (model: Model, request: RangeRequest): boolean =>
+  model.latencyView === "perHost" && answersCurrentRange(model, request);
+
 // Every resource whose fetch is scoped to the selected range. Each path that
 // moves the range reloads this one list, so a resource added here is reloaded
 // by all of them.
@@ -395,6 +458,7 @@ const RANGE_SCOPED_RELOADS = [
   reloadConnectivityStatus,
   reloadSummary,
   reloadOutages,
+  loadHostLatency,
 ];
 
 const reloadRangeScoped =
@@ -446,29 +510,55 @@ const pinAfterKey = (
 // to show it, and the window that data was fetched for is known. That window
 // comes from the model, never from `model.dateRange` (see `TimelineWindow`).
 
+// The per-host view is drawn from the host series alone, on the window they
+// were fetched for, so it does not wait on the all-hosts metrics. Until the
+// series answer the selected range the all-hosts line stands in.
 const syncLatencyChart = (
   model: Model
 ): ReadonlyArray<Command.Command<Message>> =>
-  Option.match(
-    Option.all([
-      model.maybeLatencyChartHostId,
-      AsyncData.getData(model.metrics),
-      model.maybeMetricsWindow,
-    ]),
-    {
-      onNone: () => [],
-      onSome: ([hostId, metrics, window]) => [
-        SyncLatencyChart({
-          hostId,
-          metrics,
-          startTimeMs: window.startTimeMs,
-          endTimeMs: window.endTimeMs,
-          granularity: window.granularity,
-          incidents: incidentsOf(model),
-        }),
-      ],
-    }
-  );
+  Option.match(model.maybeLatencyChartHostId, {
+    onNone: () => [],
+    onSome: (hostId) => {
+      const maybeHosts =
+        model.latencyView === "perHost"
+          ? AsyncData.getData(hostLatencyFor(model))
+          : Option.none();
+      return Option.match(maybeHosts, {
+        onSome: ({ series, window }) => [
+          SyncLatencyChart({
+            hostId,
+            metrics: AsyncData.getOrElse(model.metrics, () => []),
+            hostSeries: series,
+            startTimeMs: window.startTimeMs,
+            endTimeMs: window.endTimeMs,
+            granularity: window.granularity,
+            incidents: incidentsOf(model),
+          }),
+        ],
+        onNone: () =>
+          Option.match(
+            Option.all([
+              AsyncData.getData(model.metrics),
+              model.maybeMetricsWindow,
+            ]),
+            {
+              onNone: () => [],
+              onSome: ([metrics, window]) => [
+                SyncLatencyChart({
+                  hostId,
+                  metrics,
+                  hostSeries: [],
+                  startTimeMs: window.startTimeMs,
+                  endTimeMs: window.endTimeMs,
+                  granularity: window.granularity,
+                  incidents: incidentsOf(model),
+                }),
+              ],
+            }
+          ),
+      });
+    },
+  });
 
 const syncPacketLossChart = (
   model: Model
@@ -572,8 +662,12 @@ const setThemePreference = (
   };
 };
 
+// A range the viewer chooses ends any narrowing a brush did; a brush starts
+// one, remembering the range it cut down from, the first time only.
+type RangeOrigin = "chosen" | "brush";
+
 const applyDateRange =
-  (context: Context, selection: DateRangeSelection) =>
+  (context: Context, selection: DateRangeSelection, origin: RangeOrigin) =>
   (model: Model): StepReturn => {
     const { model: nextModel, commands: reloadCommands } = reloadRangeScoped(
       context
@@ -584,6 +678,12 @@ const applyDateRange =
         dateRange: () => selection,
         hoveredSegmentIndex: () => Option.none(),
         maybeSelectedBucketStartMs: () => Option.none(),
+        maybeRangeBeforeBrush: (before) =>
+          origin === "chosen"
+            ? Option.none()
+            : Option.orElse(before, () => Option.some(model.dateRange)),
+        // Series for the old range must not paint under the new one.
+        hostLatency: () => HostLatencyAsyncData.Idle(),
       })
     );
     return {
@@ -591,6 +691,28 @@ const applyDateRange =
       commands: [
         ...(reloadCommands ?? []),
         SaveSettings({ settings: settingsFromModel(nextModel) }),
+      ],
+    };
+  };
+
+const selectLatencyView =
+  (context: Context, view: LatencyView) =>
+  (model: Model): StepReturn => {
+    if (view === model.latencyView) return { model };
+    const nextModel = modifyFields(model, {
+      latencyView: () => view,
+      // The all-hosts line has no use for them, and by the time the viewer
+      // comes back the range may have moved on.
+      hostLatency: () => HostLatencyAsyncData.Idle(),
+    });
+    const { model: loaded, commands: fetchCommands } =
+      loadHostLatency(context)(nextModel);
+    return {
+      model: loaded,
+      commands: [
+        SaveSettings({ settings: settingsFromModel(loaded) }),
+        ...(fetchCommands ?? []),
+        ...syncLatencyChart(loaded),
       ],
     };
   };
@@ -668,6 +790,7 @@ export const update = (
           revalidateOrRetrySummary(context),
           revalidateOrRetryOutages(context),
           retryPingHosts(context),
+          revalidateHostLatency(context),
           refetchEarliestDataForAllTime(context),
         ]),
 
@@ -699,7 +822,7 @@ export const update = (
           withUpdateReturn,
           M.tag("AppliedRange", ({ selection }) => {
             const { model: nextModel, commands: appliedCommands } =
-              applyDateRange(context, selection)(withPicker);
+              applyDateRange(context, selection, "chosen")(withPicker);
             return {
               model: nextModel,
               commands: [...mappedCommands, ...(appliedCommands ?? [])],
@@ -714,7 +837,7 @@ export const update = (
       },
 
       SelectedQuickRange: ({ preset }) =>
-        applyDateRange(context, Preset({ preset }))(model),
+        applyDateRange(context, Preset({ preset }), "chosen")(model),
 
       ClickedRefreshNow: () =>
         Update.combine(model, [
@@ -737,7 +860,7 @@ export const update = (
             metrics: () =>
               AsyncData.settle(model.metrics, Result.succeed(metrics)),
             maybeMetricsWindow: () =>
-              Option.some({ startTimeMs, endTimeMs, granularity }),
+              Option.some({ startTimeMs, endTimeMs, granularity, request }),
             maybeLastUpdatedMs: () => Option.some(nowMs),
           });
           return { model: nextModel, commands: syncQualityCharts(nextModel) };
@@ -759,7 +882,8 @@ export const update = (
           const nextModel = modifyFields(model, {
             speedtestHistory: () =>
               AsyncData.settle(model.speedtestHistory, Result.succeed(history)),
-            maybeSpeedtestWindow: () => Option.some({ startTimeMs, endTimeMs }),
+            maybeSpeedtestWindow: () =>
+              Option.some({ startTimeMs, endTimeMs, request }),
           });
           return { model: nextModel, commands: syncSpeedChart(nextModel) };
         }),
@@ -863,12 +987,17 @@ export const update = (
           }),
         })),
 
-      SucceededFetchPingHosts: ({ hosts }) => ({
-        model: modifyFields(model, {
+      // The per-host lines wait on the host list: when it arrives while that
+      // view is open and nothing has been asked for yet, ask now.
+      SucceededFetchPingHosts: ({ hosts }) => {
+        const nextModel = modifyFields(model, {
           pingHosts: () =>
             AsyncData.settle(model.pingHosts, Result.succeed(hosts)),
-        }),
-      }),
+        });
+        return AsyncData.isIdle(nextModel.hostLatency)
+          ? Update.combine(nextModel, [loadHostLatency(context)])
+          : { model: nextModel };
+      },
       FailedFetchPingHosts: ({ error }) => ({
         model: modifyFields(model, {
           pingHosts: () =>
@@ -898,6 +1027,79 @@ export const update = (
         model: modifyFields(model, { isIdle: () => false }),
       }),
       WentIdle: () => ({ model: modifyFields(model, { isIdle: () => true }) }),
+
+      GotLatencyViewMessage: ({ message: radioMessage }) => {
+        const {
+          model: nextRadioGroup,
+          commands: radioCommands,
+          outMessage,
+        } = LatencyViewRadioGroup.update(
+          model.latencyViewRadioGroup,
+          radioMessage
+        );
+        const withRadioGroup = modifyFields(model, {
+          latencyViewRadioGroup: () => nextRadioGroup,
+        });
+        const mappedCommands = Command.mapMessages(
+          radioCommands ?? [],
+          (message) => GotLatencyViewMessage({ message })
+        );
+
+        if (outMessage === undefined) {
+          return { model: withRadioGroup, commands: mappedCommands };
+        }
+
+        const selected = selectLatencyView(
+          context,
+          outMessage.value
+        )(withRadioGroup);
+        return {
+          ...selected,
+          commands: [...mappedCommands, ...(selected.commands ?? [])],
+        };
+      },
+
+      SucceededFetchHostLatency: ({
+        series,
+        startTimeMs,
+        endTimeMs,
+        granularity,
+        request,
+      }) => {
+        if (!answersPerHostView(model, request)) return { model };
+        const nextModel = modifyFields(model, {
+          hostLatency: () =>
+            AsyncData.settle(
+              model.hostLatency,
+              Result.succeed({
+                series,
+                window: { startTimeMs, endTimeMs, granularity, request },
+              })
+            ),
+        });
+        return { model: nextModel, commands: syncLatencyChart(nextModel) };
+      },
+      FailedFetchHostLatency: ({ error, request }) =>
+        answersPerHostView(model, request)
+          ? {
+              model: modifyFields(model, {
+                hostLatency: () =>
+                  AsyncData.settle(model.hostLatency, Result.fail(error)),
+              }),
+            }
+          : { model },
+
+      BrushedChartRange: ({ startMs, endMs }) =>
+        Option.match(rangeFromBrush(startMs, endMs), {
+          onNone: () => ({ model }),
+          onSome: (range) => applyDateRange(context, range, "brush")(model),
+        }),
+
+      ClickedResetRange: () =>
+        Option.match(model.maybeRangeBeforeBrush, {
+          onNone: () => ({ model }),
+          onSome: (range) => applyDateRange(context, range, "chosen")(model),
+        }),
 
       HoveredConnectivitySegment: ({ index }) => ({
         model: modifyFields(model, {

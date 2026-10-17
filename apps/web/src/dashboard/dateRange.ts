@@ -1,6 +1,12 @@
 import type { Granularity } from "@shared/api/routes/metrics";
 import { Match as M, Option, Schema as S } from "effect";
 import { taggedStruct as ts } from "foldkit/schema";
+import {
+  CLOCK_FORMAT,
+  DATE_TIME_FORMAT,
+  isLocalMidnight,
+  isSameLocalDay,
+} from "@/dashboard/format";
 
 export const PresetKey = S.Literals([
   "last1h",
@@ -150,10 +156,10 @@ const DATE_LABEL_OPTIONS_WITHOUT_YEAR: Intl.DateTimeFormatOptions = {
  * Formats in UTC (not the viewer's local time zone) so the label always
  * matches the UTC day boundaries the presets above resolve against.
  */
-export const formatDateRangeLabel = (window: {
-  startTime: string;
-  endTime: string;
-}): string => {
+export const formatDateRangeLabel = (
+  window: { startTime: string; endTime: string },
+  separator = " - "
+): string => {
   const start = new Date(window.startTime);
   const end = new Date(window.endTime);
   const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
@@ -164,7 +170,63 @@ export const formatDateRangeLabel = (window: {
   );
   const endLabel = end.toLocaleDateString([], DATE_LABEL_OPTIONS_WITH_YEAR);
 
-  return `${startLabel} - ${endLabel}`;
+  return `${startLabel}${separator}${endLabel}`;
+};
+
+// The date picker ends a range on the last millisecond of a local day.
+const isWholeLocalDays = (start: Date, end: Date): boolean =>
+  isLocalMidnight(start) &&
+  (isLocalMidnight(end) || isLocalMidnight(new Date(end.getTime() + 1)));
+
+const isCalendarRange = (start: Date, end: Date): boolean =>
+  end.getTime() - start.getTime() >= DAY_MS && isWholeLocalDays(start, end);
+
+/**
+ * The start and end times of a span brushed on a chart, in local time and the
+ * locale's hour cycle to match the chart axes, the end dropping its date when
+ * it falls on the start's day. `use12Hour` overrides the locale's hour cycle.
+ */
+const brushedRangeTimes = (
+  start: Date,
+  end: Date,
+  use12Hour?: boolean
+): readonly [string, string] => {
+  const withHourCycle = (
+    options: Intl.DateTimeFormatOptions
+  ): Intl.DateTimeFormatOptions =>
+    use12Hour === undefined ? options : { ...options, hour12: use12Hour };
+  return [
+    start.toLocaleString([], withHourCycle(DATE_TIME_FORMAT)),
+    isSameLocalDay(start.getTime(), end.getTime())
+      ? end.toLocaleTimeString([], withHourCycle(CLOCK_FORMAT))
+      : end.toLocaleString([], withHourCycle(DATE_TIME_FORMAT)),
+  ];
+};
+
+/**
+ * A custom range as the viewer reads it: whole dates for days picked from the
+ * calendar, otherwise, as for a span brushed on a chart, its start and end
+ * times. Those are in local time and the locale's hour cycle to match the
+ * chart axes, unlike the UTC dates above. `use12Hour` overrides the locale's
+ * hour cycle.
+ */
+export const formatCustomRangeLabel = (
+  custom: Custom,
+  use12Hour?: boolean
+): string => {
+  const start = new Date(custom.startTime);
+  const end = new Date(custom.endTime);
+  if (isCalendarRange(start, end)) return formatDateRangeLabel(custom);
+  return brushedRangeTimes(start, end, use12Hour).join("–");
+};
+
+/** The same range worded to sit mid-sentence: "Oct 4 to Oct 10, 2026" or "Oct 16, 5:00 PM to 5:30 PM". */
+export const describeCustomRange = (custom: Custom): string => {
+  const start = new Date(custom.startTime);
+  const end = new Date(custom.endTime);
+  return isCalendarRange(start, end)
+    ? formatDateRangeLabel(custom, " to ")
+    : brushedRangeTimes(start, end).join(" to ");
 };
 
 const GRANULARITY_THRESHOLDS_MS: ReadonlyArray<readonly [number, Granularity]> =
@@ -187,7 +249,7 @@ export const granularityForRange = (window: {
   return match ? match[1] : "1d";
 };
 
-const SPEEDTEST_AGGREGATION_THRESHOLD_MS = 7 * DAY_MS;
+export const SPEEDTEST_AGGREGATION_THRESHOLD_MS = 7 * DAY_MS;
 
 /**
  * Speedtest samples are sparse enough that raw rows stay readable up to a
@@ -203,4 +265,45 @@ export const granularityForSpeedtestRange = (window: {
   return spanMs < SPEEDTEST_AGGREGATION_THRESHOLD_MS
     ? undefined
     : granularityForRange(window);
+};
+
+/** The bucket size the speed history was fetched in for a resolved window; none when it came as raw tests. */
+export const speedtestBucketOf = ({
+  startTimeMs,
+  endTimeMs,
+}: {
+  startTimeMs: number;
+  endTimeMs: number;
+}): Option.Option<Granularity> =>
+  Option.fromNullishOr(
+    granularityForSpeedtestRange({
+      startTime: new Date(startTimeMs).toISOString(),
+      endTime: new Date(endTimeMs).toISOString(),
+    })
+  );
+
+const MIN_BRUSH_SPAN_MS = 5 * 60_000;
+const SECOND_MS = 1000;
+
+/**
+ * The custom range a drag across a chart selects, or none when the drag is too
+ * short to chart: under five minutes is only a few of the finest buckets, too
+ * few to draw a line across. The ends are rounded to whole seconds so the
+ * range reads and reloads cleanly.
+ */
+export const rangeFromBrush = (
+  fromMs: number,
+  toMs: number
+): Option.Option<Custom> => {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return Option.none();
+  const startMs = Math.round(Math.min(fromMs, toMs) / SECOND_MS) * SECOND_MS;
+  const endMs = Math.round(Math.max(fromMs, toMs) / SECOND_MS) * SECOND_MS;
+  return endMs - startMs < MIN_BRUSH_SPAN_MS
+    ? Option.none()
+    : Option.some(
+        Custom({
+          startTime: new Date(startMs).toISOString(),
+          endTime: new Date(endMs).toISOString(),
+        })
+      );
 };

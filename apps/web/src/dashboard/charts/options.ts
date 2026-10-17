@@ -1,15 +1,14 @@
 import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
+import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
 import type { EChartsOption } from "echarts/types/dist/shared";
 import { Array as Array_, Option, Order } from "effect";
 import type { ChartPalette } from "@/dashboard/charts/chartTheme";
-import type {
-  JitterStats,
-  LatencyStats,
-  PacketLossStats,
-  SpeedStats,
-} from "@/dashboard/charts/stats";
+import type { LatencyStats } from "@/dashboard/charts/stats";
+import { speedMedians, testsAreDense } from "@/dashboard/charts/stats";
 import type { TimelineSlot } from "@/dashboard/charts/timeline";
+import { FULL_ZOOM, type ZoomRange } from "@/dashboard/charts/zoom";
+import { isLocalMidnight } from "@/dashboard/format";
 import type { Incident } from "@/dashboard/incidents";
 
 // Mirrors echarts' own `PrimaryTimeUnit` (scale/Time.js): every tick on a
@@ -30,12 +29,6 @@ export interface AxisTickInfo {
   lowerTimeUnit: PrimaryTimeUnit;
   level: number;
 }
-
-const isLocalMidnight = (date: Date): boolean =>
-  date.getHours() === 0 &&
-  date.getMinutes() === 0 &&
-  date.getSeconds() === 0 &&
-  date.getMilliseconds() === 0;
 
 // Whether the window itself spans more than one calendar `unit` — distinct
 // from a single tick's own alignment, since a tick can land exactly on a
@@ -153,8 +146,14 @@ const TOOLTIP_HEADER_OPTIONS: Intl.DateTimeFormatOptions = {
 export const formatTooltipHeader = (value: number): string =>
   new Date(value).toLocaleString([], TOOLTIP_HEADER_OPTIONS);
 
+const GRID_LEFT_PX = 55;
+const GRID_RIGHT_PX = 16;
+const GRID_TOP_PX = 16;
 // Matches `makeBaseAxes`' grid margins below.
-const GRID_MARGIN_PX = 55 + 16;
+const GRID_MARGIN_PX = GRID_LEFT_PX + GRID_RIGHT_PX;
+
+/** The chart width layout assumes when a caller has not measured one. */
+const DEFAULT_CHART_WIDTH_PX = 800;
 const TARGET_LABEL_PX = 60;
 const MIN_SPLIT_NUMBER = 4;
 const MAX_SPLIT_NUMBER = 10;
@@ -188,7 +187,12 @@ const makeBaseAxes = (
   const text = palette.inkSecondary;
   return {
     textStyle: { fontFamily: palette.fontFamily },
-    grid: { left: 55, right: 16, top: 16, bottom: 28 },
+    grid: {
+      left: GRID_LEFT_PX,
+      right: GRID_RIGHT_PX,
+      top: GRID_TOP_PX,
+      bottom: 28,
+    },
     // Known echarts limitation, not fixable from this option set: when the
     // window crosses a month boundary, the day-tier ticks on the far side of
     // that boundary can land one day off the regular cadence (e.g. `29 31
@@ -231,13 +235,6 @@ const makeBaseAxes = (
       },
       splitLine: makeSplitLine(palette.rule),
     },
-    // Declares that this chart's axis pointer should move in step with
-    // every other chart in the same echarts.connect() group when either is
-    // hovered — echarts.connect() alone only syncs dataZoom, not the
-    // pointer.
-    axisPointer: {
-      link: [{ xAxisIndex: "all" as const }],
-    },
   };
 };
 
@@ -247,9 +244,14 @@ const makeBaseAxes = (
 // `valueFormatter`) is required to control the header text; `params[i]`'s
 // `marker`/`seriesName` are supplied by echarts itself, so only the header
 // and value text need building here.
+//
+// A series plotted as an offset on a stack (the p95 band rides on p50) carries
+// the value to show as a third element of each point, and a series that only
+// draws a connecting line adds nothing to a row, so `skipSeries` drops it.
 const makeTooltip = (
   palette: ChartPalette,
-  formatValue: (value: number) => string
+  formatValue: (value: number) => string,
+  skipSeries: ReadonlySet<string> = new Set()
 ) => ({
   trigger: "axis" as const,
   axisPointer: {
@@ -279,8 +281,9 @@ const makeTooltip = (
     const rows = (
       params as Array<{ marker: string; seriesName: string; value: unknown }>
     )
+      .filter(({ seriesName }) => !skipSeries.has(seriesName))
       .map(({ marker, seriesName, value }) => {
-        const raw = Array.isArray(value) ? value[1] : value;
+        const raw = Array.isArray(value) ? (value[2] ?? value[1]) : value;
         const formatted = typeof raw === "number" ? formatValue(raw) : "-";
         return `${marker}${seriesName}: ${formatted}`;
       })
@@ -299,6 +302,22 @@ const makeValueAxis = (palette: ChartPalette, formatter: string) => ({
   },
   splitLine: makeSplitLine(palette.rule),
 });
+
+// Zooming is for the x axis only and rides the wheel with Ctrl held (or a
+// trackpad pinch), so scrolling the page over a chart still scrolls it, and a
+// plain drag is free for the latency chart's range brush.
+const makeZoom = ({ start, end }: ZoomRange) => [
+  {
+    type: "inside" as const,
+    xAxisIndex: 0,
+    start,
+    end,
+    filterMode: "none" as const,
+    zoomOnMouseWheel: "ctrl" as const,
+    moveOnMouseWheel: false,
+    moveOnMouseMove: false,
+  },
+];
 
 // ECharts' own types declare `data` as a mutable array, so this boundary
 // helper returns one rather than this module's usual ReadonlyArray — the
@@ -321,7 +340,98 @@ const incidentColor = (
   status: Incident["status"]
 ): string => (status === "down" ? palette.down : palette.degraded);
 
-const incidentMarkArea = (
+/** A dashed line across the value axis at a reference level for the metric. */
+type Threshold = Readonly<{ value: number; label: string }>;
+
+const PACKET_LOSS_THRESHOLD: Threshold = {
+  value: PACKET_LOSS_THRESHOLDS.degradedFloor,
+  label: `Degraded at ${PACKET_LOSS_THRESHOLDS.degradedFloor}%`,
+};
+
+/**
+ * Latency in milliseconds at or above which the latency chart draws its
+ * threshold line. A fixed rule of thumb, not derived from the data.
+ */
+export const LATENCY_THRESHOLD_MS = 50;
+
+const LATENCY_THRESHOLD: Threshold = {
+  value: LATENCY_THRESHOLD_MS,
+  label: `Reference ${LATENCY_THRESHOLD_MS} ms`,
+};
+
+const valuesOf = <A>(
+  slots: ReadonlyArray<TimelineSlot<A>>,
+  getValue: (point: A) => number | null
+): ReadonlyArray<number | null> =>
+  Array_.map(slots, (slot) =>
+    Option.match(slot.point, { onNone: () => null, onSome: getValue })
+  );
+
+// Reference labels are boxed on the card colour so they stay legible where
+// they cross the series; a threshold's sits at the start of its line and the
+// average's at the end, so the two never share a side.
+const referenceLabel = (
+  palette: ChartPalette,
+  text: string,
+  position: "insideStartTop" | "insideStartBottom" | "insideEndTop"
+) => ({
+  show: true,
+  position,
+  formatter: text,
+  color: palette.inkSecondary,
+  fontSize: 11,
+  backgroundColor: palette.card,
+  borderRadius: 3,
+  padding: [1, 4],
+});
+
+// The axis tops out at or just above the highest value, so a line that value
+// only just reaches sits at the very top of the plot, and a label above it
+// would land in the row of incident chips. A line the data has not reached is
+// not in the plot at all.
+const LABEL_ABOVE_HEADROOM_RATIO = 1.2;
+
+const peakOf = (values: ReadonlyArray<number | null>): number =>
+  Math.max(0, ...Array_.filter(values, (v) => v !== null));
+
+const thresholdLabel = (
+  palette: ChartPalette,
+  threshold: Threshold,
+  peak: number
+) =>
+  referenceLabel(
+    palette,
+    threshold.label,
+    peak >= threshold.value &&
+      peak < threshold.value * LABEL_ABOVE_HEADROOM_RATIO
+      ? "insideStartBottom"
+      : "insideStartTop"
+  );
+
+// A line the data never climbs to would sit above the plot, its label with it,
+// so it is only drawn once a value reaches it.
+const thresholdLines = (
+  threshold: Threshold,
+  values: ReadonlyArray<number | null>,
+  palette: ChartPalette
+) => {
+  const peak = peakOf(values);
+  return peak >= threshold.value
+    ? [
+        {
+          yAxis: threshold.value,
+          lineStyle: {
+            color: palette.inkSecondary,
+            type: "dashed" as const,
+            width: 1,
+          },
+          label: thresholdLabel(palette, threshold, peak),
+        },
+      ]
+    : [];
+};
+
+const markAreaOf = (
   incidents: ReadonlyArray<Incident>,
   palette: ChartPalette
 ) =>
@@ -346,91 +456,385 @@ const incidentMarkArea = (
         ),
       };
 
+// A chip is the incident's letter in a bordered box; its width is estimated
+// from the text, as canvas text cannot be measured before it is drawn.
+const CHIP_CHAR_PX = 7;
+const CHIP_CHROME_PX = 10;
+const CHIP_GAP_PX = 4;
+/** The room above the plot that a row of chips needs. */
+const CHIP_ROW_PX = 28;
+
+const chipWidthPx = (text: string): number =>
+  CHIP_CHROME_PX + CHIP_CHAR_PX * text.length;
+
+const withChipRow = <G extends { top: number }>(
+  grid: G,
+  chipLabels: ReadonlyMap<string, string>
+): G => ({
+  ...grid,
+  top: grid.top + (chipLabels.size > 0 ? CHIP_ROW_PX : 0),
+});
+
+type ChipCluster = Readonly<{
+  head: Incident;
+  last: Incident;
+  label: string;
+  centerPx: number;
+  leftPx: number;
+  rightPx: number;
+}>;
+
+// A chip is centred on its head incident, so a longer label grows both ways.
+const clusterOf = (
+  head: Incident,
+  last: Incident,
+  centerPx: number
+): ChipCluster => {
+  const label = head.ref === last.ref ? head.ref : `${head.ref}–${last.ref}`;
+  const halfWidthPx = chipWidthPx(label) / 2;
+  return {
+    head,
+    last,
+    label,
+    centerPx,
+    leftPx: centerPx - halfWidthPx,
+    rightPx: centerPx + halfWidthPx,
+  };
+};
+
+const touches = (left: ChipCluster, right: ChipCluster): boolean =>
+  right.leftPx < left.rightPx + CHIP_GAP_PX;
+
+// A chip that widened by absorbing a neighbour can reach back into the chip
+// before it, so the fold carries on leftwards until every pair has room.
+const foldLeftwards = (
+  clusters: ReadonlyArray<ChipCluster>
+): ReadonlyArray<ChipCluster> => {
+  const last = clusters[clusters.length - 1];
+  const before = clusters[clusters.length - 2];
+  if (last === undefined || before === undefined || !touches(before, last)) {
+    return clusters;
+  }
+  return foldLeftwards([
+    ...clusters.slice(0, -2),
+    clusterOf(before.head, last.last, before.centerPx),
+  ]);
+};
+
+const NO_CLUSTERS: ReadonlyArray<ChipCluster> = [];
+
 /**
- * A lettered line at each incident's start. It is what stays visible when the
- * shaded span is narrower than a pixel, as a minutes-long outage is on a
- * week-wide chart; the letter matches the ref in the incident log.
+ * The text of each chip that is drawn, by incident ref. Incidents that start
+ * close enough for their chips to touch share one chip over the first of them,
+ * lettered as the span they cover ("A–C"), the way the availability ribbon
+ * folds close incidents; a ref with no entry draws no chip of its own.
+ */
+const incidentChipLabels = (
+  incidents: ReadonlyArray<Incident>,
+  {
+    startMs,
+    endMs,
+    widthPx,
+  }: { startMs: number; endMs: number; widthPx: number }
+): ReadonlyMap<string, string> => {
+  const plotPx = Math.max(widthPx - GRID_MARGIN_PX, 1);
+  const spanMs = Math.max(endMs - startMs, 1);
+  const inWindow = Array_.filter(
+    incidents,
+    (incident) => incident.startMs >= startMs && incident.startMs <= endMs
+  );
+  const clusters = Array_.reduce(
+    Array_.sortBy(Order.mapInput(Order.Number, (i: Incident) => i.startMs))(
+      inWindow
+    ),
+    NO_CLUSTERS,
+    (acc, incident) => {
+      const own = clusterOf(
+        incident,
+        incident,
+        GRID_LEFT_PX + ((incident.startMs - startMs) / spanMs) * plotPx
+      );
+      const previous = acc[acc.length - 1];
+      return previous === undefined || !touches(previous, own)
+        ? [...acc, own]
+        : foldLeftwards([
+            ...acc.slice(0, -1),
+            clusterOf(previous.head, incident, previous.centerPx),
+          ]);
+    }
+  );
+  return new Map(Array_.map(clusters, ({ head, label }) => [head.ref, label]));
+};
+
+/**
+ * A line at each incident's start. It is what stays visible when the shaded
+ * span is narrower than a pixel, as a minutes-long outage is on a week-wide
+ * chart. A down incident's line is solid and a degraded one's is dashed, so the
+ * two differ by more than colour; the chip's letter matches the ref in the
+ * incident log.
  */
 const incidentMarkLines = (
   incidents: ReadonlyArray<Incident>,
+  chipLabels: ReadonlyMap<string, string>,
   palette: ChartPalette
 ) =>
-  Array_.map(incidents, (incident) => ({
-    xAxis: incident.startMs,
-    lineStyle: {
-      color: incidentColor(palette, incident.status),
-      width: 1.5,
-      type: "solid" as const,
+  Array_.map(incidents, (incident) => {
+    const color = incidentColor(palette, incident.status);
+    return {
+      xAxis: incident.startMs,
+      lineStyle: {
+        color,
+        width: 1.5,
+        type:
+          incident.status === "down" ? ("solid" as const) : ("dashed" as const),
+      },
+      label: {
+        show: chipLabels.has(incident.ref),
+        position: "end" as const,
+        formatter: chipLabels.get(incident.ref) ?? incident.ref,
+        color: palette.ink,
+        fontSize: 11,
+        fontWeight: 600,
+        backgroundColor: palette.card,
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 4,
+        padding: [1, 4],
+      },
+    };
+  });
+
+type LatencyPoint = Pick<
+  Metric,
+  "timestamp" | "latency" | "latency_p50" | "latency_p95"
+>;
+
+/** One host's latency over the window, bucketed like the all-hosts series. */
+export type HostLatencySeries = Readonly<{
+  host: string;
+  slots: ReadonlyArray<TimelineSlot<LatencyPoint>>;
+}>;
+
+const hasPercentiles = (slots: ReadonlyArray<TimelineSlot<LatencyPoint>>) =>
+  Array_.some(slots, (slot) =>
+    Option.exists(slot.point, (point) => point.latency_p50 !== undefined)
+  );
+
+const lineSeries = (name: string, color: string, width = 2) => ({
+  type: "line" as const,
+  name,
+  showSymbol: false,
+  lineStyle: { color, width },
+  itemStyle: { color },
+  connectNulls: false,
+});
+
+// The p50 line, with the p95 above it as a band: the band is the gap between
+// the two, so it rides on p50 as a stacked series whose points carry p95 as
+// the value to show.
+const latencyPercentileSeries = (
+  slots: ReadonlyArray<TimelineSlot<LatencyPoint>>,
+  palette: ChartPalette
+) => {
+  const p50 = toSeriesData(slots, (point) => point.latency_p50 ?? null);
+  const band = Array_.map(slots, (slot): [number, number | null, number?] =>
+    Option.match(slot.point, {
+      onNone: () => [slot.timestamp, null],
+      onSome: ({ latency_p50, latency_p95 }) =>
+        latency_p50 === undefined || latency_p95 === undefined
+          ? [slot.timestamp, null]
+          : [
+              slot.timestamp,
+              Math.max(latency_p95 - latency_p50, 0),
+              latency_p95,
+            ],
+    })
+  );
+  return [
+    {
+      ...lineSeries("p50", palette.accent),
+      stack: "latency",
+      data: p50,
     },
-    label: {
-      show: true,
-      position: "end" as const,
-      formatter: incident.ref,
-      color: palette.ink,
-      fontSize: 11,
-      fontWeight: 600,
-      backgroundColor: palette.card,
-      borderColor: incidentColor(palette, incident.status),
-      borderWidth: 1,
-      borderRadius: 4,
-      padding: [1, 4],
+    {
+      ...lineSeries("p95", palette.accent, 1),
+      stack: "latency",
+      data: band,
+      // The band's fill is too faint to carry p95 on its own, so its upper edge
+      // is drawn at full strength.
+      lineStyle: { color: palette.accent, width: 1 },
+      areaStyle: { color: palette.band },
     },
-  }));
+  ];
+};
+
+export const hostLatencyOf = (point: LatencyPoint): number | null =>
+  point.latency_p50 ?? point.latency ?? null;
 
 export const makeLatencyChartOption = ({
   slots,
+  hostSeries = [],
   stats,
   palette,
   incidents,
   startMs,
   endMs,
   splitNumber,
+  widthPx = DEFAULT_CHART_WIDTH_PX,
+  zoom = FULL_ZOOM,
 }: {
-  slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "latency">>>;
+  slots: ReadonlyArray<TimelineSlot<LatencyPoint>>;
+  /** One line per host instead of the all-hosts line, when present. */
+  hostSeries?: ReadonlyArray<HostLatencySeries>;
   stats: LatencyStats;
   palette: ChartPalette;
   incidents: ReadonlyArray<Incident>;
   startMs: number;
   endMs: number;
   splitNumber: number;
-}): EChartsOption => ({
-  ...makeBaseAxes(palette, startMs, endMs, splitNumber),
-  yAxis: makeValueAxis(palette, "{value} ms"),
-  tooltip: makeTooltip(palette, (value) => `${value.toFixed(1)} ms`),
-  series: [
-    {
-      type: "line",
-      name: "Latency",
-      data: toSeriesData(slots, (point) => point.latency ?? null),
-      showSymbol: false,
-      smooth: true,
-      lineStyle: { color: palette.accent, width: 2 },
-      areaStyle: { color: palette.band },
-      itemStyle: { color: palette.accent },
-      connectNulls: false,
-      markArea: incidentMarkArea(incidents, palette),
-      markLine:
-        stats.avg === "-" && incidents.length === 0
-          ? undefined
-          : {
-              symbol: "none",
-              silent: true,
-              lineStyle: { color: palette.inkSecondary, type: "dashed" },
-              label: {
-                position: "insideEndTop",
-                formatter: "Avg",
-                color: palette.inkSecondary,
-                padding: [2, 4],
-              },
-              data: [
-                ...(stats.avg === "-" ? [] : [{ yAxis: Number(stats.avg) }]),
-                ...incidentMarkLines(incidents, palette),
-              ],
+  widthPx?: number;
+  zoom?: ZoomRange;
+}): EChartsOption => {
+  const base = makeBaseAxes(palette, startMs, endMs, splitNumber);
+  const chipLabels = incidentChipLabels(incidents, { startMs, endMs, widthPx });
+  const isPerHost = hostSeries.length > 0;
+  const thresholds = thresholdLines(
+    LATENCY_THRESHOLD,
+    isPerHost
+      ? Array_.flatMap(hostSeries, (host) =>
+          valuesOf(host.slots, hostLatencyOf)
+        )
+      : valuesOf(
+          slots,
+          (point) =>
+            point.latency_p95 ?? point.latency_p50 ?? point.latency ?? null
+        ),
+    palette
+  );
+  // The average only means something for the single all-hosts line.
+  const showsAverage = !isPerHost && stats.avg !== "-";
+  const shared = {
+    markArea: markAreaOf(incidents, palette),
+    markLine:
+      showsAverage || thresholds.length > 0 || incidents.length > 0
+        ? {
+            symbol: "none",
+            silent: true,
+            lineStyle: {
+              color: palette.inkSecondary,
+              type: "dashed" as const,
             },
-    },
-  ],
+            data: [
+              ...(showsAverage
+                ? [
+                    {
+                      yAxis: Number(stats.avg),
+                      label: referenceLabel(
+                        palette,
+                        `Avg ${stats.avg} ms`,
+                        "insideEndTop"
+                      ),
+                    },
+                  ]
+                : []),
+              ...thresholds,
+              ...incidentMarkLines(incidents, chipLabels, palette),
+            ],
+          }
+        : undefined,
+  };
+
+  const series = isPerHost
+    ? [
+        ...Array_.map(hostSeries, (host, index) => ({
+          ...lineSeries(host.host, hostColor(palette, index)),
+          lineStyle: {
+            color: hostColor(palette, index),
+            width: 2,
+            type:
+              index < palette.series.length
+                ? ("solid" as const)
+                : ("dashed" as const),
+          },
+          data: toSeriesData(host.slots, hostLatencyOf),
+        })),
+        // Hiding a host in the legend must not take the incidents with it.
+        {
+          ...lineSeries(REFERENCE_SERIES, palette.inkSecondary),
+          data: [],
+          ...shared,
+        },
+      ]
+    : hasPercentiles(slots)
+      ? latencyPercentileSeries(slots, palette).map((entry, index) =>
+          index === 0 ? { ...entry, ...shared } : entry
+        )
+      : [
+          {
+            ...lineSeries("Latency", palette.accent),
+            data: toSeriesData(slots, (point) => point.latency ?? null),
+            areaStyle: { color: palette.band },
+            ...shared,
+          },
+        ];
+
+  return {
+    ...base,
+    dataZoom: makeZoom(zoom),
+    // The brush needs the toolbox component, which draws its own buttons
+    // unless told not to; the stroke is started by a plain drag instead.
+    toolbox: { show: false },
+    brush: makeBrush(palette),
+    // Per-host mode names its lines in a legend, and incident chips sit in a
+    // row of their own; each needs room above the plot.
+    grid: withChipRow(
+      { ...base.grid, top: base.grid.top + (isPerHost ? LEGEND_ROW_PX : 0) },
+      chipLabels
+    ),
+    legend: isPerHost
+      ? {
+          top: 0,
+          right: 8,
+          data: Array_.map(hostSeries, (host) => host.host),
+          icon: "roundRect",
+          itemWidth: 14,
+          itemHeight: 3,
+          itemGap: 16,
+          textStyle: {
+            color: palette.inkSecondary,
+            fontFamily: palette.fontFamily,
+          },
+        }
+      : undefined,
+    yAxis: makeValueAxis(palette, "{value} ms"),
+    tooltip: makeTooltip(palette, (value) => `${value.toFixed(1)} ms`),
+    series,
+  };
+};
+
+const REFERENCE_SERIES = "Reference lines";
+const LEGEND_ROW_PX = 20;
+
+const hostColor = (palette: ChartPalette, index: number): string =>
+  palette.series[index % palette.series.length] ?? palette.accent;
+
+// A plain drag across the latency chart selects a span of time; the page turns
+// the committed selection into its date range (see `rangeFromBrush`).
+const makeBrush = (palette: ChartPalette) => ({
+  xAxisIndex: 0,
+  brushType: "lineX" as const,
+  brushMode: "single" as const,
+  transformable: false,
+  removeOnClick: true,
+  brushStyle: {
+    color: palette.band,
+    borderColor: palette.accent,
+    borderWidth: 1,
+  },
 });
 
+// The bar for each bucket spans the bucket, which echarts works out from the
+// spacing of the points, so every slot is present, a gap as a null.
 export const makePacketLossChartOption = ({
   slots,
   palette,
@@ -438,45 +842,61 @@ export const makePacketLossChartOption = ({
   startMs,
   endMs,
   splitNumber,
+  widthPx = DEFAULT_CHART_WIDTH_PX,
+  zoom = FULL_ZOOM,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "packet_loss">>>;
-  stats: PacketLossStats;
   palette: ChartPalette;
   incidents: ReadonlyArray<Incident>;
   startMs: number;
   endMs: number;
   splitNumber: number;
-}): EChartsOption => ({
-  ...makeBaseAxes(palette, startMs, endMs, splitNumber),
-  yAxis: makeValueAxis(palette, "{value}%"),
-  tooltip: makeTooltip(palette, (value) => `${value.toFixed(2)}%`),
-  series: [
-    {
-      type: "line",
-      name: "Packet loss",
-      data: toSeriesData(slots, (point) => point.packet_loss ?? null),
-      // A flat 0% run draws as a real line on the axis baseline; a gap in
-      // the data (no slot) draws nothing, since connectNulls is false.
-      showSymbol: false,
-      smooth: true,
-      lineStyle: { color: palette.down, width: 2 },
-      areaStyle: { color: palette.down, opacity: 0.15 },
-      itemStyle: { color: palette.down },
-      connectNulls: false,
-      markArea: incidentMarkArea(incidents, palette),
-      markLine:
-        incidents.length === 0
-          ? undefined
-          : {
-              symbol: "none",
-              silent: true,
-              data: incidentMarkLines(incidents, palette),
-            },
-    },
-  ],
-});
+  widthPx?: number;
+  zoom?: ZoomRange;
+}): EChartsOption => {
+  const base = makeBaseAxes(palette, startMs, endMs, splitNumber);
+  const chipLabels = incidentChipLabels(incidents, { startMs, endMs, widthPx });
+  const lossThresholds = thresholdLines(
+    PACKET_LOSS_THRESHOLD,
+    valuesOf(slots, (point) => point.packet_loss ?? null),
+    palette
+  );
+  return {
+    ...base,
+    grid: withChipRow(base.grid, chipLabels),
+    dataZoom: makeZoom(zoom),
+    yAxis: makeValueAxis(palette, "{value}%"),
+    tooltip: makeTooltip(palette, (value) => `${value.toFixed(2)}%`),
+    series: [
+      {
+        type: "bar",
+        name: "Packet loss",
+        data: toSeriesData(slots, (point) => point.packet_loss ?? null),
+        barMinWidth: 1,
+        barCategoryGap: "10%",
+        itemStyle: { color: palette.down },
+        markArea: markAreaOf(incidents, palette),
+        markLine:
+          lossThresholds.length === 0 && incidents.length === 0
+            ? undefined
+            : {
+                symbol: "none",
+                silent: true,
+                data: [
+                  ...lossThresholds,
+                  ...incidentMarkLines(incidents, chipLabels, palette),
+                ],
+              },
+      },
+    ],
+  };
+};
 
 const ACCEPTABLE_JITTER_THRESHOLD_MS = 10;
+const JITTER_THRESHOLD: Threshold = {
+  value: ACCEPTABLE_JITTER_THRESHOLD_MS,
+  label: `Reference ${ACCEPTABLE_JITTER_THRESHOLD_MS} ms`,
+};
 
 export const makeJitterChartOption = ({
   slots,
@@ -485,47 +905,108 @@ export const makeJitterChartOption = ({
   startMs,
   endMs,
   splitNumber,
+  widthPx = DEFAULT_CHART_WIDTH_PX,
+  zoom = FULL_ZOOM,
 }: {
   slots: ReadonlyArray<TimelineSlot<Pick<Metric, "timestamp" | "jitter">>>;
-  stats: JitterStats;
   palette: ChartPalette;
   incidents: ReadonlyArray<Incident>;
   startMs: number;
   endMs: number;
   splitNumber: number;
-}): EChartsOption => ({
-  ...makeBaseAxes(palette, startMs, endMs, splitNumber),
-  yAxis: makeValueAxis(palette, "{value} ms"),
-  tooltip: makeTooltip(palette, (value) => `${value.toFixed(2)} ms`),
-  series: [
-    {
-      type: "line",
-      name: "Jitter",
-      data: toSeriesData(slots, (point) => point.jitter ?? null),
-      showSymbol: false,
-      smooth: true,
-      lineStyle: { color: palette.inkSecondary, width: 2 },
-      areaStyle: { color: palette.inkSecondary, opacity: 0.12 },
-      itemStyle: { color: palette.inkSecondary },
-      connectNulls: false,
-      markArea: incidentMarkArea(incidents, palette),
-      markLine: {
-        symbol: "none",
-        silent: true,
-        lineStyle: { color: palette.degraded, type: "dashed" },
-        label: {
-          position: "insideStartTop",
-          formatter: `${ACCEPTABLE_JITTER_THRESHOLD_MS} ms`,
-          color: palette.inkSecondary,
+  widthPx?: number;
+  zoom?: ZoomRange;
+}): EChartsOption => {
+  const base = makeBaseAxes(palette, startMs, endMs, splitNumber);
+  const chipLabels = incidentChipLabels(incidents, { startMs, endMs, widthPx });
+  return {
+    ...base,
+    grid: withChipRow(base.grid, chipLabels),
+    dataZoom: makeZoom(zoom),
+    yAxis: makeValueAxis(palette, "{value} ms"),
+    tooltip: makeTooltip(palette, (value) => `${value.toFixed(2)} ms`),
+    series: [
+      {
+        type: "line",
+        name: "Jitter",
+        data: toSeriesData(slots, (point) => point.jitter ?? null),
+        showSymbol: false,
+        lineStyle: { color: palette.inkSecondary, width: 2 },
+        areaStyle: { color: palette.inkSecondary, opacity: 0.12 },
+        itemStyle: { color: palette.inkSecondary },
+        connectNulls: false,
+        markArea: markAreaOf(incidents, palette),
+        markLine: {
+          symbol: "none",
+          silent: true,
+          lineStyle: { color: palette.degraded, type: "dashed" },
+          data: [
+            {
+              yAxis: JITTER_THRESHOLD.value,
+              label: thresholdLabel(
+                palette,
+                JITTER_THRESHOLD,
+                peakOf(valuesOf(slots, (point) => point.jitter ?? null))
+              ),
+            },
+            ...incidentMarkLines(incidents, chipLabels, palette),
+          ],
         },
-        data: [
-          { yAxis: ACCEPTABLE_JITTER_THRESHOLD_MS },
-          ...incidentMarkLines(incidents, palette),
-        ],
       },
-    },
-  ],
-});
+    ],
+  };
+};
+
+type MedianLabelPlacement = Readonly<{
+  position: "insideEndTop" | "insideEndBottom";
+  offset?: [number, number];
+}>;
+
+const MEDIAN_LABEL_HEIGHT_PX = 16;
+// Labels collide once the medians sit within this share of the plotted range.
+const CLOSE_MEDIANS_RATIO = 0.1;
+// A label below a line this close to the axis would run into the tick labels.
+const NEAR_AXIS_RATIO = 0.08;
+
+const ABOVE: MedianLabelPlacement = { position: "insideEndTop" };
+
+/**
+ * Each median label sits above its own line. Medians close enough for those
+ * labels to collide put the lower label below its line instead, unless that
+ * line is near the axis: then both stay above and the higher label is lifted
+ * by one label height. `peak` is the highest plotted value, which sets the
+ * scale for "near the axis".
+ */
+const medianLabelPlacements = (
+  medians: ReturnType<typeof speedMedians>,
+  peak: number
+): Record<"download" | "upload", MedianLabelPlacement> => {
+  const { download, upload } = medians;
+  if (download === null || upload === null) {
+    return { download: ABOVE, upload: ABOVE };
+  }
+  const high = Math.max(download, upload);
+  const low = Math.min(download, upload);
+  if (high - low >= peak * CLOSE_MEDIANS_RATIO) {
+    return { download: ABOVE, upload: ABOVE };
+  }
+  if (low < peak * NEAR_AXIS_RATIO) {
+    const lifted: MedianLabelPlacement = {
+      ...ABOVE,
+      offset: [0, -MEDIAN_LABEL_HEIGHT_PX],
+    };
+    return download >= upload
+      ? { download: lifted, upload: ABOVE }
+      : { download: ABOVE, upload: lifted };
+  }
+  const below: MedianLabelPlacement = { position: "insideEndBottom" };
+  return download >= upload
+    ? { download: ABOVE, upload: below }
+    : { download: below, upload: ABOVE };
+};
+
+const DOWNLOAD_LINE = "Download line";
+const UPLOAD_LINE = "Upload line";
 
 export const makeSpeedChartOption = ({
   metrics,
@@ -537,7 +1018,6 @@ export const makeSpeedChartOption = ({
   metrics: ReadonlyArray<
     Pick<SpeedMetric, "timestamp" | "download_speed" | "upload_speed">
   >;
-  stats: SpeedStats;
   palette: ChartPalette;
   startMs: number;
   endMs: number;
@@ -557,7 +1037,64 @@ export const makeSpeedChartOption = ({
       new Date(metric.timestamp).getTime(),
       getValue(metric),
     ]);
+  const download = toPair((metric) => metric.download_speed ?? null);
+  const upload = toPair((metric) => metric.upload_speed ?? null);
+  const isDense = testsAreDense(
+    Array_.map(sorted, (metric) => new Date(metric.timestamp).getTime())
+  );
 
+  // A thin line joins the points only when tests come about hourly or more
+  // often: further apart, a line would assert a trend between tests that says
+  // nothing about the hours between them.
+  const joinedBy = (name: string, data: typeof download, color: string) =>
+    isDense
+      ? [
+          {
+            type: "line" as const,
+            name,
+            data,
+            symbol: "none",
+            silent: true,
+            lineStyle: { color, width: 1, opacity: 0.6 },
+            connectNulls: false,
+          },
+        ]
+      : [];
+
+  const medianLine = (
+    value: number | null,
+    color: string,
+    label: MedianLabelPlacement
+  ) =>
+    value === null
+      ? []
+      : [
+          {
+            yAxis: value,
+            lineStyle: { color, type: "dashed" as const, width: 1.5 },
+            label: {
+              ...label,
+              formatter: `${value.toFixed(0)} Mbps`,
+              color,
+              backgroundColor: palette.card,
+              borderRadius: 3,
+              padding: [1, 4],
+            },
+          },
+        ];
+
+  const [downloadColor, uploadColor] = palette.series;
+  const medians = speedMedians(sorted);
+  const placements = medianLabelPlacements(
+    medians,
+    Math.max(
+      0,
+      ...Array_.filter(
+        Array_.map([...download, ...upload], ([, value]) => value),
+        (value) => value !== null
+      )
+    )
+  );
   const base = makeBaseAxes(palette, startMs, endMs, splitNumber);
 
   return {
@@ -567,36 +1104,53 @@ export const makeSpeedChartOption = ({
     // without this the legend's default bottom position overlaps the axis.
     grid: { ...base.grid, bottom: 52 },
     yAxis: makeValueAxis(palette, "{value} Mbps"),
-    tooltip: makeTooltip(palette, (value) => `${value.toFixed(1)} Mbps`),
+    tooltip: makeTooltip(
+      palette,
+      (value) => `${value.toFixed(1)} Mbps`,
+      new Set([DOWNLOAD_LINE, UPLOAD_LINE])
+    ),
     legend: {
       bottom: 4,
+      data: ["Download", "Upload", "Median"],
       textStyle: {
         color: palette.inkSecondary,
         fontFamily: palette.fontFamily,
       },
     },
     series: [
+      ...joinedBy(DOWNLOAD_LINE, download, downloadColor),
+      ...joinedBy(UPLOAD_LINE, upload, uploadColor),
       {
-        type: "line",
+        type: "scatter",
         name: "Download",
-        data: toPair((metric) => metric.download_speed ?? null),
-        smooth: true,
-        lineStyle: { color: palette.accent, width: 2 },
-        areaStyle: { color: palette.band },
-        itemStyle: { color: palette.accent },
-      },
-      {
-        type: "line",
-        name: "Upload",
-        data: toPair((metric) => metric.upload_speed ?? null),
-        smooth: true,
+        data: download,
         symbol: "circle",
         symbolSize: 7,
-        lineStyle: { color: palette.inkSecondary, width: 2 },
-        itemStyle: {
-          color: palette.card,
-          borderColor: palette.inkSecondary,
-          borderWidth: 2,
+        itemStyle: { color: downloadColor },
+      },
+      {
+        type: "scatter",
+        name: "Upload",
+        data: upload,
+        symbol: "diamond",
+        symbolSize: 8,
+        itemStyle: { color: uploadColor },
+      },
+      // Carries the legend entry and both reference lines; it has no points.
+      {
+        type: "line",
+        name: "Median",
+        data: [],
+        symbol: "none",
+        lineStyle: { color: palette.inkSecondary, type: "dashed", width: 1.5 },
+        itemStyle: { color: palette.inkSecondary },
+        markLine: {
+          symbol: "none",
+          silent: true,
+          data: [
+            ...medianLine(medians.download, downloadColor, placements.download),
+            ...medianLine(medians.upload, uploadColor, placements.upload),
+          ],
         },
       },
     ],

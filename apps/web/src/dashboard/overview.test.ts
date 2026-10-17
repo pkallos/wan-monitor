@@ -1,6 +1,11 @@
+import type { Granularity } from "@shared/api/routes/metrics";
 import { Option } from "effect";
 import { describe, expect, test } from "vitest";
-import { Custom, Preset } from "@/dashboard/dateRange";
+import {
+  Custom,
+  granularityForSpeedtestRange,
+  Preset,
+} from "@/dashboard/dateRange";
 import {
   CONNECTION_STATUS,
   coverageNote,
@@ -12,6 +17,8 @@ import {
   networkText,
   percentText,
   railStats,
+  speedAveragesNote,
+  speedCadenceText,
   unreportedRailStats,
 } from "@/dashboard/overview";
 import {
@@ -22,11 +29,6 @@ import {
 
 const NOW_MS = Date.parse("2026-01-01T12:00:00.000Z");
 const THIRTY_SECONDS_AGO = Option.some(NOW_MS - 30_000);
-
-const CUSTOM_RANGE = Custom({
-  startTime: "2026-01-01T00:00:00.000Z",
-  endTime: "2026-01-08T00:00:00.000Z",
-});
 
 describe("CONNECTION_STATUS", () => {
   test("uses the live vocabulary for the status word", () => {
@@ -86,35 +88,55 @@ describe("describeRange", () => {
     expect(describeRange(Preset({ preset }))).toBe(phrase);
   });
 
-  test("names the dates of a custom range with 'to', the year once", () => {
-    expect(describeRange(CUSTOM_RANGE)).toBe("Jan 1 to Jan 8, 2026");
+  test("names the dates of a custom range of whole days with 'to', the year once", () => {
+    withTimeZone("UTC", () => {
+      expect(
+        describeRange(
+          Custom({
+            startTime: "2026-01-01T00:00:00.000Z",
+            endTime: "2026-01-08T23:59:59.999Z",
+          })
+        )
+      ).toBe("Jan 1 to Jan 8, 2026");
+    });
   });
 
   test("names both years when a custom range crosses a year boundary", () => {
-    expect(
-      describeRange(
-        Custom({
-          startTime: "2025-12-28T00:00:00.000Z",
-          endTime: "2026-01-03T23:59:59.999Z",
-        })
-      )
-    ).toBe("Dec 28, 2025 to Jan 3, 2026");
+    withTimeZone("UTC", () => {
+      expect(
+        describeRange(
+          Custom({
+            startTime: "2025-12-28T00:00:00.000Z",
+            endTime: "2026-01-03T23:59:59.999Z",
+          })
+        )
+      ).toBe("Dec 28, 2025 to Jan 3, 2026");
+    });
   });
 
-  test("names the one day of a custom range that starts and ends on it", () => {
-    expect(
-      describeRange(
-        Custom({
-          startTime: "2026-10-16T05:00:00.000Z",
-          endTime: "2026-10-16T05:30:00.000Z",
-        })
-      )
-    ).toBe("Oct 16, 2026");
+  test("names a span brushed on a chart by its start and end times", () => {
+    withTimeZone("UTC", () => {
+      expect(
+        describeRange(
+          Custom({
+            startTime: "2026-10-16T09:12:00.000Z",
+            endTime: "2026-10-16T12:40:00.000Z",
+          })
+        )
+      ).toBe("Oct 16, 9:12 AM to 12:40 PM");
+    });
   });
 
-  test("reads a custom range in UTC days, whatever the viewer's zone", () => {
-    withTimeZone("America/Los_Angeles", () => {
-      expect(describeRange(CUSTOM_RANGE)).toBe("Jan 1 to Jan 8, 2026");
+  test("names the date of the end too when a brushed span crosses midnight", () => {
+    withTimeZone("UTC", () => {
+      expect(
+        describeRange(
+          Custom({
+            startTime: "2026-10-16T22:00:00.000Z",
+            endTime: "2026-10-17T02:30:00.000Z",
+          })
+        )
+      ).toBe("Oct 16, 10:00 PM to Oct 17, 2:30 AM");
     });
   });
 });
@@ -279,24 +301,28 @@ describe("describeFetchErrors", () => {
 
 describe("lastTestLabel", () => {
   const AT = "2026-01-01T11:00:00.000Z";
+  const none = Option.none<Granularity>();
 
   test("names the newest test's time, speeds and server as a sentence", () => {
     withTimeZone("UTC", () => {
       expect(
-        lastTestLabel([
-          {
-            timestamp: "2026-01-01T09:00:00.000Z",
-            download_speed: 1,
-            upload_speed: 1,
-            server_location: "Old",
-          },
-          {
-            timestamp: AT,
-            download_speed: 100.4,
-            upload_speed: 10,
-            server_location: "Fremont, CA",
-          },
-        ])
+        lastTestLabel(
+          [
+            {
+              timestamp: "2026-01-01T09:00:00.000Z",
+              download_speed: 1,
+              upload_speed: 1,
+              server_location: "Old",
+            },
+            {
+              timestamp: AT,
+              download_speed: 100.4,
+              upload_speed: 10,
+              server_location: "Fremont, CA",
+            },
+          ],
+          none
+        )
       ).toEqual(
         Option.some(
           "Last test, Jan 1 at 11:00 AM: 100 Mbps down, 10.0 Mbps up (Fremont, CA)."
@@ -308,7 +334,10 @@ describe("lastTestLabel", () => {
   test("drops the server clause when the test recorded none", () => {
     withTimeZone("UTC", () => {
       expect(
-        lastTestLabel([{ timestamp: AT, download_speed: 50, upload_speed: 5 }])
+        lastTestLabel(
+          [{ timestamp: AT, download_speed: 50, upload_speed: 5 }],
+          none
+        )
       ).toEqual(
         Option.some(
           "Last test, Jan 1 at 11:00 AM: 50.0 Mbps down, 5.0 Mbps up."
@@ -319,7 +348,9 @@ describe("lastTestLabel", () => {
 
   test("says which measurement a test is missing instead of printing a dash", () => {
     withTimeZone("UTC", () => {
-      expect(lastTestLabel([{ timestamp: AT, download_speed: 50 }])).toEqual(
+      expect(
+        lastTestLabel([{ timestamp: AT, download_speed: 50 }], none)
+      ).toEqual(
         Option.some(
           "Last test, Jan 1 at 11:00 AM: 50.0 Mbps down, no upload reading."
         )
@@ -330,7 +361,10 @@ describe("lastTestLabel", () => {
   test("keeps a genuine zero reading distinct from a missing one", () => {
     withTimeZone("UTC", () => {
       expect(
-        lastTestLabel([{ timestamp: AT, download_speed: 0, upload_speed: 0 }])
+        lastTestLabel(
+          [{ timestamp: AT, download_speed: 0, upload_speed: 0 }],
+          none
+        )
       ).toEqual(
         Option.some("Last test, Jan 1 at 11:00 AM: 0.0 Mbps down, 0.0 Mbps up.")
       );
@@ -338,7 +372,84 @@ describe("lastTestLabel", () => {
   });
 
   test("is absent with no tests", () => {
-    expect(lastTestLabel([])).toEqual(Option.none());
+    expect(lastTestLabel([], none)).toEqual(Option.none());
+    expect(lastTestLabel([], Option.some("1h"))).toEqual(Option.none());
+  });
+
+  test.each([
+    ["1m", "Latest 1-minute average"],
+    ["5m", "Latest 5-minute average"],
+    ["15m", "Latest 15-minute average"],
+    ["1h", "Latest hourly average"],
+    ["6h", "Latest 6-hour average"],
+  ] as const)("calls a %s bucket the %s, never a test", (bucket, lead) => {
+    withTimeZone("UTC", () => {
+      expect(
+        lastTestLabel(
+          [
+            {
+              timestamp: AT,
+              download_speed: 100,
+              upload_speed: 10,
+              server_location: "Fremont, CA",
+            },
+          ],
+          Option.some(bucket)
+        )
+      ).toEqual(
+        Option.some(
+          `${lead}, Jan 1 at 11:00 AM: 100 Mbps down, 10.0 Mbps up (Fremont, CA).`
+        )
+      );
+    });
+  });
+
+  test("names a daily bucket by its UTC day, with no time of day", () => {
+    withTimeZone("America/Los_Angeles", () => {
+      expect(
+        lastTestLabel(
+          [
+            {
+              timestamp: "2026-01-02T00:00:00.000Z",
+              download_speed: 100,
+              upload_speed: 10,
+            },
+          ],
+          Option.some("1d")
+        )
+      ).toEqual(
+        Option.some("Latest daily average, Jan 2: 100 Mbps down, 10.0 Mbps up.")
+      );
+    });
+  });
+});
+
+describe("speedCadenceText", () => {
+  test("says how often a test runs, in words", () => {
+    expect(speedCadenceText(3600)).toBe("A test runs every hour.");
+    expect(speedCadenceText(21_600)).toBe("A test runs every 6 hours.");
+    expect(speedCadenceText(1800)).toBe("A test runs every 30 minutes.");
+  });
+});
+
+describe("speedAveragesNote", () => {
+  test.each([
+    ["1h", "Over 7 days or more, each point averages an hour of tests."],
+    ["6h", "Over 7 days or more, each point averages 6 hours of tests."],
+    ["1d", "Over 7 days or more, each point averages a day of tests."],
+  ] as const)("says what a %s bucket holds", (bucket, expected) => {
+    expect(speedAveragesNote(bucket)).toBe(expected);
+  });
+
+  test("takes its threshold from the one that decides when tests are bucketed", () => {
+    const window = (days: number) => ({
+      startTime: new Date(0).toISOString(),
+      endTime: new Date(days * 86_400_000).toISOString(),
+    });
+
+    expect(speedAveragesNote("1h")).toContain("7 days");
+    expect(granularityForSpeedtestRange(window(7))).toBeDefined();
+    expect(granularityForSpeedtestRange(window(6.9))).toBeUndefined();
   });
 });
 

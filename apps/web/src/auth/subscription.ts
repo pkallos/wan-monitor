@@ -58,6 +58,18 @@ export const activityDependenciesToStream = ({
     Effect.sync(() => isLoggedIn)
   );
 
+export const chartBrushDependenciesToStream = ({
+  isLoggedIn,
+}: {
+  readonly isLoggedIn: boolean;
+}): Stream.Stream<Message> =>
+  Stream.when(
+    Dashboard.chartBrushStream.pipe(
+      Stream.map((message) => GotDashboardMessage({ message }))
+    ),
+    Effect.sync(() => isLoggedIn)
+  );
+
 export const systemThemeModelToDependencies = (
   model: Model
 ): { readonly isSystemTheme: boolean } => ({
@@ -90,6 +102,13 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
     {
       modelToDependencies: activityModelToDependencies,
       dependenciesToStream: activityDependenciesToStream,
+    }
+  ),
+  dashboardChartBrush: entry(
+    { isLoggedIn: S.Boolean },
+    {
+      modelToDependencies: activityModelToDependencies,
+      dependenciesToStream: chartBrushDependenciesToStream,
     }
   ),
 }));

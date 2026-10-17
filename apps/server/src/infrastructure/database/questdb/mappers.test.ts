@@ -43,6 +43,48 @@ describe("mapMetricRow", () => {
     expect(result.upload_speed).toBeUndefined();
   });
 
+  it("should map a bucket's p50 and p95 latency when the query returned them", () => {
+    const result = mapMetricRow({
+      timestamp: "2024-01-01T12:00:00.000Z",
+      source: "ping",
+      latency: 15.5,
+      latency_p50: 14,
+      latency_p95: 31.5,
+    });
+
+    expect(result.latency_p50).toBe(14);
+    expect(result.latency_p95).toBe(31.5);
+  });
+
+  it("should read a percentile the driver returned as text as a number", () => {
+    const result = mapMetricRow({
+      timestamp: "2024-01-01T12:00:00.000Z",
+      source: "ping",
+      latency_p50: "14.5",
+      latency_p95: "31",
+    });
+
+    expect(result.latency_p50).toBe(14.5);
+    expect(result.latency_p95).toBe(31);
+  });
+
+  it("should leave the percentiles out of a row that has none, or a null one", () => {
+    const raw = mapMetricRow({
+      timestamp: "2024-01-01T12:00:00.000Z",
+      source: "ping",
+      latency: 15.5,
+    });
+    const empty = mapMetricRow({
+      timestamp: "2024-01-01T12:00:00.000Z",
+      source: "ping",
+      latency_p50: null,
+      latency_p95: null,
+    });
+
+    expect(raw.latency_p50).toBeUndefined();
+    expect(empty.latency_p95).toBeUndefined();
+  });
+
   it("should map complete speedtest metric row", () => {
     const row: Record<string, unknown> = {
       timestamp: "2024-01-01T12:00:00.000Z",

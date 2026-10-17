@@ -1,7 +1,6 @@
 import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
-import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
-import { Array as Array_ } from "effect";
+import { Array as Array_, Option, Order } from "effect";
 
 // Zero is a valid reading for every metric here (0% packet loss, 0ms-adjacent
 // latency), so the guard admits it.
@@ -14,6 +13,21 @@ const average = (values: Array_.NonEmptyReadonlyArray<number>): number =>
 const max = (values: Array_.NonEmptyReadonlyArray<number>): number =>
   Array_.reduce(values, Array_.headNonEmpty(values), (a, b) => Math.max(a, b));
 
+export interface SeriesFigures {
+  readonly avg: number;
+  readonly peak: number;
+}
+
+/** The average and highest value of a plotted series; none when it has no values. */
+export const seriesFigures = (
+  values: ReadonlyArray<number>
+): Option.Option<SeriesFigures> =>
+  Array_.match(values, {
+    onEmpty: () => Option.none(),
+    onNonEmpty: (nonEmpty) =>
+      Option.some({ avg: average(nonEmpty), peak: max(nonEmpty) }),
+  });
+
 export interface LatencyStats {
   readonly current: string;
   readonly avg: string;
@@ -21,94 +35,38 @@ export interface LatencyStats {
   readonly max: string;
 }
 
+type LatencyRow = Pick<Metric, "latency" | "latency_p50">;
+
+/** Whether the rows carry per-bucket percentiles, which makes p50 the line that is plotted. */
+export const hasLatencyPercentiles = (
+  rows: ReadonlyArray<Pick<Metric, "latency_p50">>
+): boolean => Array_.some(rows, ({ latency_p50 }) => latency_p50 !== undefined);
+
+/** The all-hosts latency line as plotted: the p50 of each bucket when there is one, else its latency. */
+export const latencyLine = (
+  rows: ReadonlyArray<LatencyRow>
+): ReadonlyArray<number> => {
+  const usesPercentiles = hasLatencyPercentiles(rows);
+  return Array_.filter(
+    Array_.map(rows, (row) =>
+      usesPercentiles ? row.latency_p50 : row.latency
+    ),
+    isFiniteNonNegative
+  );
+};
+
 export const calculateLatencyStats = (
-  data: ReadonlyArray<Pick<Metric, "latency">>
+  data: ReadonlyArray<LatencyRow>
 ): LatencyStats =>
-  Array_.match(
-    Array_.filter(
-      Array_.map(data, (d) => d.latency),
-      isFiniteNonNegative
-    ),
-    {
-      onEmpty: () => ({ current: "-", avg: "-", min: "-", max: "-" }),
-      onNonEmpty: (latencies) => ({
-        current: Array_.lastNonEmpty(latencies).toFixed(1),
-        avg: average(latencies).toFixed(1),
-        min: Math.min(...latencies).toFixed(1),
-        max: max(latencies).toFixed(1),
-      }),
-    }
-  );
-
-export interface PacketLossStats {
-  readonly current: string;
-  readonly avg: string;
-  readonly max: string;
-  readonly spikes: number;
-}
-
-export const calculatePacketLossStats = (
-  data: ReadonlyArray<Pick<Metric, "packet_loss">>
-): PacketLossStats =>
-  Array_.match(
-    Array_.filter(
-      Array_.map(data, (d) => d.packet_loss),
-      isFiniteNonNegative
-    ),
-    {
-      onEmpty: () => ({ current: "-", avg: "-", max: "-", spikes: 0 }),
-      onNonEmpty: (losses) => ({
-        current: Array_.lastNonEmpty(losses).toFixed(1),
-        avg: average(losses).toFixed(1),
-        max: max(losses).toFixed(1),
-        // Same threshold and same comparison as the connectivity SQL's
-        // degraded floor, so a reading the timeline calls degraded is the one
-        // this panel calls a spike.
-        spikes: Array_.filter(
-          losses,
-          (loss) => loss >= PACKET_LOSS_THRESHOLDS.degradedFloor
-        ).length,
-      }),
-    }
-  );
-
-export interface JitterStats {
-  readonly current: string;
-  readonly avg: string;
-  readonly stability: string;
-}
-
-export const calculateJitterStats = (
-  data: ReadonlyArray<Pick<Metric, "jitter">>
-): JitterStats =>
-  Array_.match(
-    Array_.filter(
-      Array_.map(data, (d) => d.jitter),
-      isFiniteNonNegative
-    ),
-    {
-      onEmpty: () => ({ current: "-", avg: "-", stability: "-" }),
-      onNonEmpty: (jitters) => {
-        const avg = average(jitters);
-        // Stability is the inverse of the coefficient of variation: lower
-        // variance relative to the average reads as more stable.
-        const variance = average(
-          Array_.map(jitters, (value) => (value - avg) ** 2)
-        );
-        const coefficientOfVariation = avg > 0 ? Math.sqrt(variance) / avg : 0;
-        const stability = Math.max(
-          0,
-          Math.min(100, 100 * (1 - coefficientOfVariation))
-        );
-
-        return {
-          current: Array_.lastNonEmpty(jitters).toFixed(1),
-          avg: avg.toFixed(1),
-          stability: stability.toFixed(0),
-        };
-      },
-    }
-  );
+  Array_.match(latencyLine(data), {
+    onEmpty: () => ({ current: "-", avg: "-", min: "-", max: "-" }),
+    onNonEmpty: (latencies) => ({
+      current: Array_.lastNonEmpty(latencies).toFixed(1),
+      avg: average(latencies).toFixed(1),
+      min: Math.min(...latencies).toFixed(1),
+      max: max(latencies).toFixed(1),
+    }),
+  });
 
 export interface SpeedStats {
   readonly avgDownload: string;
@@ -152,4 +110,54 @@ export const calculateSpeedStats = (
     maxDownload: downloadSummary.max,
     maxUpload: uploadSummary.max,
   };
+};
+
+const median = (values: ReadonlyArray<number>): number | null =>
+  Array_.match(Array_.sort(values, Order.Number), {
+    onEmpty: () => null,
+    onNonEmpty: (sorted) => {
+      const middle = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 1
+        ? sorted[middle]
+        : (sorted[middle - 1] + sorted[middle]) / 2;
+    },
+  });
+
+/** A failed speed test is stored as 0, which is no reading rather than a slow one. */
+const isMeasured = (value: number | undefined): value is number =>
+  value !== undefined && value > 0;
+
+export const speedMedians = (
+  data: ReadonlyArray<Pick<SpeedMetric, "download_speed" | "upload_speed">>
+): { readonly download: number | null; readonly upload: number | null } => ({
+  download: median(
+    Array_.filter(
+      Array_.map(data, (d) => d.download_speed),
+      isMeasured
+    )
+  ),
+  upload: median(
+    Array_.filter(
+      Array_.map(data, (d) => d.upload_speed),
+      isMeasured
+    )
+  ),
+});
+
+// Tests run hourly by default; a few seconds of drift and the odd slow test
+// must not push an hourly cadence over the line.
+const DENSE_TESTS_MAX_GAP_MS = 65 * 60 * 1000;
+
+/** Whether tests come about hourly or more often, judged by the typical gap between them. */
+export const testsAreDense = (timestampsMs: ReadonlyArray<number>): boolean => {
+  const sorted = Array_.sort(timestampsMs, Order.Number);
+  const gaps = Array_.zipWith(
+    Array_.drop(sorted, 1),
+    sorted,
+    (later, earlier) => later - earlier
+  );
+  return Option.exists(
+    Option.fromNullishOr(median(gaps)),
+    (gap) => gap <= DENSE_TESTS_MAX_GAP_MS
+  );
 };
