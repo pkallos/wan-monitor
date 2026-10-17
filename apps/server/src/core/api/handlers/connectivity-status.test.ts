@@ -1,11 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 import { DB_UNAVAILABLE } from "@shared/api/errors";
-import { DEFAULT_GRANULARITY } from "@wan-monitor/shared";
+import { DEFAULT_GRANULARITY, MAX_OUTAGE_SPAN_DAYS } from "@wan-monitor/shared";
 import { Cause, Clock, Effect, Exit, Layer, Option } from "effect";
 import { vi } from "vitest";
+import { MAX_OUTAGES } from "@/core/analytics/outages";
 import {
   getConnectivityStatusHandler,
   getLiveConnectivityHandler,
+  getOutagesHandler,
 } from "@/core/api/handlers/connectivity-status";
 import {
   DbUnavailable,
@@ -15,9 +17,13 @@ import {
 import type {
   ConnectivityStatusRow,
   LiveConnectivityRow,
+  OutageRun,
   QueryMetricsParams,
+  QueryOutageParams,
 } from "@/infrastructure/database/questdb/model";
 import { makeTestConfigLayer } from "@/test/config";
+import { invalidTimeRangeOf } from "@/test/invalid-time-range";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 const createMockQuestDB = (
   mockRows: unknown[],
@@ -36,6 +42,7 @@ const createMockQuestDB = (
   queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
   queryLatestPingTimestamp: () => Effect.succeed(null),
+  ...emptyAnalyticsQueries,
   close: () => Effect.void,
 });
 
@@ -524,6 +531,284 @@ describe("Connectivity Status Handlers", () => {
 
         return Effect.gen(function* () {
           const exit = yield* Effect.exit(getLiveConnectivityHandler());
+
+          expect(Exit.isFailure(exit)).toBe(true);
+          if (Exit.isFailure(exit)) {
+            const error = Cause.findErrorOption(exit.cause);
+            expect(Option.isSome(error)).toBe(true);
+            if (Option.isSome(error)) {
+              expect(error.value).toMatchObject({ error: DB_UNAVAILABLE });
+            }
+          }
+        }).pipe(Effect.provide(handlerLayers(db)));
+      }
+    );
+  });
+
+  describe("getOutages", () => {
+    const START = Date.parse("2024-01-01T00:00:00Z");
+
+    const outageRun = (
+      runId: number,
+      startSeconds: number,
+      lastSeconds: number,
+      overrides: Partial<OutageRun> = {}
+    ): OutageRun => ({
+      run_id: runId,
+      start_time: new Date(START + startSeconds * 1000).toISOString(),
+      last_time: new Date(START + lastSeconds * 1000).toISOString(),
+      had_down: true,
+      max_packet_loss: 100,
+      peak_latency: null,
+      affected_hosts: [],
+      ...overrides,
+    });
+
+    const dbWithRuns = (
+      runs: readonly OutageRun[],
+      onQuery?: (params: QueryOutageParams) => void
+    ): QuestDBService => ({
+      ...createMockQuestDB([]),
+      queryOutageRuns: (params) => {
+        onQuery?.(params);
+        return Effect.succeed(runs);
+      },
+    });
+
+    const query = {
+      startTime: "2024-01-01T00:00:00Z",
+      endTime: "2024-01-01T01:00:00Z",
+    };
+
+    it.effect("returns outages newest first with the window in meta", () => {
+      const db = dbWithRuns([
+        outageRun(1, 0, 0, { affected_hosts: ["8.8.8.8"] }),
+        outageRun(2, 60, 60, { affected_hosts: ["8.8.8.8"] }),
+      ]);
+
+      return Effect.gen(function* () {
+        const result = yield* getOutagesHandler({ query });
+
+        expect(result.data.map((outage) => outage.start)).toEqual([
+          "2024-01-01T00:01:00.000Z",
+          "2024-01-01T00:00:00.000Z",
+        ]);
+        expect(result.data[0]).toMatchObject({
+          status: "down",
+          durationSeconds: 30,
+          affectedHosts: ["8.8.8.8"],
+        });
+        expect(result.meta).toEqual({
+          startTime: "2024-01-01T00:00:00.000Z",
+          endTime: "2024-01-01T01:00:00.000Z",
+          count: 2,
+          totalCount: 2,
+        });
+      }).pipe(Effect.provide(handlerLayers(db)));
+    });
+
+    it.effect("returns an empty log when no outage ran", () => {
+      const db = dbWithRuns([]);
+
+      return Effect.gen(function* () {
+        const result = yield* getOutagesHandler({ query });
+
+        expect(result.data).toEqual([]);
+        expect(result.meta.totalCount).toBe(0);
+      }).pipe(Effect.provide(handlerLayers(db)));
+    });
+
+    it.effect(
+      "caps the log at the 500 newest and reports the full count",
+      () => {
+        const runs = Array.from({ length: 600 }, (_, i) =>
+          outageRun(i + 1, i * 60, i * 60)
+        );
+        const db = dbWithRuns(runs);
+
+        return Effect.gen(function* () {
+          const result = yield* getOutagesHandler({
+            query: {
+              startTime: "2024-01-01T00:00:00Z",
+              endTime: "2024-01-02T00:00:00Z",
+            },
+          });
+
+          expect(result.data).toHaveLength(MAX_OUTAGES);
+          expect(result.meta.count).toBe(MAX_OUTAGES);
+          expect(result.meta.totalCount).toBe(600);
+          // Newest first: the 600th outage leads and the 101st is last.
+          expect(result.data[0].start).toBe(
+            new Date(START + 599 * 60_000).toISOString()
+          );
+          expect(result.data[MAX_OUTAGES - 1].start).toBe(
+            new Date(START + 100 * 60_000).toISOString()
+          );
+        }).pipe(Effect.provide(handlerLayers(db)));
+      }
+    );
+
+    it.effect("queries the requested window", () => {
+      const onQuery = vi.fn();
+      const db = dbWithRuns([], onQuery);
+
+      return Effect.gen(function* () {
+        yield* getOutagesHandler({ query });
+
+        expect(onQuery).toHaveBeenCalledWith({
+          startTime: new Date("2024-01-01T00:00:00Z"),
+          endTime: new Date("2024-01-01T01:00:00Z"),
+          mergeGapMs: 75_000,
+        });
+      }).pipe(Effect.provide(handlerLayers(db)));
+    });
+
+    it.effect(
+      "defaults to the trailing 24 hours and reports that window",
+      () => {
+        const onQuery = vi.fn();
+        const db = dbWithRuns([], onQuery);
+
+        return Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const result = yield* getOutagesHandler({ query: {} });
+
+          expect(onQuery).toHaveBeenCalledWith({
+            startTime: new Date(now - 24 * 60 * 60 * 1000),
+            endTime: new Date(now),
+            mergeGapMs: 75_000,
+          });
+          expect(result.meta).toMatchObject({
+            startTime: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+            endTime: new Date(now).toISOString(),
+          });
+        }).pipe(Effect.provide(handlerLayers(db)));
+      }
+    );
+
+    it.effect("measures the cycle period over the window it reports", () => {
+      const onPeriod = vi.fn();
+      const db: QuestDBService = {
+        ...dbWithRuns([]),
+        queryCyclePeriod: (params) => {
+          onPeriod(params);
+          return Effect.succeed(null);
+        },
+      };
+
+      return Effect.gen(function* () {
+        yield* getOutagesHandler({ query });
+
+        expect(onPeriod).toHaveBeenCalledWith({
+          startTime: new Date("2024-01-01T00:00:00Z"),
+          endTime: new Date("2024-01-01T01:00:00Z"),
+        });
+      }).pipe(Effect.provide(handlerLayers(db)));
+    });
+
+    it.effect(
+      "sizes the merge gap and each outage's end from the measured period",
+      () => {
+        const onQuery = vi.fn();
+        const runs = [outageRun(1, 0, 100)];
+        const measured: QuestDBService = {
+          ...dbWithRuns(runs, onQuery),
+          queryCyclePeriod: () => Effect.succeed(100_000),
+        };
+
+        return Effect.gen(function* () {
+          const withPeriod = yield* getOutagesHandler({ query }).pipe(
+            Effect.provide(handlerLayers(measured))
+          );
+          const withoutPeriod = yield* getOutagesHandler({ query }).pipe(
+            Effect.provide(handlerLayers(dbWithRuns(runs, onQuery)))
+          );
+
+          expect(onQuery).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ mergeGapMs: 250_000 })
+          );
+          expect(onQuery).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ mergeGapMs: 75_000 })
+          );
+          expect(withPeriod.data[0].durationSeconds).toBe(200);
+          expect(withoutPeriod.data[0].durationSeconds).toBe(130);
+        });
+      }
+    );
+
+    it.effect("accepts a span of exactly 90 days", () => {
+      const db = dbWithRuns([]);
+
+      return Effect.gen(function* () {
+        const result = yield* getOutagesHandler({
+          query: {
+            startTime: "2024-01-01T00:00:00Z",
+            endTime: new Date(
+              START + MAX_OUTAGE_SPAN_DAYS * 24 * 60 * 60 * 1000
+            ).toISOString(),
+          },
+        });
+
+        expect(result.data).toEqual([]);
+      }).pipe(Effect.provide(handlerLayers(db)));
+    });
+
+    it.effect(
+      "rejects a span over 90 days before touching the database",
+      () => {
+        const onQuery = vi.fn();
+        const db = dbWithRuns([], onQuery);
+
+        return Effect.gen(function* () {
+          const error = yield* invalidTimeRangeOf(
+            getOutagesHandler({
+              query: {
+                startTime: "2024-01-01T00:00:00Z",
+                endTime: new Date(
+                  START + MAX_OUTAGE_SPAN_DAYS * 24 * 60 * 60 * 1000 + 1
+                ).toISOString(),
+              },
+            })
+          );
+
+          expect(error.message).toContain("90 days");
+          expect(onQuery).not.toHaveBeenCalled();
+        }).pipe(Effect.provide(handlerLayers(db)));
+      }
+    );
+
+    it.effect("rejects a start after the end", () => {
+      const onQuery = vi.fn();
+      const db = dbWithRuns([], onQuery);
+
+      return Effect.gen(function* () {
+        const error = yield* invalidTimeRangeOf(
+          getOutagesHandler({
+            query: {
+              startTime: "2024-01-02T00:00:00Z",
+              endTime: "2024-01-01T00:00:00Z",
+            },
+          })
+        );
+
+        expect(error.message).toContain("startTime");
+        expect(onQuery).not.toHaveBeenCalled();
+      }).pipe(Effect.provide(handlerLayers(db)));
+    });
+
+    it.effect(
+      "maps an unreachable database to the shared 503 error body",
+      () => {
+        const db: QuestDBService = {
+          ...createMockQuestDB([]),
+          queryOutageRuns: () =>
+            Effect.fail(new DbUnavailable({ message: "connection refused" })),
+        };
+
+        return Effect.gen(function* () {
+          const exit = yield* Effect.exit(getOutagesHandler({ query }));
 
           expect(Exit.isFailure(exit)).toBe(true);
           if (Exit.isFailure(exit)) {

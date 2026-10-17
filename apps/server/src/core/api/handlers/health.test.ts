@@ -7,6 +7,7 @@ import {
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
 import { DatabaseConnectionError } from "@/infrastructure/database/questdb/errors";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 const createMockQuestDB = (healthy: boolean): QuestDBService => ({
   health: () =>
@@ -23,6 +24,7 @@ const createMockQuestDB = (healthy: boolean): QuestDBService => ({
   queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
   queryLatestPingTimestamp: () => Effect.succeed(null),
+  ...emptyAnalyticsQueries,
   close: () => Effect.void,
 });
 

@@ -12,6 +12,7 @@ import {
   PingService,
 } from "@/infrastructure/ping/service";
 import { makeTestConfigLayer } from "@/test/config";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 // Mock config
 const TestConfigLive = makeTestConfigLayer({
@@ -40,6 +41,7 @@ const MockQuestDBLive = Layer.succeed(QuestDB, {
   queryLiveConnectivity: vi.fn(),
   queryEarliestTimestamp: vi.fn(),
   queryLatestPingTimestamp: vi.fn(),
+  ...emptyAnalyticsQueries,
   health: vi.fn(),
   close: vi.fn(),
 });

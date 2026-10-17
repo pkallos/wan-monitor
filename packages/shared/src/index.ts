@@ -5,7 +5,9 @@ export type {
   ConnectivityStatusPoint,
   ConnectivityStatusResponseType,
   GetLiveConnectivityResponseType,
+  GetOutagesResponseType,
   LiveConnectivityStatus,
+  Outage,
 } from "./api/routes/connectivity-status";
 export { LiveConnectivityStatusSchema } from "./api/routes/connectivity-status";
 export type {
@@ -20,6 +22,12 @@ export type {
   SpeedTestResponseType,
 } from "./api/routes/speedtest";
 export { SpeedMetricSchema } from "./api/routes/speedtest";
+export type {
+  GetSummaryResponseType,
+  HostSummary,
+  RangeSummary,
+  SpeedSummary,
+} from "./api/routes/summary";
 export {
   DEFAULT_GRANULARITY,
   DEGRADED_BUCKET_MIN_SHARE,
@@ -27,6 +35,7 @@ export {
   LIVE_WINDOW_MIN_SECONDS,
   LIVE_WINDOW_PING_MULTIPLIER,
   liveConnectivityWindowSeconds,
+  MAX_OUTAGE_SPAN_DAYS,
   PACKET_LOSS_THRESHOLDS,
   VALID_GRANULARITIES,
 } from "./constants";

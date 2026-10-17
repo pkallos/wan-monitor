@@ -13,25 +13,42 @@ import {
 } from "@/infrastructure/database/questdb/errors";
 import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
 import {
+  attachOutageHosts,
   mapConnectivityStatusRow,
+  mapCyclePeriodMs,
+  mapHostStatsRow,
   mapLiveConnectivityRow,
   mapMetricRow,
+  mapOutageHostRow,
+  mapOutageRunRow,
+  mapSummaryStatsRow,
 } from "@/infrastructure/database/questdb/mappers";
 import type {
   ConnectivityStatusRow,
+  HostStatsRow,
   LiveConnectivityRow,
   MetricRow,
+  OutageRun,
   QueryMetricsParams,
+  QueryOutageParams,
   QuerySpeedtestsParams,
+  QueryWindowParams,
+  SummaryStatsRow,
 } from "@/infrastructure/database/questdb/model";
 import { configurePgTypeParsers } from "@/infrastructure/database/questdb/pgwire";
 import {
   buildQueryConnectivityStatus,
+  buildQueryCyclePeriod,
   buildQueryEarliestTimestamp,
+  buildQueryHostStats,
   buildQueryLatestPingTimestamp,
   buildQueryLiveConnectivity,
   buildQueryMetrics,
+  buildQueryOutageHosts,
+  buildQueryOutageRuns,
   buildQuerySpeedtests,
+  buildQuerySummaryStats,
+  type SqlQuerySpec,
 } from "@/infrastructure/database/questdb/queries";
 import {
   errorMessage,
@@ -71,6 +88,21 @@ export interface QuestDBService {
     string | null,
     DatabaseQueryError | DbUnavailable
   >;
+  readonly querySummaryStats: (
+    params: QueryWindowParams
+  ) => Effect.Effect<SummaryStatsRow, DatabaseQueryError | DbUnavailable>;
+  readonly queryHostStats: (
+    params: QueryWindowParams
+  ) => Effect.Effect<
+    readonly HostStatsRow[],
+    DatabaseQueryError | DbUnavailable
+  >;
+  readonly queryOutageRuns: (
+    params: QueryOutageParams
+  ) => Effect.Effect<readonly OutageRun[], DatabaseQueryError | DbUnavailable>;
+  readonly queryCyclePeriod: (
+    params: QueryWindowParams
+  ) => Effect.Effect<number | null, DatabaseQueryError | DbUnavailable>;
   readonly health: () => Effect.Effect<
     DatabaseHealth,
     DatabaseConnectionError | DbUnavailable
@@ -316,6 +348,82 @@ const make = Effect.gen(function* () {
       )
     );
 
+  const runRows = (
+    spec: SqlQuerySpec,
+    label: string
+  ): Effect.Effect<
+    readonly Record<string, unknown>[],
+    DatabaseQueryError | DbUnavailable
+  > =>
+    Effect.gen(function* () {
+      const conn = yield* connection.getConnection;
+
+      const result = yield* Effect.tryPromise({
+        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
+        catch: (error) => {
+          const msg = errorMessage(error);
+          if (isLikelyConnectionError(msg)) {
+            return new DbUnavailable({ message: msg });
+          }
+          return new DatabaseQueryError({
+            message: `Failed to query ${label}: ${msg}`,
+          });
+        },
+      });
+
+      return result.rows ?? [];
+    }).pipe(
+      Effect.catchTag("DbUnavailable", (e) =>
+        connection
+          .markDisconnected(e.message)
+          .pipe(Effect.andThen(Effect.fail(e)))
+      )
+    );
+
+  const querySummaryStats = (
+    params: QueryWindowParams
+  ): Effect.Effect<SummaryStatsRow, DatabaseQueryError | DbUnavailable> =>
+    buildQuerySummaryStats(params, table).pipe(
+      Effect.flatMap((spec) => runRows(spec, "summary stats")),
+      Effect.map((rows) => mapSummaryStatsRow(rows[0] ?? {}))
+    );
+
+  const queryHostStats = (
+    params: QueryWindowParams
+  ): Effect.Effect<
+    readonly HostStatsRow[],
+    DatabaseQueryError | DbUnavailable
+  > =>
+    buildQueryHostStats(params, table).pipe(
+      Effect.flatMap((spec) => runRows(spec, "host stats")),
+      Effect.map((rows) => rows.map(mapHostStatsRow))
+    );
+
+  const queryOutageRuns = (
+    params: QueryOutageParams
+  ): Effect.Effect<readonly OutageRun[], DatabaseQueryError | DbUnavailable> =>
+    Effect.all(
+      {
+        runs: buildQueryOutageRuns(params, table).pipe(
+          Effect.flatMap((spec) => runRows(spec, "outage runs")),
+          Effect.map((rows) => rows.map(mapOutageRunRow))
+        ),
+        hosts: buildQueryOutageHosts(params, table).pipe(
+          Effect.flatMap((spec) => runRows(spec, "outage hosts")),
+          Effect.map((rows) => rows.map(mapOutageHostRow))
+        ),
+      },
+      { concurrency: "unbounded" }
+    ).pipe(Effect.map(({ runs, hosts }) => attachOutageHosts(runs, hosts)));
+
+  const queryCyclePeriod = (
+    params: QueryWindowParams
+  ): Effect.Effect<number | null, DatabaseQueryError | DbUnavailable> =>
+    buildQueryCyclePeriod(params, table).pipe(
+      Effect.flatMap((spec) => runRows(spec, "cycle period")),
+      Effect.map((rows) => mapCyclePeriodMs(rows[0]))
+    );
+
   const health = (): Effect.Effect<
     DatabaseHealth,
     DatabaseConnectionError | DbUnavailable
@@ -387,11 +495,17 @@ const make = Effect.gen(function* () {
     queryLiveConnectivity,
     queryEarliestTimestamp,
     queryLatestPingTimestamp,
+    querySummaryStats,
+    queryHostStats,
+    queryOutageRuns,
+    queryCyclePeriod,
     health,
     close,
   } satisfies QuestDBService;
 });
 
-export const QuestDBLive = Layer.effect(QuestDB, make).pipe(
+export const QuestDBOverConnection = Layer.effect(QuestDB, make);
+
+export const QuestDBLive = QuestDBOverConnection.pipe(
   Layer.provide(QuestDBConnectionLive)
 );

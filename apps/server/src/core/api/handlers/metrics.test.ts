@@ -13,6 +13,7 @@ import type {
   MetricRow,
   QueryMetricsParams,
 } from "@/infrastructure/database/questdb/model";
+import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
   health: () =>
@@ -25,6 +26,7 @@ const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
   queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
   queryLatestPingTimestamp: () => Effect.succeed(null),
+  ...emptyAnalyticsQueries,
   close: () => Effect.void,
 });
 
