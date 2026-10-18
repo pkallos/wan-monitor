@@ -3,7 +3,12 @@ import { Effect, Fiber, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { GotDashboardMessage } from "@/auth/message";
-import { Checking, initLoggedOut, LoggedIn } from "@/auth/model";
+import {
+  Checking,
+  initLoggedOut,
+  LoggedIn,
+  ValidatingToken,
+} from "@/auth/model";
 import {
   activityDependenciesToStream,
   activityModelToDependencies,
@@ -32,10 +37,15 @@ const initDashboardModel = (
 ) => realInitDashboardModel(settings, NOW_MS);
 
 describe("modelToDependencies", () => {
-  test("is never logged in while Checking or LoggedOut", () => {
+  test("is never logged in while Checking, ValidatingToken or LoggedOut", () => {
     expect(
       modelToDependencies(
         Checking({ maybeToken: Option.none(), settings: defaultSettings() })
+      )
+    ).toEqual({ isPaused: true, isIdle: false, isLoggedIn: false });
+    expect(
+      modelToDependencies(
+        ValidatingToken({ token: "stored-token", settings: defaultSettings() })
       )
     ).toEqual({ isPaused: true, isIdle: false, isLoggedIn: false });
     expect(modelToDependencies(initLoggedOut(defaultSettings()))).toEqual({
@@ -209,9 +219,10 @@ describe("activityModelToDependencies", () => {
       dashboard: { ...initDashboardModel(defaultSettings()), isIdle },
     });
 
-  test("is never logged in or idle while Checking or LoggedOut", () => {
+  test("is never logged in or idle while Checking, ValidatingToken or LoggedOut", () => {
     const states = [
       Checking({ maybeToken: Option.none(), settings: defaultSettings() }),
+      ValidatingToken({ token: "stored-token", settings: defaultSettings() }),
       initLoggedOut(defaultSettings()),
     ];
 
@@ -293,9 +304,10 @@ describe("activityDependenciesToStream", () => {
 });
 
 describe("clockModelToDependencies", () => {
-  test("is not logged in, counting minutes, while Checking or LoggedOut", () => {
+  test("is not logged in, counting minutes, while Checking, ValidatingToken or LoggedOut", () => {
     const states = [
       Checking({ maybeToken: Option.none(), settings: defaultSettings() }),
+      ValidatingToken({ token: "stored-token", settings: defaultSettings() }),
       initLoggedOut(defaultSettings()),
     ];
 

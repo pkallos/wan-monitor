@@ -129,7 +129,7 @@ export const Logout = Command.define("Logout", {
 });
 
 export const SaveSession = Command.define("SaveSession", {
-  args: { token: S.String, username: S.String },
+  args: { token: S.String },
   messages: [CompletedSaveSession, FailedSaveSession],
   execute: (args) =>
     saveSession(args).pipe(

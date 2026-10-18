@@ -69,7 +69,10 @@ import { hostLatencyFor } from "@/dashboard/view/derived";
 // `now` is injected (rather than read via `Date.now()` here) so `update`
 // stays pure with respect to its inputs — the app boundary (auth/update.ts)
 // supplies the real clock, and tests can supply a fixed one.
-export type Context = { readonly token: string; readonly now: () => number };
+export type Context = {
+  readonly maybeToken: Option.Option<string>;
+  readonly now: () => number;
+};
 
 type StepReturn = Update.Return<Model, Message>;
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>;
@@ -102,7 +105,10 @@ const fetchEarliestDataIfUnknown =
   (context: Context) =>
   (model: Model): StepReturn =>
     Option.isNone(model.maybeEarliestDataMs)
-      ? { model, commands: [FetchEarliestData({ token: context.token })] }
+      ? {
+          model,
+          commands: [FetchEarliestData({ maybeToken: context.maybeToken })],
+        }
       : { model };
 
 const refetchEarliestDataForAllTime =
@@ -174,14 +180,14 @@ type ResourceFetch =
   | Readonly<{
       scope: "range";
       fetch: (
-        token: string,
+        maybeToken: Option.Option<string>,
         request: RangeRequest,
         model: Model
       ) => Command.Command<Message>;
     }>
   | Readonly<{
       scope: "global";
-      fetch: (token: string) => Command.Command<Message>;
+      fetch: (maybeToken: Option.Option<string>) => Command.Command<Message>;
     }>;
 
 type ResourceSpec<A, E> = ResourceFetch &
@@ -212,9 +218,9 @@ const resource = <A, E>(spec: ResourceSpec<A, E>): Resource => {
   ): ReadonlyArray<Command.Command<Message>> =>
     spec.scope === "range"
       ? rangeFetches(model, [
-          spec.fetch(context.token, rangeRequest(model), model),
+          spec.fetch(context.maybeToken, rangeRequest(model), model),
         ])
-      : [spec.fetch(context.token)];
+      : [spec.fetch(context.maybeToken)];
 
   const step =
     (transition: Transition<A, E>): LifecycleStep =>
@@ -241,7 +247,7 @@ const resource = <A, E>(spec: ResourceSpec<A, E>): Resource => {
 
 const METRICS = resource({
   scope: "range",
-  fetch: (token, request) => FetchMetrics({ token, ...request }),
+  fetch: (maybeToken, request) => FetchMetrics({ maybeToken, ...request }),
   read: (model) => model.metrics,
   write: (model, metrics) => modifyFields(model, { metrics: () => metrics }),
   isWanted: always,
@@ -252,7 +258,8 @@ const METRICS = resource({
 
 const SPEEDTEST_HISTORY = resource({
   scope: "range",
-  fetch: (token, request) => FetchSpeedtestHistory({ token, ...request }),
+  fetch: (maybeToken, request) =>
+    FetchSpeedtestHistory({ maybeToken, ...request }),
   read: (model) => model.speedtestHistory,
   write: (model, speedtestHistory) =>
     modifyFields(model, { speedtestHistory: () => speedtestHistory }),
@@ -264,7 +271,8 @@ const SPEEDTEST_HISTORY = resource({
 
 const CONNECTIVITY_STATUS = resource({
   scope: "range",
-  fetch: (token, request) => FetchConnectivityStatus({ token, ...request }),
+  fetch: (maybeToken, request) =>
+    FetchConnectivityStatus({ maybeToken, ...request }),
   read: (model) => model.connectivityStatus,
   write: (model, connectivityStatus) =>
     modifyFields(model, { connectivityStatus: () => connectivityStatus }),
@@ -276,7 +284,7 @@ const CONNECTIVITY_STATUS = resource({
 
 const LIVE_CONNECTIVITY = resource({
   scope: "global",
-  fetch: (token) => FetchLiveConnectivity({ token }),
+  fetch: (maybeToken) => FetchLiveConnectivity({ maybeToken }),
   read: (model) => model.liveConnectivity,
   write: (model, liveConnectivity) =>
     modifyFields(model, { liveConnectivity: () => liveConnectivity }),
@@ -288,7 +296,7 @@ const LIVE_CONNECTIVITY = resource({
 
 const SUMMARY = resource({
   scope: "range",
-  fetch: (token, request) => FetchSummary({ token, ...request }),
+  fetch: (maybeToken, request) => FetchSummary({ maybeToken, ...request }),
   read: (model) => model.summary,
   write: (model, summary) => modifyFields(model, { summary: () => summary }),
   isWanted: always,
@@ -299,7 +307,7 @@ const SUMMARY = resource({
 
 const OUTAGES = resource({
   scope: "range",
-  fetch: (token, request) => FetchOutages({ token, ...request }),
+  fetch: (maybeToken, request) => FetchOutages({ maybeToken, ...request }),
   read: (model) => model.outages,
   write: (model, outages) => modifyFields(model, { outages: () => outages }),
   isWanted: always,
@@ -311,7 +319,7 @@ const OUTAGES = resource({
 // The host list is static config, so a tick only retries a failed one.
 const PING_HOSTS = resource({
   scope: "global",
-  fetch: (token) => FetchPingHosts({ token }),
+  fetch: (maybeToken) => FetchPingHosts({ maybeToken }),
   read: (model) => model.pingHosts,
   write: (model, pingHosts) =>
     modifyFields(model, { pingHosts: () => pingHosts }),
@@ -325,8 +333,12 @@ const PING_HOSTS = resource({
 // it needs the host list first.
 const HOST_LATENCY = resource({
   scope: "range",
-  fetch: (token, request, model) =>
-    FetchHostLatency({ token, ...request, hosts: configuredHostNames(model) }),
+  fetch: (maybeToken, request, model) =>
+    FetchHostLatency({
+      maybeToken,
+      ...request,
+      hosts: configuredHostNames(model),
+    }),
   read: (model) => model.hostLatency,
   write: (model, hostLatency) =>
     modifyFields(model, { hostLatency: () => hostLatency }),
@@ -616,7 +628,7 @@ const startSpeedtest =
   (context: Context) =>
   (model: Model): StepReturn => ({
     model: modifyFields(model, { speedtestTrigger: () => AsyncData.Loading() }),
-    commands: [TriggerSpeedtest({ token: context.token })],
+    commands: [TriggerSpeedtest({ maybeToken: context.maybeToken })],
   });
 
 const selectMenuItem = (

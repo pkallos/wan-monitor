@@ -14,6 +14,7 @@ import {
   LoggedIn,
   Session,
   Unreachable,
+  ValidatingToken,
 } from "@/auth/model";
 import { update } from "@/auth/update";
 import { view } from "@/auth/view";
@@ -87,6 +88,19 @@ describe("auth view", () => {
         Checking({ maybeToken: Option.none(), settings: defaultSettings() })
       ),
       Scene.expect(Scene.role("status")).toExist()
+    );
+  });
+
+  test("shows the same loading indicator while validating a stored token", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(
+        ValidatingToken({
+          token: "stored-token",
+          settings: defaultSettings(),
+        })
+      ),
+      Scene.expect(Scene.role("status")).toHaveText("Loading…")
     );
   });
 

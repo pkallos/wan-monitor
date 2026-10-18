@@ -62,3 +62,41 @@ test("shows the DB-unavailable message and recovers", async ({ page }) => {
   await expect(banner).toBeHidden({ timeout: 30_000 });
   await expect(latencyChartCanvas(page)).toBeVisible({ timeout: 10_000 });
 });
+
+test("keeps the dashboard and shows a failed request when a proxy answers HTML", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "WAN Monitor" })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(latencyChartCanvas(page)).toBeVisible({ timeout: 10_000 });
+
+  await page.route(METRICS_ROUTE, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "text/html",
+      body: "<html><body>no available server</body></html>",
+    })
+  );
+  await applyPreset(page, "Last 7 days");
+
+  await expect(page.getByRole("alert")).toContainText(
+    "Metrics: Request failed",
+    { timeout: 15_000 }
+  );
+  await expect(
+    page.getByRole("heading", { name: "WAN Monitor" })
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Foldkit encountered an unrecoverable error/)
+  ).toBeHidden();
+
+  await page.unroute(METRICS_ROUTE);
+  await applyPreset(page, "Last 30 days");
+
+  await expect(page.getByRole("alert")).toBeHidden({ timeout: 30_000 });
+  await expect(latencyChartCanvas(page)).toBeVisible({ timeout: 10_000 });
+});

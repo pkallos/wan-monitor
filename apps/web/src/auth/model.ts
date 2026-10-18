@@ -15,6 +15,12 @@ export const Checking = ts("Checking", {
 });
 export type Checking = typeof Checking.Type;
 
+export const ValidatingToken = ts("ValidatingToken", {
+  token: S.String,
+  settings: Settings,
+});
+export type ValidatingToken = typeof ValidatingToken.Type;
+
 export const LoggedOut = ts("LoggedOut", {
   username: S.String,
   password: S.String,
@@ -37,7 +43,13 @@ export const LoggedIn = ts("LoggedIn", {
 });
 export type LoggedIn = typeof LoggedIn.Type;
 
-export const Model = S.Union([Checking, LoggedOut, Unreachable, LoggedIn]);
+export const Model = S.Union([
+  Checking,
+  ValidatingToken,
+  LoggedOut,
+  Unreachable,
+  LoggedIn,
+]);
 export type Model = typeof Model.Type;
 
 export const initLoggedOut = (
@@ -60,6 +72,7 @@ export const currentSettings = (model: Model): Settings =>
     M.withReturnType<Settings>(),
     M.tagsExhaustive({
       Checking: (checking) => checking.settings,
+      ValidatingToken: (validating) => validating.settings,
       LoggedOut: (loggedOut) => loggedOut.settings,
       Unreachable: (unreachable) => unreachable.settings,
       LoggedIn: (loggedIn) => Dashboard.settingsFromModel(loggedIn.dashboard),

@@ -14,15 +14,25 @@ import {
   currentSettings,
   initLoggedOut,
   LoggedIn,
+  type LoggedOut,
   type Model,
   Session,
   Unreachable,
+  ValidatingToken,
 } from "@/auth/model";
 import * as Dashboard from "@/dashboard";
 import type { Settings } from "@/storage";
 
 type UpdateReturn = Update.Return<Model, Message>;
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
+
+// No session (auth disabled) means no token, so no Authorization header.
+const dashboardContext = (
+  maybeSession: Option.Option<Session>
+): Dashboard.Context => ({
+  maybeToken: Option.map(maybeSession, (session) => session.token),
+  now: Date.now,
+});
 
 // A newly LoggedIn Model always starts its dashboard the same way regardless
 // of how it got here (auth disabled, a validated stored token, or a fresh
@@ -31,14 +41,13 @@ const withUpdateReturn = M.withReturnType<UpdateReturn>();
 // round-trip.
 const enterLoggedIn = (
   maybeSession: Option.Option<Session>,
-  token: string,
   settings: Settings
 ): UpdateReturn => {
   const { model: dashboardModel, commands: dashboardCommands } =
     Dashboard.update(
       Dashboard.initModel(settings, Date.now()),
       Dashboard.EnteredDashboard(),
-      { token, now: Date.now }
+      dashboardContext(maybeSession)
     );
 
   return {
@@ -55,34 +64,88 @@ const unreachable = (
   retry: Unreachable["retry"]
 ): Model => Unreachable({ token, settings, retry });
 
-type PendingCheck = {
+type PendingStatusCheck = {
   readonly maybeToken: Option.Option<string>;
+  readonly settings: Settings;
+  readonly retryAfterFailure: Unreachable["retry"];
+  readonly validateToken: (token: string) => Model;
+};
+
+// Runs only while `/status` is in flight (`Checking`, or `Unreachable` with a
+// Retry running); a late answer in any other state is ignored.
+const whileCheckingStatus = (
+  model: Model,
+  run: (check: PendingStatusCheck) => UpdateReturn
+): UpdateReturn =>
+  M.value(model).pipe(
+    withUpdateReturn,
+    M.tag("Checking", ({ maybeToken, settings }) =>
+      run({
+        maybeToken,
+        settings,
+        retryAfterFailure: "Idle",
+        validateToken: (token) => ValidatingToken({ token, settings }),
+      })
+    ),
+    // A Retry stays on Unreachable for its /me check too, so no ValidatingToken.
+    M.tag("Unreachable", (screen) =>
+      screen.retry === "Running"
+        ? run({
+            maybeToken: Option.some(screen.token),
+            settings: screen.settings,
+            retryAfterFailure: "Failed",
+            validateToken: () => screen,
+          })
+        : { model }
+    ),
+    M.orElse(() => ({ model }))
+  );
+
+type PendingTokenCheck = {
+  readonly token: string;
   readonly settings: Settings;
   readonly retryAfterFailure: Unreachable["retry"];
 };
 
-// Runs only while an auth check is in flight (`Checking`, or `Unreachable` with
-// a Retry running); a late answer in any other state is ignored.
-const whileChecking = (
+// Runs only while `/me` is in flight (`ValidatingToken`, or `Unreachable` with
+// a Retry running, which covers both of a retry's requests); a late answer in
+// any other state is ignored.
+const whileValidatingToken = (
   model: Model,
-  run: (check: PendingCheck) => UpdateReturn
-): UpdateReturn => {
-  if (model._tag === "Checking") {
-    return run({
-      maybeToken: model.maybeToken,
-      settings: model.settings,
-      retryAfterFailure: "Idle",
-    });
-  }
-  if (model._tag === "Unreachable" && model.retry === "Running") {
-    return run({
-      maybeToken: Option.some(model.token),
-      settings: model.settings,
-      retryAfterFailure: "Failed",
-    });
-  }
-  return { model };
-};
+  run: (check: PendingTokenCheck) => UpdateReturn
+): UpdateReturn =>
+  M.value(model).pipe(
+    withUpdateReturn,
+    M.tag("ValidatingToken", ({ token, settings }) =>
+      run({ token, settings, retryAfterFailure: "Idle" })
+    ),
+    M.tag("Unreachable", ({ token, settings, retry }) =>
+      retry === "Running"
+        ? run({ token, settings, retryAfterFailure: "Failed" })
+        : { model }
+    ),
+    M.orElse(() => ({ model }))
+  );
+
+const whileUnreachable = (
+  model: Model,
+  run: (screen: Unreachable) => UpdateReturn
+): UpdateReturn =>
+  M.value(model).pipe(
+    withUpdateReturn,
+    M.tag("Unreachable", run),
+    M.orElse(() => ({ model }))
+  );
+
+const whileLoggedOut = (
+  model: Model,
+  run: (loggedOut: LoggedOut) => UpdateReturn
+): UpdateReturn =>
+  M.value(model).pipe(
+    withUpdateReturn,
+    M.tag("LoggedOut", run),
+    M.orElse(() => ({ model }))
+  );
 
 // Only the OS theme subscription runs outside the dashboard. It repaints
 // `<html>` so Checking and the login screen follow a `system` preference.
@@ -111,15 +174,15 @@ const updateDashboard = (
   model: LoggedIn,
   message: Dashboard.Message
 ): UpdateReturn => {
-  const token = Option.match(model.maybeSession, {
-    onNone: () => "",
-    onSome: (session) => session.token,
-  });
   const {
     model: dashboardModel,
     commands: dashboardCommands,
     outMessage,
-  } = Dashboard.update(model.dashboard, message, { token, now: Date.now });
+  } = Dashboard.update(
+    model.dashboard,
+    message,
+    dashboardContext(model.maybeSession)
+  );
   const nextModel =
     dashboardModel === model.dashboard
       ? model
@@ -147,103 +210,107 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     withUpdateReturn,
     M.tags({
       SucceededFetchAuthStatus: ({ authRequired }) =>
-        whileChecking(model, ({ maybeToken, settings }) => {
-          if (!authRequired) return enterLoggedIn(Option.none(), "", settings);
-          return Option.match(maybeToken, {
-            onNone: () => ({ model: initLoggedOut(settings) }),
-            onSome: (token) => ({ model, commands: [FetchMe({ token })] }),
-          });
-        }),
+        whileCheckingStatus(
+          model,
+          ({ maybeToken, settings, validateToken }) => {
+            if (!authRequired) return enterLoggedIn(Option.none(), settings);
+            return Option.match(maybeToken, {
+              onNone: () => ({ model: initLoggedOut(settings) }),
+              onSome: (token) => ({
+                model: validateToken(token),
+                commands: [FetchMe({ token })],
+              }),
+            });
+          }
+        ),
       // A stored token stays in storage while the server cannot be reached:
       // only a 401 (`RejectedToken`) or Sign out may clear it.
       FailedFetchAuthStatus: () =>
-        whileChecking(model, ({ maybeToken, settings, retryAfterFailure }) =>
-          Option.match(maybeToken, {
-            onNone: () => ({ model: initLoggedOut(settings) }),
-            onSome: (token) => ({
-              model: unreachable(token, settings, retryAfterFailure),
-            }),
-          })
+        whileCheckingStatus(
+          model,
+          ({ maybeToken, settings, retryAfterFailure }) =>
+            Option.match(maybeToken, {
+              onNone: () => ({ model: initLoggedOut(settings) }),
+              onSome: (token) => ({
+                model: unreachable(token, settings, retryAfterFailure),
+              }),
+            })
         ),
 
       SucceededFetchMe: ({ username }) =>
-        whileChecking(model, ({ maybeToken, settings }) => {
-          const token = Option.getOrThrow(maybeToken);
-          return enterLoggedIn(
+        whileValidatingToken(model, ({ token, settings }) =>
+          enterLoggedIn(
             Option.some(Session.make({ token, username })),
-            token,
             settings
-          );
-        }),
+          )
+        ),
       RejectedToken: () =>
-        whileChecking(model, ({ settings }) => ({
+        whileValidatingToken(model, ({ settings }) => ({
           model: initLoggedOut(settings),
           commands: [ClearSession()],
         })),
       FailedFetchMe: () =>
-        whileChecking(model, ({ maybeToken, settings, retryAfterFailure }) => ({
-          model: unreachable(
-            Option.getOrThrow(maybeToken),
-            settings,
-            retryAfterFailure
-          ),
-        })),
-      ClickedRetryConnection: () => {
-        if (model._tag !== "Unreachable" || model.retry === "Running")
-          return { model };
-        return {
-          model: modifyFields(model, { retry: () => "Running" as const }),
-          commands: [FetchAuthStatus()],
-        };
-      },
-      ClickedSignOut: () => {
-        if (model._tag !== "Unreachable") return { model };
-        return {
-          model: initLoggedOut(model.settings),
+        whileValidatingToken(
+          model,
+          ({ token, settings, retryAfterFailure }) => ({
+            model: unreachable(token, settings, retryAfterFailure),
+          })
+        ),
+      ClickedRetryConnection: () =>
+        whileUnreachable(model, (screen) =>
+          screen.retry === "Running"
+            ? { model }
+            : {
+                model: modifyFields(screen, {
+                  retry: () => "Running" as const,
+                }),
+                commands: [FetchAuthStatus()],
+              }
+        ),
+      ClickedSignOut: () =>
+        whileUnreachable(model, ({ settings }) => ({
+          model: initLoggedOut(settings),
           commands: [ClearSession()],
-        };
-      },
+        })),
 
-      ChangedUsername: ({ value }) => {
-        if (model._tag !== "LoggedOut") return { model };
-        return { model: modifyFields(model, { username: () => value }) };
-      },
-      ChangedPassword: ({ value }) => {
-        if (model._tag !== "LoggedOut") return { model };
-        return { model: modifyFields(model, { password: () => value }) };
-      },
-      SubmittedLogin: () => {
-        if (model._tag !== "LoggedOut") return { model };
-        return {
-          model: modifyFields(model, {
+      ChangedUsername: ({ value }) =>
+        whileLoggedOut(model, (loggedOut) => ({
+          model: modifyFields(loggedOut, { username: () => value }),
+        })),
+      ChangedPassword: ({ value }) =>
+        whileLoggedOut(model, (loggedOut) => ({
+          model: modifyFields(loggedOut, { password: () => value }),
+        })),
+      SubmittedLogin: () =>
+        whileLoggedOut(model, (loggedOut) => ({
+          model: modifyFields(loggedOut, {
             isSubmitting: () => true,
             maybeError: () => Option.none(),
           }),
           commands: [
-            Login({ username: model.username, password: model.password }),
+            Login({
+              username: loggedOut.username,
+              password: loggedOut.password,
+            }),
           ],
-        };
-      },
+        })),
       SucceededLogin: ({ token, username }) => {
         const { model: loggedInModel, commands } = enterLoggedIn(
           Option.some(Session.make({ token, username })),
-          token,
           currentSettings(model)
         );
         return {
           model: loggedInModel,
-          commands: [...(commands ?? []), SaveSession({ token, username })],
+          commands: [...(commands ?? []), SaveSession({ token })],
         };
       },
-      FailedLogin: ({ error }) => {
-        if (model._tag !== "LoggedOut") return { model };
-        return {
-          model: modifyFields(model, {
+      FailedLogin: ({ error }) =>
+        whileLoggedOut(model, (loggedOut) => ({
+          model: modifyFields(loggedOut, {
             isSubmitting: () => false,
             maybeError: () => Option.some(error),
           }),
-        };
-      },
+        })),
 
       GotDashboardMessage: ({ message }) =>
         M.value(model).pipe(

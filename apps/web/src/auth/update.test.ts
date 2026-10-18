@@ -1,5 +1,5 @@
 import { Menu } from "@foldkit/ui";
-import { Option } from "effect";
+import { Match as M, Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -36,6 +36,7 @@ import {
   type Model,
   Session,
   Unreachable,
+  ValidatingToken,
 } from "@/auth/model";
 import { update } from "@/auth/update";
 import {
@@ -79,6 +80,7 @@ const initDashboardModel = (
 ) => realInitDashboardModel(settings, NOW_MS);
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
+const maybeToken = Option.some("abc123");
 
 // Each fetch resolves its window once and reports it back, so the dashboard's
 // charts paint the range that was actually requested.
@@ -92,28 +94,30 @@ const SPEEDTEST_WINDOW = {
   endTimeMs: METRICS_WINDOW.endTimeMs,
 };
 
-function assertLoggedIn(model: Model): LoggedIn {
-  if (model._tag !== "LoggedIn") {
-    throw new Error(`expected LoggedIn, got ${model._tag}`);
-  }
-  return model;
-}
+const assertLoggedIn = (model: Model): LoggedIn =>
+  M.value(model).pipe(
+    M.tag("LoggedIn", (loggedIn) => loggedIn),
+    M.orElse((other) => {
+      throw new Error(`expected LoggedIn, got ${other._tag}`);
+    })
+  );
 
-function assertLoggedOut(model: Model): LoggedOut {
-  if (model._tag !== "LoggedOut") {
-    throw new Error(`expected LoggedOut, got ${model._tag}`);
-  }
-  return model;
-}
+const assertLoggedOut = (model: Model): LoggedOut =>
+  M.value(model).pipe(
+    M.tag("LoggedOut", (loggedOut) => loggedOut),
+    M.orElse((other) => {
+      throw new Error(`expected LoggedOut, got ${other._tag}`);
+    })
+  );
 
 const resolveDashboardEntry = (
-  token: string,
+  maybeToken: Option.Option<string>,
   dateRange: DateRangeSelection = DEFAULT_DATE_RANGE
 ) =>
   Story.Command.resolveAll(
     [
       FetchMetrics({
-        token,
+        maybeToken,
         dateRange,
         maybeEarliestDataMs: Option.none(),
       }),
@@ -126,7 +130,7 @@ const resolveDashboardEntry = (
     ],
     [
       FetchSpeedtestHistory({
-        token,
+        maybeToken,
         dateRange,
         maybeEarliestDataMs: Option.none(),
       }),
@@ -138,7 +142,7 @@ const resolveDashboardEntry = (
     ],
     [
       FetchConnectivityStatus({
-        token,
+        maybeToken,
         dateRange,
         maybeEarliestDataMs: Option.none(),
       }),
@@ -154,7 +158,7 @@ const resolveDashboardEntry = (
       }),
     ],
     [
-      FetchLiveConnectivity({ token }),
+      FetchLiveConnectivity({ maybeToken }),
       SucceededFetchLiveConnectivity({
         status: "up",
         maybeLastSampleAtMs: Option.none(),
@@ -162,12 +166,12 @@ const resolveDashboardEntry = (
     ],
     [ApplyTheme, CompletedApplyTheme()],
     [
-      FetchEarliestData({ token }),
+      FetchEarliestData({ maybeToken }),
       SucceededFetchEarliestData({ earliestMs: Option.none() }),
     ],
     [
       FetchSummary({
-        token,
+        maybeToken,
         dateRange,
         maybeEarliestDataMs: Option.none(),
       }),
@@ -175,13 +179,13 @@ const resolveDashboardEntry = (
     ],
     [
       FetchOutages({
-        token,
+        maybeToken,
         dateRange,
         maybeEarliestDataMs: Option.none(),
       }),
       FailedFetchOutages({ error: "skip", request: DEFAULT_REQUEST }),
     ],
-    [FetchPingHosts({ token }), FailedFetchPingHosts({ error: "skip" })]
+    [FetchPingHosts({ maybeToken }), FailedFetchPingHosts({ error: "skip" })]
   );
 
 const chooseLogoutFromMenu = () =>
@@ -205,7 +209,7 @@ describe("auth update", () => {
       Story.model((model) => {
         expect(Option.isNone(assertLoggedIn(model).maybeSession)).toBe(true);
       }),
-      resolveDashboardEntry("")
+      resolveDashboardEntry(Option.none())
     );
   });
 
@@ -226,7 +230,7 @@ describe("auth update", () => {
           settings
         );
       }),
-      resolveDashboardEntry("", settings.dateRange)
+      resolveDashboardEntry(Option.none(), settings.dateRange)
     );
   });
 
@@ -243,53 +247,54 @@ describe("auth update", () => {
     );
   });
 
-  test("auth required with a stored token dispatches FetchMe and stays in Checking", () => {
+  test("auth required with a stored token moves to ValidatingToken and asks /me", () => {
+    const settings = defaultSettings();
+
     Story.story(
       update,
       Story.given(
-        Checking({
-          maybeToken: Option.some("stored-token"),
-          settings: defaultSettings(),
-        })
+        Checking({ maybeToken: Option.some("stored-token"), settings })
       ),
       Story.message(SucceededFetchAuthStatus({ authRequired: true })),
       Story.Command.expectExact(FetchMe({ token: "stored-token" })),
       Story.model((model) => {
-        expect(model._tag).toBe("Checking");
+        expect(model).toEqual(
+          ValidatingToken({ token: "stored-token", settings })
+        );
       }),
       Story.Command.resolve(FetchMe, SucceededFetchMe({ username: "phil" })),
       Story.model((model) => {
         expect(model._tag).toBe("LoggedIn");
       }),
-      resolveDashboardEntry("stored-token")
+      resolveDashboardEntry(Option.some("stored-token"))
     );
   });
 
-  test("a validated stored token transitions Checking to LoggedIn", () => {
+  test("a validated stored token transitions ValidatingToken to LoggedIn with its session", () => {
     Story.story(
       update,
       Story.given(
-        Checking({
-          maybeToken: Option.some("stored-token"),
+        ValidatingToken({
+          token: "stored-token",
           settings: defaultSettings(),
         })
       ),
       Story.message(SucceededFetchMe({ username: "phil" })),
       Story.model((model) => {
-        expect(Option.getOrThrow(assertLoggedIn(model).maybeSession)).toEqual(
-          Session.make({ token: "stored-token", username: "phil" })
+        expect(assertLoggedIn(model).maybeSession).toEqual(
+          Option.some(Session.make({ token: "stored-token", username: "phil" }))
         );
       }),
-      resolveDashboardEntry("stored-token")
+      resolveDashboardEntry(Option.some("stored-token"))
     );
   });
 
-  test("a rejected stored token transitions Checking to LoggedOut and clears the session", () => {
+  test("a rejected stored token transitions ValidatingToken to LoggedOut and clears the session", () => {
     Story.story(
       update,
       Story.given(
-        Checking({
-          maybeToken: Option.some("stale-token"),
+        ValidatingToken({
+          token: "stale-token",
           settings: defaultSettings(),
         })
       ),
@@ -307,9 +312,7 @@ describe("auth update", () => {
 
     Story.story(
       update,
-      Story.given(
-        Checking({ maybeToken: Option.some("stored-token"), settings })
-      ),
+      Story.given(ValidatingToken({ token: "stored-token", settings })),
       Story.message(FailedFetchMe({ error: "TransportError" })),
       Story.Command.expectNone(),
       Story.model((model) => {
@@ -319,6 +322,58 @@ describe("auth update", () => {
       })
     );
   });
+
+  describe.each([
+    ["with no stored token", Option.none<string>()],
+    ["with a stored token", Option.some("stored-token")],
+  ] as const)("Checking the status %s", (_name, maybeStoredToken) => {
+    test.each([
+      ["SucceededFetchMe", SucceededFetchMe({ username: "phil" })],
+      ["RejectedToken", RejectedToken()],
+      ["FailedFetchMe", FailedFetchMe({ error: "TransportError" })],
+    ] as const)("ignores a late %s", (_messageName, message) => {
+      const checking = Checking({
+        maybeToken: maybeStoredToken,
+        settings: defaultSettings(),
+      });
+
+      Story.story(
+        update,
+        Story.given(checking),
+        Story.message(message),
+        Story.Command.expectNone(),
+        Story.model((model) => {
+          expect(model).toEqual(checking);
+        })
+      );
+    });
+  });
+
+  test.each([
+    [
+      "SucceededFetchAuthStatus",
+      SucceededFetchAuthStatus({ authRequired: true }),
+    ],
+    ["FailedFetchAuthStatus", FailedFetchAuthStatus({ error: "boom" })],
+  ] as const)(
+    "a %s that arrives while ValidatingToken is ignored",
+    (_name, message) => {
+      const validating = ValidatingToken({
+        token: "stored-token",
+        settings: defaultSettings(),
+      });
+
+      Story.story(
+        update,
+        Story.given(validating),
+        Story.message(message),
+        Story.Command.expectNone(),
+        Story.model((model) => {
+          expect(model).toEqual(validating);
+        })
+      );
+    }
+  );
 
   test("an unreachable server on the status check keeps a stored token", () => {
     const settings = defaultSettings();
@@ -379,11 +434,31 @@ describe("auth update", () => {
       }),
       Story.Command.resolve(FetchMe, SucceededFetchMe({ username: "phil" })),
       Story.model((model) => {
-        expect(Option.getOrThrow(assertLoggedIn(model).maybeSession)).toEqual(
-          Session.make({ token: "stored-token", username: "phil" })
+        expect(assertLoggedIn(model).maybeSession).toEqual(
+          Option.some(Session.make({ token: "stored-token", username: "phil" }))
         );
       }),
-      resolveDashboardEntry("stored-token")
+      resolveDashboardEntry(Option.some("stored-token"))
+    );
+  });
+
+  test("a retry accepts a token answer at any point while it runs", () => {
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({
+          token: "stored-token",
+          settings: defaultSettings(),
+          retry: "Running",
+        })
+      ),
+      Story.message(SucceededFetchMe({ username: "phil" })),
+      Story.model((model) => {
+        expect(assertLoggedIn(model).maybeSession).toEqual(
+          Option.some(Session.make({ token: "stored-token", username: "phil" }))
+        );
+      }),
+      resolveDashboardEntry(Option.some("stored-token"))
     );
   });
 
@@ -493,7 +568,7 @@ describe("auth update", () => {
       Story.model((model) => {
         expect(Option.isNone(assertLoggedIn(model).maybeSession)).toBe(true);
       }),
-      resolveDashboardEntry("")
+      resolveDashboardEntry(Option.none())
     );
   });
 
@@ -669,11 +744,9 @@ describe("auth update", () => {
         Login,
         SucceededLogin({ token: "abc123", username: "phil" })
       ),
-      Story.Command.expectHas(
-        SaveSession({ token: "abc123", username: "phil" })
-      ),
+      Story.Command.expectHas(SaveSession({ token: "abc123" })),
       Story.Command.resolve(SaveSession, CompletedSaveSession()),
-      resolveDashboardEntry("abc123")
+      resolveDashboardEntry(Option.some("abc123"))
     );
   });
 
@@ -690,16 +763,14 @@ describe("auth update", () => {
         })
       ),
       Story.message(SucceededLogin({ token: "abc123", username: "phil" })),
-      Story.Command.expectHas(
-        SaveSession({ token: "abc123", username: "phil" })
-      ),
+      Story.Command.expectHas(SaveSession({ token: "abc123" })),
       Story.Command.resolve(SaveSession, CompletedSaveSession()),
       Story.model((model) => {
-        expect(Option.getOrThrow(assertLoggedIn(model).maybeSession)).toEqual(
-          Session.make({ token: "abc123", username: "phil" })
+        expect(assertLoggedIn(model).maybeSession).toEqual(
+          Option.some(Session.make({ token: "abc123", username: "phil" }))
         );
       }),
-      resolveDashboardEntry("abc123")
+      resolveDashboardEntry(Option.some("abc123"))
     );
   });
 
@@ -723,8 +794,8 @@ describe("auth update", () => {
       Story.model((model) => {
         const loggedOut = assertLoggedOut(model);
         expect(loggedOut.isSubmitting).toBe(false);
-        expect(Option.getOrThrow(loggedOut.maybeError)).toBe(
-          "Incorrect username or password."
+        expect(loggedOut.maybeError).toEqual(
+          Option.some("Incorrect username or password.")
         );
       })
     );
@@ -824,14 +895,14 @@ describe("auth update", () => {
       ),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -846,7 +917,7 @@ describe("auth update", () => {
       Story.Command.resolveAll(
         [
           FetchMetrics({
-            token: "abc123",
+            maybeToken,
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           }),
@@ -859,7 +930,7 @@ describe("auth update", () => {
         ],
         [
           FetchSpeedtestHistory({
-            token: "abc123",
+            maybeToken,
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           }),
@@ -871,7 +942,76 @@ describe("auth update", () => {
         ],
         [
           FetchSummary({
-            token: "abc123",
+            maybeToken,
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+          }),
+          FailedFetchSummary({ error: "skip", request: DEFAULT_REQUEST }),
+        ]
+      ),
+      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
+    );
+  });
+});
+
+describe("auth update: the dashboard's token", () => {
+  test("a LoggedIn model with no session fetches without a token", () => {
+    const loggedIn = LoggedIn({
+      maybeSession: Option.none(),
+      dashboard: {
+        ...initDashboardModel(defaultSettings()),
+        speedtestTrigger: SpeedtestTriggerAsyncData.Loading(),
+      },
+    });
+
+    Story.story(
+      update,
+      Story.given(loggedIn),
+      Story.message(
+        GotDashboardMessage({
+          message: SucceededTriggerSpeedtest({
+            downloadMbps: 500,
+            uploadMbps: 50,
+            pingMs: 8,
+          }),
+        })
+      ),
+      Story.Command.expectHas(
+        FetchMetrics({
+          maybeToken: Option.none(),
+          dateRange: DEFAULT_DATE_RANGE,
+          maybeEarliestDataMs: Option.none(),
+        })
+      ),
+      Story.Command.resolveAll(
+        [
+          FetchMetrics({
+            maybeToken: Option.none(),
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+          }),
+          SucceededFetchMetrics({
+            metrics: [],
+            nowMs: 0,
+            ...METRICS_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [
+          FetchSpeedtestHistory({
+            maybeToken: Option.none(),
+            dateRange: DEFAULT_DATE_RANGE,
+            maybeEarliestDataMs: Option.none(),
+          }),
+          SucceededFetchSpeedtestHistory({
+            history: [],
+            ...SPEEDTEST_WINDOW,
+            request: DEFAULT_REQUEST,
+          }),
+        ],
+        [
+          FetchSummary({
+            maybeToken: Option.none(),
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           }),
@@ -968,6 +1108,13 @@ describe("auth update — stale messages arriving in the wrong state", () => {
       "Checking",
       Checking({
         maybeToken: Option.none(),
+        settings: { ...defaultSettings(), theme: "system" },
+      }),
+    ],
+    [
+      "ValidatingToken",
+      ValidatingToken({
+        token: "stored-token",
         settings: { ...defaultSettings(), theme: "system" },
       }),
     ],

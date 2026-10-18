@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 // The shared E2E backend runs with auth disabled (WAN_MONITOR_PASSWORD="") so
 // the dashboard specs can render without a login. To exercise the auth flow we
@@ -9,6 +9,45 @@ import { expect, type Page, test } from "@playwright/test";
 const VALID_USERNAME = "admin";
 const VALID_PASSWORD = "test-password";
 const FAKE_TOKEN = "e2e-fake-jwt-token";
+
+// Proxy-generated error pages: bodies the API client can't decode.
+const PROXY_RESPONSES = [
+  { name: "503 with an empty body", status: 503 },
+  {
+    name: "503 text/html",
+    status: 503,
+    contentType: "text/html",
+    body: "<html><body>no available server</body></html>",
+  },
+  {
+    name: "503 text/plain",
+    status: 503,
+    contentType: "text/plain",
+    body: "no available server",
+  },
+  {
+    name: "401 text/html",
+    status: 401,
+    contentType: "text/html",
+    body: "<html><body>unauthorized</body></html>",
+  },
+  {
+    name: "400 text/html",
+    status: 400,
+    contentType: "text/html",
+    body: "<html><body>bad request</body></html>",
+  },
+] as const;
+
+const fulfillProxyResponse = (
+  route: Route,
+  response: { status: number; contentType?: string; body?: string }
+) =>
+  route.fulfill({
+    status: response.status,
+    contentType: response.contentType,
+    body: response.body,
+  });
 
 const openMenu = (page: Page) =>
   page.getByRole("button", { name: "Menu" }).click();
@@ -186,4 +225,53 @@ test.describe("Authentication flow (auth enabled)", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
   });
+});
+
+test.describe("Authentication flow (the server's answer cannot be read)", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAuthEnabled(page);
+  });
+
+  for (const response of PROXY_RESPONSES) {
+    test(`keeps the form and says sign-in failed on a ${response.name} login response`, async ({
+      page,
+    }) => {
+      await page.route("**/api/auth/login", (route) =>
+        fulfillProxyResponse(route, response)
+      );
+      await page.goto("/");
+      await login(page, VALID_USERNAME, VALID_PASSWORD);
+
+      await expect(page.getByRole("alert")).toHaveText("Sign-in failed.");
+      await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+      await expect(
+        page.getByText(/Foldkit encountered an unrecoverable error/)
+      ).toBeHidden();
+    });
+  }
+
+  for (const response of PROXY_RESPONSES) {
+    test(`says the server cannot be reached and keeps the stored token on a ${response.name} token check`, async ({
+      page,
+    }) => {
+      await page.addInitScript((token) => {
+        localStorage.setItem("wan_monitor_token", token);
+      }, FAKE_TOKEN);
+      await page.route("**/api/auth/me", (route) =>
+        fulfillProxyResponse(route, response)
+      );
+      await page.goto("/");
+
+      await expect(page.getByRole("alert")).toHaveText(
+        "Cannot reach the server."
+      );
+      await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+      await expect(
+        page.getByText(/Foldkit encountered an unrecoverable error/)
+      ).toBeHidden();
+      expect(
+        await page.evaluate(() => localStorage.getItem("wan_monitor_token"))
+      ).toBe(FAKE_TOKEN);
+    });
+  }
 });
