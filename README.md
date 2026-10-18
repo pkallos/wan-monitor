@@ -114,6 +114,32 @@ All configuration is done via environment variables.
 | `DB_HOST` | `localhost` | QuestDB host |
 | `DB_PORT` | `9000` | QuestDB HTTP port |
 
+### Database schema and migrations
+
+The server owns the shape of the `network_metrics` table. Each time the server connects to QuestDB, it first runs any versioned migration the database has not had yet, then checks the table against the schema the code expects. The applied versions are recorded in a ledger table, `network_metrics_migrations`, beside the metrics table.
+
+A new install gets the table created. A database that predates the migrations may hold a table that QuestDB inferred from the first write, with a nanosecond timestamp and VARCHAR or SYMBOL text columns. Migration v2 rewrites such a table once, into the schema the code expects:
+
+- It copies every row into a new table, then compares the copy with the original: total rows, rows per host and source, the non-null count of every column, the first and last timestamp, the number of distinct timestamps, the sum of each numeric column, and the total length of each text column.
+- It swaps the copy into place, repeats the comparison, and only then drops the original. A mismatch at any point stops the migration before the original is dropped. The original is kept, under its own name before the swap and as `network_metrics__previous` after it.
+- About 2.6 million rows, roughly ten months of pings at the default interval, took about three seconds to rewrite in testing. While both tables exist, the rewrite needs free disk of about 1.3 times the table's size: room for the copy plus its write-ahead log. A dropped table's disk space can take a while to be released.
+- While it runs, `/api/health/ready` fails with "Migrating database schema (v2: conform-network-metrics)" and the dashboard shows its database-unavailable banner. No pings are recorded until it finishes. A rebuild runs only before the server opens its first connection for writing pings, so no write can reach the table it replaces; a server that has already opened that connection asks for a restart instead.
+- An interrupted rewrite is recovered on the next start or connection attempt, except in the states that need a person (below). While the server recovers it, the ready check names the step.
+
+The server refuses to connect, with the reason and the fix in its message and log, when:
+
+- the table has a column the server does not know;
+- a copy fails verification;
+- a table is suspended, so its pending writes cannot be applied;
+- an interrupted rewrite left tables that need a person to decide which to keep;
+- the ledger records migrations but the table does not exist;
+- the table still does not match the schema after migrating;
+- the ledger records a newer version than the server knows.
+
+The server never drops a column on its own. A failure that needs a person is retried every 10 minutes; restart the server after fixing the cause to retry at once. A transient failure, such as a dropped database connection or the table changing while it is copied, is retried with a growing wait (2 seconds, then 4, 8 and so on, up to the same 10 minutes), because every retry of a rewrite copies the table again.
+
+Snapshot the QuestDB volume before upgrading an older install.
+
 ## Architecture
 
 ```
@@ -312,7 +338,7 @@ The summary and outage endpoints are read-only aggregates over the same `network
   - `windows.last24h`, `last7d` and `last30d` give uptime anchored at `endTime`.
   - `hosts` has one entry for each ping host with samples in the window, so a window with no data returns `hosts: []`. Its `availabilityPercentage` is the share of that host's ping samples that were answered; a lossy but answered sample counts as answered. `lastStatus` is the host's newest sample in the range: `down`, `degraded` (loss at or over the degraded floor) or `up`.
   - `speed` is in Mbps over successful tests (a stored 0 is a failed test): `downloadMedian` and `uploadMedian`, plus the test `count`.
-- `/api/connectivity-status/outages` returns `data` and `meta`, and covers at most 90 days per request (`MAX_OUTAGE_SPAN_DAYS`); `meta.startTime` and `meta.endTime` are the window actually queried. An outage is a run of consecutive non-up ping cycles. Runs separated by a single missing cycle are merged (cycle spacing is measured from the window's own cycles, not assumed from the configured interval), and an up cycle always ends a run. Its `status` is the worst status in the run (`down` if any cycle was down, otherwise `degraded`), `affectedHosts` lists the hosts that failed or were lossy, and `end` is one ping cycle after the last non-up cycle, clipped to the range end.
+- `/api/connectivity-status/outages` returns `data` and `meta`, and covers at most 90 days per request (`MAX_OUTAGE_SPAN_DAYS`); `meta.startTime` and `meta.endTime` are the window actually queried. An outage is a run of consecutive non-up ping cycles. Runs separated by a single missing cycle are merged (cycle spacing is measured from the window's own cycles, not assumed from the configured interval), and an up cycle always ends a run. Its `status` is the worst status in the run (`down` if any cycle was down, otherwise `degraded`), `affectedHosts` lists the hosts that failed or were lossy, and `end` is the up cycle that recorded recovery when one came within the merge gap, otherwise one ping cycle after the last non-up cycle; either way it is clipped to the range end.
 
 ## Contributing
 

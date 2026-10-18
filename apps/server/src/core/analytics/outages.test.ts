@@ -20,6 +20,7 @@ const run = (
   run_id: 1,
   start_time: iso(startSeconds),
   last_time: iso(lastSeconds),
+  recovered_time: null,
   had_down: true,
   max_packet_loss: 100,
   peak_latency: null,
@@ -82,6 +83,28 @@ describe("summarizeOutages", () => {
     });
   });
 
+  it("ends a run at the up cycle recorded after it", () => {
+    const [outage] = summarizeOutages(
+      [run(60, 120, { recovered_time: iso(165) })],
+      options(600)
+    );
+
+    expect(outage).toMatchObject({
+      start: iso(60),
+      end: iso(165),
+      durationSeconds: 105,
+    });
+  });
+
+  it("ends a single-cycle run at the up cycle after it, whatever the period", () => {
+    const [outage] = summarizeOutages(
+      [run(60, 60, { recovered_time: iso(90) })],
+      options(600, 30_000_000)
+    );
+
+    expect(outage).toMatchObject({ end: iso(90), durationSeconds: 30 });
+  });
+
   it("calls a run down when any cycle was down and degraded otherwise", () => {
     const [newest, oldest] = summarizeOutages(
       [run(0, 30, { had_down: true }), run(60, 90, { had_down: false })],
@@ -129,6 +152,19 @@ describe("summarizeOutages", () => {
 
   it("clips an outage still running at the range end to that end", () => {
     const [outage] = summarizeOutages([run(60, 90)], options(100));
+
+    expect(outage).toMatchObject({
+      start: iso(60),
+      end: iso(100),
+      durationSeconds: 40,
+    });
+  });
+
+  it("clips a recovery recorded after the range end to that end", () => {
+    const [outage] = summarizeOutages(
+      [run(60, 90, { recovered_time: iso(120) })],
+      options(100)
+    );
 
     expect(outage).toMatchObject({
       start: iso(60),

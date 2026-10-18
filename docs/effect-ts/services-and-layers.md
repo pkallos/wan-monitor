@@ -104,7 +104,11 @@ const make = Effect.gen(function* () {
   return { /* ...QuestDBConnectionService */ } satisfies QuestDBConnectionService;
 });
 
-export const QuestDBConnectionLive = Layer.effect(QuestDBConnection, make);
+export const QuestDBConnectionOverMigrator = Layer.effect(QuestDBConnection, make);
+
+export const QuestDBConnectionLive = QuestDBConnectionOverMigrator.pipe(
+  Layer.provide(SchemaMigratorLive)
+);
 ```
 
 ```ts
@@ -119,6 +123,8 @@ export const QuestDBLive = QuestDBOverConnection.pipe(
 `QuestDBOverConnection` is the service layer before its connection is provided, exported so
 `service.test.ts` can build the service over a stub `QuestDBConnection`. It is named for the
 connection it still requires rather than `*Live`, since only `QuestDBLive` is complete.
+`QuestDBConnectionOverMigrator` follows the same rule for the `SchemaMigrator` it requires, so
+`connection.test.ts` can supply a fake migrator.
 
 ## Composing the dependency graph: `Layer.provide` / `Layer.mergeAll`
 

@@ -1,17 +1,25 @@
 import type { NetworkMetric } from "@shared/metrics";
 import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schedule } from "effect";
 import { describe, expect, it } from "vitest";
 import { getOutagesHandler } from "@/core/api/handlers/connectivity-status";
 import { getSummaryHandler } from "@/core/api/handlers/summary";
+import { QuestDB } from "@/infrastructure/database/questdb/service";
+import {
+  createLegacyTable,
+  type LegacyRow,
+} from "@/infrastructure/database/questdb/test-utils/legacy-table";
 import {
   seedDatabase,
   seedGeneratedPings,
 } from "@/infrastructure/database/questdb/test-utils/seed";
 import {
   createTestLayer,
+  dropTableFamily,
   isQuestDBAvailable,
+  queryQuestDB,
   setupIntegrationTest,
+  TEST_TABLE,
   teardownIntegrationTest,
 } from "@/infrastructure/database/questdb/test-utils/setup";
 import { makeTestConfigLayer } from "@/test/config";
@@ -867,6 +875,209 @@ describe("Summary Integration Tests", () => {
       });
 
       await Effect.runPromise(Effect.provide(program, testLayer));
+    }
+  );
+
+  describe.skipIf(skipTests)("outage end", () => {
+    const outagesFor = (cycles: readonly SeededCycle[]) =>
+      Effect.gen(function* () {
+        const db = yield* setupIntegrationTest();
+        yield* seedDatabase(
+          db,
+          cycles.flatMap(([seconds, kind]) => cycle(T0 + seconds * 1000, kind))
+        );
+
+        const result = yield* getOutagesHandler({ query: WINDOW });
+
+        yield* teardownIntegrationTest(db);
+        return result.data;
+      }).pipe(Effect.provide(testLayer));
+
+    // Every gap but the one before the recovery cycle is 30s, so the period
+    // stays 30s and only the recovery cycle's time changes the end.
+    it.each<[string, number, number]>([
+      ["at the up cycle recorded within the merge gap after it", 105, 105],
+      ["at the up cycle recorded exactly the merge gap after it", 135, 135],
+      [
+        "one period after its last cycle when no up cycle followed within the merge gap",
+        136,
+        90,
+      ],
+    ])("ends an outage %s", async (_name, recoveredSecond, endSecond) => {
+      const outages = await Effect.runPromise(
+        outagesFor([
+          [0, "up"],
+          [30, "up"],
+          [60, "down"],
+          [recoveredSecond, "up"],
+          [recoveredSecond + 30, "up"],
+          [recoveredSecond + 60, "up"],
+        ])
+      );
+
+      expect(outages).toHaveLength(1);
+      expect(outages[0]).toMatchObject({
+        start: new Date(T0 + 60_000).toISOString(),
+        end: new Date(T0 + endSecond * 1000).toISOString(),
+        durationSeconds: endSecond - 60,
+      });
+    });
+  });
+
+  describe.skipIf(skipTests)(
+    "on a legacy table that predates the schema migrations",
+    () => {
+      // A name no earlier run has written through ILP: QuestDB's ILP writer
+      // loses the first batch for a name whose table was dropped.
+      const legacyName = `${TEST_TABLE}_legacy_${Date.now().toString(36)}`;
+      const legacyLayer = Layer.mergeAll(
+        createTestLayer(legacyName),
+        makeTestConfigLayer()
+      );
+      const CYCLE_MS = 30_000;
+      const atCycle = (index: number): number => T0 + index * CYCLE_MS;
+      const [google, cloudflare] = HOSTS;
+
+      /** A series of `kind` pings for `host` over cycles `from` up to but not including `to`. */
+      const span = (
+        host: string,
+        from: number,
+        to: number,
+        kind: "up" | "down"
+      ) => ({
+        host,
+        startMs: atCycle(from),
+        count: to - from,
+        intervalMs: CYCLE_MS,
+        kind,
+      });
+
+      /**
+       * An hour of 30s cycles: both hosts down for cycles 20-22, only 8.8.8.8
+       * down at 40, and both down for 60-61 and 63 with no cycle recorded at 62.
+       */
+      const series = [
+        ...[google, cloudflare].flatMap((host) => [
+          span(host, 0, 20, "up"),
+          span(host, 20, 23, "down"),
+          span(host, 60, 62, "down"),
+          span(host, 63, 64, "down"),
+          span(host, 64, 120, "up"),
+        ]),
+        span(google, 23, 40, "up"),
+        span(google, 40, 41, "down"),
+        span(google, 41, 60, "up"),
+        span(cloudflare, 23, 60, "up"),
+      ];
+
+      const legacyRows = series.flatMap(
+        ({ host, startMs, count, intervalMs, kind }) =>
+          Array.from({ length: count }, (_, index): LegacyRow => {
+            const timestampMs = startMs + index * intervalMs;
+            return kind === "down"
+              ? {
+                  timestampMs,
+                  source: "ping",
+                  host,
+                  packetLoss: 100,
+                  connectivityStatus: "down",
+                }
+              : {
+                  timestampMs,
+                  source: "ping",
+                  host,
+                  latency: 30,
+                  jitter: 2,
+                  packetLoss: 0,
+                  connectivityStatus: "up",
+                };
+          })
+      );
+
+      it("is migrated on connect, then measures the cycle period and outage durations", async () => {
+        const designatedType = async () =>
+          (
+            await queryQuestDB(
+              `SELECT type FROM table_columns('${legacyName}') WHERE designated`
+            )
+          )[0];
+        await Effect.runPromise(dropTableFamily(legacyName));
+        await Effect.runPromise(createLegacyTable(legacyName, legacyRows));
+
+        const program = Effect.gen(function* () {
+          const db = yield* QuestDB;
+          yield* db
+            .health()
+            .pipe(
+              Effect.retry(
+                Schedule.spaced("200 millis").pipe(
+                  Schedule.upTo({ duration: "30 seconds" })
+                )
+              )
+            );
+
+          const period = yield* db.queryCyclePeriod({
+            startTime: new Date(T0),
+            endTime: new Date(T0 + HOUR),
+          });
+          const result = yield* getOutagesHandler({ query: WINDOW });
+          return { period, outages: result.data };
+        }).pipe(Effect.provide(legacyLayer));
+
+        const before = await designatedType();
+        let after: Awaited<ReturnType<typeof designatedType>>;
+        let ledger: readonly (readonly unknown[])[];
+        let leftovers: readonly (readonly unknown[])[];
+        let result: { period: number | null; outages: unknown };
+        try {
+          result = await Effect.runPromise(program);
+          after = await designatedType();
+          ledger = await queryQuestDB(
+            `SELECT version FROM ${legacyName}_migrations ORDER BY version`
+          );
+          leftovers = await queryQuestDB(
+            `SELECT table_name FROM tables() WHERE table_name IN ('${legacyName}__previous', '${legacyName}__rebuild')`
+          );
+        } finally {
+          await Effect.runPromise(dropTableFamily(legacyName));
+        }
+        const { period, outages } = result;
+
+        expect(before).toEqual(["TIMESTAMP_NS"]);
+        expect(after).toEqual(["TIMESTAMP"]);
+        expect(ledger).toEqual([[1], [2]]);
+        expect(leftovers).toEqual([]);
+        expect(period).toBe(CYCLE_MS);
+        expect(outages).toEqual([
+          {
+            start: new Date(atCycle(60)).toISOString(),
+            end: new Date(atCycle(64)).toISOString(),
+            durationSeconds: 120,
+            status: "down",
+            affectedHosts: [cloudflare, google],
+            maxPacketLoss: 100,
+            peakLatency: null,
+          },
+          {
+            start: new Date(atCycle(40)).toISOString(),
+            end: new Date(atCycle(41)).toISOString(),
+            durationSeconds: 30,
+            status: "degraded",
+            affectedHosts: [google],
+            maxPacketLoss: 100,
+            peakLatency: 30,
+          },
+          {
+            start: new Date(atCycle(20)).toISOString(),
+            end: new Date(atCycle(23)).toISOString(),
+            durationSeconds: 90,
+            status: "down",
+            affectedHosts: [cloudflare, google],
+            maxPacketLoss: 100,
+            peakLatency: null,
+          },
+        ]);
+      }, 60_000);
     }
   );
 

@@ -400,6 +400,7 @@ describe("mapOutageRunRow", () => {
         run_id: "3",
         start_time: "2024-01-01T12:00:00.000Z",
         last_time: "2024-01-01T12:05:00.000Z",
+        recovered_time: "2024-01-01T12:05:30.000Z",
         had_down: 1,
         max_packet_loss: 100,
         peak_latency: 40,
@@ -408,6 +409,7 @@ describe("mapOutageRunRow", () => {
       run_id: 3,
       start_time: "2024-01-01T12:00:00.000Z",
       last_time: "2024-01-01T12:05:00.000Z",
+      recovered_time: "2024-01-01T12:05:30.000Z",
       had_down: true,
       max_packet_loss: 100,
       peak_latency: 40,
@@ -427,11 +429,12 @@ describe("mapOutageRunRow", () => {
     expect(result.had_down).toBe(false);
   });
 
-  it("should keep a missing loss and latency null", () => {
+  it("should keep a missing loss, latency and recovery null", () => {
     const result = mapOutageRunRow({
       run_id: 1,
       start_time: "t1",
       last_time: "t2",
+      recovered_time: null,
       had_down: 1,
       max_packet_loss: null,
       peak_latency: null,
@@ -439,6 +442,7 @@ describe("mapOutageRunRow", () => {
 
     expect(result.max_packet_loss).toBeNull();
     expect(result.peak_latency).toBeNull();
+    expect(result.recovered_time).toBeNull();
   });
 });
 
@@ -447,6 +451,7 @@ describe("attachOutageHosts", () => {
     run_id: runId,
     start_time: `start-${runId}`,
     last_time: `last-${runId}`,
+    recovered_time: null,
     had_down: true,
     max_packet_loss: 100,
     peak_latency: null,

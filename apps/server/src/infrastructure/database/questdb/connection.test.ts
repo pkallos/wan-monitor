@@ -1,13 +1,29 @@
 import { beforeEach, describe, expect, it } from "@effect/vitest";
 import { Sender } from "@questdb/nodejs-client";
-import { Duration, Effect, Layer, Option, Result } from "effect";
+import {
+  Context,
+  Deferred,
+  Duration,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Result,
+} from "effect";
+import { TestClock } from "effect/testing";
 import { Pool } from "pg";
 import { vi } from "vitest";
 import {
   QuestDBConnection,
-  QuestDBConnectionLive,
+  QuestDBConnectionOverMigrator,
+  type QuestDBConnectionService,
 } from "@/infrastructure/database/questdb/connection";
 import { DbUnavailable } from "@/infrastructure/database/questdb/errors";
+import { MigrationError } from "@/infrastructure/database/questdb/migrations/migration";
+import {
+  SchemaMigrator,
+  type SchemaMigratorService,
+} from "@/infrastructure/database/questdb/migrations/service";
 import { makeTestConfigLayer } from "@/test/config";
 
 vi.mock("@questdb/nodejs-client");
@@ -24,6 +40,35 @@ const mockPool = (mock: Partial<Pool>) => {
 const TestConfigLayer = makeTestConfigLayer({
   database: { requestTimeout: 5000, retryTimeout: 10000 },
 });
+
+const failing = (kind: "transient" | "terminal", step = "copy") =>
+  new MigrationError({ step, kind, message: "disk full" });
+
+const healthyConnection = () => {
+  vi.mocked(Sender.fromConfig).mockResolvedValue(
+    asSender({
+      flush: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+  );
+  mockPool({
+    query: vi.fn().mockResolvedValue({ rows: [] }),
+    end: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+  });
+};
+
+const migratorLayer = (migrate: SchemaMigratorService["migrate"]) =>
+  Layer.succeed(SchemaMigrator, { migrate });
+
+const connectionLayer = (
+  config: typeof TestConfigLayer = TestConfigLayer,
+  migrator: ReturnType<typeof migratorLayer> = migratorLayer(() => Effect.void)
+) =>
+  Layer.provide(
+    QuestDBConnectionOverMigrator,
+    Layer.mergeAll(config, migrator)
+  );
 
 describe("QuestDBConnection integration tests", () => {
   beforeEach(() => {
@@ -57,9 +102,7 @@ describe("QuestDBConnection integration tests", () => {
           expect.stringContaining("http::addr=localhost:9000")
         );
         expect(mockPgClient.query).toHaveBeenCalledWith("SELECT 1");
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live(
@@ -97,11 +140,7 @@ describe("QuestDBConnection integration tests", () => {
           expect(Sender.fromConfig).toHaveBeenCalledWith(
             expect.stringContaining("tcp::addr=localhost:9009")
           );
-        }).pipe(
-          Effect.provide(
-            Layer.provide(QuestDBConnectionLive, TestConfigTcpLayer)
-          )
-        );
+        }).pipe(Effect.provide(connectionLayer(TestConfigTcpLayer)));
       }
     );
 
@@ -115,9 +154,7 @@ describe("QuestDBConnection integration tests", () => {
         yield* Effect.sleep(Duration.millis(200));
         const result = yield* Effect.result(connection.getConnection);
         expect(Result.isFailure(result)).toBe(true);
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live(
@@ -143,9 +180,7 @@ describe("QuestDBConnection integration tests", () => {
 
           expect(mockSender.close).toHaveBeenCalled();
           expect(mockPgClient.end).toHaveBeenCalled();
-        }).pipe(
-          Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-        );
+        }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
       }
     );
 
@@ -171,9 +206,7 @@ describe("QuestDBConnection integration tests", () => {
 
         expect(mockSender.close).toHaveBeenCalled();
         expect(mockPgClient.end).toHaveBeenCalled();
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
   });
 
@@ -191,9 +224,7 @@ describe("QuestDBConnection integration tests", () => {
         if (Result.isFailure(result)) {
           expect(result.failure).toBeInstanceOf(DbUnavailable);
         }
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live("should track connection state correctly", () => {
@@ -225,9 +256,7 @@ describe("QuestDBConnection integration tests", () => {
         } else {
           expect.fail("connectedSince should be Some(Date)");
         }
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live("should close connection properly", () => {
@@ -256,9 +285,7 @@ describe("QuestDBConnection integration tests", () => {
         expect(mockSender.flush).toHaveBeenCalled();
         expect(mockSender.close).toHaveBeenCalled();
         expect(mockPgClient.end).toHaveBeenCalled();
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
   });
 
@@ -290,9 +317,7 @@ describe("QuestDBConnection integration tests", () => {
         const conn = yield* connection.getConnection;
         expect(conn).toBeDefined();
         expect(attemptCount).toBeGreaterThan(1);
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live("should update lastError on connection failure", () => {
@@ -309,9 +334,7 @@ describe("QuestDBConnection integration tests", () => {
         if (Option.isSome(state.lastError)) {
           expect(state.lastError.value.message).toContain("timed out");
         }
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
   });
 
@@ -346,9 +369,7 @@ describe("QuestDBConnection integration tests", () => {
         if (Option.isSome(stateAfter.lastError)) {
           expect(stateAfter.lastError.value.message).toBe("Test error");
         }
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live("should handle health check failures and reconnect", () => {
@@ -379,9 +400,7 @@ describe("QuestDBConnection integration tests", () => {
 
         yield* connection.getState;
         expect(healthCheckCount).toBeGreaterThan(1);
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live("should handle pg error events", () => {
@@ -419,9 +438,7 @@ describe("QuestDBConnection integration tests", () => {
 
         const stateAfter = yield* connection.getState;
         expect(Option.isNone(stateAfter.connection)).toBe(true);
-      }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
-      );
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
     it.live("should handle cleanup errors gracefully", () => {
@@ -443,9 +460,415 @@ describe("QuestDBConnection integration tests", () => {
         const connection = yield* QuestDBConnection;
         yield* Effect.sleep(Duration.millis(200));
         yield* connection.close;
+      }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
+    });
+  });
+
+  describe("schema migration", () => {
+    it.live("migrates before it creates the sender", () => {
+      const events: string[] = [];
+      healthyConnection();
+      vi.mocked(Sender.fromConfig).mockImplementation(async () => {
+        events.push("sender");
+        return asSender({
+          flush: vi.fn().mockResolvedValue(undefined),
+          close: vi.fn().mockResolvedValue(undefined),
+        });
+      });
+
+      return Effect.gen(function* () {
+        const connection = yield* QuestDBConnection;
+        yield* Effect.sleep(Duration.millis(300));
+        yield* connection.getConnection;
+
+        expect(events).toEqual(["migrate", "sender"]);
       }).pipe(
-        Effect.provide(Layer.provide(QuestDBConnectionLive, TestConfigLayer))
+        Effect.provide(
+          connectionLayer(
+            TestConfigLayer,
+            migratorLayer(() => Effect.sync(() => void events.push("migrate")))
+          )
+        )
       );
+    });
+
+    it.live("explains the wait through lastError while it migrates", () => {
+      healthyConnection();
+      const release = Deferred.makeUnsafe<void>();
+
+      return Effect.gen(function* () {
+        const connection = yield* QuestDBConnection;
+        yield* Effect.sleep(Duration.millis(300));
+
+        const migrating = yield* connection.getState;
+        expect(migrating.isConnecting).toBe(true);
+        expect(Option.isNone(migrating.connection)).toBe(true);
+        expect(
+          Option.map(migrating.lastError, (error) => error.message)
+        ).toEqual(
+          Option.some("Migrating database schema (v2: conform-network-metrics)")
+        );
+        const unavailable = yield* Effect.flip(connection.getConnection);
+        expect(unavailable.message).toContain("Migrating database schema");
+
+        yield* Deferred.succeed(release, undefined);
+        yield* Effect.sleep(Duration.millis(300));
+        yield* connection.getConnection;
+      }).pipe(
+        Effect.provide(
+          connectionLayer(
+            TestConfigLayer,
+            migratorLayer(({ onProgress }) =>
+              Effect.gen(function* () {
+                yield* onProgress?.("v2: conform-network-metrics") ??
+                  Effect.void;
+                yield* Deferred.await(release);
+              })
+            )
+          )
+        )
+      );
+    });
+
+    it.live(
+      "shows a recovery step through lastError, not a stale connection error",
+      () => {
+        healthyConnection();
+        const release = Deferred.makeUnsafe<void>();
+
+        return Effect.gen(function* () {
+          const connection = yield* QuestDBConnection;
+          yield* Effect.sleep(Duration.millis(300));
+
+          const migrating = yield* connection.getState;
+          expect(
+            Option.map(migrating.lastError, (error) => error.message)
+          ).toEqual(
+            Option.some(
+              "Migrating database schema (recovering an interrupted rebuild of network_metrics)"
+            )
+          );
+
+          yield* Deferred.succeed(release, undefined);
+        }).pipe(
+          Effect.provide(
+            connectionLayer(
+              TestConfigLayer,
+              migratorLayer(({ onProgress }) =>
+                Effect.gen(function* () {
+                  yield* onProgress?.(
+                    "recovering an interrupted rebuild of network_metrics"
+                  ) ?? Effect.void;
+                  yield* Deferred.await(release);
+                })
+              )
+            )
+          )
+        );
+      }
+    );
+
+    it.live(
+      "stays unavailable with the migration's own message and creates no sender when it fails",
+      () => {
+        vi.mocked(Sender.fromConfig).mockResolvedValue(asSender({}));
+
+        return Effect.gen(function* () {
+          const connection = yield* QuestDBConnection;
+          yield* Effect.sleep(Duration.millis(300));
+
+          const unavailable = yield* Effect.flip(connection.getConnection);
+          expect(unavailable).toBeInstanceOf(DbUnavailable);
+          expect(unavailable.message).toBe(failing("transient").message);
+          const state = yield* connection.getState;
+          expect(state.isConnecting).toBe(false);
+          expect(Sender.fromConfig).not.toHaveBeenCalled();
+        }).pipe(
+          Effect.provide(
+            connectionLayer(
+              TestConfigLayer,
+              migratorLayer(() => Effect.fail(failing("transient")))
+            )
+          )
+        );
+      }
+    );
+  });
+
+  describe("schema migration retries on the test clock", () => {
+    /** Builds the connection layer in a child fiber so the test clock can run its start-up sleep. */
+    const connect = (migrate: SchemaMigratorService["migrate"]) =>
+      Effect.gen(function* () {
+        const building = yield* Effect.forkChild(
+          Layer.build(connectionLayer(TestConfigLayer, migratorLayer(migrate)))
+        );
+        yield* TestClock.adjust(Duration.millis(100));
+        const context = yield* Fiber.join(building);
+        return Context.get(context, QuestDBConnection);
+      });
+
+    /** Lets the real promises behind a successful connection settle. */
+    const untilConnected = (connection: QuestDBConnectionService) =>
+      Effect.gen(function* () {
+        for (let polls = 0; polls < 200; polls += 1) {
+          if (Option.isSome((yield* connection.getState).connection)) return;
+          yield* Effect.promise(
+            () => new Promise((resolve) => setTimeout(resolve, 5))
+          );
+        }
+      });
+
+    it.effect(
+      "retries a transient failure at the reconnect interval and not before",
+      () => {
+        let attempts = 0;
+
+        return Effect.gen(function* () {
+          yield* connect(() =>
+            Effect.suspend(() => {
+              attempts += 1;
+              return Effect.fail(failing("transient"));
+            })
+          );
+          expect(attempts).toBe(1);
+
+          yield* TestClock.adjust(Duration.millis(1899));
+          expect(attempts).toBe(1);
+
+          yield* TestClock.adjust(Duration.millis(1));
+          expect(attempts).toBe(2);
+        });
+      }
+    );
+
+    it.effect(
+      "doubles the wait after each repeated transient failure, up to ten minutes",
+      () => {
+        let attempts = 0;
+        const waitsMs = [
+          2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000, 256_000,
+          512_000, 600_000, 600_000,
+        ];
+
+        return Effect.gen(function* () {
+          yield* connect(() =>
+            Effect.suspend(() => {
+              attempts += 1;
+              return Effect.fail(failing("transient"));
+            })
+          );
+          let waited = 100;
+
+          for (const [index, waitMs] of waitsMs.entries()) {
+            expect(attempts).toBe(index + 1);
+            yield* TestClock.adjust(Duration.millis(waitMs - waited - 1));
+            expect(attempts).toBe(index + 1);
+            yield* TestClock.adjust(Duration.millis(1));
+            expect(attempts).toBe(index + 2);
+            waited = 0;
+          }
+        });
+      }
+    );
+
+    it.effect("starts again at the reconnect interval after a success", () => {
+      healthyConnection();
+      let attempts = 0;
+
+      return Effect.gen(function* () {
+        const connection = yield* connect(() =>
+          Effect.suspend(() => {
+            attempts += 1;
+            return attempts <= 2
+              ? Effect.fail(failing("transient"))
+              : attempts === 3
+                ? Effect.void
+                : Effect.fail(failing("transient"));
+          })
+        );
+        yield* TestClock.adjust(Duration.millis(1900));
+        yield* TestClock.adjust(Duration.seconds(4));
+        expect(attempts).toBe(3);
+        yield* untilConnected(connection);
+
+        yield* connection.markDisconnected("connection dropped");
+        yield* TestClock.adjust(Duration.seconds(5));
+        expect(attempts).toBe(4);
+
+        yield* TestClock.adjust(Duration.millis(1999));
+        expect(attempts).toBe(4);
+        yield* TestClock.adjust(Duration.millis(1));
+        expect(attempts).toBe(5);
+      });
+    });
+
+    it.effect(
+      "keeps retrying a failed connect step at the reconnect interval and says so as a connection failure",
+      () => {
+        let attempts = 0;
+
+        return Effect.gen(function* () {
+          const connection = yield* connect(() =>
+            Effect.suspend(() => {
+              attempts += 1;
+              return Effect.fail(
+                new MigrationError({
+                  step: "connect",
+                  kind: "transient",
+                  message: "Could not connect to run migrations: ECONNREFUSED",
+                })
+              );
+            })
+          );
+          expect(attempts).toBe(1);
+
+          let waited = 100;
+          for (let expected = 2; expected <= 6; expected += 1) {
+            yield* TestClock.adjust(Duration.millis(2000 - waited - 1));
+            expect(attempts).toBe(expected - 1);
+            yield* TestClock.adjust(Duration.millis(1));
+            expect(attempts).toBe(expected);
+            waited = 0;
+          }
+          const state = yield* connection.getState;
+          expect(state.isConnecting).toBe(false);
+          expect(Option.map(state.lastError, (error) => error.message)).toEqual(
+            Option.some("Could not connect to run migrations: ECONNREFUSED")
+          );
+        });
+      }
+    );
+
+    it.effect("does not count connect failures towards the backoff", () => {
+      let attempts = 0;
+
+      return Effect.gen(function* () {
+        yield* connect(() =>
+          Effect.suspend(() => {
+            attempts += 1;
+            return Effect.fail(
+              attempts <= 3
+                ? failing("transient", "connect")
+                : failing("transient")
+            );
+          })
+        );
+        yield* TestClock.adjust(Duration.millis(1900));
+        yield* TestClock.adjust(Duration.seconds(2));
+        yield* TestClock.adjust(Duration.seconds(2));
+        expect(attempts).toBe(4);
+
+        yield* TestClock.adjust(Duration.millis(1999));
+        expect(attempts).toBe(4);
+        yield* TestClock.adjust(Duration.millis(1));
+        expect(attempts).toBe(5);
+        yield* TestClock.adjust(Duration.millis(3999));
+        expect(attempts).toBe(5);
+        yield* TestClock.adjust(Duration.millis(1));
+        expect(attempts).toBe(6);
+      });
+    });
+
+    it.effect(
+      "retries a terminal failure after ten minutes and not before",
+      () => {
+        let attempts = 0;
+
+        return Effect.gen(function* () {
+          const connection = yield* connect(() =>
+            Effect.suspend(() => {
+              attempts += 1;
+              return Effect.fail(failing("terminal"));
+            })
+          );
+          expect(attempts).toBe(1);
+
+          yield* TestClock.adjust(Duration.millis(10 * 60 * 1000 - 101));
+          expect(attempts).toBe(1);
+          const state = yield* connection.getState;
+          expect(Option.map(state.lastError, (error) => error.message)).toEqual(
+            Option.some("disk full")
+          );
+          expect(Sender.fromConfig).not.toHaveBeenCalled();
+
+          yield* TestClock.adjust(Duration.millis(1));
+          expect(attempts).toBe(2);
+        });
+      }
+    );
+
+    it.effect(
+      "connects once a transient failure clears and drops the migration error",
+      () => {
+        healthyConnection();
+        let attempts = 0;
+
+        return Effect.gen(function* () {
+          const connection = yield* connect(() =>
+            Effect.suspend(() => {
+              attempts += 1;
+              return attempts === 1
+                ? Effect.fail(failing("transient"))
+                : Effect.void;
+            })
+          );
+          const failed = yield* connection.getState;
+          expect(Option.isSome(failed.lastError)).toBe(true);
+          expect(Sender.fromConfig).not.toHaveBeenCalled();
+
+          yield* TestClock.adjust(Duration.seconds(2));
+          yield* untilConnected(connection);
+
+          const connected = yield* connection.getState;
+          expect(Option.isSome(connected.connection)).toBe(true);
+          expect(Option.isNone(connected.lastError)).toBe(true);
+          expect(attempts).toBe(2);
+          expect(Sender.fromConfig).toHaveBeenCalledTimes(1);
+        });
+      }
+    );
+
+    describe("rewriting tables", () => {
+      const permissions = () => {
+        const seen: boolean[] = [];
+        const migrate: SchemaMigratorService["migrate"] = ({
+          canRewriteTables,
+        }) => Effect.sync(() => void seen.push(canRewriteTables));
+        return { seen, migrate };
+      };
+
+      it.effect(
+        "allows it until this process has opened an ILP connection",
+        () => {
+          healthyConnection();
+          const { seen, migrate } = permissions();
+
+          return Effect.gen(function* () {
+            const connection = yield* connect(migrate);
+            yield* untilConnected(connection);
+            expect(seen).toEqual([true]);
+
+            yield* connection.markDisconnected("connection dropped");
+            yield* TestClock.adjust(Duration.seconds(5));
+            yield* untilConnected(connection);
+
+            expect(seen).toEqual([true, false]);
+          });
+        }
+      );
+
+      it.effect("keeps allowing it while no sender has been created", () => {
+        vi.mocked(Sender.fromConfig).mockRejectedValue(new Error("no sender"));
+        const { seen, migrate } = permissions();
+
+        return Effect.gen(function* () {
+          yield* connect(migrate);
+          yield* TestClock.adjust(Duration.seconds(20));
+
+          expect(seen.length).toBeGreaterThan(1);
+          expect(seen.every((allowed) => allowed)).toBe(true);
+        });
+      });
     });
   });
 });

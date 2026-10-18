@@ -29,7 +29,12 @@ const summarizeRun = (
   rangeEndMs: number
 ): Outage => {
   const startMs = Date.parse(run.start_time);
-  const endMs = Math.min(Date.parse(run.last_time) + periodMs, rangeEndMs);
+  const endMs = Math.min(
+    run.recovered_time === null
+      ? Date.parse(run.last_time) + periodMs
+      : Date.parse(run.recovered_time),
+    rangeEndMs
+  );
 
   return {
     start: new Date(startMs).toISOString(),
@@ -47,13 +52,13 @@ const summarizeRun = (
  * ascending time order. The database does the grouping (see
  * `buildQueryOutageRuns`): an up cycle always ends a run, and two non-up
  * cycles with no cycle recorded between them stay in one run when they sit
- * within `outageMergeGapMs` of each other, which bridges one skipped cycle but
- * not two. A run is `down` when any of its cycles was down, otherwise
- * `degraded`.
+ * within `outageMergeGapMs` of each other; that gap bridges one skipped cycle
+ * but not two. A run is `down` when any of its cycles was down, and
+ * `degraded` otherwise.
  *
- * A cycle covers one period, so a run ends one period after its last cycle,
- * clipped to the range end. A run that begins at the first cycle of the range
- * starts there: nothing earlier was observed.
+ * Each outage ends at the up cycle recorded within the merge gap after its run
+ * or, with none recorded, one period after its last cycle; the end is clipped
+ * to the range end.
  */
 export const summarizeOutages = (
   runs: readonly OutageRun[],

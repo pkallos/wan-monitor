@@ -557,6 +557,7 @@ describe("Connectivity Status Handlers", () => {
       run_id: runId,
       start_time: new Date(START + startSeconds * 1000).toISOString(),
       last_time: new Date(START + lastSeconds * 1000).toISOString(),
+      recovered_time: null,
       had_down: true,
       max_packet_loss: 100,
       peak_latency: null,

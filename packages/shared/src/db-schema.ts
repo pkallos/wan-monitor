@@ -1,24 +1,19 @@
 /**
  * Canonical QuestDB schema for the `network_metrics` table.
  *
- * This module is the single source of truth for the table's shape. It is
- * consumed by the server schema bootstrap (production/local dev), the server
- * integration-test setup, and the E2E seed fixture, so that every environment
- * creates an identical table and schema drift is impossible.
+ * This module is the single source of truth for the table's end-state shape.
+ * It is consumed by the server's schema migrations (production/local dev), the
+ * server integration-test setup, and the E2E seed fixture, so that every
+ * environment creates an identical table. Changing the columns needs a new
+ * migration; the migrator's integration test fails until there is one.
  *
  * The module is intentionally dependency-free (pure strings/arrays) so it can
  * be imported from any runtime context (Effect server, Vitest, Playwright)
  * without pulling in a framework dependency graph.
  */
 
-/** The metrics table name, referenced by all schema operations. */
+/** The default metrics table name. */
 export const NETWORK_METRICS_TABLE = "network_metrics";
-
-/**
- * Canonical schema version. Bump whenever {@link NETWORK_METRICS_COLUMNS}
- * changes so the change is visible in bootstrap logs and reviewable in diffs.
- */
-export const SCHEMA_VERSION = 1;
 
 /** A single QuestDB column definition. */
 export interface ColumnDefinition {
@@ -28,8 +23,8 @@ export interface ColumnDefinition {
 }
 
 /**
- * The designated timestamp column. QuestDB requires exactly one designated
- * timestamp for time-series partitioning.
+ * The designated timestamp column. A table has at most one, and partitioned
+ * WAL tables require it.
  */
 export const DESIGNATED_TIMESTAMP = "timestamp";
 
@@ -37,7 +32,7 @@ export const DESIGNATED_TIMESTAMP = "timestamp";
  * The canonical column set for `network_metrics`, in declaration order.
  *
  * Every column queried by the server (see `queries.ts`) must appear here so a
- * freshly-bootstrapped table can satisfy all queries without relying on ILP
+ * freshly created table can satisfy all queries without relying on ILP
  * schema-on-write to lazily create columns.
  */
 export const NETWORK_METRICS_COLUMNS: readonly ColumnDefinition[] = [
@@ -58,23 +53,24 @@ export const NETWORK_METRICS_COLUMNS: readonly ColumnDefinition[] = [
 
 /**
  * Build the idempotent `CREATE TABLE IF NOT EXISTS` statement for the canonical
- * schema. Uses WAL and daily partitioning so test and production tables share
- * identical semantics.
+ * schema. The table uses WAL and daily partitioning, so test and production
+ * tables behave identically.
  */
 export const buildCreateTableSql = (
-  table: string = NETWORK_METRICS_TABLE
+  table: string = NETWORK_METRICS_TABLE,
+  columnDefinitions: readonly ColumnDefinition[] = NETWORK_METRICS_COLUMNS
 ): string => {
-  const columns = NETWORK_METRICS_COLUMNS.map(
-    (column) => `  ${column.name} ${column.type}`
-  ).join(",\n");
+  const columns = columnDefinitions
+    .map((column) => `  ${column.name} ${column.type}`)
+    .join(",\n");
 
   return `CREATE TABLE IF NOT EXISTS ${table} (\n${columns}\n) TIMESTAMP(${DESIGNATED_TIMESTAMP}) PARTITION BY DAY WAL;`;
 };
 
 /**
  * Build a forward-only `ALTER TABLE ADD COLUMN` statement for a single column.
- * Used by the migration path when a pre-existing table is missing a canonical
- * column. Additive and non-destructive: no existing data is affected.
+ * A migration uses it when a pre-existing table lacks that column. It only
+ * adds, so no existing data is affected.
  */
 export const buildAddColumnSql = (
   column: ColumnDefinition,
@@ -83,9 +79,10 @@ export const buildAddColumnSql = (
 
 /**
  * Given the column names that currently exist on the table, return the
- * canonical columns that are missing and therefore need to be added.
+ * entries of `columns` whose names are not among them.
  */
 export const missingColumns = (
-  existing: readonly string[]
+  existing: readonly string[],
+  columns: readonly ColumnDefinition[] = NETWORK_METRICS_COLUMNS
 ): readonly ColumnDefinition[] =>
-  NETWORK_METRICS_COLUMNS.filter((column) => !existing.includes(column.name));
+  columns.filter((column) => !existing.includes(column.name));

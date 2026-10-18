@@ -109,6 +109,10 @@ export const mapOutageRunRow = (
   run_id: Number(row.run_id),
   start_time: String(row.start_time),
   last_time: String(row.last_time),
+  recovered_time:
+    row.recovered_time === null || row.recovered_time === undefined
+      ? null
+      : String(row.recovered_time),
   had_down: Number(row.had_down) > 0,
   max_packet_loss: toNumberOrNull(row.max_packet_loss),
   peak_latency: toNumberOrNull(row.peak_latency),
