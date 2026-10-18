@@ -102,7 +102,7 @@ All configuration is done via environment variables.
 |----------|---------|-------------|
 | `WAN_MONITOR_USERNAME` | `admin` | Login username |
 | `WAN_MONITOR_PASSWORD` | *(empty)* | Login password. **If empty, authentication is disabled.** |
-| `JWT_SECRET` | *(empty)* | Secret for signing tokens. **Required if password is set.** |
+| `JWT_SECRET` | *(random per start)* | Secret for signing tokens. When unset, a random secret is generated at each start and sessions end on restart. Set it whenever a password is set, and to keep sessions across restarts. |
 | `JWT_EXPIRES_IN` | `24h` | How long login sessions last |
 
 ### Server & Database

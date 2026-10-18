@@ -1,4 +1,5 @@
-import { Config, Context, Effect, Layer, Schema } from "effect";
+import { randomBytes } from "node:crypto";
+import { Config, Context, Effect, Layer, Option, Schema } from "effect";
 
 // Application configuration
 export interface AppConfig {
@@ -39,6 +40,18 @@ export interface AppConfig {
 export class ConfigService extends Context.Service<ConfigService, AppConfig>()(
   "ConfigService"
 ) {}
+
+// A secret generated per process start invalidates every session on restart,
+// so enabling auth without JWT_SECRET is worth a startup warning.
+const generateJwtSecret = (authEnabled: boolean) =>
+  Effect.gen(function* () {
+    if (authEnabled) {
+      yield* Effect.logWarning(
+        "JWT_SECRET is not set; sessions are signed with a random secret and will not survive a restart. Set JWT_SECRET to keep sessions across restarts."
+      );
+    }
+    return yield* Effect.sync(() => randomBytes(32).toString("hex"));
+  });
 
 // Load configuration from environment
 const makeConfig = Effect.gen(function* () {
@@ -105,9 +118,10 @@ const makeConfig = Effect.gen(function* () {
   const authPassword = yield* Config.String("WAN_MONITOR_PASSWORD").pipe(
     Config.withDefault("")
   );
-  const jwtSecret = yield* Config.String("JWT_SECRET").pipe(
-    Config.withDefault("wan-monitor-default-secret-change-in-production")
-  );
+  const configuredJwtSecret = yield* Config.option(Config.String("JWT_SECRET"));
+  const jwtSecret = Option.isSome(configuredJwtSecret)
+    ? configuredJwtSecret.value
+    : yield* generateJwtSecret(authPassword !== "");
   const jwtExpiresIn = yield* Config.String("JWT_EXPIRES_IN").pipe(
     Config.withDefault("24h")
   );

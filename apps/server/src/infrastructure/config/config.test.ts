@@ -1,4 +1,4 @@
-import { ConfigProvider, Effect, Exit, Layer } from "effect";
+import { ConfigProvider, Effect, Exit, Layer, Logger } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   type AppConfig,
@@ -123,6 +123,70 @@ describe("ConfigService", () => {
       const config = await loadConfig({ PING_HOSTS: "8.8.8.8,,1.1.1.1," });
 
       expect(config.ping.hosts).toEqual(["8.8.8.8", "1.1.1.1"]);
+    });
+  });
+
+  describe("JWT_SECRET", () => {
+    const loadWithWarnings = async (env: Record<string, string>) => {
+      const warnings: string[] = [];
+      const logger = Logger.make<unknown, void>(({ logLevel, message }) => {
+        if (logLevel === "Warn") {
+          warnings.push(String(message));
+        }
+      });
+      const config = await Effect.runPromise(
+        loading(env).pipe(Effect.provide(Logger.layer([logger])))
+      );
+      return { config, warnings };
+    };
+
+    it("uses the configured value as-is", async () => {
+      const config = await loadConfig({ JWT_SECRET: "fake-configured-secret" });
+
+      expect(config.auth.jwtSecret).toBe("fake-configured-secret");
+    });
+
+    it("generates a random hex secret when unset", async () => {
+      const config = await loadConfig({});
+
+      expect(config.auth.jwtSecret).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it("generates a different secret on every load", async () => {
+      const first = await loadConfig({});
+      const second = await loadConfig({});
+
+      expect(first.auth.jwtSecret).not.toBe(second.auth.jwtSecret);
+    });
+
+    it("generates a random secret when set to an empty string", async () => {
+      const config = await loadConfig({ JWT_SECRET: "" });
+
+      expect(config.auth.jwtSecret).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it("warns once when auth is enabled without a configured secret", async () => {
+      const { warnings } = await loadWithWarnings({
+        WAN_MONITOR_PASSWORD: "fake-password",
+      });
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("JWT_SECRET");
+    });
+
+    it("does not warn when the secret is configured", async () => {
+      const { warnings } = await loadWithWarnings({
+        WAN_MONITOR_PASSWORD: "fake-password",
+        JWT_SECRET: "fake-configured-secret",
+      });
+
+      expect(warnings).toEqual([]);
+    });
+
+    it("does not warn when auth is disabled", async () => {
+      const { warnings } = await loadWithWarnings({});
+
+      expect(warnings).toEqual([]);
     });
   });
 
