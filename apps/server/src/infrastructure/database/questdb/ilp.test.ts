@@ -1,4 +1,5 @@
 import type { Sender } from "@questdb/nodejs-client";
+import { NETWORK_METRICS_TABLE } from "@shared/db-schema";
 import type { NetworkMetric } from "@shared/metrics";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
@@ -34,7 +35,7 @@ describe("ILP integration tests", () => {
         connectivityStatus: "up",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics");
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
@@ -67,7 +68,7 @@ describe("ILP integration tests", () => {
         internalIp: "192.168.1.100",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics");
       expect(sender.symbol).toHaveBeenCalledWith("source", "speedtest");
@@ -104,7 +105,7 @@ describe("ILP integration tests", () => {
         source: "ping",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics");
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
@@ -122,7 +123,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.symbol).toHaveBeenCalledWith("source", "speedtest");
       expect(sender.symbol).not.toHaveBeenCalledWith("host", expect.anything());
@@ -137,7 +138,7 @@ describe("ILP integration tests", () => {
         host: "8.8.8.8",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
       expect(sender.floatColumn).not.toHaveBeenCalledWith(
@@ -154,7 +155,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.floatColumn).toHaveBeenCalledWith("latency", 15.5);
       expect(sender.floatColumn).not.toHaveBeenCalledWith(
@@ -171,7 +172,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.floatColumn).not.toHaveBeenCalledWith(
         "packet_loss",
@@ -187,7 +188,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.stringColumn).not.toHaveBeenCalledWith(
         "connectivity_status",
@@ -203,7 +204,7 @@ describe("ILP integration tests", () => {
         uploadBandwidth: 50_000_000,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.intColumn).toHaveBeenCalledWith(
         "upload_bandwidth",
@@ -223,7 +224,7 @@ describe("ILP integration tests", () => {
         downloadBandwidth: 100_000_000,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.intColumn).toHaveBeenCalledWith(
         "download_bandwidth",
@@ -243,7 +244,7 @@ describe("ILP integration tests", () => {
         isp: "Test ISP",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.stringColumn).toHaveBeenCalledWith("isp", "Test ISP");
       expect(sender.stringColumn).not.toHaveBeenCalledWith(
@@ -260,7 +261,7 @@ describe("ILP integration tests", () => {
         serverLocation: "Test Location",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.stringColumn).toHaveBeenCalledWith(
         "server_location",
@@ -280,7 +281,7 @@ describe("ILP integration tests", () => {
         internalIp: "192.168.1.100",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.stringColumn).toHaveBeenCalledWith(
         "internal_ip",
@@ -300,7 +301,7 @@ describe("ILP integration tests", () => {
         externalIp: "1.2.3.4",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.stringColumn).toHaveBeenCalledWith(
         "external_ip",
@@ -322,7 +323,7 @@ describe("ILP integration tests", () => {
         packetLoss: 0,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.floatColumn).toHaveBeenCalledWith("latency", 0);
       expect(sender.floatColumn).toHaveBeenCalledWith("jitter", 0);
@@ -337,7 +338,7 @@ describe("ILP integration tests", () => {
         source: "ping",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       const expectedNanos = BigInt(timestamp.getTime()) * 1_000_000n;
       expect(sender.at).toHaveBeenCalledWith(expectedNanos, "ns");
@@ -353,7 +354,7 @@ describe("ILP integration tests", () => {
         connectivityStatus: "degraded",
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
       expect(sender.symbol).toHaveBeenCalledWith("host", "1.1.1.1");
@@ -370,18 +371,6 @@ describe("ILP integration tests", () => {
         "packet_loss",
         expect.anything()
       );
-    });
-
-    it("should default to the network_metrics table when none is provided", async () => {
-      const sender = createMockSender();
-      const metric: NetworkMetric = {
-        timestamp: new Date("2024-01-01T12:00:00.000Z"),
-        source: "ping",
-      };
-
-      await writeMetricToSender(sender, metric);
-
-      expect(sender.table).toHaveBeenCalledWith("network_metrics");
     });
 
     it("should write to a custom table when one is provided", async () => {
@@ -406,9 +395,9 @@ describe("ILP integration tests", () => {
         source: "ping",
       };
 
-      await expect(writeMetricToSender(sender, metric)).rejects.toBe(
-        flushError
-      );
+      await expect(
+        writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE)
+      ).rejects.toBe(flushError);
     });
 
     it("should chain sender calls in correct order", async () => {
@@ -420,7 +409,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      await writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric, NETWORK_METRICS_TABLE);
 
       const callOrder = vi.mocked(sender.table).mock.invocationCallOrder[0];
       expect(callOrder).toBeLessThan(

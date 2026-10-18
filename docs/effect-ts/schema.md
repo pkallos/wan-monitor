@@ -82,11 +82,11 @@ validation-error wrapping correctly and gives a structured, path-aware error ins
 
 ## Typed HTTP errors
 
-`Schema.TaggedErrorClass` (v3's `Schema.TaggedError`, renamed) defines an error that both encodes over
+`Schema.TaggedError` defines an error that both encodes over
 HTTP and carries a response status, via the `httpApiStatus` annotation:
 
 ```ts
-export class MissingCredentials extends Schema.TaggedErrorClass<MissingCredentials>()(
+export class MissingCredentials extends Schema.TaggedError<MissingCredentials>()(
   "MissingCredentials",
   { message: Schema.String },
   { httpApiStatus: 400 }
@@ -95,6 +95,18 @@ export class MissingCredentials extends Schema.TaggedErrorClass<MissingCredentia
 
 See `error-handling.md` for the full error-modeling rules and `http-api.md` for how these attach to
 endpoints.
+
+## Decoding database rows
+
+Query results are decoded, never cast. `apps/server/src/infrastructure/database/questdb/model.ts` declares
+one `Schema.Struct` per query, and `service.ts` decodes every row through it, so each row type derives from its
+struct's `Type` and a column or alias that drifts from the SQL fails loudly. Two details:
+
+- pg returns LONG (int8) columns, including `count()` and `SUM()`, as strings and DOUBLE columns as
+  numbers, so numeric columns decode through `Schema.Union([Schema.Finite, Schema.FiniteFromString])`.
+- A row that fails to decode fails the whole query with a `DatabaseQueryError` (the API answers it as a
+  500 `InternalError`). Rows are not skipped or coerced: stored data is held to the declared schema by
+  the versioned migrations, so drift is fixed there, not tolerated in queries.
 
 ## Anti-patterns
 

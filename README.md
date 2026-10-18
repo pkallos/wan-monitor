@@ -317,6 +317,7 @@ wan-monitor/
 | `/api/auth/status` | GET | Check if auth is required |
 | `/api/auth/login` | POST | Login (returns JWT) |
 | `/api/metrics` | GET | Query ping and speedtest data |
+| `/api/metrics/earliest` | GET | Timestamp of the oldest stored row, or `null` when there is none |
 | `/api/connectivity-status` | GET | Aggregated up/down/degraded status |
 | `/api/connectivity-status/live` | GET | Current status from the newest ping cycle in a trailing window |
 | `/api/connectivity-status/outages` | GET | Outage log: runs of non-up ping cycles, newest first (500 at most) |
@@ -339,6 +340,8 @@ Query parameters for `/api/metrics`:
 With a `granularity`, each ping row also carries `latency_p50` and `latency_p95`, the approximate percentiles of the per-cycle mean latency in its bucket, the same population `/summary` uses. For one `host`, a bucket holds every reading of that host, as the host summary does. The bucket averages for latency, jitter and packet loss are means of per-cycle means: each ping cycle is first reduced to the mean across its hosts, a step a query for one `host` skips.
 
 Every endpoint that takes a range reads `startTime` and `endTime` as ISO 8601 timestamps with a time and a zone (`2024-02-10T08:00:00Z`): `/api/metrics`, `/api/speedtest/history`, `/api/connectivity-status`, `/api/summary` and `/api/connectivity-status/outages`. A missing `endTime` defaults to the current time, and a missing `startTime` trails the `endTime` by one hour for `/api/metrics` and `/api/speedtest/history` and by 24 hours for the other three. A malformed timestamp, one whose UTC instant falls outside years 0000 to 9999, a `startTime` after the `endTime`, a `limit` that is not a positive integer, or a window wider than the endpoint allows (below) is rejected with a 400 before any query runs. A reversed range answers with the `InvalidTimeRange` error; a malformed value fails request decoding instead.
+
+The data endpoints (`/api/metrics`, `/api/metrics/earliest`, `/api/speedtest/history`, `/api/connectivity-status`, `/api/connectivity-status/live`, `/api/connectivity-status/outages` and `/api/summary`) answer a `503` with `DbUnavailable` when QuestDB is unreachable and a `500` with `InternalError` when a query fails for any other reason. Both of those bodies are `{ "_tag": ..., "message": ... }` with a fixed message, and the cause of a `500` is logged on the server only.
 
 The summary and outage endpoints are read-only aggregates over the same `network_metrics` table.
 

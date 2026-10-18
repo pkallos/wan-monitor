@@ -1,18 +1,18 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DB_UNAVAILABLE } from "@shared/api/errors";
+import { DbUnavailable } from "@shared/api/errors";
+import type { Metric } from "@wan-monitor/shared";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 import { getSummaryHandler } from "@/core/api/handlers/summary";
 import {
-  DbUnavailable,
+  DatabaseUnavailable,
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
 import type {
   ConnectivityStatusRow,
   HostStatsRow,
-  MetricRow,
   QueryMetricsParams,
   SummaryStatsRow,
 } from "@/infrastructure/database/questdb/model";
@@ -310,7 +310,7 @@ describe("Summary Handlers", () => {
     it.effect(
       "summarizes speed tests, ignoring failed tests stored as 0",
       () => {
-        const speedtest = (download: number, upload: number): MetricRow => ({
+        const speedtest = (download: number, upload: number): Metric => ({
           timestamp: "2024-01-31T12:00:00Z",
           source: "speedtest",
           download_speed: download,
@@ -342,7 +342,9 @@ describe("Summary Handlers", () => {
       () => {
         const db: Partial<QuestDBService> = {
           queryHostStats: () =>
-            Effect.fail(new DbUnavailable({ message: "connection refused" })),
+            Effect.fail(
+              new DatabaseUnavailable({ message: "connection refused" })
+            ),
         };
 
         return Effect.gen(function* () {
@@ -355,7 +357,7 @@ describe("Summary Handlers", () => {
             const error = Cause.findErrorOption(exit.cause);
             expect(Option.isSome(error)).toBe(true);
             if (Option.isSome(error)) {
-              expect(error.value).toMatchObject({ error: DB_UNAVAILABLE });
+              expect(error.value).toBeInstanceOf(DbUnavailable);
             }
           }
         }).pipe(Effect.provide(layers(db)));

@@ -2,8 +2,8 @@ import { createServer, type Server, type Socket } from "node:net";
 import { DatabaseError, Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DatabaseUnavailable,
   DatabaseWriteError,
-  DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 import {
   classifyWriteError,
@@ -188,7 +188,7 @@ describe("classifyWriteError", () => {
   it("should treat a rejected write as an unavailable database over TCP", () => {
     const error = classifyWriteError("write metric", "tcp")(rejected);
 
-    expect(error).toBeInstanceOf(DbUnavailable);
+    expect(error).toBeInstanceOf(DatabaseUnavailable);
     expect(error.message).toBe("invalid column: nope");
   });
 });

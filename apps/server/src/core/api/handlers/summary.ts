@@ -15,7 +15,7 @@ import {
   type TimeWindow,
   validateWindow,
 } from "@/core/analytics/window";
-import { mapQueryError } from "@/core/api/handlers/db-error";
+import { withApiErrors } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import type {
   HostStatsRow,
@@ -120,7 +120,7 @@ const loadSummary = (range: TimeWindow) =>
         endTime: new Date(range.endMs).toISOString(),
       },
     };
-  }).pipe(Effect.catch(mapQueryError("Failed to query summary")));
+  }).pipe(withApiErrors("Failed to query summary"));
 
 export const getSummaryHandler = ({
   query,

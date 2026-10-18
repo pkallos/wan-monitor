@@ -17,6 +17,10 @@ export class SpeedTestTimeoutError extends Data.TaggedError(
   "SpeedTestTimeoutError"
 )<{
   readonly timeoutMs: number;
-}> {}
+}> {
+  override get message(): string {
+    return `Timeout after ${this.timeoutMs}ms`;
+  }
+}
 
 export type SpeedTestError = SpeedTestExecutionError | SpeedTestTimeoutError;

@@ -17,21 +17,27 @@ export const mbpsToBps = (mbps: number): number => Math.round(mbps * 1_000_000);
 // Schemas
 // ============================================================================
 
-// Connectivity status enum
-export const ConnectivityStatus = Schema.Literals(["up", "down", "degraded"]);
-export type ConnectivityStatus = typeof ConnectivityStatus.Type;
+export const ConnectivityStatusSchema = Schema.Literals([
+  "up",
+  "down",
+  "degraded",
+]);
+export type ConnectivityStatus = typeof ConnectivityStatusSchema.Type;
+
+export const MetricSourceSchema = Schema.Literals(["ping", "speedtest"]);
+export type MetricSource = typeof MetricSourceSchema.Type;
 
 // Network metric schema
 export const NetworkMetric = Schema.Struct({
   timestamp: Schema.Date,
-  source: Schema.Literals(["ping", "speedtest"]),
+  source: MetricSourceSchema,
   host: Schema.optional(Schema.String),
   latency: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),
   packetLoss: Schema.optional(Schema.Number),
   downloadBandwidth: Schema.optional(Schema.Number),
   uploadBandwidth: Schema.optional(Schema.Number),
-  connectivityStatus: Schema.optional(ConnectivityStatus),
+  connectivityStatus: Schema.optional(ConnectivityStatusSchema),
   serverLocation: Schema.optional(Schema.String),
   isp: Schema.optional(Schema.String),
   externalIp: Schema.optional(Schema.String),

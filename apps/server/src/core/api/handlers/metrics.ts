@@ -7,7 +7,7 @@ import {
   type TimeWindow,
   validateWindow,
 } from "@/core/analytics/window";
-import { mapQueryError } from "@/core/api/handlers/db-error";
+import { withApiErrors } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
 const DEFAULT_METRICS_SPAN_MS = 60 * 60 * 1000;
@@ -21,7 +21,7 @@ const loadMetrics = (
 
     const startTime = new Date(startMs);
     const endTime = new Date(endMs);
-    const rawData = yield* db.queryMetrics({
+    const data = yield* db.queryMetrics({
       startTime,
       endTime,
       host: query.host,
@@ -31,24 +31,6 @@ const loadMetrics = (
       percentiles: query.percentiles,
     });
 
-    const data = rawData.map((m) => ({
-      timestamp: m.timestamp,
-      source: m.source,
-      host: m.host ?? undefined,
-      latency: m.latency ?? undefined,
-      latency_p50: m.latency_p50 ?? undefined,
-      latency_p95: m.latency_p95 ?? undefined,
-      jitter: m.jitter ?? undefined,
-      packet_loss: m.packet_loss ?? undefined,
-      connectivity_status: m.connectivity_status ?? undefined,
-      download_speed: m.download_speed ?? undefined,
-      upload_speed: m.upload_speed ?? undefined,
-      server_location: m.server_location ?? undefined,
-      isp: m.isp ?? undefined,
-      external_ip: m.external_ip ?? undefined,
-      internal_ip: m.internal_ip ?? undefined,
-    }));
-
     return {
       data,
       meta: {
@@ -57,7 +39,7 @@ const loadMetrics = (
         count: data.length,
       },
     };
-  }).pipe(Effect.catch(mapQueryError("Failed to query metrics")));
+  }).pipe(withApiErrors("Failed to query metrics"));
 
 export const getMetricsHandler = ({
   query,
@@ -77,7 +59,7 @@ export const getEarliestTimestampHandler = () =>
     const db = yield* QuestDB;
     const timestamp = yield* db.queryEarliestTimestamp();
     return { timestamp };
-  }).pipe(Effect.catch(mapQueryError("Failed to query earliest timestamp")));
+  }).pipe(withApiErrors("Failed to query earliest timestamp"));
 
 export const MetricsGroupLive = HttpApiBuilder.group(
   WanMonitorApi,

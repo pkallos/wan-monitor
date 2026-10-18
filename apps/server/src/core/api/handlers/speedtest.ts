@@ -1,20 +1,19 @@
 import { WanMonitorApi } from "@shared/api";
 import type { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
 import type { SpeedMetric } from "@wan-monitor/shared";
-import { Clock, Effect, Option, Result, type Schema } from "effect";
+import { Clock, Effect, Option, type Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import {
   resolveWindow,
   type TimeWindow,
   validateWindow,
 } from "@/core/analytics/window";
-import { mapQueryError } from "@/core/api/handlers/db-error";
+import { withApiErrors } from "@/core/api/handlers/db-error";
 import {
   SpeedTestRunner,
   type SpeedTestRunnerInterface,
 } from "@/core/monitoring/speed-test-runner";
 import { QuestDB } from "@/infrastructure/database/questdb";
-import { SpeedTestTimeoutError } from "@/infrastructure/speedtest/errors";
 
 const SpeedTestErrorCode = {
   ALREADY_RUNNING: "SPEED_TEST_ALREADY_RUNNING",
@@ -25,45 +24,27 @@ const SpeedTestErrorCode = {
 type SpeedTestErrorCode =
   (typeof SpeedTestErrorCode)[keyof typeof SpeedTestErrorCode];
 
-const failedResponse = (
-  nowMs: number,
-  code: SpeedTestErrorCode,
-  message: string
-) => ({
-  success: false as const,
-  timestamp: new Date(nowMs).toISOString(),
-  error: { code, message },
-});
+const failedResponse = (code: SpeedTestErrorCode, message: string) =>
+  Clock.currentTimeMillis.pipe(
+    Effect.map((nowMs) => ({
+      success: false as const,
+      timestamp: new Date(nowMs).toISOString(),
+      error: { code, message },
+    }))
+  );
 
 export const triggerSpeedTestHandler = (runner: SpeedTestRunnerInterface) =>
   Effect.gen(function* () {
-    const outcome = yield* runner.runIfIdle().pipe(Effect.result);
-    const now = yield* Clock.currentTimeMillis;
+    const outcome = yield* runner.runIfIdle();
 
-    if (Result.isFailure(outcome)) {
-      const error = outcome.failure;
-      return error instanceof SpeedTestTimeoutError
-        ? failedResponse(
-            now,
-            SpeedTestErrorCode.TIMEOUT,
-            `Speed test timed out after ${error.timeoutMs}ms`
-          )
-        : failedResponse(
-            now,
-            SpeedTestErrorCode.EXECUTION_FAILED,
-            error.message
-          );
-    }
-
-    if (Option.isNone(outcome.success)) {
-      return failedResponse(
-        now,
+    if (Option.isNone(outcome)) {
+      return yield* failedResponse(
         SpeedTestErrorCode.ALREADY_RUNNING,
         "A speed test is already in progress"
       );
     }
 
-    const { result } = outcome.success.value;
+    const { result } = outcome.value;
     return {
       success: true as const,
       timestamp: result.timestamp.toISOString(),
@@ -77,7 +58,17 @@ export const triggerSpeedTestHandler = (runner: SpeedTestRunnerInterface) =>
         externalIp: result.externalIp,
       },
     };
-  });
+  }).pipe(
+    Effect.catchTags({
+      SpeedTestTimeoutError: (error) =>
+        failedResponse(
+          SpeedTestErrorCode.TIMEOUT,
+          `Speed test timed out after ${error.timeoutMs}ms`
+        ),
+      SpeedTestExecutionError: (error) =>
+        failedResponse(SpeedTestErrorCode.EXECUTION_FAILED, error.message),
+    })
+  );
 
 const DEFAULT_HISTORY_SPAN_MS = 60 * 60 * 1000;
 
@@ -104,11 +95,11 @@ const loadSpeedTestHistory = (
       download_speed: m.download_speed,
       upload_speed: m.upload_speed,
       latency: m.latency,
-      jitter: m.jitter ?? undefined,
-      server_location: m.server_location ?? undefined,
-      isp: m.isp ?? undefined,
-      external_ip: m.external_ip ?? undefined,
-      internal_ip: m.internal_ip ?? undefined,
+      jitter: m.jitter,
+      server_location: m.server_location,
+      isp: m.isp,
+      external_ip: m.external_ip,
+      internal_ip: m.internal_ip,
     }));
 
     return {
@@ -119,7 +110,7 @@ const loadSpeedTestHistory = (
         count: data.length,
       },
     };
-  }).pipe(Effect.catch(mapQueryError("Failed to query speedtest history")));
+  }).pipe(withApiErrors("Failed to query speedtest history"));
 
 export const getSpeedTestHistoryHandler = ({
   query,

@@ -1,5 +1,5 @@
 import { BrowserKeyValueStore } from "@effect/platform-browser";
-import { DB_UNAVAILABLE, InvalidTimeRange } from "@shared/api/errors";
+import { DbUnavailable, InvalidTimeRange } from "@shared/api/errors";
 import { Clock, Effect, Option, Schema as S } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { Command } from "foldkit";
@@ -43,18 +43,13 @@ import { Settings, writeSettings } from "@/storage";
 const DB_UNAVAILABLE_MESSAGE = "Database unavailable.";
 const REQUEST_FAILED_MESSAGE = "Request failed";
 
-const isDbUnavailableError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "error" in error &&
-  error.error === DB_UNAVAILABLE;
-
+const isDbUnavailable = S.is(DbUnavailable);
 const isInvalidTimeRange = S.is(InvalidTimeRange);
 
 // Typed API errors that carry a message written for the viewer pass it
 // through; transport and decoding failures say nothing a viewer can act on.
 const fetchErrorMessage = (error: unknown): string =>
-  isDbUnavailableError(error)
+  isDbUnavailable(error)
     ? DB_UNAVAILABLE_MESSAGE
     : isInvalidTimeRange(error)
       ? error.message

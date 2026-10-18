@@ -1,13 +1,12 @@
 export {
   DatabaseConnectionError,
   DatabaseQueryError,
+  DatabaseUnavailable,
   DatabaseWriteError,
-  DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 
 export type {
   ConnectivityStatusRow,
-  MetricRow,
   QueryMetricsParams,
   QuerySpeedtestsParams,
 } from "@/infrastructure/database/questdb/model";

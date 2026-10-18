@@ -12,12 +12,14 @@ import { DatabaseError, Pool } from "pg";
 import { vi } from "vitest";
 import {
   QuestDBConnection,
+  type QuestDBConnectionService,
   type QuestDBRawConnection,
 } from "@/infrastructure/database/questdb/connection";
 import {
+  DatabaseConnectionError,
   DatabaseQueryError,
+  DatabaseUnavailable,
   DatabaseWriteError,
-  DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 import {
   QuestDB,
@@ -140,29 +142,31 @@ const withStubbedPgClient = <A, E>(
   );
 
 describe.each(queries)("%s", (_name, failureLabel, run) => {
-  it.effect("fails with DbUnavailable and marks the connection down", () =>
-    withStubbedPgClient(
-      () =>
-        Promise.reject(
-          systemError("connect ECONNREFUSED 127.0.0.1:8812", "ECONNREFUSED")
-        ),
-      (db, disconnects) =>
-        Effect.gen(function* () {
-          const error = yield* Effect.flip(run(db));
+  it.effect(
+    "fails with DatabaseUnavailable and marks the connection down",
+    () =>
+      withStubbedPgClient(
+        () =>
+          Promise.reject(
+            systemError("connect ECONNREFUSED 127.0.0.1:8812", "ECONNREFUSED")
+          ),
+        (db, disconnects) =>
+          Effect.gen(function* () {
+            const error = yield* Effect.flip(run(db));
 
-          expect(error).toBeInstanceOf(DbUnavailable);
-          expect(error).toMatchObject({
-            message: "connect ECONNREFUSED 127.0.0.1:8812",
-          });
-          expect(new Set(disconnects)).toEqual(
-            new Set(["connect ECONNREFUSED 127.0.0.1:8812"])
-          );
-        })
-    )
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
+            expect(error).toMatchObject({
+              message: "connect ECONNREFUSED 127.0.0.1:8812",
+            });
+            expect(new Set(disconnects)).toEqual(
+              new Set(["connect ECONNREFUSED 127.0.0.1:8812"])
+            );
+          })
+      )
   );
 
   it.effect(
-    "fails with DbUnavailable and a usable message when the error has no message",
+    "fails with DatabaseUnavailable and a usable message when the error has no message",
     () =>
       withStubbedPgClient(
         () =>
@@ -173,7 +177,7 @@ describe.each(queries)("%s", (_name, failureLabel, run) => {
           Effect.gen(function* () {
             const error = yield* Effect.flip(run(db));
 
-            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
             expect(error).toMatchObject({ message: "ECONNREFUSED" });
             expect(new Set(disconnects)).toEqual(new Set(["ECONNREFUSED"]));
           })
@@ -204,6 +208,26 @@ describe.each(queries)("%s", (_name, failureLabel, run) => {
             expect(error).toBeInstanceOf(DatabaseQueryError);
             expect(error).toMatchObject({
               message: `Failed to query ${failureLabel}: ${failure.message}`,
+            });
+            expect(disconnects).toEqual([]);
+          })
+      )
+  );
+
+  it.effect(
+    "fails with DatabaseQueryError and leaves the connection up on a row that does not match its schema",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [{ unexpected: "column" }] }),
+        (db, disconnects) =>
+          Effect.gen(function* () {
+            const error = yield* Effect.flip(run(db));
+
+            expect(error).toBeInstanceOf(DatabaseQueryError);
+            expect(error).toMatchObject({
+              message: expect.stringContaining(
+                `Failed to decode ${failureLabel} rows`
+              ),
             });
             expect(disconnects).toEqual([]);
           })
@@ -266,6 +290,7 @@ describe("queryOutageRuns", () => {
                   run_id: 1,
                   start_time: "2024-01-01T00:00:00.000Z",
                   last_time: "2024-01-01T00:01:00.000Z",
+                  recovered_time: null,
                   had_down: 0,
                   max_packet_loss: 20,
                   peak_latency: 40,
@@ -274,6 +299,7 @@ describe("queryOutageRuns", () => {
                   run_id: 2,
                   start_time: "2024-01-01T01:00:00.000Z",
                   last_time: "2024-01-01T01:00:30.000Z",
+                  recovered_time: null,
                   had_down: 1,
                   max_packet_loss: 100,
                   peak_latency: null,
@@ -289,6 +315,217 @@ describe("queryOutageRuns", () => {
             ["8.8.8.8", "1.1.1.1"],
           ]);
           expect(runs.map((run) => run.had_down)).toEqual([false, true]);
+        })
+    )
+  );
+});
+
+describe("query results", () => {
+  const speedtestRow = {
+    timestamp: "2024-01-01T12:00:00.000Z",
+    source: "speedtest",
+    download_bandwidth: "250000000",
+    upload_bandwidth: "50000000",
+  };
+
+  it.effect("reads string bandwidth columns from pg as numbers", () =>
+    withStubbedPgClient(
+      () => Promise.resolve({ rows: [speedtestRow] }),
+      (db) =>
+        Effect.gen(function* () {
+          const [row] = yield* db.querySpeedtests(window);
+
+          expect(row?.download_speed).toBe(250);
+          expect(row?.upload_speed).toBe(50);
+        })
+    )
+  );
+
+  it.effect("reads string counts from pg as numbers", () =>
+    withStubbedPgClient(
+      () =>
+        Promise.resolve({
+          rows: [
+            {
+              timestamp: "2024-01-01T12:00:00.000Z",
+              up_count: "12",
+              down_count: "0",
+              degraded_count: "0",
+              total_count: "12",
+            },
+          ],
+        }),
+      (db) =>
+        Effect.gen(function* () {
+          const rows = yield* db.queryConnectivityStatus(window);
+
+          expect(rows).toEqual([
+            {
+              timestamp: "2024-01-01T12:00:00.000Z",
+              up_count: 12,
+              down_count: 0,
+              degraded_count: 0,
+              total_count: 12,
+            },
+          ]);
+        })
+    )
+  );
+
+  it.effect("fails the whole query when one of several rows is invalid", () =>
+    withStubbedPgClient(
+      () =>
+        Promise.resolve({
+          rows: [
+            { timestamp: "2024-01-01T12:00:00.000Z", source: "ping" },
+            {
+              timestamp: "2024-01-01T12:01:00.000Z",
+              source: "ping",
+              connectivity_status: "sideways",
+            },
+          ],
+        }),
+      (db) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(db.queryMetrics(window));
+
+          expect(error).toBeInstanceOf(DatabaseQueryError);
+          expect(error).toMatchObject({
+            message: expect.stringContaining("Failed to decode metrics rows"),
+          });
+        })
+    )
+  );
+});
+
+describe("queries over no rows", () => {
+  const noSummary = {
+    latency_p50: null,
+    latency_p95: null,
+    avg_packet_loss: null,
+    avg_jitter: null,
+  };
+
+  it.effect.each([
+    ["queryMetrics", (db: QuestDBService) => db.queryMetrics(window), []],
+    ["querySpeedtests", (db: QuestDBService) => db.querySpeedtests(window), []],
+    [
+      "queryConnectivityStatus",
+      (db: QuestDBService) => db.queryConnectivityStatus(window),
+      [],
+    ],
+    ["queryHostStats", (db: QuestDBService) => db.queryHostStats(window), []],
+    [
+      "queryOutageRuns",
+      (db: QuestDBService) => db.queryOutageRuns({ ...window, mergeGapMs: 1 }),
+      [],
+    ],
+    [
+      "queryLiveConnectivity",
+      (db: QuestDBService) =>
+        db.queryLiveConnectivity("2024-01-01T00:00:00.000Z"),
+      null,
+    ],
+    [
+      "queryEarliestTimestamp",
+      (db: QuestDBService) => db.queryEarliestTimestamp(),
+      null,
+    ],
+    [
+      "queryLatestPingTimestamp",
+      (db: QuestDBService) => db.queryLatestPingTimestamp(),
+      null,
+    ],
+    [
+      "querySummaryStats",
+      (db: QuestDBService) => db.querySummaryStats(window),
+      noSummary,
+    ],
+    [
+      "queryCyclePeriod",
+      (db: QuestDBService) => db.queryCyclePeriod(window),
+      null,
+    ],
+  ] as const)(
+    "%s returns its empty result without an error",
+    ([, run, empty]) =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db) =>
+          Effect.gen(function* () {
+            expect(yield* run(db)).toEqual(empty);
+          })
+      )
+  );
+});
+
+describe("health", () => {
+  const healthLayer = (
+    connection: Pick<QuestDBConnectionService, "getConnection" | "getState">
+  ) =>
+    QuestDBOverConnection.pipe(
+      Layer.provide(
+        Layer.merge(
+          Layer.succeed(QuestDBConnection, {
+            ...connection,
+            markDisconnected: () => Effect.void,
+            close: Effect.void,
+          }),
+          makeTestConfigLayer()
+        )
+      )
+    );
+
+  const notConnected = {
+    connection: Option.none(),
+    isConnecting: false,
+    lastError: Option.none(),
+    connectedSince: Option.none(),
+  };
+
+  it.effect("fails with the connection's own unavailable error", () =>
+    Effect.gen(function* () {
+      const db = yield* QuestDB;
+      const error = yield* Effect.flip(db.health());
+
+      expect(error).toBeInstanceOf(DatabaseUnavailable);
+      expect(error).toMatchObject({ message: "connect ECONNREFUSED" });
+    }).pipe(
+      Effect.provide(
+        healthLayer({
+          getConnection: Effect.fail(
+            new DatabaseUnavailable({ message: "connect ECONNREFUSED" })
+          ),
+          getState: Effect.succeed(notConnected),
+        })
+      )
+    )
+  );
+
+  it.effect("fails with DatabaseConnectionError when SELECT 1 rejects", () =>
+    withStubbedPgClient(
+      () => Promise.reject(new Error("boom")),
+      (db) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(db.health());
+
+          expect(error).toBeInstanceOf(DatabaseConnectionError);
+          expect(error).toMatchObject({
+            message: "Health check failed: Error: boom",
+          });
+        })
+    )
+  );
+
+  it.effect("reports connected when SELECT 1 succeeds", () =>
+    withStubbedPgClient(
+      () => Promise.resolve({ rows: [] }),
+      (db) =>
+        Effect.gen(function* () {
+          const health = yield* db.health();
+
+          expect(health.connected).toBe(true);
+          expect(health.uptime).toBe(0);
         })
     )
   );
@@ -316,22 +553,24 @@ describe("writeMetric", () => {
       return { beforeTimeout, error };
     });
 
-  it.effect("fails with DbUnavailable and marks the connection down", () =>
-    withStubbedPgClient(
-      () => Promise.resolve({ rows: [] }),
-      (db, disconnects, conn) =>
-        Effect.gen(function* () {
-          vi.spyOn(conn.sender, "at").mockRejectedValue(
-            systemError("read ECONNRESET", "ECONNRESET")
-          );
+  it.effect(
+    "fails with DatabaseUnavailable and marks the connection down",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "at").mockRejectedValue(
+              systemError("read ECONNRESET", "ECONNRESET")
+            );
 
-          const error = yield* Effect.flip(db.writeMetric(metric));
+            const error = yield* Effect.flip(db.writeMetric(metric));
 
-          expect(error).toBeInstanceOf(DbUnavailable);
-          expect(error).toMatchObject({ message: "read ECONNRESET" });
-          expect(disconnects).toEqual(["read ECONNRESET"]);
-        })
-    )
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
+            expect(error).toMatchObject({ message: "read ECONNRESET" });
+            expect(disconnects).toEqual(["read ECONNRESET"]);
+          })
+      )
   );
 
   it.effect(
@@ -380,7 +619,7 @@ describe("writeMetric", () => {
   );
 
   it.effect(
-    "fails with DbUnavailable and marks the connection down on any rejected write over TCP",
+    "fails with DatabaseUnavailable and marks the connection down on any rejected write over TCP",
     () =>
       withStubbedPgClient(
         () => Promise.resolve({ rows: [] }),
@@ -392,7 +631,7 @@ describe("writeMetric", () => {
 
             const error = yield* Effect.flip(db.writeMetric(metric));
 
-            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
             expect(error).toMatchObject({
               message: "TCP transport is not connected",
             });
@@ -404,7 +643,7 @@ describe("writeMetric", () => {
   );
 
   it.effect(
-    "fails with DbUnavailable when QuestDB has closed the ILP socket under a real TCP sender",
+    "fails with DatabaseUnavailable when QuestDB has closed the ILP socket under a real TCP sender",
     () =>
       Effect.acquireUseRelease(
         Effect.promise(
@@ -431,7 +670,7 @@ describe("writeMetric", () => {
 
                 const error = yield* Effect.flip(db.writeMetric(metric));
 
-                expect(error).toBeInstanceOf(DbUnavailable);
+                expect(error).toBeInstanceOf(DatabaseUnavailable);
                 expect(disconnects).toHaveLength(1);
               }),
             `tcp::addr=127.0.0.1:${port};auto_flush_rows=1;auto_flush_interval=0;`,
@@ -519,7 +758,7 @@ describe("writeMetric", () => {
   );
 
   it.effect(
-    "fails with DbUnavailable once requestTimeout + retryTimeout elapse on a write that never settles",
+    "fails with DatabaseUnavailable once requestTimeout + retryTimeout elapse on a write that never settles",
     () =>
       withStubbedPgClient(
         () => Promise.resolve({ rows: [] }),
@@ -532,7 +771,7 @@ describe("writeMetric", () => {
             );
 
             expect(beforeTimeout).toBeUndefined();
-            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
             expect(error).toMatchObject({ message: timeoutMessage });
             expect(disconnects).toEqual([timeoutMessage]);
           })
@@ -540,7 +779,7 @@ describe("writeMetric", () => {
   );
 
   it.effect(
-    "fails with DbUnavailable when the real sender cannot reach QuestDB and the flush never settles",
+    "fails with DatabaseUnavailable when the real sender cannot reach QuestDB and the flush never settles",
     () =>
       withStubbedPgClient(
         () => Promise.resolve({ rows: [] }),
@@ -548,7 +787,7 @@ describe("writeMetric", () => {
           Effect.gen(function* () {
             const { error } = yield* runUntilTimeout(db.writeMetric(metric));
 
-            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
             expect(error).toMatchObject({ message: timeoutMessage });
             expect(disconnects).toEqual([timeoutMessage]);
           }),
@@ -595,26 +834,28 @@ describe("writeMetric", () => {
 });
 
 describe("flush", () => {
-  it.effect("fails with DbUnavailable and marks the connection down", () =>
-    withStubbedPgClient(
-      () => Promise.resolve({ rows: [] }),
-      (db, disconnects, conn) =>
-        Effect.gen(function* () {
-          vi.spyOn(conn.sender, "flush").mockRejectedValue(
-            systemError("read ECONNRESET", "ECONNRESET")
-          );
+  it.effect(
+    "fails with DatabaseUnavailable and marks the connection down",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "flush").mockRejectedValue(
+              systemError("read ECONNRESET", "ECONNRESET")
+            );
 
-          const error = yield* Effect.flip(db.flush());
+            const error = yield* Effect.flip(db.flush());
 
-          expect(error).toBeInstanceOf(DbUnavailable);
-          expect(error).toMatchObject({ message: "read ECONNRESET" });
-          expect(disconnects).toEqual(["read ECONNRESET"]);
-        })
-    )
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
+            expect(error).toMatchObject({ message: "read ECONNRESET" });
+            expect(disconnects).toEqual(["read ECONNRESET"]);
+          })
+      )
   );
 
   it.effect(
-    "fails with DbUnavailable and marks the connection down on any rejected flush over TCP",
+    "fails with DatabaseUnavailable and marks the connection down on any rejected flush over TCP",
     () =>
       withStubbedPgClient(
         () => Promise.resolve({ rows: [] }),
@@ -626,7 +867,7 @@ describe("flush", () => {
 
             const error = yield* Effect.flip(db.flush());
 
-            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
             expect(disconnects).toEqual(["TCP transport is not connected"]);
           }),
         stubbedSenderConfig,
@@ -657,7 +898,7 @@ describe("flush", () => {
   );
 
   it.effect(
-    "fails with DbUnavailable once requestTimeout + retryTimeout elapse on a flush that never settles",
+    "fails with DatabaseUnavailable once requestTimeout + retryTimeout elapse on a flush that never settles",
     () =>
       withStubbedPgClient(
         () => Promise.resolve({ rows: [] }),
@@ -672,7 +913,7 @@ describe("flush", () => {
             const error = yield* Fiber.join(fiber);
 
             const message = "QuestDB flush timed out after 11000ms";
-            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toBeInstanceOf(DatabaseUnavailable);
             expect(error).toMatchObject({ message });
             expect(disconnects).toEqual([message]);
           })

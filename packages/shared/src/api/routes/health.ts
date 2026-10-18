@@ -17,6 +17,5 @@ export const HealthApiGroup = HttpApiGroup.make("health")
   .add(
     HttpApiEndpoint.get("getLive", "/live", {
       success: HealthStatus,
-      error: Schema.String,
     })
   );

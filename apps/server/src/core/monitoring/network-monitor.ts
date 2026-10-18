@@ -130,30 +130,18 @@ export const NetworkMonitorLive = Layer.effect(
      */
     const executeSpeedTestCycle = Effect.gen(function* () {
       const { persisted } = yield* speedTestRunner.run().pipe(
-        Effect.catchTags({
-          SpeedTestExecutionError: (error) =>
-            Effect.gen(function* () {
-              yield* Ref.update(statsRef, (s) => ({
-                ...s,
-                failedSpeedTests: s.failedSpeedTests + 1,
-              }));
-              yield* Effect.logError(
-                `Speed test failed: SpeedTestExecutionError - ${error.message}`
-              );
-              return yield* Effect.fail(error);
-            }),
-          SpeedTestTimeoutError: (error) =>
-            Effect.gen(function* () {
-              yield* Ref.update(statsRef, (s) => ({
-                ...s,
-                failedSpeedTests: s.failedSpeedTests + 1,
-              }));
-              yield* Effect.logError(
-                `Speed test failed: SpeedTestTimeoutError - Timeout after ${error.timeoutMs}ms`
-              );
-              return yield* Effect.fail(error);
-            }),
-        })
+        Effect.tapError((error) =>
+          Ref.update(statsRef, (s) => ({
+            ...s,
+            failedSpeedTests: s.failedSpeedTests + 1,
+          })).pipe(
+            Effect.andThen(
+              Effect.logError(
+                `Speed test failed: ${error._tag} - ${error.message}`
+              )
+            )
+          )
+        )
       );
 
       const finishedAt = yield* Clock.currentTimeMillis;

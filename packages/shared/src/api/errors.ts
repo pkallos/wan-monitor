@@ -1,27 +1,5 @@
 import { Schema } from "effect";
 
-/**
- * Stable machine-readable code the frontend keys off to render the
- * "Database temporarily unavailable" banner. Kept in one place so the server
- * error payload and the client detection never drift.
- */
-export const DB_UNAVAILABLE = "DB_UNAVAILABLE" as const;
-
-/**
- * Structured body returned (with HTTP 503) by data endpoints when QuestDB is
- * unreachable. Declaring it as a typed API error lets the Effect HttpApiClient
- * decode it on the client instead of surfacing an opaque string.
- */
-export const DbUnavailableErrorSchema = Schema.Struct({
-  error: Schema.Literal(DB_UNAVAILABLE),
-  message: Schema.String,
-  timestamp: Schema.String,
-});
-
-export type DbUnavailableError = Schema.Schema.Type<
-  typeof DbUnavailableErrorSchema
->;
-
 // ---------------------------------------------------------------------------
 // Typed HTTP errors — Schema.TaggedError subclasses carrying the response
 // status. These replace plain `Effect.fail("string")` so the client can
@@ -64,4 +42,24 @@ export class HealthUnhealthy extends Schema.TaggedError<HealthUnhealthy>()(
   "HealthUnhealthy",
   { message: Schema.String },
   { httpApiStatus: 503 }
+) {}
+
+/**
+ * 503 — QuestDB is unreachable. The web app keys its "database unavailable"
+ * banner on this tag; the message is fixed and never carries driver text.
+ */
+export class DbUnavailable extends Schema.TaggedError<DbUnavailable>()(
+  "DbUnavailable",
+  { message: Schema.String },
+  { httpApiStatus: 503 }
+) {}
+
+/**
+ * 500 when a data query fails for a reason other than an outage. Fixed
+ * message; the cause stays in the server log.
+ */
+export class InternalError extends Schema.TaggedError<InternalError>()(
+  "InternalError",
+  { message: Schema.String },
+  { httpApiStatus: 500 }
 ) {}

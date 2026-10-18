@@ -54,9 +54,13 @@ const THIRTY_DAY_RANGE = Custom({
 const ALL_TIME_RANGE = Preset({ preset: "allTime" });
 
 const DB_UNAVAILABLE_BODY = {
-  error: "DB_UNAVAILABLE",
+  _tag: "DbUnavailable",
   message: "Database temporarily unavailable",
-  timestamp: "2026-07-26T00:30:00.000Z",
+};
+
+const INTERNAL_ERROR_BODY = {
+  _tag: "InternalError",
+  message: "Internal server error",
 };
 
 const mockHttpClient = (status: number, body: unknown) =>
@@ -187,18 +191,12 @@ describe("fetchMetrics", () => {
     }
   });
 
-  test("maps a DB_UNAVAILABLE response into a distinguishable, friendly message", async () => {
+  test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchMetrics({
       token: "abc",
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
-      Effect.provide(
-        mockHttpClient(503, {
-          error: "DB_UNAVAILABLE",
-          message: "Database temporarily unavailable",
-          timestamp: "2026-07-26T00:30:00.000Z",
-        })
-      ),
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
 
@@ -206,6 +204,24 @@ describe("fetchMetrics", () => {
       _tag: "FailedFetchMetrics",
       request: DEFAULT_REQUEST,
       error: "Database unavailable.",
+    });
+  });
+
+  test("words a 500 InternalError as a generic failure without its message", async () => {
+    const result = await fetchMetrics({
+      token: "abc",
+      dateRange: DEFAULT_DATE_RANGE,
+    }).pipe(
+      Effect.provide(
+        mockHttpClient(500, { ...INTERNAL_ERROR_BODY, message: "disk on fire" })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "FailedFetchMetrics",
+      request: DEFAULT_REQUEST,
+      error: "Request failed",
     });
   });
 
@@ -389,18 +405,12 @@ describe("fetchSpeedtestHistory", () => {
     expect(result._tag).toBe("SucceededFetchSpeedtestHistory");
   });
 
-  test("maps a DB_UNAVAILABLE response into a distinguishable, friendly message", async () => {
+  test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchSpeedtestHistory({
       token: "abc",
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
-      Effect.provide(
-        mockHttpClient(503, {
-          error: "DB_UNAVAILABLE",
-          message: "Database temporarily unavailable",
-          timestamp: "2026-07-26T00:30:00.000Z",
-        })
-      ),
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
 
@@ -609,18 +619,12 @@ describe("fetchConnectivityStatus", () => {
     });
   });
 
-  test("maps a DB_UNAVAILABLE response into a distinguishable, friendly message", async () => {
+  test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchConnectivityStatus({
       token: "abc",
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
-      Effect.provide(
-        mockHttpClient(503, {
-          error: "DB_UNAVAILABLE",
-          message: "Database temporarily unavailable",
-          timestamp: "2026-07-26T00:30:00.000Z",
-        })
-      ),
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
 
@@ -696,15 +700,9 @@ describe("fetchLiveConnectivity", () => {
     });
   });
 
-  test("maps a DB_UNAVAILABLE response into a distinguishable, friendly message", async () => {
+  test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
-      Effect.provide(
-        mockHttpClient(503, {
-          error: "DB_UNAVAILABLE",
-          message: "Database temporarily unavailable",
-          timestamp: "2026-07-26T00:30:00.000Z",
-        })
-      ),
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
 
@@ -716,7 +714,7 @@ describe("fetchLiveConnectivity", () => {
 
   test("maps a transport failure into FailedFetchLiveConnectivity", async () => {
     const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
-      Effect.provide(mockHttpClient(500, "Internal error")),
+      Effect.provide(mockHttpClient(500, INTERNAL_ERROR_BODY)),
       Effect.runPromise
     );
 
@@ -774,15 +772,9 @@ describe("fetchEarliestData", () => {
     });
   });
 
-  test("maps a DB_UNAVAILABLE response into a distinguishable, friendly message", async () => {
+  test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchEarliestData({ token: "abc" }).pipe(
-      Effect.provide(
-        mockHttpClient(503, {
-          error: "DB_UNAVAILABLE",
-          message: "Database temporarily unavailable",
-          timestamp: "2026-07-26T00:30:00.000Z",
-        })
-      ),
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
 
@@ -982,18 +974,12 @@ describe("fetchSummary", () => {
     });
   });
 
-  test("words a 503 DB_UNAVAILABLE as Database unavailable", async () => {
+  test("words a 503 DbUnavailable as Database unavailable", async () => {
     const result = await fetchSummary({
       token: "abc",
       dateRange: ONE_DAY_RANGE,
     }).pipe(
-      Effect.provide(
-        mockHttpClient(503, {
-          error: "DB_UNAVAILABLE",
-          message: "Database temporarily unavailable",
-          timestamp: "2026-07-26T00:00:00.000Z",
-        })
-      ),
+      Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
 
@@ -1028,7 +1014,10 @@ describe("the range request echoed back on results", () => {
     const result = await fetchOutages({
       token: "abc",
       dateRange: ONE_DAY_RANGE,
-    }).pipe(Effect.provide(mockHttpClient(500, "boom")), Effect.runPromise);
+    }).pipe(
+      Effect.provide(mockHttpClient(500, INTERNAL_ERROR_BODY)),
+      Effect.runPromise
+    );
 
     expect(result).toMatchObject({
       _tag: "FailedFetchOutages",
@@ -1130,7 +1119,10 @@ describe("fetchOutages", () => {
     const result = await fetchOutages({
       token: "abc",
       dateRange: ONE_DAY_RANGE,
-    }).pipe(Effect.provide(mockHttpClient(500, "boom")), Effect.runPromise);
+    }).pipe(
+      Effect.provide(mockHttpClient(500, INTERNAL_ERROR_BODY)),
+      Effect.runPromise
+    );
 
     expect(result._tag).toBe("FailedFetchOutages");
   });
@@ -1213,7 +1205,10 @@ describe("fetchHostLatency", () => {
       token: "abc",
       dateRange: ONE_DAY_RANGE,
       hosts: ["8.8.8.8"],
-    }).pipe(Effect.provide(mockHttpClient(500, "boom")), Effect.runPromise);
+    }).pipe(
+      Effect.provide(mockHttpClient(500, INTERNAL_ERROR_BODY)),
+      Effect.runPromise
+    );
 
     expect(result).toMatchObject({
       _tag: "FailedFetchHostLatency",

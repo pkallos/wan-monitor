@@ -1,17 +1,5 @@
 import type { Granularity } from "@shared/api/routes/metrics";
 
-export const VALID_GRANULARITIES: Granularity[] = [
-  "1m",
-  "5m",
-  "15m",
-  "1h",
-  "6h",
-  "1d",
-];
-
-export const isValidGranularity = (value: string): value is Granularity =>
-  VALID_GRANULARITIES.some((granularity) => granularity === value);
-
 /**
  * Granularity used when a request doesn't name one. The connectivity handler
  * and the SQL builder both read it, so the bucket grid coverage is measured

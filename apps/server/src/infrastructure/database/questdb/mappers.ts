@@ -1,128 +1,35 @@
+import type { Metric } from "@wan-monitor/shared";
 import type {
-  ConnectivityStatusRow,
-  CycleStatus,
-  HostStatsRow,
-  LiveConnectivityRow,
-  MetricRow,
+  MetricRowSchema,
   OutageHostRow,
   OutageRun,
   OutageRunRow,
-  SummaryStatsRow,
 } from "@/infrastructure/database/questdb/model";
 
-const toNumberOrNull = (value: unknown): number | null =>
-  value === null || value === undefined ? null : Number(value);
+const BITS_PER_MEGABIT = 1_000_000;
 
-export const mapMetricRow = (row: Record<string, unknown>): MetricRow =>
-  ({
-    timestamp: row.timestamp as string,
-    source: row.source as "ping" | "speedtest",
-    host: row.host as string | undefined,
-    latency:
-      row.latency !== null && row.latency !== undefined
-        ? (row.latency as number)
-        : undefined,
-    latency_p50: toNumberOrNull(row.latency_p50) ?? undefined,
-    latency_p95: toNumberOrNull(row.latency_p95) ?? undefined,
-    jitter:
-      row.jitter !== null && row.jitter !== undefined
-        ? (row.jitter as number)
-        : undefined,
-    packet_loss:
-      row.packet_loss !== null && row.packet_loss !== undefined
-        ? (row.packet_loss as number)
-        : undefined,
-    connectivity_status: row.connectivity_status as string | undefined,
-    download_speed:
-      row.download_bandwidth !== null && row.download_bandwidth !== undefined
-        ? (row.download_bandwidth as number) / 1_000_000
-        : undefined,
-    upload_speed:
-      row.upload_bandwidth !== null && row.upload_bandwidth !== undefined
-        ? (row.upload_bandwidth as number) / 1_000_000
-        : undefined,
-    server_location:
-      row.server_location !== null && row.server_location !== undefined
-        ? (row.server_location as string)
-        : undefined,
-    isp:
-      row.isp !== null && row.isp !== undefined
-        ? (row.isp as string)
-        : undefined,
-    external_ip:
-      row.external_ip !== null && row.external_ip !== undefined
-        ? (row.external_ip as string)
-        : undefined,
-    internal_ip:
-      row.internal_ip !== null && row.internal_ip !== undefined
-        ? (row.internal_ip as string)
-        : undefined,
-  }) satisfies MetricRow;
+const toMbps = (
+  bitsPerSecond: number | null | undefined
+): number | undefined =>
+  bitsPerSecond == null ? undefined : bitsPerSecond / BITS_PER_MEGABIT;
 
-// Mirrors `CYCLE_STATUS_CASE`'s own ELSE branch: a cycle that is neither down
-// nor degraded is up.
-const toCycleStatus = (value: unknown): CycleStatus =>
-  value === "down" ? "down" : value === "degraded" ? "degraded" : "up";
-
-export const mapLiveConnectivityRow = (
-  row: Record<string, unknown>
-): LiveConnectivityRow => ({
-  timestamp: row.timestamp as string,
-  cycle_status: toCycleStatus(row.cycle_status),
-});
-
-export const mapConnectivityStatusRow = (
-  row: Record<string, unknown>
-): ConnectivityStatusRow => ({
-  timestamp: row.timestamp as string,
-  up_count: Number(row.up_count ?? 0),
-  down_count: Number(row.down_count ?? 0),
-  degraded_count: Number(row.degraded_count ?? 0),
-  total_count: Number(row.total_count ?? 0),
-});
-
-export const mapSummaryStatsRow = (
-  row: Record<string, unknown>
-): SummaryStatsRow => ({
-  latency_p50: toNumberOrNull(row.latency_p50),
-  latency_p95: toNumberOrNull(row.latency_p95),
-  avg_packet_loss: toNumberOrNull(row.avg_packet_loss),
-  avg_jitter: toNumberOrNull(row.avg_jitter),
-});
-
-export const mapHostStatsRow = (
-  row: Record<string, unknown>
-): HostStatsRow => ({
-  host: String(row.host),
-  latency_p50: toNumberOrNull(row.latency_p50),
-  latency_p95: toNumberOrNull(row.latency_p95),
-  avg_packet_loss: toNumberOrNull(row.avg_packet_loss),
-  avg_jitter: toNumberOrNull(row.avg_jitter),
-  answered_count: Number(row.answered_count ?? 0),
-  total_count: Number(row.total_count ?? 0),
-  last_status: toCycleStatus(row.last_status),
-});
-
-export const mapOutageRunRow = (
-  row: Record<string, unknown>
-): OutageRunRow => ({
-  run_id: Number(row.run_id),
-  start_time: String(row.start_time),
-  last_time: String(row.last_time),
-  recovered_time:
-    row.recovered_time === null || row.recovered_time === undefined
-      ? null
-      : String(row.recovered_time),
-  had_down: Number(row.had_down) > 0,
-  max_packet_loss: toNumberOrNull(row.max_packet_loss),
-  peak_latency: toNumberOrNull(row.peak_latency),
-});
-
-export const mapOutageHostRow = (
-  row: Record<string, unknown>
-): OutageHostRow => ({
-  run_id: Number(row.run_id),
-  host: String(row.host),
+/** Renames bandwidth to Mbps speeds and turns every null column into an absent key. */
+export const toMetric = (row: typeof MetricRowSchema.Type): Metric => ({
+  timestamp: row.timestamp,
+  source: row.source,
+  host: row.host ?? undefined,
+  latency: row.latency ?? undefined,
+  latency_p50: row.latency_p50 ?? undefined,
+  latency_p95: row.latency_p95 ?? undefined,
+  jitter: row.jitter ?? undefined,
+  packet_loss: row.packet_loss ?? undefined,
+  connectivity_status: row.connectivity_status ?? undefined,
+  download_speed: toMbps(row.download_bandwidth),
+  upload_speed: toMbps(row.upload_bandwidth),
+  server_location: row.server_location ?? undefined,
+  isp: row.isp ?? undefined,
+  external_ip: row.external_ip ?? undefined,
+  internal_ip: row.internal_ip ?? undefined,
 });
 
 /** Attaches each run's affected hosts, matched on the run's id. */
@@ -146,9 +53,5 @@ export const attachOutageHosts = (
 };
 
 /** The measured cycle period in whole milliseconds, or null when unmeasurable. */
-export const mapCyclePeriodMs = (
-  row: Record<string, unknown> | undefined
-): number | null => {
-  const micros = toNumberOrNull(row?.period_micros);
-  return micros === null ? null : Math.round(micros / 1000);
-};
+export const toCyclePeriodMs = (micros: number | null): number | null =>
+  micros === null ? null : Math.round(micros / 1000);

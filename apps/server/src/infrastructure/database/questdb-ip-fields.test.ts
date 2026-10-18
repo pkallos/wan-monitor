@@ -1,4 +1,5 @@
 import type { NetworkMetric } from "@shared/metrics";
+import type { Metric } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { seedDatabase } from "@/infrastructure/database/questdb/test-utils/seed";
@@ -134,9 +135,9 @@ describe("QuestDB IP Fields Schema Mapping", () => {
     }
   );
 
-  it("should include IP fields in MetricRow type definition", () => {
+  it("should include IP fields in Metric type definition", () => {
     // Type-level test - this will fail at compile time if types are wrong
-    const mockRow: import("@/infrastructure/database/questdb").MetricRow = {
+    const mockRow: Metric = {
       timestamp: new Date().toISOString(),
       source: "speedtest",
       host: "test.com",

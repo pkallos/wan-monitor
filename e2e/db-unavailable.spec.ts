@@ -1,14 +1,14 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * PHI-96: when a data query returns the backend's `503 DB_UNAVAILABLE` response,
+ * PHI-96: when a data query returns the backend's `503 DbUnavailable` response,
  * the dashboard shows a warning distinguishing that specific failure and
  * recovers once queries succeed again.
  *
  * The outage is simulated at the network boundary with `page.route` (no
  * production test hooks): the metrics query drives the banner, so we stub only
- * that endpoint, then unroute to recover. The server's real 503 behaviour is
- * covered by unit tests (server `mapQueryError`, web `command.test.ts`).
+ * that endpoint, then unroute to recover. The server's real 503 is covered by
+ * the server and web unit tests.
  */
 
 const BANNER_TEXT = /Database unavailable/;
@@ -23,9 +23,8 @@ const applyPreset = async (page: Page, preset: string) => {
 };
 
 const DB_UNAVAILABLE_BODY = JSON.stringify({
-  error: "DB_UNAVAILABLE",
+  _tag: "DbUnavailable",
   message: "Database temporarily unavailable",
-  timestamp: new Date().toISOString(),
 });
 
 test("shows the DB-unavailable message and recovers", async ({ page }) => {

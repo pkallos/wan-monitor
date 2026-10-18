@@ -296,17 +296,23 @@ describe("Server Lifecycle Integration Tests", () => {
     it.effect(
       "should handle database connection failures during startup",
       () => {
-        class DbUnavailable extends Data.TaggedError("DbUnavailable")<{
+        class DatabaseUnavailable extends Data.TaggedError(
+          "DatabaseUnavailable"
+        )<{
           readonly message: string;
         }> {}
 
         const QuestDBFailingTest = Layer.succeed(QuestDB, {
           writeMetric: vi.fn(() =>
-            Effect.fail(new DbUnavailable({ message: "Connection refused" }))
+            Effect.fail(
+              new DatabaseUnavailable({ message: "Connection refused" })
+            )
           ),
           flush: vi.fn(() => Effect.void),
           queryMetrics: vi.fn(() =>
-            Effect.fail(new DbUnavailable({ message: "Connection refused" }))
+            Effect.fail(
+              new DatabaseUnavailable({ message: "Connection refused" })
+            )
           ),
           querySpeedtests: vi.fn(),
           queryConnectivityStatus: vi.fn(),
@@ -315,7 +321,9 @@ describe("Server Lifecycle Integration Tests", () => {
           queryLatestPingTimestamp: vi.fn(),
           ...emptyAnalyticsQueries,
           health: vi.fn(() =>
-            Effect.fail(new DbUnavailable({ message: "Connection refused" }))
+            Effect.fail(
+              new DatabaseUnavailable({ message: "Connection refused" })
+            )
           ),
           close: vi.fn(() => Effect.void),
         });
@@ -353,8 +361,8 @@ describe("Server Lifecycle Integration Tests", () => {
             const error = Cause.findErrorOption(healthExit.cause);
             expect(Option.isSome(error)).toBe(true);
             if (Option.isSome(error)) {
-              expect(error.value).toBeInstanceOf(DbUnavailable);
-              expect(error.value._tag).toBe("DbUnavailable");
+              expect(error.value).toBeInstanceOf(DatabaseUnavailable);
+              expect(error.value._tag).toBe("DatabaseUnavailable");
             }
           }
         }).pipe(Effect.provide(TestLayer));

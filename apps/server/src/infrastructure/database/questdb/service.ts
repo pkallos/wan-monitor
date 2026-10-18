@@ -1,39 +1,51 @@
 import type { DatabaseHealth, NetworkMetric } from "@shared/metrics";
-import { Context, Duration, Effect, Layer, Option, Semaphore } from "effect";
+import type { Metric } from "@wan-monitor/shared";
+import {
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  Option,
+  Schema,
+  Semaphore,
+} from "effect";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
   QuestDBConnection,
   QuestDBConnectionLive,
+  type QuestDBRawConnection,
 } from "@/infrastructure/database/questdb/connection";
 import {
   DatabaseConnectionError,
-  type DatabaseQueryError,
+  DatabaseQueryError,
+  DatabaseUnavailable,
   type DatabaseWriteError,
-  DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
 import {
   attachOutageHosts,
-  mapConnectivityStatusRow,
-  mapCyclePeriodMs,
-  mapHostStatsRow,
-  mapLiveConnectivityRow,
-  mapMetricRow,
-  mapOutageHostRow,
-  mapOutageRunRow,
-  mapSummaryStatsRow,
+  toCyclePeriodMs,
+  toMetric,
 } from "@/infrastructure/database/questdb/mappers";
-import type {
-  ConnectivityStatusRow,
-  HostStatsRow,
-  LiveConnectivityRow,
-  MetricRow,
-  OutageRun,
-  QueryMetricsParams,
-  QueryOutageParams,
-  QuerySpeedtestsParams,
-  QueryWindowParams,
-  SummaryStatsRow,
+import {
+  type ConnectivityStatusRow,
+  ConnectivityStatusRowSchema,
+  CyclePeriodRowSchema,
+  type HostStatsRow,
+  HostStatsRowSchema,
+  type LiveConnectivityRow,
+  LiveConnectivityRowSchema,
+  MetricRowSchema,
+  OutageHostRowSchema,
+  type OutageRun,
+  OutageRunRowSchema,
+  type QueryMetricsParams,
+  type QueryOutageParams,
+  type QuerySpeedtestsParams,
+  type QueryWindowParams,
+  type SummaryStatsRow,
+  SummaryStatsRowSchema,
+  TimestampRowSchema,
 } from "@/infrastructure/database/questdb/model";
 import { configurePgTypeParsers } from "@/infrastructure/database/questdb/pgwire";
 import {
@@ -60,55 +72,75 @@ configurePgTypeParsers();
 export interface QuestDBService {
   readonly writeMetric: (
     metric: NetworkMetric
-  ) => Effect.Effect<void, DatabaseWriteError | DbUnavailable>;
-  readonly flush: () => Effect.Effect<void, DatabaseWriteError | DbUnavailable>;
+  ) => Effect.Effect<void, DatabaseWriteError | DatabaseUnavailable>;
+  readonly flush: () => Effect.Effect<
+    void,
+    DatabaseWriteError | DatabaseUnavailable
+  >;
   readonly queryMetrics: (
     params: QueryMetricsParams
-  ) => Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable>;
+  ) => Effect.Effect<
+    readonly Metric[],
+    DatabaseQueryError | DatabaseUnavailable
+  >;
   readonly querySpeedtests: (
     params: QuerySpeedtestsParams
-  ) => Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable>;
+  ) => Effect.Effect<
+    readonly Metric[],
+    DatabaseQueryError | DatabaseUnavailable
+  >;
   readonly queryConnectivityStatus: (
     params: QueryMetricsParams
   ) => Effect.Effect<
     readonly ConnectivityStatusRow[],
-    DatabaseQueryError | DbUnavailable
+    DatabaseQueryError | DatabaseUnavailable
   >;
   readonly queryLiveConnectivity: (
     sinceIso: string
   ) => Effect.Effect<
     LiveConnectivityRow | null,
-    DatabaseQueryError | DbUnavailable
+    DatabaseQueryError | DatabaseUnavailable
   >;
   readonly queryEarliestTimestamp: () => Effect.Effect<
     string | null,
-    DatabaseQueryError | DbUnavailable
+    DatabaseQueryError | DatabaseUnavailable
   >;
   readonly queryLatestPingTimestamp: () => Effect.Effect<
     string | null,
-    DatabaseQueryError | DbUnavailable
+    DatabaseQueryError | DatabaseUnavailable
   >;
   readonly querySummaryStats: (
     params: QueryWindowParams
-  ) => Effect.Effect<SummaryStatsRow, DatabaseQueryError | DbUnavailable>;
+  ) => Effect.Effect<SummaryStatsRow, DatabaseQueryError | DatabaseUnavailable>;
   readonly queryHostStats: (
     params: QueryWindowParams
   ) => Effect.Effect<
     readonly HostStatsRow[],
-    DatabaseQueryError | DbUnavailable
+    DatabaseQueryError | DatabaseUnavailable
   >;
   readonly queryOutageRuns: (
     params: QueryOutageParams
-  ) => Effect.Effect<readonly OutageRun[], DatabaseQueryError | DbUnavailable>;
+  ) => Effect.Effect<
+    readonly OutageRun[],
+    DatabaseQueryError | DatabaseUnavailable
+  >;
   readonly queryCyclePeriod: (
     params: QueryWindowParams
-  ) => Effect.Effect<number | null, DatabaseQueryError | DbUnavailable>;
+  ) => Effect.Effect<number | null, DatabaseQueryError | DatabaseUnavailable>;
   readonly health: () => Effect.Effect<
     DatabaseHealth,
-    DatabaseConnectionError | DbUnavailable
+    DatabaseConnectionError | DatabaseUnavailable
   >;
   readonly close: () => Effect.Effect<void>;
 }
+
+/** Stands in for a zero-row result; QuestDB answers an empty window with one all-null row. */
+const NO_SUMMARY_STATS: SummaryStatsRow = {
+  latency_p50: null,
+  latency_p95: null,
+  avg_packet_loss: null,
+  avg_jitter: null,
+};
 
 export class QuestDB extends Context.Service<QuestDB, QuestDBService>()(
   "QuestDB"
@@ -132,278 +164,168 @@ const make = Effect.gen(function* () {
         duration: Duration.millis(ilpTimeoutMs),
         orElse: () =>
           Effect.fail(
-            new DbUnavailable({
+            new DatabaseUnavailable({
               message: `QuestDB ${operation} timed out after ${ilpTimeoutMs}ms`,
             })
           ),
       })
     );
 
+  const withDisconnectOnUnavailable = <
+    A,
+    E extends DatabaseQueryError | DatabaseWriteError,
+  >(
+    effect: Effect.Effect<A, E | DatabaseUnavailable>
+  ) =>
+    effect.pipe(
+      Effect.catchTag("DatabaseUnavailable", (error) =>
+        connection
+          .markDisconnected(error.message)
+          .pipe(Effect.andThen(Effect.fail(error)))
+      )
+    );
+
+  const runIlp = (
+    operation: "write" | "flush",
+    action: string,
+    send: (conn: QuestDBRawConnection) => Promise<void>
+  ) =>
+    connection.getConnection.pipe(
+      Effect.flatMap((conn) =>
+        withIlpTimeout(
+          operation,
+          Effect.tryPromise({
+            try: () => send(conn),
+            catch: classifyWriteError(action, protocol),
+          })
+        )
+      ),
+      withDisconnectOnUnavailable
+    );
+
   // The sender batches rows across calls and drops a rejected batch, so each
   // row is flushed alone under this lock to tie a failure to its own row.
   const writeLock = yield* Semaphore.make(1);
 
-  const writeMetric = (
-    metric: NetworkMetric
-  ): Effect.Effect<void, DatabaseWriteError | DbUnavailable> =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
+  const writeMetric = (metric: NetworkMetric) =>
+    runIlp("write", "write metric", async (conn) => {
+      await writeMetricToSender(conn.sender, metric, table);
+      await conn.sender.flush();
+    }).pipe(writeLock.withPermits(1));
 
-      yield* withIlpTimeout(
-        "write",
-        Effect.tryPromise({
-          try: async () => {
-            await writeMetricToSender(conn.sender, metric, table);
-            await conn.sender.flush();
-          },
-          catch: classifyWriteError("write metric", protocol),
-        })
-      );
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      ),
-      writeLock.withPermits(1)
-    );
+  const flush = () =>
+    runIlp("flush", "flush metrics", async (conn) => {
+      await conn.sender.flush();
+    });
 
-  const queryMetrics = (
-    params: QueryMetricsParams
-  ): Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable> =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      const spec = yield* buildQueryMetrics(params, table);
-
-      const result = yield* Effect.tryPromise({
-        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: classifyQueryError("metrics"),
-      });
-
-      if (!result.rows || result.rows.length === 0) {
-        return [];
-      }
-
-      return result.rows.map(mapMetricRow);
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
-    );
-
-  const querySpeedtests = (
-    params: QuerySpeedtestsParams
-  ): Effect.Effect<readonly MetricRow[], DatabaseQueryError | DbUnavailable> =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      const spec = yield* buildQuerySpeedtests(params, table);
-
-      const result = yield* Effect.tryPromise({
-        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: classifyQueryError("speedtests"),
-      });
-
-      if (!result.rows || result.rows.length === 0) {
-        return [];
-      }
-
-      return result.rows.map(mapMetricRow);
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
-    );
-
-  const queryConnectivityStatus = (
-    params: QueryMetricsParams
-  ): Effect.Effect<
-    readonly ConnectivityStatusRow[],
-    DatabaseQueryError | DbUnavailable
-  > =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      const spec = yield* buildQueryConnectivityStatus(params, table);
-
-      const result = yield* Effect.tryPromise({
-        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: classifyQueryError("connectivity status"),
-      });
-
-      if (!result.rows || result.rows.length === 0) {
-        return [];
-      }
-
-      return result.rows.map(mapConnectivityStatusRow);
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
-    );
-
-  const queryLiveConnectivity = (
-    sinceIso: string
-  ): Effect.Effect<
-    LiveConnectivityRow | null,
-    DatabaseQueryError | DbUnavailable
-  > =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      const spec = yield* buildQueryLiveConnectivity({ sinceIso }, table);
-
-      const result = yield* Effect.tryPromise({
-        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: classifyQueryError("live connectivity"),
-      });
-
-      const row = result.rows?.[0];
-      return row ? mapLiveConnectivityRow(row) : null;
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
-    );
-
-  const queryEarliestTimestamp = (): Effect.Effect<
-    string | null,
-    DatabaseQueryError | DbUnavailable
-  > =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      const spec = yield* buildQueryEarliestTimestamp(table);
-
-      const result = yield* Effect.tryPromise({
-        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: classifyQueryError("earliest timestamp"),
-      });
-
-      return result.rows[0]?.timestamp ?? null;
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
-    );
-
-  const queryLatestPingTimestamp = (): Effect.Effect<
-    string | null,
-    DatabaseQueryError | DbUnavailable
-  > =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      const spec = yield* buildQueryLatestPingTimestamp(table);
-
-      const result = yield* Effect.tryPromise({
-        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: classifyQueryError("latest ping timestamp"),
-      });
-
-      return result.rows[0]?.timestamp ?? null;
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
-    );
-
-  const runRows = (
+  const runRows = <S extends Schema.ConstraintDecoder<unknown>>(
     spec: SqlQuerySpec,
-    label: string
-  ): Effect.Effect<
-    readonly Record<string, unknown>[],
-    DatabaseQueryError | DbUnavailable
-  > =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      const result = yield* Effect.tryPromise({
-        try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: classifyQueryError(label),
-      });
-
-      return result.rows ?? [];
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
+    label: string,
+    schema: S
+  ) =>
+    connection.getConnection.pipe(
+      Effect.flatMap((conn) =>
+        Effect.tryPromise({
+          try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
+          catch: classifyQueryError(label),
+        })
+      ),
+      Effect.flatMap((result) =>
+        Schema.decodeUnknownEffect(Schema.Array(schema))(result.rows).pipe(
+          Effect.mapError(
+            (error) =>
+              new DatabaseQueryError({
+                message: `Failed to decode ${label} rows: ${error.message}`,
+              })
+          )
+        )
+      ),
+      withDisconnectOnUnavailable
     );
 
-  const querySummaryStats = (
-    params: QueryWindowParams
-  ): Effect.Effect<SummaryStatsRow, DatabaseQueryError | DbUnavailable> =>
-    buildQuerySummaryStats(params, table).pipe(
-      Effect.flatMap((spec) => runRows(spec, "summary stats")),
-      Effect.map((rows) => mapSummaryStatsRow(rows[0] ?? {}))
+  const queryMetrics = (params: QueryMetricsParams) =>
+    runRows(buildQueryMetrics(params, table), "metrics", MetricRowSchema).pipe(
+      Effect.map((rows) => rows.map(toMetric))
     );
 
-  const queryHostStats = (
-    params: QueryWindowParams
-  ): Effect.Effect<
-    readonly HostStatsRow[],
-    DatabaseQueryError | DbUnavailable
-  > =>
-    buildQueryHostStats(params, table).pipe(
-      Effect.flatMap((spec) => runRows(spec, "host stats")),
-      Effect.map((rows) => rows.map(mapHostStatsRow))
+  const querySpeedtests = (params: QuerySpeedtestsParams) =>
+    runRows(
+      buildQuerySpeedtests(params, table),
+      "speedtests",
+      MetricRowSchema
+    ).pipe(Effect.map((rows) => rows.map(toMetric)));
+
+  const queryConnectivityStatus = (params: QueryMetricsParams) =>
+    runRows(
+      buildQueryConnectivityStatus(params, table),
+      "connectivity status",
+      ConnectivityStatusRowSchema
     );
 
-  const queryOutageRuns = (
-    params: QueryOutageParams
-  ): Effect.Effect<readonly OutageRun[], DatabaseQueryError | DbUnavailable> =>
+  const queryLiveConnectivity = (sinceIso: string) =>
+    runRows(
+      buildQueryLiveConnectivity({ sinceIso }, table),
+      "live connectivity",
+      LiveConnectivityRowSchema
+    ).pipe(Effect.map((rows) => rows[0] ?? null));
+
+  const queryEarliestTimestamp = () =>
+    runRows(
+      buildQueryEarliestTimestamp(table),
+      "earliest timestamp",
+      TimestampRowSchema
+    ).pipe(Effect.map((rows) => rows[0]?.timestamp ?? null));
+
+  const queryLatestPingTimestamp = () =>
+    runRows(
+      buildQueryLatestPingTimestamp(table),
+      "latest ping timestamp",
+      TimestampRowSchema
+    ).pipe(Effect.map((rows) => rows[0]?.timestamp ?? null));
+
+  const querySummaryStats = (params: QueryWindowParams) =>
+    runRows(
+      buildQuerySummaryStats(params, table),
+      "summary stats",
+      SummaryStatsRowSchema
+    ).pipe(Effect.map((rows) => rows[0] ?? NO_SUMMARY_STATS));
+
+  const queryHostStats = (params: QueryWindowParams) =>
+    runRows(
+      buildQueryHostStats(params, table),
+      "host stats",
+      HostStatsRowSchema
+    );
+
+  const queryOutageRuns = (params: QueryOutageParams) =>
     Effect.all(
       {
-        runs: buildQueryOutageRuns(params, table).pipe(
-          Effect.flatMap((spec) => runRows(spec, "outage runs")),
-          Effect.map((rows) => rows.map(mapOutageRunRow))
+        runs: runRows(
+          buildQueryOutageRuns(params, table),
+          "outage runs",
+          OutageRunRowSchema
         ),
-        hosts: buildQueryOutageHosts(params, table).pipe(
-          Effect.flatMap((spec) => runRows(spec, "outage hosts")),
-          Effect.map((rows) => rows.map(mapOutageHostRow))
+        hosts: runRows(
+          buildQueryOutageHosts(params, table),
+          "outage hosts",
+          OutageHostRowSchema
         ),
       },
       { concurrency: "unbounded" }
     ).pipe(Effect.map(({ runs, hosts }) => attachOutageHosts(runs, hosts)));
 
-  const queryCyclePeriod = (
-    params: QueryWindowParams
-  ): Effect.Effect<number | null, DatabaseQueryError | DbUnavailable> =>
-    buildQueryCyclePeriod(params, table).pipe(
-      Effect.flatMap((spec) => runRows(spec, "cycle period")),
-      Effect.map((rows) => mapCyclePeriodMs(rows[0]))
+  const queryCyclePeriod = (params: QueryWindowParams) =>
+    runRows(
+      buildQueryCyclePeriod(params, table),
+      "cycle period",
+      CyclePeriodRowSchema
+    ).pipe(
+      Effect.map((rows) => toCyclePeriodMs(rows[0]?.period_micros ?? null))
     );
 
-  const health = (): Effect.Effect<
-    DatabaseHealth,
-    DatabaseConnectionError | DbUnavailable
-  > =>
+  const health = () =>
     Effect.gen(function* () {
-      const state = yield* connection.getState;
-
-      if (Option.isNone(state.connection)) {
-        const errorMsg = Option.isSome(state.lastError)
-          ? state.lastError.value.message
-          : "Database not connected";
-        return yield* Effect.fail(new DbUnavailable({ message: errorMsg }));
-      }
-
-      const conn = state.connection.value;
+      const conn = yield* connection.getConnection;
 
       yield* Effect.tryPromise({
         try: () => conn.pgClient.query("SELECT 1"),
@@ -413,36 +335,13 @@ const make = Effect.gen(function* () {
           }),
       });
 
-      const uptime = Option.isSome(state.connectedSince)
-        ? (Date.now() - state.connectedSince.value.getTime()) / 1000
+      const { connectedSince } = yield* connection.getState;
+      const uptime = Option.isSome(connectedSince)
+        ? (Date.now() - connectedSince.value.getTime()) / 1000
         : 0;
 
-      return {
-        connected: true,
-        uptime,
-      } satisfies DatabaseHealth;
+      return { connected: true, uptime } satisfies DatabaseHealth;
     });
-
-  const flush = (): Effect.Effect<void, DatabaseWriteError | DbUnavailable> =>
-    Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      yield* withIlpTimeout(
-        "flush",
-        Effect.tryPromise({
-          try: async () => {
-            await conn.sender.flush();
-          },
-          catch: classifyWriteError("flush metrics", protocol),
-        })
-      );
-    }).pipe(
-      Effect.catchTag("DbUnavailable", (e) =>
-        connection
-          .markDisconnected(e.message)
-          .pipe(Effect.andThen(Effect.fail(e)))
-      )
-    );
 
   const close = (): Effect.Effect<void> => connection.close;
 

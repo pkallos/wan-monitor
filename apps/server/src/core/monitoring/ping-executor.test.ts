@@ -5,8 +5,8 @@ import {
   PingExecutorLive,
 } from "@/core/monitoring/ping-executor";
 import {
+  DatabaseUnavailable,
   DatabaseWriteError,
-  DbUnavailable,
   QuestDB,
 } from "@/infrastructure/database/questdb";
 import {
@@ -237,7 +237,9 @@ describe("PingExecutor", () => {
         )
       );
       mockWriteMetric.mockReturnValue(
-        Effect.fail(new DbUnavailable({ message: "QuestDB write timed out" }))
+        Effect.fail(
+          new DatabaseUnavailable({ message: "QuestDB write timed out" })
+        )
       );
 
       const program = Effect.gen(function* () {
@@ -249,7 +251,7 @@ describe("PingExecutor", () => {
         program.pipe(Effect.provide(TestLive), Effect.provide(logs.layer))
       );
 
-      expect(logs.entries[0]?.text).toContain("DbUnavailable");
+      expect(logs.entries[0]?.text).toContain("DatabaseUnavailable");
     });
 
     it("should neither log nor report writeError when the write succeeds", async () => {

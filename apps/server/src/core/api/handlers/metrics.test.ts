@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import type { Metric } from "@wan-monitor/shared";
 import { Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import {
@@ -9,14 +10,11 @@ import {
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
-import type {
-  MetricRow,
-  QueryMetricsParams,
-} from "@/infrastructure/database/questdb/model";
+import type { QueryMetricsParams } from "@/infrastructure/database/questdb/model";
 import { invalidTimeRangeOf } from "@/test/invalid-time-range";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
-const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
+const createMockQuestDB = (mockData: Metric[]): QuestDBService => ({
   health: () =>
     Effect.succeed({ connected: true, version: "1.0.0", uptime: 100 }),
   writeMetric: () => Effect.void,
@@ -58,7 +56,7 @@ describe("Metrics Handlers", () => {
     });
 
     it.effect("returns metrics data with metadata", () => {
-      const mockData: MetricRow[] = [
+      const mockData: Metric[] = [
         {
           timestamp: "2024-01-01T00:00:00Z",
           source: "ping",
@@ -96,82 +94,6 @@ describe("Metrics Handlers", () => {
 
         expect(result.meta.startTime).toBe("2024-01-01T00:00:00.000Z");
         expect(result.meta.endTime).toBe("2024-01-02T00:00:00.000Z");
-      }).pipe(Effect.provide(QuestDBTest));
-    });
-
-    it.effect("converts null values to undefined for optional fields", () => {
-      // QuestDB returns null for missing values, while our TypeScript types use undefined.
-      // This test verifies the handler correctly converts null -> undefined.
-      // We use a type that represents the raw DB response shape with nullable fields.
-      type RawMetricRow = {
-        [K in keyof MetricRow]: MetricRow[K] | null;
-      };
-
-      const mockDataWithNulls: RawMetricRow[] = [
-        {
-          timestamp: "2024-01-01T12:00:00Z",
-          source: "ping",
-          host: null,
-          latency: null,
-          jitter: null,
-          packet_loss: null,
-          connectivity_status: null,
-          download_speed: null,
-          upload_speed: null,
-          server_location: null,
-          isp: null,
-          external_ip: null,
-          internal_ip: null,
-        },
-        {
-          timestamp: "2024-01-01T12:01:00Z",
-          source: "speedtest",
-          host: null,
-          latency: null,
-          jitter: null,
-          packet_loss: null,
-          connectivity_status: null,
-          download_speed: null,
-          upload_speed: null,
-          server_location: null,
-          isp: null,
-          external_ip: null,
-          internal_ip: null,
-        },
-      ];
-
-      const QuestDBTest = Layer.succeed(QuestDB, {
-        ...createMockQuestDB([]),
-        // Cast to MetricRow[] since that's what the service interface expects,
-        // but QuestDB actually returns nullable fields at runtime
-        queryMetrics: () => Effect.succeed(mockDataWithNulls as MetricRow[]),
-      });
-
-      return Effect.gen(function* () {
-        const result = yield* getMetricsHandler({ query: {} });
-
-        expect(result.data).toHaveLength(2);
-
-        expect(result.data[0].host).toBeUndefined();
-        expect(result.data[0].latency).toBeUndefined();
-        expect(result.data[0].jitter).toBeUndefined();
-        expect(result.data[0].packet_loss).toBeUndefined();
-        expect(result.data[0].connectivity_status).toBeUndefined();
-
-        expect(result.data[1].download_speed).toBeUndefined();
-        expect(result.data[1].upload_speed).toBeUndefined();
-        expect(result.data[1].latency).toBeUndefined();
-        expect(result.data[1].jitter).toBeUndefined();
-        expect(result.data[1].server_location).toBeUndefined();
-        expect(result.data[1].isp).toBeUndefined();
-        expect(result.data[1].external_ip).toBeUndefined();
-        expect(result.data[1].internal_ip).toBeUndefined();
-
-        expect(result.data[0].timestamp).toBe("2024-01-01T12:00:00Z");
-        expect(result.data[0].source).toBe("ping");
-        expect(result.meta.count).toBe(2);
-
-        return result;
       }).pipe(Effect.provide(QuestDBTest));
     });
 
