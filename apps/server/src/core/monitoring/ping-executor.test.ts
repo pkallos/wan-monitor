@@ -21,7 +21,7 @@ import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 // Mock config
 const TestConfigLive = makeTestConfigLayer({
   ping: { hosts: ["8.8.8.8", "1.1.1.1"] },
-  auth: { password: "testpassword", jwtExpiresIn: "1h" },
+  auth: { password: "testpassword" },
 });
 
 // Mock PingService

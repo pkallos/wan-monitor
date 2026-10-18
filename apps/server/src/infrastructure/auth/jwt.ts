@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer, Redacted } from "effect";
 import jwt from "jsonwebtoken";
 import { ConfigService } from "@/infrastructure/config/config";
 
@@ -85,23 +85,29 @@ export const JwtServiceLive = Layer.effect(
     const config = yield* ConfigService;
 
     const sign = (username: string): Effect.Effect<TokenResponse, never> =>
-      Effect.sync(() => {
-        const token = jwt.sign({ username }, config.auth.jwtSecret, {
-          expiresIn: config.auth.jwtExpiresIn as jwt.SignOptions["expiresIn"],
-        });
+      Effect.suspend(() => {
+        const token = jwt.sign(
+          { username },
+          Redacted.value(config.auth.jwtSecret),
+          { expiresIn: config.auth.jwtExpiresInSeconds }
+        );
 
         const decoded = jwt.decode(token);
-        const expiresAt = isJwtPayload(decoded)
-          ? new Date(decoded.exp * 1000).toISOString()
-          : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-        return { token, expiresAt };
+        return isJwtPayload(decoded)
+          ? Effect.succeed({
+              token,
+              expiresAt: new Date(decoded.exp * 1000).toISOString(),
+            })
+          : Effect.die(new Error("signed token is missing its exp claim"));
       });
 
     const verify = (token: string): Effect.Effect<JwtPayload, JwtError> =>
       Effect.try({
         try: () => {
-          const decoded = jwt.verify(token, config.auth.jwtSecret);
+          const decoded = jwt.verify(
+            token,
+            Redacted.value(config.auth.jwtSecret)
+          );
           if (!isJwtPayload(decoded)) {
             throw new Error("Invalid token payload");
           }

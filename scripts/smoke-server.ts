@@ -52,7 +52,10 @@ interface Backend {
 // Every database and ping key is set explicitly so neither the caller's
 // environment nor a `.env.local` can point the test at a real QuestDB or host.
 // The long ping train delays the first speed test until the phases finish.
-function startBackend(port: number): Backend {
+function startBackend(
+  port: number,
+  envOverrides: Record<string, string> = {}
+): Backend {
   let output = "";
   const child = spawn(process.execPath, [builtEntry], {
     cwd: repoRoot,
@@ -67,12 +70,13 @@ function startBackend(port: number): Backend {
       DB_PORT: "1",
       DB_PG_PORT: "1",
       DB_PROTOCOL: "http",
+      // The SIGTERM phase looks for the QuestDB finalizer's info-level line.
       LOG_LEVEL: "info",
-      LOG_PRETTY: "false",
       // Keep the monitor's startup ping off external hosts so the smoke test
       // stays hermetic and fast in CI. Liveness does not depend on it.
       PING_HOSTS: "127.0.0.1",
       PING_TRAIN_COUNT: "40",
+      ...envOverrides,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -132,6 +136,22 @@ async function waitForHealthy(backend: Backend): Promise<string | undefined> {
   return `backend did not serve a healthy ${HEALTH_URL} within ${TIMEOUT_MS}ms`;
 }
 
+// Logged by the program fiber right after the layers build, so it also shows
+// whether LOG_LEVEL reaches that fiber and not only the layer finalizers.
+const MONITOR_LINE = "Starting network monitor";
+const FINALIZER_LINE = "QuestDB connection closed";
+
+async function waitForOutput(backend: Backend, text: string): Promise<boolean> {
+  const deadline = Date.now() + TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (backend.output().includes(text)) {
+      return true;
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+  return false;
+}
+
 async function checkBootAndSigterm(): Promise<void> {
   const backend = startBackend(PORT);
   try {
@@ -143,6 +163,11 @@ async function checkBootAndSigterm(): Promise<void> {
     console.log(
       `[smoke] PASS: built backend booted and served ${HEALTH_URL} (200 ok)`
     );
+
+    if (!(await waitForOutput(backend, MONITOR_LINE))) {
+      fail(`"${MONITOR_LINE}" was never logged`, backend.output());
+      return;
+    }
 
     backend.child.kill("SIGTERM");
     const exit = await settled(backend.exit, TIMEOUT_MS);
@@ -156,12 +181,49 @@ async function checkBootAndSigterm(): Promise<void> {
         `backend should exit with code 130 after SIGTERM (code=${exit.code} signal=${exit.signal})`,
         backend.output()
       );
-    } else if (!backend.output().includes("QuestDB connection closed")) {
+    } else if (!backend.output().includes(FINALIZER_LINE)) {
       fail("SIGTERM did not run the QuestDB finalizer", backend.output());
     } else {
       console.log(
         "[smoke] PASS: SIGTERM ran the finalizers and exited with code 130"
       );
+    }
+  } finally {
+    backend.child.kill("SIGKILL");
+  }
+}
+
+async function checkLogLevelFiltersInfoLogs(): Promise<void> {
+  const backend = startBackend(PORT, { LOG_LEVEL: "warn" });
+  try {
+    const unhealthy = await waitForHealthy(backend);
+    if (unhealthy !== undefined) {
+      fail(unhealthy, backend.output());
+      return;
+    }
+
+    // Give the program fiber time to log MONITOR_LINE if the level were not applied to it.
+    await sleep(1500);
+    backend.child.kill("SIGTERM");
+    if ((await settled(backend.exit, TIMEOUT_MS)) === undefined) {
+      fail(
+        `backend did not exit within ${TIMEOUT_MS}ms of SIGTERM`,
+        backend.output()
+      );
+      return;
+    }
+
+    // The first phase asserts both lines appear under LOG_LEVEL=info.
+    const leaked = [MONITOR_LINE, FINALIZER_LINE].filter((line) =>
+      backend.output().includes(line)
+    );
+    if (leaked.length > 0) {
+      fail(
+        `LOG_LEVEL=warn still logged info output: ${leaked.join(", ")}`,
+        backend.output()
+      );
+    } else {
+      console.log("[smoke] PASS: LOG_LEVEL=warn filtered out info logs");
     }
   } finally {
     backend.child.kill("SIGKILL");
@@ -221,6 +283,7 @@ async function main(): Promise<void> {
 
   try {
     await checkBootAndSigterm();
+    await checkLogLevelFiltersInfoLogs();
     await checkStartupFailureExitsNonZero();
   } finally {
     if (createdLink && existsSync(linkPath)) {

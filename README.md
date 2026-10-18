@@ -103,7 +103,7 @@ All configuration is done via environment variables.
 | `WAN_MONITOR_USERNAME` | `admin` | Login username |
 | `WAN_MONITOR_PASSWORD` | *(empty)* | Login password. **If empty, authentication is disabled.** |
 | `JWT_SECRET` | *(random per start)* | Secret for signing tokens. When unset, a random secret is generated at each start and sessions end on restart. Set it whenever a password is set, and to keep sessions across restarts. |
-| `JWT_EXPIRES_IN` | `24h` | How long login sessions last |
+| `JWT_EXPIRES_IN` | `24h` | How long login sessions last: a number with a unit, such as `90m`, `24h` or `7d`. A bare number such as `3600`, or any other value, stops the server at startup. |
 
 If a session is stored and the server cannot be reached when the dashboard loads, the browser keeps the session and shows "Cannot reach the server" with Retry and Sign out buttons. The session continues if the token is still valid when the server answers; only a rejected token or Sign out ends it.
 
@@ -112,7 +112,7 @@ If a session is stored and the server cannot be reached when the dashboard loads
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERVER_PORT` | `3001` | Backend API port (internal) |
-| `LOG_LEVEL` | `info` | Logging verbosity: trace, debug, info, warn, error |
+| `LOG_LEVEL` | `info` | Minimum level to log: trace, debug, info, warn, error, fatal (any case). Any other value stops the server at startup. |
 | `DB_HOST` | `localhost` | QuestDB host |
 | `DB_PORT` | `9000` | QuestDB HTTP port |
 

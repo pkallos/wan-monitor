@@ -145,8 +145,7 @@ ENV SERVER_PORT=3001
 ENV SERVER_HOST=0.0.0.0
 
 # Logging configuration (with defaults)
-ENV LOG_LEVEL=warn
-ENV LOG_PRETTY=false
+ENV LOG_LEVEL=info
 
 # Database configuration (with defaults for embedded QuestDB)
 ENV DB_HOST=localhost
@@ -165,7 +164,7 @@ ENV SPEEDTEST_TIMEOUT_SECONDS=120
 # ENV WAN_MONITOR_USERNAME=admin  # Default is 'admin' if not set
 # ENV WAN_MONITOR_PASSWORD=       # Required to enable auth
 # ENV JWT_SECRET=                 # Random per start if unset; set to keep sessions across restarts
-# ENV JWT_EXPIRES_IN=24h          # Default is '24h' if not set
+# ENV JWT_EXPIRES_IN=24h          # Needs a unit (90m, 24h, 7d); default is '24h' if not set
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

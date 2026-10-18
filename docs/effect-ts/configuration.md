@@ -46,6 +46,31 @@ reach for `new Config.ConfigError(new Schema.SchemaError(...))`, not `SourceErro
 — if you do need a manual transform for something `Config.schema` genuinely can't express, match that
 signature.
 
+## Secrets
+
+Read a secret with `Config.Redacted`, which wraps the value in `Redacted<string>`. It prints as
+`<redacted>` in logs, `String(...)` and `JSON.stringify`, so logging the whole `AppConfig` does not leak
+it. An optional secret is `Config.option(Config.Redacted("NAME"))`; an empty value reads as absent.
+Unwrap with `Redacted.value` only where the secret is used (signing a token, comparing a password):
+
+```ts
+const authPassword = yield* Config.option(Config.Redacted("WAN_MONITOR_PASSWORD"));
+// ...
+secureEquals(payload.password, Redacted.value(password.value));
+```
+
+An `Option` or `Redacted` is always truthy, so test for presence with `Option.isSome` / `Option.isNone`,
+never `!config.auth.password`. `toEqual` cannot see inside a `Redacted`, so assert secret values with
+`Redacted.value`.
+
+## Decoding a value
+
+When the env string needs more than a literal check, decode it with a schema.
+`LOG_LEVEL` is matched case-insensitively with `SchemaTransformation.toLowerCase()` and then checked
+against the allowed names; `JWT_EXPIRES_IN` goes through `SchemaTransformation.transformEffect` into a
+number of seconds and fails with `SchemaIssue.InvalidValue` for anything else. Both are read with
+`Config.schema(schema, "NAME")`, so a bad value stops startup with an error naming the variable.
+
 ## Injecting config in tests
 
 Provide a fixed `AppConfig` directly via `Layer.succeed`, bypassing environment reads entirely:
@@ -59,8 +84,8 @@ const ConfigLayer = Layer.succeed(ConfigService, makeTestAppConfig({ auth: { pas
 ```
 
 `makeTestAppConfig` (in `apps/server/src/test/config.ts`) builds a complete `AppConfig` from shared
-defaults plus per-section partial overrides, so a test only spells out the fields it cares about. This
-replaced a config object literal that used to be copy-pasted across the server test suite — reach for
+defaults plus per-section partial overrides, so a test only spells out the fields it cares about. Its
+`auth` override takes plain strings and wraps them: `password: ""` becomes `Option.none()` (auth off). Reach for
 it instead of constructing an `AppConfig` by hand in a new test.
 
 For a test that needs to exercise `ConfigProvider` itself (integration tests reading real environment

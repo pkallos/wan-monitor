@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Result } from "effect";
+import { Cause, Effect, Exit, Layer, Result } from "effect";
 import jsonwebtoken from "jsonwebtoken";
 import { vi } from "vitest";
 import {
@@ -38,6 +38,53 @@ describe("JWT Service", () => {
       }).pipe(Effect.provide(JwtServiceTest));
     });
 
+    it.effect(
+      "signs with the configured expiry and derives expiresAt from it",
+      () => {
+        const ConfigServiceTest = Layer.succeed(
+          ConfigService,
+          makeTestAppConfig({
+            auth: { password: "test-password", jwtExpiresInSeconds: 3600 },
+          })
+        );
+
+        const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+
+        return Effect.gen(function* () {
+          const jwtService = yield* JwtService;
+          const { token, expiresAt } = yield* jwtService.sign("testuser");
+          const payload = yield* jwtService.decode(token);
+
+          expect(payload).not.toBeNull();
+          if (payload !== null) {
+            expect(payload.exp - payload.iat).toBe(3600);
+            expect(expiresAt).toBe(new Date(payload.exp * 1000).toISOString());
+          }
+        }).pipe(Effect.provide(JwtServiceTest));
+      }
+    );
+
+    it.effect("dies when the token it just signed has no exp claim", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createTestConfigService("test-secret")
+      );
+
+      const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+
+      return Effect.gen(function* () {
+        const jwtService = yield* JwtService;
+        const decodeSpy = vi.spyOn(jsonwebtoken, "decode").mockReturnValueOnce({
+          username: "testuser",
+        });
+        const exit = yield* Effect.exit(jwtService.sign("testuser")).pipe(
+          Effect.ensuring(Effect.sync(() => decodeSpy.mockRestore()))
+        );
+
+        expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+      }).pipe(Effect.provide(JwtServiceTest));
+    });
+
     it.effect("includes username in token payload", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
@@ -58,35 +105,6 @@ describe("JWT Service", () => {
         return decoded;
       }).pipe(Effect.provide(JwtServiceTest));
     });
-
-    it.effect(
-      "falls back to a 24h expiry when the freshly signed token doesn't decode as a payload",
-      () => {
-        const ConfigServiceTest = Layer.succeed(
-          ConfigService,
-          createTestConfigService("test-secret")
-        );
-
-        const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
-        const decodeSpy = vi
-          .spyOn(jsonwebtoken, "decode")
-          .mockReturnValueOnce(null);
-
-        return Effect.gen(function* () {
-          const jwtService = yield* JwtService;
-          const before = Date.now();
-          const result = yield* jwtService.sign("testuser");
-          decodeSpy.mockRestore();
-
-          const expiresAt = new Date(result.expiresAt).getTime();
-          expect(expiresAt).toBeGreaterThan(before + 23 * 60 * 60 * 1000);
-          expect(expiresAt).toBeLessThanOrEqual(
-            before + 24 * 60 * 60 * 1000 + 1000
-          );
-          return result;
-        }).pipe(Effect.provide(JwtServiceTest));
-      }
-    );
   });
 
   describe("verify", () => {
@@ -191,22 +209,19 @@ describe("JWT Service", () => {
     it.effect("fails with JwtExpiredError for an expired token", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,
-        makeTestAppConfig({
-          auth: {
-            username: "admin",
-            password: "test-password",
-            jwtSecret: "test-secret",
-            jwtExpiresIn: "-10s",
-          },
-        })
+        createTestConfigService("test-secret")
       );
 
       const JwtServiceTest = Layer.provide(JwtServiceLive, ConfigServiceTest);
+      const issuedAt = Math.floor(Date.now() / 1000) - 100;
+      const expiredToken = jsonwebtoken.sign(
+        { username: "testuser", iat: issuedAt, exp: issuedAt + 1 },
+        "test-secret"
+      );
 
       return Effect.gen(function* () {
         const jwtService = yield* JwtService;
-        const { token } = yield* jwtService.sign("testuser");
-        const result = yield* Effect.result(jwtService.verify(token));
+        const result = yield* Effect.result(jwtService.verify(expiredToken));
 
         expect(Result.isFailure(result)).toBe(true);
         if (Result.isFailure(result)) {

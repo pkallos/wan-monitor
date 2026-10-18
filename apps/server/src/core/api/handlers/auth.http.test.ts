@@ -94,7 +94,6 @@ const makeTestApp = (
         username: TEST_USERNAME,
         password: authPassword,
         jwtSecret,
-        jwtExpiresIn: "1h",
       },
     })
   );

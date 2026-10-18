@@ -4,7 +4,7 @@ import {
   Authorization,
   Unauthorized,
 } from "@shared/api/middlewares/authorization";
-import { Context, Data, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer, Option } from "effect";
 import { HttpServerRequest } from "effect/http";
 import {
   type JwtError,
@@ -48,13 +48,13 @@ export const AuthServiceLive = Layer.effect(
     const jwtService = yield* JwtService;
 
     const isAuthRequired = (): Effect.Effect<boolean, never> =>
-      Effect.succeed(Boolean(config.auth.password));
+      Effect.succeed(Option.isSome(config.auth.password));
 
     const verifyRequest = (
       authHeader: string | undefined
     ): Effect.Effect<JwtPayload | null, AuthError> =>
       Effect.gen(function* () {
-        if (!config.auth.password) {
+        if (Option.isNone(config.auth.password)) {
           return null;
         }
 

@@ -79,6 +79,12 @@ you'd model as a required service. The codebase's own use of this is `References
 Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"));
 ```
 
+Production sets it from config: `MinimumLogLevelLive` in `config.ts` is a `Layer.effect` that reads
+`ConfigService` and provides `References.MinimumLogLevel`. `index.ts` feeds it to the whole graph, so
+the level applies while each layer is built and in the fibers and finalizers that follow. Use
+`Layer.provideMerge` so the level also reaches the program fiber and the loops `start()` forks from
+it; `Layer.provide` would apply it only while the layers build.
+
 Define your own the same way `LoggerRef` is defined in the source docs — `Context.Reference("Key", {
 defaultValue: () => ... })` — when you actually need an overridable default, not a required
 dependency. Most services in this codebase are required (`Context.Service`), because a monitoring

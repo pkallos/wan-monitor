@@ -84,8 +84,6 @@ updates:
           - "@biomejs/*"
           - "husky"
           - "lint-staged"
-          - "pino"
-          - "pino-pretty"
 
       # TypeScript and type definitions - ignore major versions
       # (@types/node major is pinned to match the project's Node version)
@@ -102,7 +100,6 @@ updates:
       utilities:
         patterns:
           - "echarts"
-          - "clsx"
           - "jsonwebtoken"
           - "ping"
         update-types:

@@ -72,6 +72,9 @@ yield* TestClock.setTime(fixedNow);
 yield* TestClock.adjust(Duration.seconds(44));
 ```
 
+`TestClock` starts at epoch 0. Code that treats a 0 timestamp as unset (`NetworkMonitor.getStats` does)
+needs `TestClock.setTime` with a non-zero instant before it runs.
+
 Only meaningful under `it.effect` (which provides the fake clock `TestEnv` implicitly); using
 `TestClock` under `it.live` has nothing to hook into, since `it.live` doesn't install it.
 
