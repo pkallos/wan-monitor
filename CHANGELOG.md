@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.0
+
+### Minor Changes
+
+- [#421](https://github.com/pkallos/wan-monitor/pull/421) [`a1efae4`](https://github.com/pkallos/wan-monitor/commit/a1efae43fe2d5041a3d56ddd351fdd84326bfc70) Thanks [@pkallos](https://github.com/pkallos)! - Apply LOG_LEVEL, keep the password and JWT secret out of logs, and ping once at boot instead of twice; startup now fails on an invalid LOG_LEVEL or a JWT_EXPIRES_IN with no unit (use 24h or 3600s, not 86400000)
+
+- [#427](https://github.com/pkallos/wan-monitor/pull/427) [`3e2e5af`](https://github.com/pkallos/wan-monitor/commit/3e2e5afe908e234469080bf491a6cfb9f7dee7a2) Thanks [@pkallos](https://github.com/pkallos)! - Treat speed tests that older versions stored as 0 as missing readings in averages, the speed chart and the last-test label, and add DB_QUERY_TIMEOUT (25 seconds by default) so long date ranges over a large history no longer fail at 5 seconds
+
+- [#422](https://github.com/pkallos/wan-monitor/pull/422) [`e527478`](https://github.com/pkallos/wan-monitor/commit/e527478f7b5fbd83c3a5cc6e448e4991a0b110b1) Thanks [@pkallos](https://github.com/pkallos)! - Return data endpoint errors as tagged JSON bodies (a 503 is now `{ _tag: "DbUnavailable", message }`, and a 500 is `InternalError` without database error text), and fail a query whose stored rows don't match the declared schema instead of coercing them
+
+### Patch Changes
+
+- [#418](https://github.com/pkallos/wan-monitor/pull/418) [`34e482d`](https://github.com/pkallos/wan-monitor/commit/34e482d5a706d8ddf97885c1deaa8aaa887286fe) Thanks [@pkallos](https://github.com/pkallos)! - Stop redrawing the dashboard on every mouse move, scroll and key press, and keep the "Updated" and "Last checked" times counting up on their own
+
+- [#425](https://github.com/pkallos/wan-monitor/pull/425) [`856b9e7`](https://github.com/pkallos/wan-monitor/commit/856b9e781cdded52874662dc611a112de2b6489c) Thanks [@pkallos](https://github.com/pkallos)! - Send the security headers on every response, including static assets and errors, and drop X-XSS-Protection and the forced upgrade header on /api
+
+- [#426](https://github.com/pkallos/wan-monitor/pull/426) [`c63c55b`](https://github.com/pkallos/wan-monitor/commit/c63c55b7742fb79c0f7cef1180e4cafd5d23d444) Thanks [@pkallos](https://github.com/pkallos)! - Stop sending an empty `Authorization` header with every request when sign-in is disabled
+
 ## 1.3.2
 
 ### Patch Changes
