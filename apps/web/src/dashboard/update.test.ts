@@ -839,6 +839,7 @@ describe("dashboard update: retrying a fetch that failed", () => {
     pingHosts: PingHostsAsyncData.Failure(failed),
     connectivityStatus: ConnectivityStatusAsyncData.Failure(failed),
     metrics: MetricsAsyncData.Failure(failed),
+    speedtestHistory: SpeedtestHistoryAsyncData.Failure(failed),
   });
   const tick = () => withContext(afterBootFailures(), TickedRefresh());
 
@@ -847,6 +848,8 @@ describe("dashboard update: retrying a fetch that failed", () => {
     ["outages", "FetchOutages"],
     ["pingHosts", "FetchPingHosts"],
     ["connectivityStatus", "FetchConnectivityStatus"],
+    ["metrics", "FetchMetrics"],
+    ["speedtestHistory", "FetchSpeedtestHistory"],
   ] as const)(
     "a tick starts the %s fetch again and keeps the failure on screen",
     (field, command) => {
@@ -930,20 +933,21 @@ describe("dashboard update: retrying a fetch that failed", () => {
     expect(model.summary._tag).toBe("Loading");
   });
 
-  test("a tick leaves a failed metrics fetch alone", () => {
-    const { model, commands = [] } = tick();
-
-    expect(model.metrics._tag).toBe("Failure");
-    expect(commands.map(({ name }) => name)).not.toContain("FetchMetrics");
-  });
-
   test("a tick does not restart a fetch that is already in flight", () => {
     const { commands = [] } = withContext(
-      { ...afterBootFailures(), summary: SummaryAsyncData.Loading() },
+      {
+        ...afterBootFailures(),
+        summary: SummaryAsyncData.Loading(),
+        metrics: MetricsAsyncData.Loading(),
+        speedtestHistory: SpeedtestHistoryAsyncData.Refreshing({ data: [] }),
+      },
       TickedRefresh()
     );
 
-    expect(commands.map(({ name }) => name)).not.toContain("FetchSummary");
+    const names = commands.map(({ name }) => name);
+    expect(names).not.toContain("FetchSummary");
+    expect(names).not.toContain("FetchMetrics");
+    expect(names).not.toContain("FetchSpeedtestHistory");
   });
 
   test("a tick leaves loaded hosts alone: they are static config", () => {
@@ -2314,6 +2318,48 @@ describe("dashboard update — speedtest trigger", () => {
       ),
       resolveSummaryFetch(),
       ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
+    );
+  });
+
+  test("a successful trigger moves loaded cards to Refreshing so they show a refetch is running", () => {
+    const { model } = withContext(
+      {
+        ...initModel(defaultSettings()),
+        ...loadedInsights(),
+        metrics: MetricsAsyncData.Success({ data: [] }),
+        speedtestHistory: SpeedtestHistoryAsyncData.Success({ data: [] }),
+      },
+      SucceededTriggerSpeedtest({
+        downloadMbps: 500,
+        uploadMbps: 50,
+        pingMs: 8,
+      })
+    );
+
+    expect(model.metrics._tag).toBe("Refreshing");
+    expect(model.speedtestHistory._tag).toBe("Refreshing");
+    expect(model.summary._tag).toBe("Refreshing");
+  });
+
+  test("a successful trigger reloads cards whose last load failed", () => {
+    const failed = { error: "Request failed" };
+    const { model, commands = [] } = withContext(
+      {
+        ...initModel(defaultSettings()),
+        metrics: MetricsAsyncData.Failure(failed),
+        speedtestHistory: SpeedtestHistoryAsyncData.Failure(failed),
+      },
+      SucceededTriggerSpeedtest({
+        downloadMbps: 500,
+        uploadMbps: 50,
+        pingMs: 8,
+      })
+    );
+
+    expect(model.metrics._tag).toBe("Loading");
+    expect(model.speedtestHistory._tag).toBe("Loading");
+    expect(commands.map(({ name }) => name)).toEqual(
+      expect.arrayContaining(["FetchMetrics", "FetchSpeedtestHistory"])
     );
   });
 

@@ -12,6 +12,7 @@ import {
   FailedFetchMe,
   FailedLogin,
   FailedSaveSession,
+  RejectedToken,
   SucceededFetchAuthStatus,
   SucceededFetchMe,
   SucceededLogin,
@@ -61,8 +62,10 @@ export const fetchMe = ({ token }: { token: string }) =>
     const me = yield* client.auth.me();
     return SucceededFetchMe({ username: me.username });
   }).pipe(
-    Effect.catch((error) =>
-      Effect.succeed(FailedFetchMe({ error: String(error) }))
+    Effect.catchTag(
+      "Unauthorized",
+      () => Effect.succeed(RejectedToken()),
+      (error) => Effect.succeed(FailedFetchMe({ error: String(error) }))
     )
   );
 
@@ -116,7 +119,7 @@ export const FetchAuthStatus = Command.define("FetchAuthStatus", {
 
 export const FetchMe = Command.define("FetchMe", {
   args: { token: S.String },
-  messages: [SucceededFetchMe, FailedFetchMe],
+  messages: [SucceededFetchMe, RejectedToken, FailedFetchMe],
   execute: (args) => fetchMe(args).pipe(Effect.provide(FetchHttpClient.layer)),
 });
 

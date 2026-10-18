@@ -85,7 +85,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     supervisor \
     curl \
-    wget \
     ca-certificates \
     openjdk-17-jre-headless \
     iputils-ping \
@@ -96,13 +95,15 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install QuestDB
+# Download and install QuestDB. QUESTDB_SHA256 must match QUESTDB_VERSION; take it
+# from the `digest` of the -no-jre-bin release asset.
 ARG QUESTDB_VERSION=9.2.3
+ARG QUESTDB_SHA256=f019d587b6698ebfd2d44b0d056dd36d838c33219243142118b964ee41e5ffe3
 RUN mkdir -p /opt/questdb /var/lib/questdb \
-    && wget -q "https://github.com/questdb/questdb/releases/download/${QUESTDB_VERSION}/questdb-${QUESTDB_VERSION}-no-jre-bin.tar.gz" -O /tmp/questdb.tar.gz \
+    && curl -fsSL "https://github.com/questdb/questdb/releases/download/${QUESTDB_VERSION}/questdb-${QUESTDB_VERSION}-no-jre-bin.tar.gz" -o /tmp/questdb.tar.gz \
+    && echo "${QUESTDB_SHA256}  /tmp/questdb.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/questdb.tar.gz -C /opt/questdb --strip-components=1 \
-    && rm /tmp/questdb.tar.gz \
-    && chmod +x /opt/questdb/bin/*.sh 2>/dev/null || true
+    && rm /tmp/questdb.tar.gz
 
 # Create log directories
 RUN mkdir -p /var/log/supervisor /var/log/nginx

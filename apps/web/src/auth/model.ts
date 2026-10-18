@@ -24,13 +24,20 @@ export const LoggedOut = ts("LoggedOut", {
 });
 export type LoggedOut = typeof LoggedOut.Type;
 
+export const Unreachable = ts("Unreachable", {
+  token: S.String,
+  settings: Settings,
+  retry: S.Literals(["Idle", "Running", "Failed"]),
+});
+export type Unreachable = typeof Unreachable.Type;
+
 export const LoggedIn = ts("LoggedIn", {
   maybeSession: S.Option(Session),
   dashboard: Dashboard.Model,
 });
 export type LoggedIn = typeof LoggedIn.Type;
 
-export const Model = S.Union([Checking, LoggedOut, LoggedIn]);
+export const Model = S.Union([Checking, LoggedOut, Unreachable, LoggedIn]);
 export type Model = typeof Model.Type;
 
 export const initLoggedOut = (
@@ -54,6 +61,7 @@ export const currentSettings = (model: Model): Settings =>
     M.tagsExhaustive({
       Checking: (checking) => checking.settings,
       LoggedOut: (loggedOut) => loggedOut.settings,
+      Unreachable: (unreachable) => unreachable.settings,
       LoggedIn: (loggedIn) => Dashboard.settingsFromModel(loggedIn.dashboard),
     })
   );

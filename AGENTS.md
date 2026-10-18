@@ -126,8 +126,8 @@ When the feature is complete:
    # 6. Docker Build - must build successfully
    pnpm docker:build
 
-   # 7. Test Docker Image
-   docker run -d --name wan-monitor-test -p 8080:80 wan-monitor:local && sleep 15 && curl http://localhost:8080/api/health/live && docker stop wan-monitor-test && docker rm wan-monitor-test
+   # 7. Boot the image and wait for /api/health/ready (QuestDB and migrations included)
+   pnpm docker:smoke
    ```
 
    **CRITICAL:** If ANY step fails, fix it before pushing. Do NOT push with failing checks.

@@ -1,4 +1,5 @@
-import { Effect, Layer } from "effect";
+import { Unauthorized } from "@shared/api/middlewares/authorization";
+import { Effect, Layer, Schema } from "effect";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import { KeyValueStore } from "effect/persistence";
 import { describe, expect, test } from "vitest";
@@ -202,9 +203,39 @@ describe("fetchMe", () => {
     expect(result).toEqual({ _tag: "SucceededFetchMe", username: "phil" });
   });
 
-  test("maps a rejected token into FailedFetchMe", async () => {
+  test("maps a rejected token into RejectedToken", async () => {
+    const body = Schema.encodeSync(Unauthorized)(
+      new Unauthorized({ message: "Invalid token" })
+    );
     const result = await fetchMe({ token: "stale-token" }).pipe(
-      Effect.provide(mockHttpClient(401, "Unauthorized")),
+      Effect.provide(mockHttpClient(401, body)),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({ _tag: "RejectedToken" });
+  });
+
+  test("maps a transport failure into FailedFetchMe", async () => {
+    const result = await fetchMe({ token: "stored-token" }).pipe(
+      Effect.provide(transportFailureHttpClient),
+      Effect.runPromise
+    );
+
+    expect(result._tag).toBe("FailedFetchMe");
+  });
+
+  test("maps a server error into FailedFetchMe", async () => {
+    const result = await fetchMe({ token: "stored-token" }).pipe(
+      Effect.provide(mockHttpClient(502, "Bad Gateway")),
+      Effect.runPromise
+    );
+
+    expect(result._tag).toBe("FailedFetchMe");
+  });
+
+  test("maps a response that does not decode into FailedFetchMe", async () => {
+    const result = await fetchMe({ token: "stored-token" }).pipe(
+      Effect.provide(mockHttpClient(200, { unexpected: true })),
       Effect.runPromise
     );
 

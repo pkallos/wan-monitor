@@ -41,6 +41,7 @@
     "format:check": "pnpm -r run format:check",
     "check": "biome check --write .",
     "docker:build": "docker build -t wan-monitor:local .",
+    "docker:smoke": "sh scripts/docker-smoke.sh wan-monitor:local",
     "changeset": "changeset",
     "prepare": "husky",
     "postinstall": "sh scripts/patch-speedtest-net.sh"

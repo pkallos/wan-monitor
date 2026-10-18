@@ -250,6 +250,21 @@ describe("Auth HTTP integration (real JWT flow)", () => {
         expect(body._tag).toBe("Unauthorized");
         expect(body.message).toBe("Authorization header required");
       });
+
+      it("rejects a token signed with a different secret as a tagged Unauthorized", async () => {
+        const otherApp = makeTestApp(
+          TEST_PASSWORD,
+          "a-totally-different-secret"
+        );
+        const foreignToken = await loginForToken(otherApp);
+        await otherApp.dispose();
+
+        const res = await get(app, "/api/auth/me", foreignToken);
+
+        expect(res.status).toBe(401);
+        const body = (await res.json()) as { _tag: string };
+        expect(body._tag).toBe("Unauthorized");
+      });
     });
 
     describe("GET /api/auth/status", () => {
