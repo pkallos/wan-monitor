@@ -1,8 +1,8 @@
+import type { Metric } from "@wan-monitor/shared";
 import { describe, expect, it } from "vitest";
 import { summarizeSpeed } from "@/core/analytics/speed";
-import type { MetricRow } from "@/infrastructure/database/questdb/model";
 
-const test = (download?: number, upload?: number): MetricRow => ({
+const test = (download?: number, upload?: number): Metric => ({
   timestamp: "2024-01-01T00:00:00Z",
   source: "speedtest",
   download_speed: download,

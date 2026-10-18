@@ -21,7 +21,7 @@ import {
   QuestDBConnectionOverMigrator,
   type QuestDBConnectionService,
 } from "@/infrastructure/database/questdb/connection";
-import { DbUnavailable } from "@/infrastructure/database/questdb/errors";
+import { DatabaseUnavailable } from "@/infrastructure/database/questdb/errors";
 import { MigrationError } from "@/infrastructure/database/questdb/migrations/migration";
 import {
   SchemaMigrator,
@@ -244,7 +244,7 @@ describe("QuestDBConnection integration tests", () => {
   });
 
   describe("connection lifecycle", () => {
-    it.live("should return DbUnavailable when not connected", () => {
+    it.live("should return DatabaseUnavailable when not connected", () => {
       vi.mocked(Sender.fromConfig).mockRejectedValue(
         new Error("Connection failed")
       );
@@ -255,7 +255,7 @@ describe("QuestDBConnection integration tests", () => {
         const result = yield* Effect.result(connection.getConnection);
 
         if (Result.isFailure(result)) {
-          expect(result.failure).toBeInstanceOf(DbUnavailable);
+          expect(result.failure).toBeInstanceOf(DatabaseUnavailable);
         }
       }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
@@ -611,7 +611,7 @@ describe("QuestDBConnection integration tests", () => {
           yield* Effect.sleep(Duration.millis(300));
 
           const unavailable = yield* Effect.flip(connection.getConnection);
-          expect(unavailable).toBeInstanceOf(DbUnavailable);
+          expect(unavailable).toBeInstanceOf(DatabaseUnavailable);
           expect(unavailable.message).toBe(failing("transient").message);
           const state = yield* connection.getState;
           expect(state.isConnecting).toBe(false);

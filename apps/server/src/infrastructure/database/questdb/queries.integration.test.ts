@@ -1,5 +1,5 @@
 import type { NetworkMetric } from "@shared/metrics";
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { DatabaseError, Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
@@ -299,7 +299,7 @@ describe("Metrics Aggregation Integration Tests", () => {
             startTime: window.startTime,
             endTime: window.endTime,
             host: "8.8.8.8",
-            granularity: "15m",
+            granularity: "15m" as const,
             source: "ping" as const,
           };
 
@@ -571,25 +571,6 @@ describe("Metrics Aggregation Integration Tests", () => {
         await Effect.runPromise(Effect.provide(program, testLayer));
       }
     );
-
-    it.skipIf(skipTests)(
-      "should fail with an invalid granularity",
-      async () => {
-        const program = Effect.gen(function* () {
-          const db = yield* setupIntegrationTest();
-
-          const result = yield* Effect.exit(
-            db.querySpeedtests({ granularity: "invalid" })
-          );
-
-          expect(Exit.isFailure(result)).toBe(true);
-
-          yield* teardownIntegrationTest(db);
-        });
-
-        await Effect.runPromise(Effect.provide(program, testLayer));
-      }
-    );
   });
 
   describe("Null/Undefined Field Handling", () => {
@@ -733,6 +714,93 @@ describe("Metrics Aggregation Integration Tests", () => {
     );
   });
 
+  // `toNetworkMetric` in speed-test-runner.ts never sets connectivityStatus, and
+  // a missing reading leaves its bandwidth out of the ILP row, so production
+  // speed test rows carry nulls that every query must decode.
+  describe("speed test rows as production writes them", () => {
+    const baseTime = new Date("2024-01-15T09:00:00Z");
+    const window = {
+      startTime: baseTime,
+      endTime: new Date(baseTime.getTime() + 3_600_000),
+    };
+    const seedProductionSpeedtests = [
+      {
+        timestamp: baseTime,
+        source: "speedtest" as const,
+        latency: 18,
+        downloadBandwidth: 250_000_000,
+      },
+      {
+        timestamp: new Date(baseTime.getTime() + 600_000),
+        source: "speedtest" as const,
+        latency: 22,
+      },
+    ];
+
+    it.skipIf(skipTests)(
+      "reads them back raw through queryMetrics and querySpeedtests",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+          yield* seedDatabase(db, seedProductionSpeedtests);
+
+          const viaMetrics = yield* db.queryMetrics({
+            ...window,
+            source: "speedtest",
+          });
+          const viaSpeedtests = yield* db.querySpeedtests(window);
+
+          for (const rows of [viaMetrics, viaSpeedtests]) {
+            expect(rows).toHaveLength(2);
+            const [newest, oldest] = rows;
+            expect(oldest?.download_speed).toBe(250);
+            expect(newest?.download_speed).toBeUndefined();
+            for (const row of rows) {
+              expect(row.upload_speed).toBeUndefined();
+              expect(row.connectivity_status).toBeUndefined();
+              expect(row.host).toBeUndefined();
+            }
+          }
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+
+    it.skipIf(skipTests)(
+      "reads them back aggregated through queryMetrics and querySpeedtests",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+          yield* seedDatabase(db, seedProductionSpeedtests);
+
+          const viaMetrics = yield* db.queryMetrics({
+            ...window,
+            source: "speedtest",
+            granularity: "1h",
+          });
+          const viaSpeedtests = yield* db.querySpeedtests({
+            ...window,
+            granularity: "1h",
+          });
+
+          for (const rows of [viaMetrics, viaSpeedtests]) {
+            expect(rows).toHaveLength(1);
+            expect(rows[0]?.download_speed).toBe(250);
+            expect(rows[0]?.upload_speed).toBeUndefined();
+            expect(rows[0]?.connectivity_status).toBeUndefined();
+          }
+
+          yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+  });
+
   describe("Edge Cases", () => {
     it.skipIf(skipTests)(
       "should return empty array for time window with no data",
@@ -788,36 +856,6 @@ describe("Metrics Aggregation Integration Tests", () => {
 
       await Effect.runPromise(Effect.provide(program, testLayer));
     });
-
-    it.skipIf(skipTests)(
-      "should handle queries with only startTime",
-      async () => {
-        const program = Effect.gen(function* () {
-          const db = yield* setupIntegrationTest();
-
-          // Create and seed data
-          const dataset = createSeedDataset();
-          const { window, pingMetrics } = dataset.standardWindow;
-          yield* seedDatabase(db, pingMetrics);
-
-          // Query with only startTime (endTime should default to now)
-          const results = yield* db.queryMetrics({
-            startTime: window.startTime,
-            host: "8.8.8.8",
-          });
-
-          // Should get all the seeded data
-          expect(results.length).toBeGreaterThan(0);
-
-          // Cleanup
-          yield* teardownIntegrationTest(db);
-
-          return results;
-        });
-
-        await Effect.runPromise(Effect.provide(program, testLayer));
-      }
-    );
   });
 
   describe("queryEarliestTimestamp", () => {

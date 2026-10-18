@@ -1,11 +1,16 @@
-import { DbUnavailableErrorSchema, InvalidTimeRange } from "@shared/api/errors";
+import {
+  DbUnavailable,
+  InternalError,
+  InvalidTimeRange,
+} from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import {
   IsoTimestampSchema,
   PositiveIntFromStringSchema,
 } from "@shared/api/schemas";
+import { ConnectivityStatusSchema, MetricSourceSchema } from "@shared/metrics";
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 export const GranularitySchema = Schema.Literals([
   "1m",
@@ -16,9 +21,6 @@ export const GranularitySchema = Schema.Literals([
   "1d",
 ]);
 export type Granularity = Schema.Schema.Type<typeof GranularitySchema>;
-
-const MetricSourceSchema = Schema.Literals(["ping", "speedtest"]);
-export type MetricSource = Schema.Schema.Type<typeof MetricSourceSchema>;
 
 const PercentilesSchema = Schema.Literals(["p50", "p50-p95"]);
 
@@ -32,7 +34,7 @@ export const MetricSchema = Schema.Struct({
   latency_p95: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),
   packet_loss: Schema.optional(Schema.Number),
-  connectivity_status: Schema.optional(Schema.String),
+  connectivity_status: Schema.optional(ConnectivityStatusSchema),
   download_speed: Schema.optional(Schema.Number),
   upload_speed: Schema.optional(Schema.Number),
   server_location: Schema.optional(Schema.String),
@@ -85,20 +87,13 @@ export const MetricsApiGroup = HttpApiGroup.make("metrics")
     HttpApiEndpoint.get("getMetrics", "/", {
       query: GetMetricsQueryParams,
       success: GetMetricsResponse,
-      error: [
-        InvalidTimeRange,
-        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
-        Schema.String,
-      ],
+      error: [InvalidTimeRange, DbUnavailable, InternalError],
     })
   )
   .add(
     HttpApiEndpoint.get("getEarliestTimestamp", "/earliest", {
       success: GetEarliestTimestampResponse,
-      error: [
-        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
-        Schema.String,
-      ],
+      error: [DbUnavailable, InternalError],
     })
   )
   .middleware(Authorization);

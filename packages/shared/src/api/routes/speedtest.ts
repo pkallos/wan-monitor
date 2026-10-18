@@ -1,4 +1,8 @@
-import { DbUnavailableErrorSchema, InvalidTimeRange } from "@shared/api/errors";
+import {
+  DbUnavailable,
+  InternalError,
+  InvalidTimeRange,
+} from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { GranularitySchema } from "@shared/api/routes/metrics";
 import {
@@ -6,7 +10,7 @@ import {
   PositiveIntFromStringSchema,
 } from "@shared/api/schemas";
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 const SpeedTestResult = Schema.Struct({
   downloadMbps: Schema.optional(Schema.Number),
@@ -95,24 +99,18 @@ export const SpeedTestApiGroup = HttpApiGroup.make("speedtest")
   .add(
     HttpApiEndpoint.post("triggerSpeedTest", "/trigger", {
       success: SpeedTestResponse,
-      error: Schema.String,
     })
   )
   .add(
     HttpApiEndpoint.get("getSpeedTestStatus", "/status", {
       success: SpeedTestStatusResponse,
-      error: Schema.String,
     })
   )
   .add(
     HttpApiEndpoint.get("getSpeedTestHistory", "/history", {
       query: SpeedTestHistoryQuery,
       success: SpeedTestHistoryResponse,
-      error: [
-        InvalidTimeRange,
-        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
-        Schema.String,
-      ],
+      error: [InvalidTimeRange, DbUnavailable, InternalError],
     })
   )
   .middleware(Authorization);

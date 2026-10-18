@@ -6,7 +6,9 @@ export class DatabaseConnectionError extends Data.TaggedError(
   readonly message: string;
 }> {}
 
-export class DbUnavailable extends Data.TaggedError("DbUnavailable")<{
+export class DatabaseUnavailable extends Data.TaggedError(
+  "DatabaseUnavailable"
+)<{
   readonly message: string;
 }> {}
 

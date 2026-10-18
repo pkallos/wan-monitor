@@ -1,5 +1,5 @@
 import { BrowserKeyValueStore } from "@effect/platform-browser";
-import { Effect, Option, Schema as S } from "effect";
+import { Effect, Option, Predicate, Schema as S } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { Command } from "foldkit";
 import { makeClient } from "@/api/client";
@@ -19,27 +19,7 @@ import {
 } from "@/auth/message";
 import { clearToken, writeToken } from "@/storage";
 
-const loginErrorMessage = (error: {
-  readonly _tag: string;
-  readonly reason?: { readonly _tag: string };
-}): string => {
-  if (error._tag === "AuthNotConfigured") {
-    return "Authentication is not configured on the server.";
-  }
-  if (error._tag === "InvalidCredentials") {
-    return "Incorrect username or password.";
-  }
-  if (error._tag === "MissingCredentials") {
-    return "Username and password are required.";
-  }
-  if (
-    error._tag === "HttpClientError" &&
-    error.reason?._tag === "TransportError"
-  ) {
-    return "Cannot reach the server.";
-  }
-  return "Sign-in failed.";
-};
+const failedLogin = (error: string) => Effect.succeed(FailedLogin({ error }));
 
 // Each fetch*/save/clear function still requires its service (HttpClient or
 // KeyValueStore) from context, so it can be tested directly against a mock.
@@ -86,8 +66,22 @@ export const login = ({
       username: response.username,
     });
   }).pipe(
-    Effect.catch((error) =>
-      Effect.succeed(FailedLogin({ error: loginErrorMessage(error) }))
+    Effect.catchTags(
+      {
+        AuthNotConfigured: () =>
+          failedLogin("Authentication is not configured on the server."),
+        InvalidCredentials: () =>
+          failedLogin("Incorrect username or password."),
+        MissingCredentials: () =>
+          failedLogin("Username and password are required."),
+        HttpClientError: ({ reason }) =>
+          failedLogin(
+            Predicate.isTagged(reason, "TransportError")
+              ? "Cannot reach the server."
+              : "Sign-in failed."
+          ),
+      },
+      () => failedLogin("Sign-in failed.")
     )
   );
 

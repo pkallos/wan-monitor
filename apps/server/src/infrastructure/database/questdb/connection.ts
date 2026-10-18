@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
   DatabaseConnectionError,
-  DbUnavailable,
+  DatabaseUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 import {
   SchemaMigrator,
@@ -40,7 +40,10 @@ const initialState: QuestDBConnectionState = {
 };
 
 export interface QuestDBConnectionService {
-  readonly getConnection: Effect.Effect<QuestDBRawConnection, DbUnavailable>;
+  readonly getConnection: Effect.Effect<
+    QuestDBRawConnection,
+    DatabaseUnavailable
+  >;
   readonly getState: Effect.Effect<QuestDBConnectionState>;
   readonly markDisconnected: (error: string) => Effect.Effect<void>;
   readonly close: Effect.Effect<void>;
@@ -345,7 +348,7 @@ const make = Effect.gen(function* () {
       const errorMsg = Option.isSome(state.lastError)
         ? state.lastError.value.message
         : "Database not connected";
-      return yield* Effect.fail(new DbUnavailable({ message: errorMsg }));
+      return yield* Effect.fail(new DatabaseUnavailable({ message: errorMsg }));
     }
     return state.connection.value;
   });

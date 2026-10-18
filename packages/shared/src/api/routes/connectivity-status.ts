@@ -1,17 +1,14 @@
-import { DbUnavailableErrorSchema, InvalidTimeRange } from "@shared/api/errors";
+import {
+  DbUnavailable,
+  InternalError,
+  InvalidTimeRange,
+} from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
+import { GranularitySchema } from "@shared/api/routes/metrics";
 import { IsoTimestampSchema } from "@shared/api/schemas";
+import { ConnectivityStatusSchema } from "@shared/metrics";
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
-
-export const ConnectivityStatusSchema = Schema.Literals([
-  "up",
-  "down",
-  "degraded",
-]);
-export type ConnectivityStatus = Schema.Schema.Type<
-  typeof ConnectivityStatusSchema
->;
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 /**
  * States the live indicator can report. Extends the historical
@@ -110,9 +107,7 @@ const GetLiveConnectivityResponse = Schema.Struct({
 export const GetConnectivityStatusQuery = Schema.Struct({
   startTime: Schema.optional(IsoTimestampSchema),
   endTime: Schema.optional(IsoTimestampSchema),
-  granularity: Schema.optional(
-    Schema.Literals(["1m", "5m", "15m", "1h", "6h", "1d"])
-  ),
+  granularity: Schema.optional(GranularitySchema),
 });
 
 export const GetOutagesQuery = Schema.Struct({
@@ -143,31 +138,20 @@ export const ConnectivityStatusApiGroup = HttpApiGroup.make(
     HttpApiEndpoint.get("getConnectivityStatus", "/", {
       query: GetConnectivityStatusQuery,
       success: ConnectivityStatusResponse,
-      error: [
-        InvalidTimeRange,
-        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
-        Schema.String,
-      ],
+      error: [InvalidTimeRange, DbUnavailable, InternalError],
     })
   )
   .add(
     HttpApiEndpoint.get("getLiveConnectivity", "/live", {
       success: GetLiveConnectivityResponse,
-      error: [
-        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
-        Schema.String,
-      ],
+      error: [DbUnavailable, InternalError],
     })
   )
   .add(
     HttpApiEndpoint.get("getOutages", "/outages", {
       query: GetOutagesQuery,
       success: GetOutagesResponse,
-      error: [
-        InvalidTimeRange,
-        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
-        Schema.String,
-      ],
+      error: [InvalidTimeRange, DbUnavailable, InternalError],
     })
   )
   .middleware(Authorization);

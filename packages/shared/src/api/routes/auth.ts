@@ -5,7 +5,7 @@ import {
 } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 const LoginRequest = Schema.Struct({
   username: Schema.String,
@@ -43,18 +43,15 @@ export const AuthApiGroup = HttpApiGroup.make("auth")
   .add(
     HttpApiEndpoint.post("logout", "/logout", {
       success: LogoutResponse,
-      error: Schema.String,
     })
   )
   .add(
     HttpApiEndpoint.get("me", "/me", {
       success: MeResponse,
-      error: HttpApiSchema.status(401)(Schema.String),
     }).middleware(Authorization)
   )
   .add(
     HttpApiEndpoint.get("status", "/status", {
       success: StatusResponse,
-      error: Schema.String,
     })
   );

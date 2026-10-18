@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DB_UNAVAILABLE } from "@shared/api/errors";
+import { DbUnavailable } from "@shared/api/errors";
 import { DEFAULT_GRANULARITY, MAX_OUTAGE_SPAN_DAYS } from "@wan-monitor/shared";
 import { Cause, Clock, Effect, Exit, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
@@ -11,7 +11,7 @@ import {
   getOutagesHandler,
 } from "@/core/api/handlers/connectivity-status";
 import {
-  DbUnavailable,
+  DatabaseUnavailable,
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
@@ -58,7 +58,7 @@ const createMockLiveQuestDB = (options: {
   queryLiveConnectivity: (sinceIso) => {
     options.onLiveQuery?.(sinceIso);
     return options.liveUnavailable
-      ? Effect.fail(new DbUnavailable({ message: "connection refused" }))
+      ? Effect.fail(new DatabaseUnavailable({ message: "connection refused" }))
       : Effect.succeed(options.liveRow ?? null);
   },
   queryLatestPingTimestamp: () => {
@@ -580,7 +580,7 @@ describe("Connectivity Status Handlers", () => {
             const error = Cause.findErrorOption(exit.cause);
             expect(Option.isSome(error)).toBe(true);
             if (Option.isSome(error)) {
-              expect(error.value).toMatchObject({ error: DB_UNAVAILABLE });
+              expect(error.value).toBeInstanceOf(DbUnavailable);
             }
           }
         }).pipe(Effect.provide(handlerLayers(db)));
@@ -848,7 +848,9 @@ describe("Connectivity Status Handlers", () => {
         const db: QuestDBService = {
           ...createMockQuestDB([]),
           queryOutageRuns: () =>
-            Effect.fail(new DbUnavailable({ message: "connection refused" })),
+            Effect.fail(
+              new DatabaseUnavailable({ message: "connection refused" })
+            ),
         };
 
         return Effect.gen(function* () {
@@ -859,7 +861,7 @@ describe("Connectivity Status Handlers", () => {
             const error = Cause.findErrorOption(exit.cause);
             expect(Option.isSome(error)).toBe(true);
             if (Option.isSome(error)) {
-              expect(error.value).toMatchObject({ error: DB_UNAVAILABLE });
+              expect(error.value).toBeInstanceOf(DbUnavailable);
             }
           }
         }).pipe(Effect.provide(handlerLayers(db)));

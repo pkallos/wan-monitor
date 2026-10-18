@@ -1,9 +1,13 @@
-import { DbUnavailableErrorSchema, InvalidTimeRange } from "@shared/api/errors";
+import {
+  DbUnavailable,
+  InternalError,
+  InvalidTimeRange,
+} from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
-import { ConnectivityStatusSchema } from "@shared/api/routes/connectivity-status";
 import { IsoTimestampSchema } from "@shared/api/schemas";
+import { ConnectivityStatusSchema } from "@shared/metrics";
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 const NullableNumber = Schema.NullOr(Schema.Number);
 
@@ -80,11 +84,7 @@ export const SummaryApiGroup = HttpApiGroup.make("summary")
     HttpApiEndpoint.get("getSummary", "/", {
       query: GetSummaryQuery,
       success: GetSummaryResponse,
-      error: [
-        InvalidTimeRange,
-        HttpApiSchema.status(503)(DbUnavailableErrorSchema),
-        Schema.String,
-      ],
+      error: [InvalidTimeRange, DbUnavailable, InternalError],
     })
   )
   .middleware(Authorization);

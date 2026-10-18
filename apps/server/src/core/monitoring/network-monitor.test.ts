@@ -35,6 +35,7 @@ import {
 // Import from speedtest-service to avoid native module loading
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
 import { makeTestConfigLayer } from "@/test/config";
+import { captureLogs } from "@/test/logs";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 import { speedTestRunnerFrom } from "@/test/speedtest-runner";
 
@@ -437,6 +438,49 @@ describe("NetworkMonitor", () => {
       expect(stats.successfulSpeedTests).toBe(0);
       expect(stats.failedSpeedTests).toBeGreaterThanOrEqual(1);
     }).pipe(Effect.provide(TimeoutTestLayer));
+  });
+
+  it.live("logs the timeout duration when a speed test times out", () => {
+    const logs = captureLogs();
+    const TimingOutSpeedTestService = Layer.succeed(SpeedTestService, {
+      runTest: () =>
+        Effect.fail(new SpeedTestTimeoutError({ timeoutMs: 30_000 })),
+    });
+
+    const LoggingLayer = NetworkMonitorLive.pipe(
+      Layer.provide(MockPingExecutor),
+      Layer.provide(
+        speedTestRunnerFrom(TimingOutSpeedTestService, MockQuestDB)
+      ),
+      Layer.provide(
+        makeTestConfigLayer({
+          speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
+          auth: { password: "testpassword" },
+        })
+      )
+    );
+
+    return Effect.gen(function* () {
+      const monitor = yield* NetworkMonitor;
+
+      const fiber = yield* Effect.forkChild(
+        Effect.gen(function* () {
+          yield* monitor.start();
+          return yield* Effect.never;
+        })
+      );
+
+      yield* Effect.sleep("1500 millis");
+      yield* Fiber.interrupt(fiber);
+
+      const failures = logs.entries.filter(
+        (entry) =>
+          entry.level === "Error" && entry.text.includes("Speed test failed")
+      );
+      expect(failures.length).toBeGreaterThanOrEqual(1);
+      expect(failures[0]?.text).toContain("SpeedTestTimeoutError");
+      expect(failures[0]?.text).toContain("30000ms");
+    }).pipe(Effect.provide(LoggingLayer), Effect.provide(logs.layer));
   });
 
   it.live("holds the shared runner during a scheduled speed test", () => {

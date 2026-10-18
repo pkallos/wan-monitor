@@ -1,22 +1,37 @@
+import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   attachOutageHosts,
-  mapConnectivityStatusRow,
-  mapCyclePeriodMs,
-  mapHostStatsRow,
-  mapLiveConnectivityRow,
-  mapMetricRow,
-  mapOutageHostRow,
-  mapOutageRunRow,
-  mapSummaryStatsRow,
+  toCyclePeriodMs,
+  toMetric,
 } from "@/infrastructure/database/questdb/mappers";
-import type { OutageRunRow } from "@/infrastructure/database/questdb/model";
+import {
+  ConnectivityStatusRowSchema,
+  HostStatsRowSchema,
+  LiveConnectivityRowSchema,
+  MetricRowSchema,
+  OutageHostRowSchema,
+  type OutageRunRow,
+  OutageRunRowSchema,
+  SummaryStatsRowSchema,
+} from "@/infrastructure/database/questdb/model";
 
-describe("mapMetricRow", () => {
+const metricFrom = (row: Record<string, unknown>) =>
+  toMetric(Schema.decodeUnknownSync(MetricRowSchema)(row));
+
+const rejects = (schema: Schema.ConstraintDecoder<unknown>, row: unknown) =>
+  Result.isFailure(Schema.decodeUnknownResult(schema)(row));
+
+const PING_ROW = { timestamp: "2024-01-01T12:00:00.000Z", source: "ping" };
+const SPEEDTEST_ROW = {
+  timestamp: "2024-01-01T12:00:00.000Z",
+  source: "speedtest",
+};
+
+describe("MetricRowSchema with toMetric", () => {
   it("should map complete ping metric row", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
+    const result = metricFrom({
+      ...PING_ROW,
       host: "8.8.8.8",
       latency: 15.5,
       jitter: 2.1,
@@ -28,25 +43,22 @@ describe("mapMetricRow", () => {
       isp: null,
       external_ip: null,
       internal_ip: null,
-    };
+    });
 
-    const result = mapMetricRow(row);
-
-    expect(result.timestamp).toBe("2024-01-01T12:00:00.000Z");
-    expect(result.source).toBe("ping");
-    expect(result.host).toBe("8.8.8.8");
-    expect(result.latency).toBe(15.5);
-    expect(result.jitter).toBe(2.1);
-    expect(result.packet_loss).toBe(0);
-    expect(result.connectivity_status).toBe("up");
-    expect(result.download_speed).toBeUndefined();
-    expect(result.upload_speed).toBeUndefined();
+    expect(result).toEqual({
+      timestamp: "2024-01-01T12:00:00.000Z",
+      source: "ping",
+      host: "8.8.8.8",
+      latency: 15.5,
+      jitter: 2.1,
+      packet_loss: 0,
+      connectivity_status: "up",
+    });
   });
 
   it("should map a bucket's p50 and p95 latency when the query returned them", () => {
-    const result = mapMetricRow({
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
+    const result = metricFrom({
+      ...PING_ROW,
       latency: 15.5,
       latency_p50: 14,
       latency_p95: 31.5,
@@ -57,9 +69,8 @@ describe("mapMetricRow", () => {
   });
 
   it("should read a percentile the driver returned as text as a number", () => {
-    const result = mapMetricRow({
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
+    const result = metricFrom({
+      ...PING_ROW,
       latency_p50: "14.5",
       latency_p95: "31",
     });
@@ -69,14 +80,9 @@ describe("mapMetricRow", () => {
   });
 
   it("should leave the percentiles out of a row that has none, or a null one", () => {
-    const raw = mapMetricRow({
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
-      latency: 15.5,
-    });
-    const empty = mapMetricRow({
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
+    const raw = metricFrom({ ...PING_ROW, latency: 15.5 });
+    const empty = metricFrom({
+      ...PING_ROW,
       latency_p50: null,
       latency_p95: null,
     });
@@ -86,10 +92,9 @@ describe("mapMetricRow", () => {
   });
 
   it("should map complete speedtest metric row", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "speedtest",
-      host: undefined,
+    const result = metricFrom({
+      ...SPEEDTEST_ROW,
+      host: null,
       latency: 20.3,
       jitter: 3.5,
       packet_loss: null,
@@ -100,72 +105,66 @@ describe("mapMetricRow", () => {
       isp: "Test ISP",
       external_ip: "1.2.3.4",
       internal_ip: "192.168.1.100",
-    };
+    });
 
-    const result = mapMetricRow(row);
-
-    expect(result.timestamp).toBe("2024-01-01T12:00:00.000Z");
-    expect(result.source).toBe("speedtest");
-    expect(result.host).toBeUndefined();
-    expect(result.latency).toBe(20.3);
-    expect(result.jitter).toBe(3.5);
-    expect(result.packet_loss).toBeUndefined();
-    expect(result.connectivity_status).toBeNull();
-    expect(result.download_speed).toBe(100);
-    expect(result.upload_speed).toBe(50);
-    expect(result.server_location).toBe("Test Location");
-    expect(result.isp).toBe("Test ISP");
-    expect(result.external_ip).toBe("1.2.3.4");
-    expect(result.internal_ip).toBe("192.168.1.100");
-  });
-
-  it("should handle null latency values", () => {
-    const row: Record<string, unknown> = {
+    expect(result).toEqual({
       timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
-      host: "8.8.8.8",
-      latency: null,
-      jitter: null,
-      packet_loss: null,
-      connectivity_status: "down",
-    };
-
-    const result = mapMetricRow(row);
-
-    expect(result.latency).toBeUndefined();
-    expect(result.jitter).toBeUndefined();
-    expect(result.packet_loss).toBeUndefined();
-  });
-
-  it("should handle undefined values", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
-      host: undefined,
-      latency: undefined,
-      jitter: undefined,
-      packet_loss: undefined,
-      connectivity_status: undefined,
-    };
-
-    const result = mapMetricRow(row);
-
-    expect(result.host).toBeUndefined();
-    expect(result.latency).toBeUndefined();
-    expect(result.jitter).toBeUndefined();
-    expect(result.packet_loss).toBeUndefined();
+      source: "speedtest",
+      latency: 20.3,
+      jitter: 3.5,
+      download_speed: 100,
+      upload_speed: 50,
+      server_location: "Test Location",
+      isp: "Test ISP",
+      external_ip: "1.2.3.4",
+      internal_ip: "192.168.1.100",
+    });
     expect(result.connectivity_status).toBeUndefined();
   });
 
-  it("should keep a genuine zero bandwidth reading as 0, not undefined", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "speedtest",
-      download_bandwidth: 0,
-      upload_bandwidth: 0,
-    };
+  it("should convert the LONG bandwidth columns pg returns as strings", () => {
+    const result = metricFrom({
+      ...SPEEDTEST_ROW,
+      download_bandwidth: "250000000",
+      upload_bandwidth: "50000000",
+    });
 
-    const result = mapMetricRow(row);
+    expect(result.download_speed).toBe(250);
+    expect(result.upload_speed).toBe(50);
+  });
+
+  it("should read null latency, jitter and bandwidth as absent, not 0", () => {
+    const result = metricFrom({
+      ...SPEEDTEST_ROW,
+      latency: null,
+      jitter: null,
+      download_bandwidth: null,
+      upload_bandwidth: null,
+    });
+
+    expect(result.latency).toBeUndefined();
+    expect(result.jitter).toBeUndefined();
+    expect(result.download_speed).toBeUndefined();
+    expect(result.upload_speed).toBeUndefined();
+  });
+
+  it("should handle undefined and missing columns", () => {
+    const result = metricFrom({
+      ...PING_ROW,
+      host: undefined,
+      latency: undefined,
+      connectivity_status: undefined,
+    });
+
+    expect(result).toEqual(PING_ROW);
+  });
+
+  it("should keep a genuine zero bandwidth reading as 0, not undefined", () => {
+    const result = metricFrom({
+      ...SPEEDTEST_ROW,
+      download_bandwidth: 0,
+      upload_bandwidth: "0",
+    });
 
     // A measured 0 Mbps is a real observation (a dead link during a speed
     // test); collapsing it to undefined would report it as "no data".
@@ -174,35 +173,19 @@ describe("mapMetricRow", () => {
   });
 
   it("should convert bandwidth from bps to mbps", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "speedtest",
+    const result = metricFrom({
+      ...SPEEDTEST_ROW,
       download_bandwidth: 125_000_000,
       upload_bandwidth: 25_000_000,
-    };
-
-    const result = mapMetricRow(row);
+    });
 
     expect(result.download_speed).toBe(125);
     expect(result.upload_speed).toBe(25);
   });
 
-  it("should handle missing bandwidth fields", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
-    };
-
-    const result = mapMetricRow(row);
-
-    expect(result.download_speed).toBeUndefined();
-    expect(result.upload_speed).toBeUndefined();
-  });
-
   it("should handle partial data with mixed null and undefined", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      source: "ping",
+    const result = metricFrom({
+      ...PING_ROW,
       host: "1.1.1.1",
       latency: 10.5,
       jitter: null,
@@ -210,153 +193,154 @@ describe("mapMetricRow", () => {
       connectivity_status: "up",
       download_bandwidth: null,
       upload_bandwidth: undefined,
-    };
+    });
 
-    const result = mapMetricRow(row);
-
-    expect(result.host).toBe("1.1.1.1");
-    expect(result.latency).toBe(10.5);
-    expect(result.jitter).toBeUndefined();
-    expect(result.packet_loss).toBeUndefined();
-    expect(result.connectivity_status).toBe("up");
-    expect(result.download_speed).toBeUndefined();
-    expect(result.upload_speed).toBeUndefined();
+    expect(result).toEqual({
+      ...PING_ROW,
+      host: "1.1.1.1",
+      latency: 10.5,
+      connectivity_status: "up",
+    });
   });
+
+  it.each([null, undefined, 1_704_110_400_000])(
+    "should reject the timestamp %j",
+    (timestamp) => {
+      expect(rejects(MetricRowSchema, { ...PING_ROW, timestamp })).toBe(true);
+    }
+  );
+
+  it.each(["icmp", "", null])("should reject the source %j", (source) => {
+    expect(rejects(MetricRowSchema, { ...PING_ROW, source })).toBe(true);
+  });
+
+  it.each(["sideways", ""])(
+    "should reject the connectivity_status %j rather than pass it on",
+    (connectivity_status) => {
+      expect(
+        rejects(MetricRowSchema, { ...PING_ROW, connectivity_status })
+      ).toBe(true);
+    }
+  );
+
+  it.each(["fast", Number.NaN, {}])(
+    "should reject the bandwidth %j rather than turn it into NaN",
+    (download_bandwidth) => {
+      expect(
+        rejects(MetricRowSchema, { ...SPEEDTEST_ROW, download_bandwidth })
+      ).toBe(true);
+    }
+  );
 });
 
-describe("mapConnectivityStatusRow", () => {
+describe("ConnectivityStatusRowSchema", () => {
+  const decode = Schema.decodeUnknownSync(ConnectivityStatusRowSchema);
+  const row = {
+    timestamp: "2024-01-01T12:00:00.000Z",
+    up_count: 45,
+    down_count: 3,
+    degraded_count: 2,
+    total_count: 50,
+  };
+
   it("should map complete connectivity status row", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      up_count: 45,
-      down_count: 3,
-      degraded_count: 2,
-      total_count: 50,
-    };
-
-    const result = mapConnectivityStatusRow(row);
-
-    expect(result.timestamp).toBe("2024-01-01T12:00:00.000Z");
-    expect(result.up_count).toBe(45);
-    expect(result.down_count).toBe(3);
-    expect(result.degraded_count).toBe(2);
-    expect(result.total_count).toBe(50);
+    expect(decode(row)).toEqual(row);
   });
 
   it("should handle zero counts", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
+    const zero = {
+      ...row,
       up_count: 0,
       down_count: 0,
       degraded_count: 0,
       total_count: 0,
     };
 
-    const result = mapConnectivityStatusRow(row);
-
-    expect(result.up_count).toBe(0);
-    expect(result.down_count).toBe(0);
-    expect(result.degraded_count).toBe(0);
-    expect(result.total_count).toBe(0);
+    expect(decode(zero)).toEqual(zero);
   });
 
-  it("should handle null/undefined counts by converting to 0", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      up_count: null,
-      down_count: undefined,
-      degraded_count: null,
-      total_count: undefined,
-    };
-
-    const result = mapConnectivityStatusRow(row);
-
-    expect(result.up_count).toBe(0);
-    expect(result.down_count).toBe(0);
-    expect(result.degraded_count).toBe(0);
-    expect(result.total_count).toBe(0);
-  });
-
-  it("should convert string numbers to numbers", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
-      up_count: "42",
-      down_count: "5",
-      degraded_count: "3",
-      total_count: "50",
-    };
-
-    const result = mapConnectivityStatusRow(row);
-
-    expect(result.up_count).toBe(42);
-    expect(result.down_count).toBe(5);
-    expect(result.degraded_count).toBe(3);
-    expect(result.total_count).toBe(50);
+  it("should convert the LONG counts pg returns as strings", () => {
+    expect(
+      decode({
+        ...row,
+        up_count: "42",
+        down_count: "5",
+        degraded_count: "3",
+        total_count: "50",
+      })
+    ).toEqual({
+      ...row,
+      up_count: 42,
+      down_count: 5,
+      degraded_count: 3,
+      total_count: 50,
+    });
   });
 
   it("should handle mixed count types", () => {
-    const row: Record<string, unknown> = {
-      timestamp: "2024-01-01T12:00:00.000Z",
+    expect(
+      decode({ ...row, up_count: 30, down_count: "10", total_count: 40 })
+    ).toMatchObject({
       up_count: 30,
-      down_count: "10",
-      degraded_count: null,
+      down_count: 10,
       total_count: 40,
-    };
-
-    const result = mapConnectivityStatusRow(row);
-
-    expect(result.up_count).toBe(30);
-    expect(result.down_count).toBe(10);
-    expect(result.degraded_count).toBe(0);
-    expect(result.total_count).toBe(40);
+    });
   });
+
+  it.each([null, undefined, "many"])(
+    "should reject the count %j rather than read it as 0",
+    (up_count) => {
+      expect(rejects(ConnectivityStatusRowSchema, { ...row, up_count })).toBe(
+        true
+      );
+    }
+  );
 });
 
-describe("mapLiveConnectivityRow", () => {
+describe("LiveConnectivityRowSchema", () => {
   it.each(["up", "down", "degraded"] as const)(
     "should map a %s cycle",
     (status) => {
-      const result = mapLiveConnectivityRow({
+      const row = {
         timestamp: "2024-01-01T12:00:00.000Z",
         cycle_status: status,
-      });
+      };
 
-      expect(result).toEqual({
-        timestamp: "2024-01-01T12:00:00.000Z",
-        cycle_status: status,
-      });
+      expect(Schema.decodeUnknownSync(LiveConnectivityRowSchema)(row)).toEqual(
+        row
+      );
     }
   );
 
-  it("should fall back to up for a status the CASE cannot emit", () => {
-    const result = mapLiveConnectivityRow({
-      timestamp: "2024-01-01T12:00:00.000Z",
-      cycle_status: null,
-    });
-
-    expect(result.cycle_status).toBe("up");
-  });
+  it.each([null, "sideways"])(
+    "should reject the status %j rather than read it as up",
+    (cycle_status) => {
+      expect(
+        rejects(LiveConnectivityRowSchema, {
+          timestamp: "2024-01-01T12:00:00.000Z",
+          cycle_status,
+        })
+      ).toBe(true);
+    }
+  );
 });
 
-describe("mapSummaryStatsRow", () => {
+describe("SummaryStatsRowSchema", () => {
+  const decode = Schema.decodeUnknownSync(SummaryStatsRowSchema);
+
   it("should map every aggregate", () => {
-    expect(
-      mapSummaryStatsRow({
-        latency_p50: 20,
-        latency_p95: 45.5,
-        avg_packet_loss: 1.5,
-        avg_jitter: 2,
-      })
-    ).toEqual({
+    const stats = {
       latency_p50: 20,
       latency_p95: 45.5,
       avg_packet_loss: 1.5,
       avg_jitter: 2,
-    });
+    };
+
+    expect(decode(stats)).toEqual(stats);
   });
 
   it("should keep nulls null rather than coercing them to 0", () => {
-    const result = mapSummaryStatsRow({
+    const result = decode({
       latency_p50: null,
       latency_p95: null,
       avg_packet_loss: null,
@@ -367,75 +351,62 @@ describe("mapSummaryStatsRow", () => {
   });
 });
 
-describe("mapHostStatsRow", () => {
-  it("should coerce string counts and map the status", () => {
-    expect(
-      mapHostStatsRow({
-        host: "8.8.8.8",
-        latency_p50: 10,
-        latency_p95: 30,
-        avg_packet_loss: 0,
-        avg_jitter: null,
-        answered_count: "58",
-        total_count: "60",
-        last_status: "degraded",
-      })
-    ).toEqual({
-      host: "8.8.8.8",
-      latency_p50: 10,
-      latency_p95: 30,
-      avg_packet_loss: 0,
-      avg_jitter: null,
+describe("HostStatsRowSchema", () => {
+  const row = {
+    host: "8.8.8.8",
+    latency_p50: 10,
+    latency_p95: 30,
+    avg_packet_loss: 0,
+    avg_jitter: null,
+    answered_count: "58",
+    total_count: "60",
+    last_status: "degraded",
+  };
+
+  it("should coerce string counts and keep the status", () => {
+    expect(Schema.decodeUnknownSync(HostStatsRowSchema)(row)).toEqual({
+      ...row,
       answered_count: 58,
       total_count: 60,
-      last_status: "degraded",
     });
+  });
+
+  it("should reject a last_status outside up, down and degraded", () => {
+    expect(
+      rejects(HostStatsRowSchema, { ...row, last_status: "sideways" })
+    ).toBe(true);
   });
 });
 
-describe("mapOutageRunRow", () => {
+describe("OutageRunRowSchema", () => {
+  const decode = Schema.decodeUnknownSync(OutageRunRowSchema);
+  const row = {
+    run_id: "3",
+    start_time: "2024-01-01T12:00:00.000Z",
+    last_time: "2024-01-01T12:05:00.000Z",
+    recovered_time: "2024-01-01T12:05:30.000Z",
+    had_down: 1,
+    max_packet_loss: 100,
+    peak_latency: 40,
+  };
+
   it("should map a run's span, worst loss and peak latency", () => {
-    expect(
-      mapOutageRunRow({
-        run_id: "3",
-        start_time: "2024-01-01T12:00:00.000Z",
-        last_time: "2024-01-01T12:05:00.000Z",
-        recovered_time: "2024-01-01T12:05:30.000Z",
-        had_down: 1,
-        max_packet_loss: 100,
-        peak_latency: 40,
-      })
-    ).toEqual({
-      run_id: 3,
-      start_time: "2024-01-01T12:00:00.000Z",
-      last_time: "2024-01-01T12:05:00.000Z",
-      recovered_time: "2024-01-01T12:05:30.000Z",
-      had_down: true,
-      max_packet_loss: 100,
-      peak_latency: 40,
-    });
+    expect(decode(row)).toEqual({ ...row, run_id: 3, had_down: true });
   });
 
-  it("should read a run with no down cycle as not down", () => {
-    const result = mapOutageRunRow({
-      run_id: 1,
-      start_time: "t1",
-      last_time: "t2",
-      had_down: 0,
-      max_packet_loss: 20,
-      peak_latency: 40,
-    });
-
-    expect(result.had_down).toBe(false);
+  it.each([
+    [0, false],
+    ["0", false],
+    [1, true],
+    ["2", true],
+  ])("should read had_down %j as %j", (had_down, expected) => {
+    expect(decode({ ...row, had_down }).had_down).toBe(expected);
   });
 
   it("should keep a missing loss, latency and recovery null", () => {
-    const result = mapOutageRunRow({
-      run_id: 1,
-      start_time: "t1",
-      last_time: "t2",
+    const result = decode({
+      ...row,
       recovered_time: null,
-      had_down: 1,
       max_packet_loss: null,
       peak_latency: null,
     });
@@ -484,29 +455,24 @@ describe("attachOutageHosts", () => {
   });
 });
 
-describe("mapOutageHostRow", () => {
+describe("OutageHostRowSchema", () => {
   it("should map a run id and host", () => {
-    expect(mapOutageHostRow({ run_id: "2", host: "8.8.8.8" })).toEqual({
-      run_id: 2,
-      host: "8.8.8.8",
-    });
+    expect(
+      Schema.decodeUnknownSync(OutageHostRowSchema)({
+        run_id: "2",
+        host: "8.8.8.8",
+      })
+    ).toEqual({ run_id: 2, host: "8.8.8.8" });
   });
 });
 
-describe("mapCyclePeriodMs", () => {
+describe("toCyclePeriodMs", () => {
   it("should convert microseconds to whole milliseconds", () => {
-    expect(mapCyclePeriodMs({ period_micros: 40_500_223 })).toBe(40_500);
-    expect(mapCyclePeriodMs({ period_micros: 59_999_700 })).toBe(60_000);
+    expect(toCyclePeriodMs(40_500_223)).toBe(40_500);
+    expect(toCyclePeriodMs(59_999_700)).toBe(60_000);
   });
 
-  it.each([null, undefined])(
-    "should read %s as no measurable period",
-    (period) => {
-      expect(mapCyclePeriodMs({ period_micros: period })).toBeNull();
-    }
-  );
-
-  it("should read a missing row as no measurable period", () => {
-    expect(mapCyclePeriodMs(undefined)).toBeNull();
+  it("should read null as no measurable period", () => {
+    expect(toCyclePeriodMs(null)).toBeNull();
   });
 });

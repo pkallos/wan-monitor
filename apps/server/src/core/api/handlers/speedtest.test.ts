@@ -13,10 +13,7 @@ import {
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
-import type {
-  MetricRow,
-  QuerySpeedtestsParams,
-} from "@/infrastructure/database/questdb/model";
+import type { QuerySpeedtestsParams } from "@/infrastructure/database/questdb/model";
 import {
   createSpeedtestMetrics,
   seedDatabase,
@@ -608,7 +605,7 @@ describe("SpeedTest API Handlers", () => {
 
         const QuestDBTest = Layer.succeed(QuestDB, {
           ...createTestQuestDB(),
-          querySpeedtests: () => Effect.succeed([partialRow as MetricRow]),
+          querySpeedtests: () => Effect.succeed([partialRow]),
         });
 
         return Effect.gen(function* () {
@@ -632,7 +629,7 @@ describe("SpeedTest API Handlers", () => {
 
       const QuestDBTest = Layer.succeed(QuestDB, {
         ...createTestQuestDB(),
-        querySpeedtests: () => Effect.succeed([zeroRow as MetricRow]),
+        querySpeedtests: () => Effect.succeed([zeroRow]),
       });
 
       return Effect.gen(function* () {
@@ -641,60 +638,6 @@ describe("SpeedTest API Handlers", () => {
         expect(result.data[0].download_speed).toBe(0);
         expect(result.data[0].upload_speed).toBe(0);
         expect(result.data[0].latency).toBe(0);
-      }).pipe(Effect.provide(QuestDBTest));
-    });
-
-    it.effect("converts null values to undefined for optional fields", () => {
-      // QuestDB returns null for missing values, while our TypeScript types use undefined.
-      // This test verifies the handler correctly converts null -> undefined.
-      type RawMetricRow = {
-        [K in keyof MetricRow]: MetricRow[K] | null;
-      };
-
-      const mockDataWithNulls: RawMetricRow[] = [
-        {
-          timestamp: "2024-01-01T12:00:00Z",
-          source: "speedtest",
-          host: null,
-          download_speed: 100.5,
-          upload_speed: 50.2,
-          latency: 15.3,
-          jitter: null,
-          packet_loss: null,
-          connectivity_status: null,
-          server_location: null,
-          isp: null,
-          external_ip: null,
-          internal_ip: null,
-        },
-      ];
-
-      const QuestDBTest = Layer.succeed(QuestDB, {
-        ...createTestQuestDB(),
-        // Cast to MetricRow[] since that's what the service interface expects,
-        // but QuestDB actually returns nullable fields at runtime
-        querySpeedtests: () => Effect.succeed(mockDataWithNulls as MetricRow[]),
-      });
-
-      return Effect.gen(function* () {
-        // Call the actual handler logic
-        const result = yield* getSpeedTestHistoryHandler({ query: {} });
-
-        // Verify the handler converted null to undefined
-        expect(result.data).toHaveLength(1);
-        expect(result.data[0].jitter).toBeUndefined();
-        expect(result.data[0].server_location).toBeUndefined();
-        expect(result.data[0].isp).toBeUndefined();
-        expect(result.data[0].external_ip).toBeUndefined();
-        expect(result.data[0].internal_ip).toBeUndefined();
-
-        // Verify non-null values are preserved
-        expect(result.data[0].timestamp).toBe("2024-01-01T12:00:00Z");
-        expect(result.data[0].download_speed).toBe(100.5);
-        expect(result.data[0].upload_speed).toBe(50.2);
-        expect(result.data[0].latency).toBe(15.3);
-
-        return result;
       }).pipe(Effect.provide(QuestDBTest));
     });
   });

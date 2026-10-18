@@ -46,13 +46,11 @@ export const PingApiGroup = HttpApiGroup.make("ping")
     HttpApiEndpoint.post("triggerPing", "/trigger", {
       payload: Schema.NullOr(TriggerPingRequest),
       success: TriggerPingResponse,
-      error: Schema.String,
     })
   )
   .add(
     HttpApiEndpoint.get("getHosts", "/hosts", {
       success: GetHostsResponse,
-      error: Schema.String,
     })
   )
   .middleware(Authorization);

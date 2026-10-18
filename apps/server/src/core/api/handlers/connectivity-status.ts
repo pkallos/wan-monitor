@@ -23,7 +23,7 @@ import {
   type TimeWindow,
   validateWindow,
 } from "@/core/analytics/window";
-import { mapQueryError } from "@/core/api/handlers/db-error";
+import { withApiErrors } from "@/core/api/handlers/db-error";
 import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
@@ -78,7 +78,7 @@ const loadConnectivityStatus = (
         count: data.length,
       },
     };
-  }).pipe(Effect.catch(mapQueryError("Failed to query connectivity status")));
+  }).pipe(withApiErrors("Failed to query connectivity status"));
 
 export const getConnectivityStatusHandler = ({
   query,
@@ -123,7 +123,7 @@ export const getLiveConnectivityHandler = () =>
     // the healthy path: it turns silence into "no data since <timestamp>".
     const lastSampleAt = yield* db.queryLatestPingTimestamp();
     return { status: "noInfo" as const, lastSampleAt, windowSeconds };
-  }).pipe(Effect.catch(mapQueryError("Failed to query live connectivity")));
+  }).pipe(withApiErrors("Failed to query live connectivity"));
 
 const loadOutages = ({ startMs, endMs }: TimeWindow) =>
   Effect.gen(function* () {
@@ -156,7 +156,7 @@ const loadOutages = ({ startMs, endMs }: TimeWindow) =>
         totalCount: outages.length,
       },
     };
-  }).pipe(Effect.catch(mapQueryError("Failed to query outages")));
+  }).pipe(withApiErrors("Failed to query outages"));
 
 /**
  * The outage log for a window: runs of non-up ping cycles (see

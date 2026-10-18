@@ -410,16 +410,16 @@ new PingTimeoutError({ host, timeoutMs });
 
 Benefits: `_tag` is set automatically, the class extends `Error` (real stack traces + `instanceof Error`), you get value equality/hashing via `Data`, and a typed props constructor.
 
-**Serializable / API-boundary errors** — use `Schema.TaggedErrorClass` (so they encode/decode across the HTTP boundary), as in `packages/shared/src/api/middlewares/authorization.ts`:
+**Serializable / API-boundary errors** — use `Schema.TaggedError` (so they encode/decode across the HTTP boundary), as in `packages/shared/src/api/middlewares/authorization.ts`:
 
 ```typescript
-import { Schema } from 'effect';
+import { Schema } from "effect";
 
-export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()(
-  'Unauthorized',
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
+  "Unauthorized",
   { message: Schema.String },
   { httpApiStatus: 401 }
 ) {}
 ```
 
-Rule of thumb: if the error only ever flows through the Effect error channel in-process, use `Data.TaggedError`. If it crosses a serialization boundary (HTTP response, worker message), use `Schema.TaggedErrorClass`. Discriminate either kind with `catchTag` / Effect type guards — never with direct `_tag` comparisons.
+Rule of thumb: if the error only ever flows through the Effect error channel in-process, use `Data.TaggedError`. If it crosses a serialization boundary (HTTP response, worker message), use `Schema.TaggedError`. Discriminate either kind with `catchTag` / Effect type guards — never with direct `_tag` comparisons.

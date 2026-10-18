@@ -4,7 +4,7 @@ import type { NetworkMetric } from "@shared/metrics";
 export const writeMetricToSender = (
   sender: Sender,
   metric: NetworkMetric,
-  table = "network_metrics"
+  table: string
 ): Promise<void> => {
   let row = sender.table(table).symbol("source", metric.source);
 

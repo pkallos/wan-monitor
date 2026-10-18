@@ -12,8 +12,7 @@ plumbing) and `effect/http-api` (the schema-driven API layer: `HttpApi`, `HttpAp
 ## Defining an endpoint
 
 ```ts
-import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 export const AuthApiGroup = HttpApiGroup.make("auth")
   .add(
@@ -26,10 +25,14 @@ export const AuthApiGroup = HttpApiGroup.make("auth")
   .add(
     HttpApiEndpoint.get("me", "/me", {
       success: MeResponse,
-      error: HttpApiSchema.status(401)(Schema.String),
     }).middleware(Authorization)
   );
 ```
+
+An endpoint declares only the errors its handler can fail with. `me` declares none: the `Authorization`
+middleware's own `Unauthorized` joins the endpoint's error union, and an omitted `error` means `never`,
+so the type checker proves the handler cannot fail. A bare `Schema.String` error would widen every
+client's error union with a case nothing produces.
 
 `HttpApiEndpoint.get`/`post`/etc. take `(id, path, options)` where `options` is a plain object:
 `payload`, `query`, `success`, `error`. This is v4's endpoint shape — v3 built the same endpoint with a
@@ -160,7 +163,7 @@ short-circuit works the same as any other `Effect.gen`.
 
 ## Typed errors
 
-See `error-handling.md`'s `Schema.TaggedErrorClass` + `httpApiStatus` section — that's what
+See `error-handling.md`'s `Schema.TaggedError` + `httpApiStatus` section — that's what
 `MissingCredentials`, `InvalidCredentials`, `Unauthorized`, and the rest are built from.
 
 ## Testing a full app instance

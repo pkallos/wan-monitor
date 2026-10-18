@@ -1,7 +1,6 @@
 export { WanMonitorApi } from "./api/index";
 // Export schema-derived types for type-safe API responses
 export type {
-  ConnectivityStatus,
   ConnectivityStatusPoint,
   ConnectivityStatusResponseType,
   GetLiveConnectivityResponseType,
@@ -14,7 +13,6 @@ export type {
   GetMetricsResponseType,
   Granularity,
   Metric,
-  MetricSource,
 } from "./api/routes/metrics";
 export type {
   SpeedMetric,
@@ -31,14 +29,13 @@ export type {
 export {
   DEFAULT_GRANULARITY,
   DEGRADED_BUCKET_MIN_SHARE,
-  isValidGranularity,
   LIVE_WINDOW_MIN_SECONDS,
   LIVE_WINDOW_PING_MULTIPLIER,
   liveConnectivityWindowSeconds,
   MAX_OUTAGE_SPAN_DAYS,
   PACKET_LOSS_THRESHOLDS,
-  VALID_GRANULARITIES,
 } from "./constants";
+export type { ConnectivityStatus, MetricSource } from "./metrics";
 export { mbpsToBps } from "./metrics";
 export {
   alignTimestampToMs,

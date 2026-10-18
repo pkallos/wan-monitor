@@ -60,7 +60,7 @@ being stale, so it was removed rather than pinned back.
   singleton. See `services-and-layers.md`.
 - **Side effects only inside `Effect`**, composed with `Effect.gen` or `pipe`. No bare `async`/`await`
   outside an `Effect.tryPromise`/`Effect.promise` boundary.
-- **Errors are typed and tagged** — `Data.TaggedError` for in-process errors, `Schema.TaggedErrorClass`
+- **Errors are typed and tagged** — `Data.TaggedError` for in-process errors, `Schema.TaggedError`
   for anything that crosses the HTTP boundary. Never a hand-rolled class with a manual `_tag` field.
   Never a bare `Error`/`string` thrown or rejected across an Effect boundary.
 - **Discriminate errors with Effect's own tools** (`Cause.isFailReason`, `catchTag`, `Result.isFailure`,

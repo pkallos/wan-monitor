@@ -2,8 +2,8 @@ import { DatabaseError } from "pg";
 import type { AppConfig } from "@/infrastructure/config/config";
 import {
   DatabaseQueryError,
+  DatabaseUnavailable,
   DatabaseWriteError,
-  DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 
 const CONNECTION_ERROR_CODES: ReadonlySet<string> = new Set([
@@ -50,10 +50,10 @@ export const isConnectionError = (error: unknown): boolean => {
 
 export const classifyQueryError =
   (label: string) =>
-  (error: unknown): DbUnavailable | DatabaseQueryError => {
+  (error: unknown): DatabaseUnavailable | DatabaseQueryError => {
     const message = errorMessage(error);
     return isConnectionError(error)
-      ? new DbUnavailable({ message })
+      ? new DatabaseUnavailable({ message })
       : new DatabaseQueryError({
           message: `Failed to query ${label}: ${message}`,
         });
@@ -61,11 +61,11 @@ export const classifyQueryError =
 
 export const classifyWriteError =
   (action: string, protocol: AppConfig["database"]["protocol"]) =>
-  (error: unknown): DbUnavailable | DatabaseWriteError => {
+  (error: unknown): DatabaseUnavailable | DatabaseWriteError => {
     const message = errorMessage(error);
     // QuestDB closes a TCP ILP connection on any server-side error, and the
     // sender then rejects every write with a code-less "not connected" error.
     return protocol === "tcp" || isConnectionError(error)
-      ? new DbUnavailable({ message })
+      ? new DatabaseUnavailable({ message })
       : new DatabaseWriteError({ message: `Failed to ${action}: ${message}` });
   };

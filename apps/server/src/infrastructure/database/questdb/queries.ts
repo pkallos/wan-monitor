@@ -1,10 +1,8 @@
+import { NETWORK_METRICS_COLUMNS } from "@shared/db-schema";
 import {
   DEFAULT_GRANULARITY,
-  isValidGranularity,
   PACKET_LOSS_THRESHOLDS,
 } from "@wan-monitor/shared";
-import { Effect } from "effect";
-import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
 import type {
   QueryMetricsParams,
   QueryOutageParams,
@@ -23,62 +21,61 @@ export interface SqlQuerySpec {
  */
 const PERCENTILE_PRECISION = 3;
 
+const windowParams = ({
+  startTime,
+  endTime,
+}: QueryWindowParams): readonly string[] => [
+  startTime.toISOString(),
+  endTime.toISOString(),
+];
+
+const RAW_COLUMNS = NETWORK_METRICS_COLUMNS.map((column) => column.name).join(
+  ", "
+);
+
 export const buildQueryMetrics = (
   params: QueryMetricsParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.gen(function* () {
-    const startTime =
-      params.startTime?.toISOString() ??
-      new Date(Date.now() - 3600000).toISOString();
-    const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
+  table: string
+): SqlQuerySpec => {
+  const queryParams: (string | number)[] = [...windowParams(params)];
+  let paramIndex = 3;
 
-    const queryParams: (string | number)[] = [startTime, endTime];
-    let paramIndex = 3;
+  let hostFilter = "";
+  if (params.host) {
+    hostFilter = `AND host = $${paramIndex}`;
+    queryParams.push(params.host);
+    paramIndex++;
+  }
 
-    let hostFilter = "";
-    if (params.host) {
-      hostFilter = `AND host = $${paramIndex}`;
-      queryParams.push(params.host);
-      paramIndex++;
-    }
+  // `source` is projected un-aggregated next to SAMPLE BY, so QuestDB treats
+  // it as a grouping key and emits one row per source per bucket. Pinning a
+  // single source keeps each bucket to one row.
+  let sourceFilter = "";
+  if (params.source) {
+    sourceFilter = `AND source = $${paramIndex}`;
+    queryParams.push(params.source);
+    paramIndex++;
+  }
 
-    // `source` is projected un-aggregated next to SAMPLE BY, so QuestDB treats
-    // it as a grouping key and emits one row per source per bucket. Pinning a
-    // single source keeps each bucket to one row.
-    let sourceFilter = "";
-    if (params.source) {
-      sourceFilter = `AND source = $${paramIndex}`;
-      queryParams.push(params.source);
-      paramIndex++;
-    }
+  let limitClause = "";
+  if (params.limit) {
+    limitClause = `LIMIT $${paramIndex}`;
+    queryParams.push(params.limit);
+  }
 
-    let limitClause = "";
-    if (params.limit) {
-      limitClause = `LIMIT $${paramIndex}`;
-      queryParams.push(params.limit);
-    }
+  const granularity = params.granularity;
 
-    const granularity = params.granularity;
-    if (granularity && !isValidGranularity(granularity)) {
-      return yield* Effect.fail(
-        new DatabaseQueryError({
-          message: `Invalid granularity: ${granularity}`,
-        })
-      );
-    }
-
-    const windowFilter = `
+  const windowFilter = `
             WHERE timestamp >= $1
               AND timestamp <= $2
               ${hostFilter}
               ${sourceFilter}`;
-    // For one host every reading counts, as in the host summary. Across hosts,
-    // the inner SAMPLE BY 1s collapses each ping cycle to one row so the
-    // bucket's figures cover the same per-cycle population as the summary.
-    const aggregatedFrom =
-      params.host === undefined
-        ? `(
+  // For one host every reading counts, as in the host summary. Across hosts,
+  // the inner SAMPLE BY 1s collapses each ping cycle to one row so the
+  // bucket's figures cover the same per-cycle population as the summary.
+  const aggregatedFrom =
+    params.host === undefined
+      ? `(
             SELECT
               timestamp,
               source,
@@ -97,17 +94,17 @@ export const buildQueryMetrics = (
             ${windowFilter}
             SAMPLE BY 1s
           )`
-        : `${table}
+      : `${table}
             ${windowFilter}`;
-    // Each percentile is a pass of its own over every cycle in the window, so
-    // the 95th is only computed for callers that draw it.
-    const p95Column =
-      params.percentiles === "p50"
-        ? ""
-        : `approx_percentile(latency, 0.95, ${PERCENTILE_PRECISION}) as latency_p95,`;
+  // Each percentile is a pass of its own over every cycle in the window, so
+  // the 95th is only computed for callers that draw it.
+  const p95Column =
+    params.percentiles === "p50"
+      ? ""
+      : `approx_percentile(latency, 0.95, ${PERCENTILE_PRECISION}) as latency_p95,`;
 
-    const query = granularity
-      ? `
+  const query = granularity
+    ? `
           SELECT
             timestamp,
             source,
@@ -129,21 +126,8 @@ export const buildQueryMetrics = (
           ORDER BY timestamp DESC
           ${limitClause}
         `
-      : `
-          SELECT
-            timestamp,
-            source,
-            host,
-            latency,
-            jitter,
-            packet_loss,
-            connectivity_status,
-            download_bandwidth,
-            upload_bandwidth,
-            server_location,
-            isp,
-            external_ip,
-            internal_ip
+    : `
+          SELECT ${RAW_COLUMNS}
           FROM ${table}
           WHERE timestamp >= $1
             AND timestamp <= $2
@@ -153,38 +137,25 @@ export const buildQueryMetrics = (
           ${limitClause}
         `;
 
-    return { query, params: queryParams } satisfies SqlQuerySpec;
-  });
+  return { query, params: queryParams };
+};
 
 export const buildQuerySpeedtests = (
   params: QuerySpeedtestsParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.gen(function* () {
-    const startTime =
-      params.startTime?.toISOString() ??
-      new Date(Date.now() - 3600000).toISOString();
-    const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
+  table: string
+): SqlQuerySpec => {
+  const queryParams: (string | number)[] = [...windowParams(params)];
 
-    const queryParams: (string | number)[] = [startTime, endTime];
+  let limitClause = "";
+  if (params.limit) {
+    limitClause = "LIMIT $3";
+    queryParams.push(params.limit);
+  }
 
-    let limitClause = "";
-    if (params.limit) {
-      limitClause = "LIMIT $3";
-      queryParams.push(params.limit);
-    }
+  const granularity = params.granularity;
 
-    const granularity = params.granularity;
-    if (granularity && !isValidGranularity(granularity)) {
-      return yield* Effect.fail(
-        new DatabaseQueryError({
-          message: `Invalid granularity: ${granularity}`,
-        })
-      );
-    }
-
-    const query = granularity
-      ? `
+  const query = granularity
+    ? `
           SELECT
             timestamp,
             source,
@@ -204,21 +175,8 @@ export const buildQuerySpeedtests = (
           ORDER BY timestamp DESC
           ${limitClause}
         `
-      : `
-          SELECT
-            timestamp,
-            source,
-            host,
-            latency,
-            jitter,
-            packet_loss,
-            connectivity_status,
-            download_bandwidth,
-            upload_bandwidth,
-            server_location,
-            isp,
-            external_ip,
-            internal_ip
+    : `
+          SELECT ${RAW_COLUMNS}
           FROM ${table}
           WHERE timestamp >= $1
             AND timestamp <= $2
@@ -227,16 +185,13 @@ export const buildQuerySpeedtests = (
           ${limitClause}
         `;
 
-    return { query, params: queryParams } satisfies SqlQuerySpec;
-  });
+  return { query, params: queryParams };
+};
 
-export const buildQueryEarliestTimestamp = (
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `SELECT min(timestamp) as timestamp FROM ${table}`,
-    params: [],
-  });
+export const buildQueryEarliestTimestamp = (table: string): SqlQuerySpec => ({
+  query: `SELECT min(timestamp) as timestamp FROM ${table}`,
+  params: [],
+});
 
 /**
  * Reduces one ping cycle (the rows sharing a write timestamp, grouped by
@@ -266,10 +221,9 @@ export const CYCLE_STATUS_CASE = `CASE
  */
 export const buildQueryLiveConnectivity = (
   { sinceIso }: { readonly sinceIso: string },
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `
+  table: string
+): SqlQuerySpec => ({
+  query: `
         SELECT
           timestamp,
           ${CYCLE_STATUS_CASE} as cycle_status
@@ -280,54 +234,38 @@ export const buildQueryLiveConnectivity = (
         ORDER BY timestamp DESC
         LIMIT 1
       `,
-    params: [sinceIso],
-  });
+  params: [sinceIso],
+});
 
 /**
  * Newest ping timestamp of any age. Lets the live indicator say when the
  * monitor last reported, so an empty window reads as "no data, last seen 4h
  * ago" rather than a bare "no data".
  */
-export const buildQueryLatestPingTimestamp = (
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `SELECT max(timestamp) as timestamp FROM ${table} WHERE source = 'ping'`,
-    params: [],
-  });
+export const buildQueryLatestPingTimestamp = (table: string): SqlQuerySpec => ({
+  query: `SELECT max(timestamp) as timestamp FROM ${table} WHERE source = 'ping'`,
+  params: [],
+});
 
 export const buildQueryConnectivityStatus = (
   params: QueryMetricsParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.gen(function* () {
-    const startTime =
-      params.startTime?.toISOString() ??
-      new Date(Date.now() - 86400000).toISOString();
-    const endTime = params.endTime?.toISOString() ?? new Date().toISOString();
+  table: string
+): SqlQuerySpec => {
+  const granularity = params.granularity ?? DEFAULT_GRANULARITY;
 
-    const granularity = params.granularity ?? DEFAULT_GRANULARITY;
-    if (!isValidGranularity(granularity)) {
-      return yield* Effect.fail(
-        new DatabaseQueryError({
-          message: `Invalid granularity: ${granularity}`,
-        })
-      );
-    }
-
-    // Connectivity classification is quorum-based across a ping cycle (all
-    // hosts pinged together — see `pingResultToMetric`'s shared `timestamp`),
-    // not per host-row: the inner query reduces each cycle to one of three
-    // states via `CYCLE_STATUS_CASE`, then the outer query buckets cycles by
-    // granularity. `up_count + degraded_count + down_count` always equals
-    // `total_count` for every output bucket.
-    //
-    // `ALIGN TO CALENDAR` pins bucket boundaries to epoch-floored intervals,
-    // matching `expectedBucketCount`'s alignment so the coverage ratio compares
-    // two counts of the same grid. Buckets with no ping cycles are absent from
-    // the result rather than zero-filled, which is what makes a missing bucket
-    // readable as "the collector wasn't running".
-    const query = `
+  // Connectivity classification is quorum-based across a ping cycle (all
+  // hosts pinged together — see `pingResultToMetric`'s shared `timestamp`),
+  // not per host-row: the inner query reduces each cycle to one of three
+  // states via `CYCLE_STATUS_CASE`, then the outer query buckets cycles by
+  // granularity. `up_count + degraded_count + down_count` always equals
+  // `total_count` for every output bucket.
+  //
+  // `ALIGN TO CALENDAR` pins bucket boundaries to epoch-floored intervals,
+  // matching `expectedBucketCount`'s alignment so the coverage ratio compares
+  // two counts of the same grid. Buckets with no ping cycles are absent from
+  // the result rather than zero-filled, which is what makes a missing bucket
+  // readable as "the collector wasn't running".
+  const query = `
         SELECT
           bucket_ts as timestamp,
           SUM(CASE WHEN cycle_status = 'down' THEN 1 ELSE 0 END) as down_count,
@@ -349,19 +287,11 @@ export const buildQueryConnectivityStatus = (
         ORDER BY timestamp ASC
       `;
 
-    return { query, params: [startTime, endTime] } satisfies SqlQuerySpec;
-  });
+  return { query, params: windowParams(params) };
+};
 
 /** Precision for the cycle period, where a sub-millisecond error matters. */
 const MAX_PERCENTILE_PRECISION = 5;
-
-const windowParams = ({
-  startTime,
-  endTime,
-}: QueryWindowParams): readonly string[] => [
-  startTime.toISOString(),
-  endTime.toISOString(),
-];
 
 /**
  * Latency percentiles, mean loss and mean jitter over every ping cycle in the
@@ -371,10 +301,9 @@ const windowParams = ({
  */
 export const buildQuerySummaryStats = (
   params: QueryWindowParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `
+  table: string
+): SqlQuerySpec => ({
+  query: `
         SELECT
           approx_percentile(latency, 0.5, ${PERCENTILE_PRECISION}) as latency_p50,
           approx_percentile(latency, 0.95, ${PERCENTILE_PRECISION}) as latency_p95,
@@ -394,8 +323,8 @@ export const buildQuerySummaryStats = (
           )
         )
       `,
-    params: windowParams(params),
-  });
+  params: windowParams(params),
+});
 
 /**
  * Per-host latency percentiles, loss, jitter and answered share, plus the
@@ -405,10 +334,9 @@ export const buildQuerySummaryStats = (
  */
 export const buildQueryHostStats = (
   params: QueryWindowParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `
+  table: string
+): SqlQuerySpec => ({
+  query: `
         SELECT
           host,
           approx_percentile(latency, 0.5, ${PERCENTILE_PRECISION}) as latency_p50,
@@ -428,17 +356,14 @@ export const buildQueryHostStats = (
           AND source = 'ping'
         ORDER BY host
       `,
-    params: windowParams(params),
-  });
+  params: windowParams(params),
+});
 
-const outageParams = ({
-  startTime,
-  endTime,
-  mergeGapMs,
-}: QueryOutageParams): readonly (string | number)[] => [
-  startTime.toISOString(),
-  endTime.toISOString(),
-  Math.round(mergeGapMs * 1000),
+const outageParams = (
+  params: QueryOutageParams
+): readonly (string | number)[] => [
+  ...windowParams(params),
+  Math.round(params.mergeGapMs * 1000),
 ];
 
 /**
@@ -518,10 +443,9 @@ const numberedOutageCycles = (table: string): string => `
  */
 export const buildQueryOutageRuns = (
   params: QueryOutageParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `
+  table: string
+): SqlQuerySpec => ({
+  query: `
         SELECT
           run_id,
           min(timestamp) as start_time,
@@ -535,8 +459,8 @@ export const buildQueryOutageRuns = (
         GROUP BY run_id
         ORDER BY run_id
       `,
-    params: outageParams(params),
-  });
+  params: outageParams(params),
+});
 
 /**
  * One row per (outage run, host) for every host that was down or at or over
@@ -547,10 +471,9 @@ export const buildQueryOutageRuns = (
  */
 export const buildQueryOutageHosts = (
   params: QueryOutageParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `
+  table: string
+): SqlQuerySpec => ({
+  query: `
         SELECT DISTINCT runs.run_id, affected.host
         FROM (
           SELECT timestamp, host, count() as sample_count
@@ -567,8 +490,8 @@ export const buildQueryOutageHosts = (
         JOIN (${numberedOutageCycles(table)}
         ) runs ON affected.timestamp = runs.timestamp
       `,
-    params: outageParams(params),
-  });
+  params: outageParams(params),
+});
 
 /**
  * Median gap, in microseconds, between consecutive ping cycles in the window.
@@ -579,10 +502,9 @@ export const buildQueryOutageHosts = (
  */
 export const buildQueryCyclePeriod = (
   params: QueryWindowParams,
-  table = "network_metrics"
-): Effect.Effect<SqlQuerySpec, DatabaseQueryError> =>
-  Effect.succeed({
-    query: `
+  table: string
+): SqlQuerySpec => ({
+  query: `
         SELECT approx_percentile(gap, 0.5, ${MAX_PERCENTILE_PRECISION}) as period_micros
         FROM (
           SELECT datediff('u', previous_timestamp, timestamp) as gap
@@ -599,5 +521,5 @@ export const buildQueryCyclePeriod = (
         )
         WHERE gap IS NOT NULL
       `,
-    params: windowParams(params),
-  });
+  params: windowParams(params),
+});
