@@ -112,6 +112,20 @@ expect(beforeTimeout).toBeUndefined(); // still running one second before the ti
 
 See `apps/server/src/infrastructure/speedtest/service.test.ts`.
 
+## Fetch error paths run in the node environment
+
+`apps/web` tests run under `happy-dom`, where an `HttpApiClient` call that gets a declared error status
+with a body that does not decode (empty, HTML, plain text) dies with a `TypeError` instead of failing
+with `HttpClientError`. Effect 4.0.0 hashes the failure's object graph while combining causes, and under
+`happy-dom` that graph reaches a live generator through the window. Chromium and WebKit don't reach it;
+Firefox wasn't checked. Test dashboard fetch error paths in a file that starts with
+`// @vitest-environment node`, as `apps/web/src/dashboard/command.errorBodies.test.ts` does. Node has no
+page origin, so that file stubs `VITE_API_URL`; without a base URL every request fails before a response
+is read and the test passes for the wrong reason.
+
+Modules that import `@/dashboard`, which is all of `@/auth`, read `window` at load and can't run in the
+node environment. Cover their error bodies in e2e (`e2e/auth.spec.ts`).
+
 ## Anti-patterns
 
 - ❌ `it.scoped`/`it.scopedLive` — neither exists; use `it.effect`/`it.live`.

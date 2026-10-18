@@ -55,14 +55,17 @@ const fetchErrorMessage = (error: unknown): string =>
       ? error.message
       : REQUEST_FAILED_MESSAGE;
 
+const TokenArgs = { maybeToken: S.Option(S.String) };
+
 const DateRangeArgs = {
-  token: S.String,
+  ...TokenArgs,
   dateRange: DateRangeSelection,
   maybeEarliestDataMs: S.optional(S.Option(S.Number)),
 };
 
-type RangeArgs = {
-  token: string;
+type TokenOnlyArgs = { maybeToken: Option.Option<string> };
+
+type RangeArgs = TokenOnlyArgs & {
   dateRange: DateRangeSelection;
   maybeEarliestDataMs?: Option.Option<number>;
 };
@@ -74,12 +77,12 @@ type RangeArgs = {
 export const rangeRequest = ({
   dateRange,
   maybeEarliestDataMs = Option.none(),
-}: Omit<RangeArgs, "token">): RangeRequest => ({
+}: Omit<RangeArgs, "maybeToken">): RangeRequest => ({
   dateRange,
   maybeEarliestDataMs,
 });
 
-export const fetchMetrics = ({ token, ...range }: RangeArgs) => {
+export const fetchMetrics = ({ maybeToken, ...range }: RangeArgs) => {
   const request = rangeRequest(range);
   return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
@@ -90,7 +93,7 @@ export const fetchMetrics = ({ token, ...range }: RangeArgs) => {
     );
     const { startTime, endTime } = window;
     const granularity = granularityForRange(window);
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     // Everything downstream of this charts ping measurements, and pinning a
     // source is also what keeps an aggregated bucket to one row (see
     // `buildQueryMetrics`).
@@ -120,7 +123,7 @@ export const fetchMetrics = ({ token, ...range }: RangeArgs) => {
   );
 };
 
-export const fetchSpeedtestHistory = ({ token, ...range }: RangeArgs) => {
+export const fetchSpeedtestHistory = ({ maybeToken, ...range }: RangeArgs) => {
   const request = rangeRequest(range);
   return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
@@ -131,7 +134,7 @@ export const fetchSpeedtestHistory = ({ token, ...range }: RangeArgs) => {
     );
     const { startTime, endTime } = window;
     const granularity = granularityForSpeedtestRange(window);
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const response = yield* client.speedtest.getSpeedTestHistory({
       query: {
         startTime,
@@ -157,7 +160,10 @@ export const fetchSpeedtestHistory = ({ token, ...range }: RangeArgs) => {
   );
 };
 
-export const fetchConnectivityStatus = ({ token, ...range }: RangeArgs) => {
+export const fetchConnectivityStatus = ({
+  maybeToken,
+  ...range
+}: RangeArgs) => {
   const request = rangeRequest(range);
   return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
@@ -167,7 +173,7 @@ export const fetchConnectivityStatus = ({ token, ...range }: RangeArgs) => {
       request.maybeEarliestDataMs
     );
     const { startTime, endTime } = window;
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const response = yield* client.connectivityStatus.getConnectivityStatus({
       query: {
         startTime,
@@ -205,9 +211,9 @@ export const fetchConnectivityStatus = ({ token, ...range }: RangeArgs) => {
  * Takes no date range on purpose: the live indicator answers "right now", and
  * the absence of a range in this signature is what keeps it that way.
  */
-export const fetchLiveConnectivity = ({ token }: { token: string }) =>
+export const fetchLiveConnectivity = ({ maybeToken }: TokenOnlyArgs) =>
   Effect.gen(function* () {
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const response = yield* client.connectivityStatus.getLiveConnectivity();
     return SucceededFetchLiveConnectivity({
       status: response.status,
@@ -224,7 +230,7 @@ export const fetchLiveConnectivity = ({ token }: { token: string }) =>
     )
   );
 
-export const fetchSummary = ({ token, ...range }: RangeArgs) => {
+export const fetchSummary = ({ maybeToken, ...range }: RangeArgs) => {
   const request = rangeRequest(range);
   return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
@@ -233,7 +239,7 @@ export const fetchSummary = ({ token, ...range }: RangeArgs) => {
       nowMs,
       request.maybeEarliestDataMs
     );
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const summary = yield* client.summary.getSummary({
       query: { startTime, endTime },
     });
@@ -247,14 +253,14 @@ export const fetchSummary = ({ token, ...range }: RangeArgs) => {
   );
 };
 
-export const fetchOutages = ({ token, ...range }: RangeArgs) => {
+export const fetchOutages = ({ maybeToken, ...range }: RangeArgs) => {
   const request = rangeRequest(range);
   return Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
     const { isClamped, ...window } = outageWindow(
       getDateRangeWindow(request.dateRange, nowMs, request.maybeEarliestDataMs)
     );
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const outages = yield* client.connectivityStatus.getOutages({
       query: window,
     });
@@ -274,7 +280,7 @@ export const fetchOutages = ({ token, ...range }: RangeArgs) => {
 };
 
 export const fetchHostLatency = ({
-  token,
+  maybeToken,
   hosts,
   ...range
 }: RangeArgs & { hosts: ReadonlyArray<string> }) => {
@@ -288,7 +294,7 @@ export const fetchHostLatency = ({
     );
     const { startTime, endTime } = window;
     const granularity = granularityForRange(window);
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const series = yield* Effect.forEach(
       hosts,
       (host) =>
@@ -322,9 +328,9 @@ export const fetchHostLatency = ({
   );
 };
 
-export const fetchPingHosts = ({ token }: { token: string }) =>
+export const fetchPingHosts = ({ maybeToken }: TokenOnlyArgs) =>
   Effect.gen(function* () {
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const hosts = yield* client.ping.getHosts();
     return SucceededFetchPingHosts({ hosts });
   }).pipe(
@@ -333,9 +339,9 @@ export const fetchPingHosts = ({ token }: { token: string }) =>
     )
   );
 
-export const fetchEarliestData = ({ token }: { token: string }) =>
+export const fetchEarliestData = ({ maybeToken }: TokenOnlyArgs) =>
   Effect.gen(function* () {
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const response = yield* client.metrics.getEarliestTimestamp();
     return SucceededFetchEarliestData({
       earliestMs:
@@ -351,9 +357,9 @@ export const fetchEarliestData = ({ token }: { token: string }) =>
     )
   );
 
-export const triggerSpeedtest = ({ token }: { token: string }) =>
+export const triggerSpeedtest = ({ maybeToken }: TokenOnlyArgs) =>
   Effect.gen(function* () {
-    const client = yield* makeClient(Option.some(token));
+    const client = yield* makeClient(maybeToken);
     const response = yield* client.speedtest.triggerSpeedTest();
 
     if (!response.success) {
@@ -422,7 +428,7 @@ export const FetchConnectivityStatus = Command.define(
 );
 
 export const FetchLiveConnectivity = Command.define("FetchLiveConnectivity", {
-  args: { token: S.String },
+  args: TokenArgs,
   messages: [SucceededFetchLiveConnectivity, FailedFetchLiveConnectivity],
   execute: (args) =>
     fetchLiveConnectivity(args).pipe(Effect.provide(FetchHttpClient.layer)),
@@ -450,21 +456,21 @@ export const FetchHostLatency = Command.define("FetchHostLatency", {
 });
 
 export const FetchPingHosts = Command.define("FetchPingHosts", {
-  args: { token: S.String },
+  args: TokenArgs,
   messages: [SucceededFetchPingHosts, FailedFetchPingHosts],
   execute: (args) =>
     fetchPingHosts(args).pipe(Effect.provide(FetchHttpClient.layer)),
 });
 
 export const FetchEarliestData = Command.define("FetchEarliestData", {
-  args: { token: S.String },
+  args: TokenArgs,
   messages: [SucceededFetchEarliestData, FailedFetchEarliestData],
   execute: (args) =>
     fetchEarliestData(args).pipe(Effect.provide(FetchHttpClient.layer)),
 });
 
 export const TriggerSpeedtest = Command.define("TriggerSpeedtest", {
-  args: { token: S.String },
+  args: TokenArgs,
   messages: [SucceededTriggerSpeedtest, FailedTriggerSpeedtest],
   execute: (args) =>
     triggerSpeedtest(args).pipe(Effect.provide(FetchHttpClient.layer)),

@@ -11,7 +11,7 @@ import {
   type Message,
   SubmittedLogin,
 } from "@/auth/message";
-import type { LoggedOut, Model, Unreachable } from "@/auth/model";
+import type { LoggedIn, LoggedOut, Model, Unreachable } from "@/auth/model";
 import { view as dashboardView } from "@/dashboard/view";
 import { card } from "@/ui/card";
 import {
@@ -164,10 +164,18 @@ const unreachableView = (model: Unreachable, h: HtmlBuilder<Message>): Html =>
     ]
   );
 
-const dashboardShellView = (
-  model: Extract<Model, { _tag: "LoggedIn" }>,
-  h: HtmlBuilder<Message>
-): Html =>
+const loadingView = (h: HtmlBuilder<Message>): Html =>
+  h.div(
+    [
+      h.Role("status"),
+      h.Class(
+        "flex min-h-screen items-center justify-center bg-bg text-sm text-ink-2"
+      ),
+    ],
+    ["Loading…"]
+  );
+
+const dashboardShellView = (model: LoggedIn, h: HtmlBuilder<Message>): Html =>
   h.submodel({
     slotId: "dashboard",
     model: model.dashboard,
@@ -185,16 +193,8 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: "WAN Monitor",
   body: M.value(model).pipe(
     M.tagsExhaustive({
-      Checking: () =>
-        h.div(
-          [
-            h.Role("status"),
-            h.Class(
-              "flex min-h-screen items-center justify-center bg-bg text-sm text-ink-2"
-            ),
-          ],
-          ["Loading…"]
-        ),
+      Checking: () => loadingView(h),
+      ValidatingToken: () => loadingView(h),
       LoggedOut: (loggedOut) => loginView(loggedOut, h),
       Unreachable: (unreachable) => unreachableView(unreachable, h),
       LoggedIn: (loggedIn) => dashboardShellView(loggedIn, h),

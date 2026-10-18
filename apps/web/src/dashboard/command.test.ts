@@ -24,6 +24,7 @@ import {
 } from "@/dashboard/testFixtures";
 import { defaultSettings, readSettings, type Settings } from "@/storage";
 
+const maybeToken = Option.some("abc");
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 const DEFAULT_REQUEST = {
   dateRange: DEFAULT_DATE_RANGE,
@@ -120,7 +121,7 @@ const failingKeyValueStore = Layer.succeed(
 describe("fetchMetrics", () => {
   test("echoes the range it was issued for on success and on failure", async () => {
     const succeeded = await fetchMetrics({
-      token: "abc",
+      maybeToken,
       ...ALL_TIME_REQUEST,
     }).pipe(
       Effect.provide(
@@ -136,7 +137,7 @@ describe("fetchMetrics", () => {
       Effect.runPromise
     );
     const failed = await fetchMetrics({
-      token: "abc",
+      maybeToken,
       ...ALL_TIME_REQUEST,
     }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
@@ -152,7 +153,7 @@ describe("fetchMetrics", () => {
 
   test("decodes a successful response into SucceededFetchMetrics", async () => {
     const result = await fetchMetrics({
-      token: "abc",
+      maybeToken,
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
       Effect.provide(
@@ -193,7 +194,7 @@ describe("fetchMetrics", () => {
 
   test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchMetrics({
-      token: "abc",
+      maybeToken,
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
@@ -209,7 +210,7 @@ describe("fetchMetrics", () => {
 
   test("words a 500 InternalError as a generic failure without its message", async () => {
     const result = await fetchMetrics({
-      token: "abc",
+      maybeToken,
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
       Effect.provide(
@@ -228,7 +229,7 @@ describe("fetchMetrics", () => {
   test("requests server-side aggregation for the range's granularity", async () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
-    await fetchMetrics({ token: "abc", dateRange: ONE_DAY_RANGE }).pipe(
+    await fetchMetrics({ maybeToken, dateRange: ONE_DAY_RANGE }).pipe(
       Effect.provide(
         capturingHttpClient(capturedParams, {
           data: [],
@@ -248,7 +249,7 @@ describe("fetchMetrics", () => {
   test("asks for ping rows only, so speedtest rows can't share a bucket", async () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
-    await fetchMetrics({ token: "abc", dateRange: ONE_DAY_RANGE }).pipe(
+    await fetchMetrics({ maybeToken, dateRange: ONE_DAY_RANGE }).pipe(
       Effect.provide(
         capturingHttpClient(capturedParams, {
           data: [],
@@ -269,7 +270,7 @@ describe("fetchMetrics", () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
     const result = await fetchMetrics({
-      token: "abc",
+      maybeToken,
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
       Effect.provide(
@@ -299,7 +300,7 @@ describe("fetchMetrics", () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
     const result = await fetchMetrics({
-      token: "abc",
+      maybeToken,
       dateRange: Preset({ preset: "ytd" }),
     }).pipe(
       Effect.provide(
@@ -324,7 +325,7 @@ describe("fetchMetrics", () => {
     const earliestDataMs = Date.parse("2025-01-01T00:00:00.000Z");
 
     await fetchMetrics({
-      token: "abc",
+      maybeToken,
       dateRange: ALL_TIME_RANGE,
       maybeEarliestDataMs: Option.some(earliestDataMs),
     }).pipe(
@@ -347,7 +348,7 @@ describe("fetchMetrics", () => {
 describe("fetchSpeedtestHistory", () => {
   test("echoes the range it was issued for on success and on failure", async () => {
     const succeeded = await fetchSpeedtestHistory({
-      token: "abc",
+      maybeToken,
       ...ALL_TIME_REQUEST,
     }).pipe(
       Effect.provide(
@@ -363,7 +364,7 @@ describe("fetchSpeedtestHistory", () => {
       Effect.runPromise
     );
     const failed = await fetchSpeedtestHistory({
-      token: "abc",
+      maybeToken,
       ...ALL_TIME_REQUEST,
     }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
@@ -379,7 +380,7 @@ describe("fetchSpeedtestHistory", () => {
 
   test("decodes a successful response into SucceededFetchSpeedtestHistory", async () => {
     const result = await fetchSpeedtestHistory({
-      token: "abc",
+      maybeToken,
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
       Effect.provide(
@@ -407,7 +408,7 @@ describe("fetchSpeedtestHistory", () => {
 
   test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchSpeedtestHistory({
-      token: "abc",
+      maybeToken,
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
@@ -425,7 +426,7 @@ describe("fetchSpeedtestHistory", () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
     await fetchSpeedtestHistory({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(
@@ -448,7 +449,7 @@ describe("fetchSpeedtestHistory", () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
     await fetchSpeedtestHistory({
-      token: "abc",
+      maybeToken,
       dateRange: THIRTY_DAY_RANGE,
     }).pipe(
       Effect.provide(
@@ -469,7 +470,7 @@ describe("fetchSpeedtestHistory", () => {
 
   test("reports back the window it requested, with no granularity for raw rows", async () => {
     const result = await fetchSpeedtestHistory({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(
@@ -496,7 +497,7 @@ describe("fetchSpeedtestHistory", () => {
 describe("fetchConnectivityStatus", () => {
   test("echoes the range it was issued for on success and on failure", async () => {
     const succeeded = await fetchConnectivityStatus({
-      token: "abc",
+      maybeToken,
       ...ALL_TIME_REQUEST,
     }).pipe(
       Effect.provide(
@@ -519,7 +520,7 @@ describe("fetchConnectivityStatus", () => {
       Effect.runPromise
     );
     const failed = await fetchConnectivityStatus({
-      token: "abc",
+      maybeToken,
       ...ALL_TIME_REQUEST,
     }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
@@ -535,7 +536,7 @@ describe("fetchConnectivityStatus", () => {
 
   test("decodes a successful response into SucceededFetchConnectivityStatus with uptimePercentage lifted from meta", async () => {
     const result = await fetchConnectivityStatus({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_HOUR_RANGE,
     }).pipe(
       Effect.provide(
@@ -589,7 +590,7 @@ describe("fetchConnectivityStatus", () => {
 
   test("decodes a null uptime into None rather than defaulting it to 0", async () => {
     const result = await fetchConnectivityStatus({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_HOUR_RANGE,
     }).pipe(
       Effect.provide(
@@ -621,7 +622,7 @@ describe("fetchConnectivityStatus", () => {
 
   test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
     const result = await fetchConnectivityStatus({
-      token: "abc",
+      maybeToken,
       dateRange: DEFAULT_DATE_RANGE,
     }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
@@ -639,7 +640,7 @@ describe("fetchConnectivityStatus", () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
     await fetchConnectivityStatus({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(
@@ -663,7 +664,7 @@ describe("fetchConnectivityStatus", () => {
 
 describe("fetchLiveConnectivity", () => {
   test("decodes a live status and its sample time", async () => {
-    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+    const result = await fetchLiveConnectivity({ maybeToken }).pipe(
       Effect.provide(
         mockHttpClient(200, {
           status: "degraded",
@@ -682,7 +683,7 @@ describe("fetchLiveConnectivity", () => {
   });
 
   test("decodes a noInfo status with no recorded sample into None", async () => {
-    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+    const result = await fetchLiveConnectivity({ maybeToken }).pipe(
       Effect.provide(
         mockHttpClient(200, {
           status: "noInfo",
@@ -701,7 +702,7 @@ describe("fetchLiveConnectivity", () => {
   });
 
   test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
-    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+    const result = await fetchLiveConnectivity({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
@@ -713,7 +714,7 @@ describe("fetchLiveConnectivity", () => {
   });
 
   test("maps a transport failure into FailedFetchLiveConnectivity", async () => {
-    const result = await fetchLiveConnectivity({ token: "abc" }).pipe(
+    const result = await fetchLiveConnectivity({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(500, INTERNAL_ERROR_BODY)),
       Effect.runPromise
     );
@@ -726,7 +727,7 @@ describe("fetchLiveConnectivity", () => {
   test("sends no date-range query parameters at all", async () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
-    await fetchLiveConnectivity({ token: "abc" }).pipe(
+    await fetchLiveConnectivity({ maybeToken }).pipe(
       Effect.provide(
         capturingHttpClient(capturedParams, {
           status: "up",
@@ -747,7 +748,7 @@ describe("fetchLiveConnectivity", () => {
 
 describe("fetchEarliestData", () => {
   test("decodes a present timestamp into Some", async () => {
-    const result = await fetchEarliestData({ token: "abc" }).pipe(
+    const result = await fetchEarliestData({ maybeToken }).pipe(
       Effect.provide(
         mockHttpClient(200, { timestamp: "2025-01-01T00:00:00.000Z" })
       ),
@@ -761,7 +762,7 @@ describe("fetchEarliestData", () => {
   });
 
   test("decodes a null timestamp (no data yet) into None", async () => {
-    const result = await fetchEarliestData({ token: "abc" }).pipe(
+    const result = await fetchEarliestData({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(200, { timestamp: null })),
       Effect.runPromise
     );
@@ -773,7 +774,7 @@ describe("fetchEarliestData", () => {
   });
 
   test("maps a DbUnavailable response into a distinguishable, friendly message", async () => {
-    const result = await fetchEarliestData({ token: "abc" }).pipe(
+    const result = await fetchEarliestData({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
       Effect.runPromise
     );
@@ -787,7 +788,7 @@ describe("fetchEarliestData", () => {
 
 describe("triggerSpeedtest", () => {
   test("maps a successful trigger into SucceededTriggerSpeedtest", async () => {
-    const result = await triggerSpeedtest({ token: "abc" }).pipe(
+    const result = await triggerSpeedtest({ maybeToken }).pipe(
       Effect.provide(
         mockHttpClient(200, {
           success: true,
@@ -807,7 +808,7 @@ describe("triggerSpeedtest", () => {
   });
 
   test("passes a missing measurement through as undefined, not 0", async () => {
-    const result = await triggerSpeedtest({ token: "abc" }).pipe(
+    const result = await triggerSpeedtest({ maybeToken }).pipe(
       Effect.provide(
         mockHttpClient(200, {
           success: true,
@@ -825,7 +826,7 @@ describe("triggerSpeedtest", () => {
   });
 
   test("maps an already-running trigger into FailedTriggerSpeedtest", async () => {
-    const result = await triggerSpeedtest({ token: "abc" }).pipe(
+    const result = await triggerSpeedtest({ maybeToken }).pipe(
       Effect.provide(
         mockHttpClient(200, {
           success: false,
@@ -847,7 +848,7 @@ describe("triggerSpeedtest", () => {
   });
 
   test("maps a transport failure into a generic FailedTriggerSpeedtest", async () => {
-    const result = await triggerSpeedtest({ token: "abc" }).pipe(
+    const result = await triggerSpeedtest({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(500, "Internal error")),
       Effect.runPromise
     );
@@ -952,7 +953,7 @@ describe("fetchSummary", () => {
   test("asks for the resolved range and decodes the summary", async () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
     const result = await fetchSummary({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(capturingHttpClient(capturedParams, summaryResponse())),
@@ -976,7 +977,7 @@ describe("fetchSummary", () => {
 
   test("words a 503 DbUnavailable as Database unavailable", async () => {
     const result = await fetchSummary({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(mockHttpClient(503, DB_UNAVAILABLE_BODY)),
@@ -994,7 +995,7 @@ describe("fetchSummary", () => {
 describe("the range request echoed back on results", () => {
   test("carries the earliest datapoint the window was resolved with", async () => {
     const result = await fetchSummary({
-      token: "abc",
+      maybeToken,
       dateRange: ALL_TIME_RANGE,
       maybeEarliestDataMs: Option.some(1_000),
     }).pipe(
@@ -1012,7 +1013,7 @@ describe("the range request echoed back on results", () => {
 
   test("rides back on a failure as well, so a stale failure can be told apart", async () => {
     const result = await fetchOutages({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(mockHttpClient(500, INTERNAL_ERROR_BODY)),
@@ -1030,7 +1031,7 @@ describe("fetchOutages", () => {
   test("asks for the selected window as is when the log accepts it", async () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
     const result = await fetchOutages({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(capturingHttpClient(capturedParams, outagesResponse())),
@@ -1055,7 +1056,7 @@ describe("fetchOutages", () => {
     vi.setSystemTime(Date.parse("2026-07-28T09:30:00.000Z"));
     try {
       const result = await fetchOutages({
-        token: "abc",
+        maybeToken,
         dateRange: DEFAULT_DATE_RANGE,
       }).pipe(
         Effect.provide(mockHttpClient(200, outagesResponse())),
@@ -1076,7 +1077,7 @@ describe("fetchOutages", () => {
       startTime: "2025-01-01T00:00:00.000Z",
       endTime: "2026-07-27T00:00:00.000Z",
     });
-    const result = await fetchOutages({ token: "abc", dateRange: wide }).pipe(
+    const result = await fetchOutages({ maybeToken, dateRange: wide }).pipe(
       Effect.provide(capturingHttpClient(capturedParams, outagesResponse())),
       Effect.runPromise
     );
@@ -1097,7 +1098,7 @@ describe("fetchOutages", () => {
 
   test("shows the server's own message when it rejects the time range", async () => {
     const result = await fetchOutages({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(
@@ -1117,7 +1118,7 @@ describe("fetchOutages", () => {
 
   test("reports a failed request as FailedFetchOutages", async () => {
     const result = await fetchOutages({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
     }).pipe(
       Effect.provide(mockHttpClient(500, INTERNAL_ERROR_BODY)),
@@ -1140,7 +1141,7 @@ describe("fetchHostLatency", () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
     await fetchHostLatency({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
       hosts: ["8.8.8.8", "1.1.1.1"],
     }).pipe(
@@ -1166,7 +1167,7 @@ describe("fetchHostLatency", () => {
     const capturedParams: Array<ReadonlyArray<readonly [string, string]>> = [];
 
     await fetchHostLatency({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
       hosts: ["8.8.8.8"],
     }).pipe(
@@ -1179,7 +1180,7 @@ describe("fetchHostLatency", () => {
 
   test("returns the series in the order the hosts were given, with the window and the range asked for", async () => {
     const result = await fetchHostLatency({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
       hosts: ["8.8.8.8", "1.1.1.1"],
     }).pipe(
@@ -1202,7 +1203,7 @@ describe("fetchHostLatency", () => {
 
   test("fails as a whole when any host's request fails, naming the range", async () => {
     const result = await fetchHostLatency({
-      token: "abc",
+      maybeToken,
       dateRange: ONE_DAY_RANGE,
       hosts: ["8.8.8.8"],
     }).pipe(
@@ -1219,7 +1220,7 @@ describe("fetchHostLatency", () => {
 
 describe("fetchPingHosts", () => {
   test("decodes the hosts and their intervals", async () => {
-    const result = await fetchPingHosts({ token: "abc" }).pipe(
+    const result = await fetchPingHosts({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(200, hostsResponse())),
       Effect.runPromise
     );
@@ -1231,7 +1232,7 @@ describe("fetchPingHosts", () => {
   });
 
   test("reports a failed request as FailedFetchPingHosts", async () => {
-    const result = await fetchPingHosts({ token: "abc" }).pipe(
+    const result = await fetchPingHosts({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(500, "boom")),
       Effect.runPromise
     );
@@ -1240,7 +1241,7 @@ describe("fetchPingHosts", () => {
   });
 
   test("words an unrecognised failure as a plain Request failed, not the raw error", async () => {
-    const result = await fetchPingHosts({ token: "abc" }).pipe(
+    const result = await fetchPingHosts({ maybeToken }).pipe(
       Effect.provide(mockHttpClient(500, "boom")),
       Effect.runPromise
     );

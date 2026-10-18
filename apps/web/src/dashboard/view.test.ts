@@ -123,7 +123,8 @@ const LOADED_WINDOWS = {
   }),
 };
 
-const context = { token: "abc123", now: () => NOW_MS };
+const maybeToken = Option.some("abc123");
+const context = { maybeToken, now: () => NOW_MS };
 const boundUpdate = (
   model: Parameters<typeof update>[0],
   message: Parameters<typeof update>[1]
@@ -1434,26 +1435,26 @@ describe("dashboard view", () => {
       Scene.click(Scene.role("button", { name: "Refresh now" })),
       Scene.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Scene.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Scene.Command.expectHas(
         FetchConnectivityStatus({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
-      Scene.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
+      Scene.Command.expectHas(FetchLiveConnectivity({ maybeToken })),
       Scene.Command.resolveAll(
         ...ENTER_INSIGHT_RESOLVERS,
         ...REFRESH_EXTRA_RESOLVERS,
@@ -1691,7 +1692,7 @@ describe("dashboard view", () => {
       Scene.click(Scene.role("button", { name: "24h" })),
       Scene.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: Preset({ preset: "last24h" }),
           maybeEarliestDataMs: Option.none(),
         })
@@ -1785,7 +1786,7 @@ describe("dashboard view", () => {
       Scene.click(Scene.role("button", { name: "Retry" })),
       Scene.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -1875,21 +1876,21 @@ describe("dashboard view", () => {
         Scene.Mount.expectEnded(MeasureRibbon),
         Scene.Command.expectHas(
           FetchMetrics({
-            token: "abc123",
+            maybeToken,
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           })
         ),
         Scene.Command.expectHas(
           FetchSpeedtestHistory({
-            token: "abc123",
+            maybeToken,
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           })
         ),
         Scene.Command.expectHas(
           FetchConnectivityStatus({
-            token: "abc123",
+            maybeToken,
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           })
@@ -3588,7 +3589,7 @@ describe("dashboard view: insights", () => {
         ),
         Scene.Command.expectHas(
           FetchHostLatency({
-            token: "abc123",
+            maybeToken,
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
             hosts: ["1.1.1.1", "8.8.8.8"],
@@ -3686,7 +3687,7 @@ describe("dashboard view: insights", () => {
         Scene.click(Scene.role("button", { name: "Reset range" })),
         Scene.Command.expectHas(
           FetchMetrics({
-            token: "abc123",
+            maybeToken,
             dateRange: DEFAULT_DATE_RANGE,
             maybeEarliestDataMs: Option.none(),
           })

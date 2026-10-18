@@ -166,7 +166,8 @@ const withLoadedWindows = (model: ReturnType<typeof initModel>) => ({
   }),
 });
 
-const context = { token: "abc123", now: () => NOW_MS };
+const maybeToken = Option.some("abc123");
+const context = { maybeToken, now: () => NOW_MS };
 const withContext = (
   model: ReturnType<typeof initModel>,
   message: Parameters<typeof update>[1]
@@ -234,7 +235,7 @@ describe("dashboard update — metrics", () => {
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -310,7 +311,7 @@ describe("dashboard update — metrics", () => {
       Story.message(TickedRefresh()),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -346,14 +347,14 @@ describe("dashboard update — metrics", () => {
       Story.message(TickedRefresh()),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchConnectivityStatus({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -470,7 +471,7 @@ describe("dashboard update — earliest data", () => {
       withContext,
       Story.given(initModel(defaultSettings())),
       Story.message(EnteredDashboard()),
-      Story.Command.expectHas(FetchEarliestData({ token: "abc123" })),
+      Story.Command.expectHas(FetchEarliestData({ maybeToken })),
       Story.Command.resolveAll(
         [FetchMetrics, succeededFetchMetrics()],
         [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
@@ -576,21 +577,21 @@ describe("dashboard update — earliest data", () => {
       }),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: Preset({ preset: "allTime" }),
           maybeEarliestDataMs: Option.some(earliestMs),
         })
       ),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: Preset({ preset: "allTime" }),
           maybeEarliestDataMs: Option.some(earliestMs),
         })
       ),
       Story.Command.expectHas(
         FetchConnectivityStatus({
-          token: "abc123",
+          maybeToken,
           dateRange: Preset({ preset: "allTime" }),
           maybeEarliestDataMs: Option.some(earliestMs),
         })
@@ -717,7 +718,7 @@ describe("dashboard update: 'All time' while the earliest datapoint is unknown",
     expect(model.dateRange).toEqual(ALL_TIME);
     expect(names(commands)).toEqual(expect.arrayContaining(RANGE_FETCHES));
     expect(argsOf(commands, "FetchMetrics")).toEqual({
-      token: "abc123",
+      maybeToken,
       dateRange: ALL_TIME,
       maybeEarliestDataMs: Option.none(),
     });
@@ -828,7 +829,7 @@ describe("dashboard update: 'All time' while the earliest datapoint is unknown",
 
       expect(model.maybeEarliestDataMs).toEqual(Option.some(EARLIEST_MS));
       expect(argsOf(commands, "FetchSummary")).toEqual({
-        token: "abc123",
+        maybeToken,
         dateRange: ALL_TIME,
         maybeEarliestDataMs: Option.some(EARLIEST_MS),
       });
@@ -1019,7 +1020,7 @@ describe("dashboard update — speedtest history", () => {
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -1143,7 +1144,7 @@ describe("dashboard update — live connectivity", () => {
       withContext,
       Story.given(initModel(defaultSettings())),
       Story.message(EnteredDashboard()),
-      Story.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.expectHas(FetchLiveConnectivity({ maybeToken })),
       Story.model((model) => {
         expect(model.liveConnectivity._tag).toBe("Loading");
       }),
@@ -1181,7 +1182,7 @@ describe("dashboard update — live connectivity", () => {
       withContext,
       Story.given(model),
       Story.message(TickedRefresh()),
-      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.expectExact(FetchLiveConnectivity({ maybeToken })),
       Story.model((model) => {
         expect(model.liveConnectivity._tag).toBe("Refreshing");
       }),
@@ -1202,7 +1203,7 @@ describe("dashboard update — live connectivity", () => {
       withContext,
       Story.given(model),
       Story.message(TickedRefresh()),
-      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.expectExact(FetchLiveConnectivity({ maybeToken })),
       Story.model((model) => {
         expect(model.liveConnectivity._tag).toBe("Loading");
         expect(connectionOf(model)).not.toBe("up");
@@ -1223,7 +1224,7 @@ describe("dashboard update — live connectivity", () => {
       withContext,
       Story.given(model),
       Story.message(TickedRefresh()),
-      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.expectExact(FetchLiveConnectivity({ maybeToken })),
       Story.model((model) => {
         expect(model.liveConnectivity).toEqual(
           LiveConnectivityAsyncData.Failure({ error: "network error" })
@@ -1266,7 +1267,7 @@ describe("dashboard update — live connectivity", () => {
       withContext,
       Story.given(model),
       Story.message(TickedRefresh()),
-      Story.Command.expectExact(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.expectExact(FetchLiveConnectivity({ maybeToken })),
       Story.model((model) => {
         expect(connectionOf(model)).toBe("up");
       }),
@@ -1291,7 +1292,7 @@ describe("dashboard update — live connectivity", () => {
         expect(model.liveConnectivity._tag).toBe("Loading");
         expect(connectionOf(model)).not.toBe("up");
       }),
-      Story.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.expectHas(FetchLiveConnectivity({ maybeToken })),
       Story.Command.resolveAll(
         [FetchMetrics, succeededFetchMetrics()],
         [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()],
@@ -1443,21 +1444,21 @@ describe("dashboard update — date range", () => {
       }),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: appliedRange,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: appliedRange,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchConnectivityStatus({
-          token: "abc123",
+          maybeToken,
           dateRange: appliedRange,
           maybeEarliestDataMs: Option.none(),
         })
@@ -1517,7 +1518,7 @@ describe("dashboard update — date range with no prior data", () => {
       Story.Command.resolveAll(
         [
           FetchMetrics({
-            token: "abc123",
+            maybeToken,
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           }),
@@ -1525,7 +1526,7 @@ describe("dashboard update — date range with no prior data", () => {
         ],
         [
           FetchSpeedtestHistory({
-            token: "abc123",
+            maybeToken,
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           }),
@@ -1533,7 +1534,7 @@ describe("dashboard update — date range with no prior data", () => {
         ],
         [
           FetchConnectivityStatus({
-            token: "abc123",
+            maybeToken,
             dateRange: appliedRange,
             maybeEarliestDataMs: Option.none(),
           }),
@@ -1589,24 +1590,24 @@ describe("dashboard update — manual refresh", () => {
         expect(model.connectivityStatus._tag).toBe("Refreshing");
         expect(model.liveConnectivity._tag).toBe("Refreshing");
       }),
-      Story.Command.expectHas(FetchLiveConnectivity({ token: "abc123" })),
+      Story.Command.expectHas(FetchLiveConnectivity({ maybeToken })),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: currentRange,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: currentRange,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchConnectivityStatus({
-          token: "abc123",
+          maybeToken,
           dateRange: currentRange,
           maybeEarliestDataMs: Option.none(),
         })
@@ -2130,7 +2131,7 @@ describe("dashboard update: overflow menu", () => {
         expect(AsyncData.isLoading(updatedModel.speedtestTrigger)).toBe(true);
         expect(updatedModel.menu.isOpen).toBe(false);
       }),
-      Story.Command.expectHas(TriggerSpeedtest({ token: "abc123" })),
+      Story.Command.expectHas(TriggerSpeedtest({ maybeToken })),
       Story.Command.resolve(
         TriggerSpeedtest,
         SucceededTriggerSpeedtest({
@@ -2190,21 +2191,21 @@ describe("dashboard update: quick range", () => {
       }),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: Preset({ preset: "last24h" }),
           maybeEarliestDataMs: Option.some(0),
         })
       ),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: Preset({ preset: "last24h" }),
           maybeEarliestDataMs: Option.some(0),
         })
       ),
       Story.Command.expectHas(
         FetchConnectivityStatus({
-          token: "abc123",
+          maybeToken,
           dateRange: Preset({ preset: "last24h" }),
           maybeEarliestDataMs: Option.some(0),
         })
@@ -2253,7 +2254,7 @@ describe("dashboard update — speedtest trigger", () => {
       withContext,
       Story.given(initModel(defaultSettings())),
       Story.message(ClickedTriggerSpeedtest()),
-      Story.Command.expectExact(TriggerSpeedtest({ token: "abc123" })),
+      Story.Command.expectExact(TriggerSpeedtest({ maybeToken })),
       Story.model((model) => {
         expect(model.speedtestTrigger._tag).toBe("Loading");
       }),
@@ -2292,14 +2293,14 @@ describe("dashboard update — speedtest trigger", () => {
       ),
       Story.Command.expectHas(
         FetchMetrics({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchSpeedtestHistory({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -2313,7 +2314,7 @@ describe("dashboard update — speedtest trigger", () => {
       }),
       Story.Command.expectHas(
         FetchSummary({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
@@ -2963,19 +2964,19 @@ describe("dashboard update: insight fetches", () => {
       Story.message(EnteredDashboard()),
       Story.Command.expectHas(
         FetchSummary({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
       Story.Command.expectHas(
         FetchOutages({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
         })
       ),
-      Story.Command.expectHas(FetchPingHosts({ token: "abc123" })),
+      Story.Command.expectHas(FetchPingHosts({ maybeToken })),
       Story.model((model) => {
         expect(model.summary._tag).toBe("Loading");
         expect(model.outages._tag).toBe("Loading");
@@ -3443,7 +3444,7 @@ describe("dashboard update: per-host latency", () => {
     expect(summarized(commands)).toContainEqual(
       summarize(
         FetchHostLatency({
-          token: "abc123",
+          maybeToken,
           dateRange: DEFAULT_DATE_RANGE,
           maybeEarliestDataMs: Option.none(),
           hosts: HOSTS,
@@ -3850,9 +3851,7 @@ describe("dashboard update: per-host latency", () => {
       commands: ReadonlyArray<{ name: string; args?: unknown }> | undefined
     ) => summarized(commands).filter(({ name }) => name === "FetchHostLatency");
     const hostFetchFor = (request: RangeRequest) =>
-      summarize(
-        FetchHostLatency({ token: "abc123", ...request, hosts: HOSTS })
-      );
+      summarize(FetchHostLatency({ maybeToken, ...request, hosts: HOSTS }));
     const landed = (request: RangeRequest) =>
       SucceededFetchHostLatency({
         series: [{ host: "8.8.8.8", metrics: [hostMetric] }],

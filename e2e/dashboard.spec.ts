@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 
 test.describe("WAN Monitor Dashboard", () => {
   test.beforeEach(async ({ page }) => {
@@ -465,4 +465,38 @@ test.describe("Metrics API with Seeded Data", () => {
     expect(firstStatus).toHaveProperty("status");
     expect(firstStatus).toHaveProperty("upPercentage");
   });
+});
+
+// Needs the e2e backend's empty WAN_MONITOR_PASSWORD (sign-in disabled).
+test("sends no Authorization header while sign-in is disabled", async ({
+  page,
+}) => {
+  const apiRequests: Array<Request> = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) {
+      apiRequests.push(request);
+    }
+  });
+
+  await page.goto("/");
+  await expect(page.getByTestId("connection-status")).toHaveText(
+    /^(Online|Degraded|Offline|No data)$/,
+    { timeout: 15000 }
+  );
+  await expect(page.locator('[aria-label="Latency chart"] canvas')).toBeVisible(
+    { timeout: 10000 }
+  );
+
+  expect(
+    apiRequests.map((request) => new URL(request.url()).pathname)
+  ).toContain("/api/metrics");
+  const withAuthorization = await Promise.all(
+    apiRequests.map(async (request) => ({
+      path: new URL(request.url()).pathname,
+      authorization: (await request.allHeaders()).authorization,
+    }))
+  );
+  expect(
+    withAuthorization.filter(({ authorization }) => authorization !== undefined)
+  ).toEqual([]);
 });
