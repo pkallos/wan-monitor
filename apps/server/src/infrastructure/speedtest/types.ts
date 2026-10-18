@@ -4,9 +4,10 @@ import type { SpeedTestError } from "@/infrastructure/speedtest/errors";
 // Schema-like type definition (without importing Schema to avoid native module deps)
 export interface SpeedTestResult {
   timestamp: Date;
-  downloadSpeed: number;
-  uploadSpeed: number;
-  latency: number;
+  /** Absent when the CLI took no reading, which is distinct from a measured 0. */
+  downloadSpeed?: number;
+  uploadSpeed?: number;
+  latency?: number;
   jitter?: number;
   serverId?: string;
   serverName?: string;

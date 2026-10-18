@@ -1,6 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { NetworkMetric } from "@shared/metrics";
-import { Effect, Fiber, Layer, References } from "effect";
+import {
+  Clock,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  References,
+} from "effect";
 import { vi } from "vitest";
 import {
   type MonitorStats,
@@ -12,6 +20,8 @@ import {
   PingExecutor,
   PingExecutorLive,
 } from "@/core/monitoring/ping-executor";
+import { SpeedTestRunner } from "@/core/monitoring/speed-test-runner";
+import type { ConfigService } from "@/infrastructure/config/config";
 import { DatabaseWriteError, QuestDB } from "@/infrastructure/database/questdb";
 import { PingService } from "@/infrastructure/ping/service";
 import {
@@ -22,6 +32,7 @@ import {
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
 import { makeTestConfigLayer } from "@/test/config";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
+import { speedTestRunnerFrom } from "@/test/speedtest-runner";
 
 describe("NetworkMonitor", () => {
   const mockPingResults: readonly PingExecutionResult[] = [
@@ -83,8 +94,7 @@ describe("NetworkMonitor", () => {
 
   const TestLayer = NetworkMonitorLive.pipe(
     Layer.provide(MockPingExecutor),
-    Layer.provide(MockQuestDB),
-    Layer.provide(MockSpeedTestService),
+    Layer.provide(speedTestRunnerFrom(MockSpeedTestService, MockQuestDB)),
     Layer.provide(MockConfig),
     Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
   );
@@ -141,8 +151,7 @@ describe("NetworkMonitor", () => {
 
     const CustomPingTestLayer = NetworkMonitorLive.pipe(
       Layer.provide(MockPingExecutor),
-      Layer.provide(MockQuestDB),
-      Layer.provide(MockSpeedTestService),
+      Layer.provide(speedTestRunnerFrom(MockSpeedTestService, MockQuestDB)),
       Layer.provide(CustomPingConfig),
       Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
@@ -170,8 +179,7 @@ describe("NetworkMonitor", () => {
 
     const EmptyResultsTestLayer = NetworkMonitorLive.pipe(
       Layer.provide(EmptyResultsPingExecutor),
-      Layer.provide(MockQuestDB),
-      Layer.provide(MockSpeedTestService),
+      Layer.provide(speedTestRunnerFrom(MockSpeedTestService, MockQuestDB)),
       Layer.provide(MockConfig),
       Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
@@ -204,8 +212,7 @@ describe("NetworkMonitor", () => {
 
     const SpeedTestTestLayer = NetworkMonitorLive.pipe(
       Layer.provide(MockPingExecutor),
-      Layer.provide(MockQuestDB),
-      Layer.provide(MockSpeedTestService),
+      Layer.provide(speedTestRunnerFrom(MockSpeedTestService, MockQuestDB)),
       Layer.provide(SpeedTestConfig),
       Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
@@ -250,8 +257,7 @@ describe("NetworkMonitor", () => {
 
     const MixedResultsTestLayer = NetworkMonitorLive.pipe(
       Layer.provide(MixedResultsPingExecutor),
-      Layer.provide(MockQuestDB),
-      Layer.provide(MockSpeedTestService),
+      Layer.provide(speedTestRunnerFrom(MockSpeedTestService, MockQuestDB)),
       Layer.provide(MockConfig),
       Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
     );
@@ -300,8 +306,7 @@ describe("NetworkMonitor", () => {
 
       const FlakyTestLayer = NetworkMonitorLive.pipe(
         Layer.provide(MockPingExecutor),
-        Layer.provide(MockQuestDB),
-        Layer.provide(FlakySpeedTestService),
+        Layer.provide(speedTestRunnerFrom(FlakySpeedTestService, MockQuestDB)),
         Layer.provide(
           makeTestConfigLayer({
             ping: {
@@ -381,8 +386,12 @@ describe("NetworkMonitor", () => {
 
     const FailingWriteTestLayer = NetworkMonitorLive.pipe(
       Layer.provide(MockPingExecutor),
-      Layer.provide(FailingSpeedTestWriteQuestDB),
-      Layer.provide(SucceedingSpeedTestService),
+      Layer.provide(
+        speedTestRunnerFrom(
+          SucceedingSpeedTestService,
+          FailingSpeedTestWriteQuestDB
+        )
+      ),
       Layer.provide(
         makeTestConfigLayer({
           ping: {
@@ -431,8 +440,9 @@ describe("NetworkMonitor", () => {
 
     const TimeoutTestLayer = NetworkMonitorLive.pipe(
       Layer.provide(MockPingExecutor),
-      Layer.provide(MockQuestDB),
-      Layer.provide(TimingOutSpeedTestService),
+      Layer.provide(
+        speedTestRunnerFrom(TimingOutSpeedTestService, MockQuestDB)
+      ),
       Layer.provide(
         makeTestConfigLayer({
           ping: {
@@ -467,6 +477,107 @@ describe("NetworkMonitor", () => {
       expect(stats.failedSpeedTests).toBeGreaterThanOrEqual(1);
     }).pipe(Effect.provide(TimeoutTestLayer));
   });
+
+  it.live("holds the shared runner during a scheduled speed test", () => {
+    const gate = Effect.runSync(Deferred.make<void>());
+    const started = Effect.runSync(Deferred.make<void>());
+    const GatedSpeedTestService = Layer.succeed(SpeedTestService, {
+      runTest: () =>
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Deferred.await(gate)),
+          Effect.as({ timestamp: new Date(), downloadSpeed: 100 })
+        ),
+    });
+    const RunnerLayer = speedTestRunnerFrom(GatedSpeedTestService, MockQuestDB);
+    const SharedRunnerLayer = Layer.merge(
+      NetworkMonitorLive.pipe(
+        Layer.provide(MockPingExecutor),
+        Layer.provide(RunnerLayer),
+        Layer.provide(MockConfig)
+      ),
+      RunnerLayer
+    ).pipe(Layer.provide(Layer.succeed(References.MinimumLogLevel, "None")));
+
+    return Effect.gen(function* () {
+      const monitor = yield* NetworkMonitor;
+      const runner = yield* SpeedTestRunner;
+
+      const fiber = yield* Effect.forkChild(
+        Effect.gen(function* () {
+          yield* monitor.start();
+          return yield* Effect.never;
+        })
+      );
+      yield* Deferred.await(started);
+
+      expect(yield* runner.isRunning()).toBe(true);
+      expect(Option.isNone(yield* runner.runIfIdle())).toBe(true);
+
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.interrupt(fiber);
+    }).pipe(Effect.provide(SharedRunnerLayer));
+  });
+
+  it.live(
+    "stamps a speed test cycle when its run finishes, not when it queued",
+    () => {
+      const gate = Effect.runSync(Deferred.make<void>());
+      const started = Effect.runSync(Deferred.make<void>());
+      const finished = { timestamp: new Date(), downloadSpeed: 100 };
+      let calls = 0;
+      const QueuedSpeedTestService = Layer.succeed(SpeedTestService, {
+        runTest: () =>
+          Effect.suspend(() => {
+            calls += 1;
+            return calls === 1
+              ? Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Deferred.await(gate)),
+                  Effect.as(finished)
+                )
+              : Effect.succeed(finished);
+          }),
+      });
+      const RunnerLayer = speedTestRunnerFrom(
+        QueuedSpeedTestService,
+        MockQuestDB
+      );
+      const QueuedLayer = Layer.merge(
+        NetworkMonitorLive.pipe(
+          Layer.provide(MockPingExecutor),
+          Layer.provide(RunnerLayer),
+          Layer.provide(MockConfig)
+        ),
+        RunnerLayer
+      ).pipe(Layer.provide(Layer.succeed(References.MinimumLogLevel, "None")));
+
+      return Effect.gen(function* () {
+        const monitor = yield* NetworkMonitor;
+        const runner = yield* SpeedTestRunner;
+
+        const manual = yield* Effect.forkChild(runner.runIfIdle());
+        yield* Deferred.await(started);
+        const fiber = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            yield* monitor.start();
+            return yield* Effect.never;
+          })
+        );
+        yield* Effect.sleep("100 millis");
+
+        const releasedAt = yield* Clock.currentTimeMillis;
+        yield* Deferred.succeed(gate, undefined);
+        yield* Fiber.join(manual);
+        yield* Effect.sleep("100 millis");
+        const stats: MonitorStats = yield* monitor.getStats();
+        yield* Fiber.interrupt(fiber);
+
+        expect(stats.successfulSpeedTests).toBe(1);
+        expect(stats.lastSpeedTestTime?.getTime()).toBeGreaterThanOrEqual(
+          releasedAt
+        );
+      }).pipe(Effect.provide(QueuedLayer));
+    }
+  );
 
   it.live(
     "should maintain consistent counters after concurrent ping and speedtest cycles",
@@ -514,8 +625,9 @@ describe("NetworkMonitor", () => {
 
       const ConcurrentTestLayer = NetworkMonitorLive.pipe(
         Layer.provide(ConcurrentPingExecutor),
-        Layer.provide(MockQuestDB),
-        Layer.provide(ConcurrentSpeedTestService),
+        Layer.provide(
+          speedTestRunnerFrom(ConcurrentSpeedTestService, MockQuestDB)
+        ),
         Layer.provide(ConcurrentConfig),
         Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
       );
@@ -564,12 +676,13 @@ describe("NetworkMonitor", () => {
 describe("NetworkMonitor ping write failures", () => {
   const hosts = ["8.8.8.8", "1.1.1.1"];
 
+  const failingSpeedTest = Layer.succeed(SpeedTestService, {
+    runTest: vi.fn(() =>
+      Effect.fail(new SpeedTestExecutionError({ message: "Mock error" }))
+    ),
+  });
+
   const baseLayers = Layer.mergeAll(
-    Layer.succeed(SpeedTestService, {
-      runTest: vi.fn(() =>
-        Effect.fail(new SpeedTestExecutionError({ message: "Mock error" }))
-      ),
-    }),
     makeTestConfigLayer({
       ping: { hosts, timeout: 5000, intervalSeconds: 30 },
       speedtest: { intervalSeconds: 3600, timeoutSeconds: 120 },
@@ -595,6 +708,17 @@ describe("NetworkMonitor ping write failures", () => {
       close: vi.fn(),
     });
 
+  const monitorWith = (
+    pingExecutor: Layer.Layer<PingExecutor, never, ConfigService | QuestDB>,
+    db: Layer.Layer<QuestDB>
+  ) =>
+    NetworkMonitorLive.pipe(
+      Layer.provide(pingExecutor),
+      Layer.provide(speedTestRunnerFrom(failingSpeedTest, db)),
+      Layer.provide(db),
+      Layer.provide(baseLayers)
+    );
+
   const statsAfterCycles = Effect.gen(function* () {
     const monitor = yield* NetworkMonitor;
     const fiber = yield* Effect.forkChild(monitor.start());
@@ -615,10 +739,9 @@ describe("NetworkMonitor ping write failures", () => {
         }),
       executeHosts: vi.fn(),
     });
-    const layer = NetworkMonitorLive.pipe(
-      Layer.provide(executor),
-      Layer.provide(questDBWith(() => Effect.void)),
-      Layer.provide(baseLayers)
+    const layer = monitorWith(
+      executor,
+      questDBWith(() => Effect.void)
     );
     return { cycles, layer };
   };
@@ -665,22 +788,25 @@ describe("NetworkMonitor ping write failures", () => {
   it.live(
     "does not count successful pings as failed while the database is down",
     () => {
-      const layer = NetworkMonitorLive.pipe(
-        Layer.provide(PingExecutorLive),
-        Layer.provide(
-          Layer.succeed(PingService, {
-            ping: (host: string) =>
-              Effect.succeed({ host, alive: true, latency: 10, packetLoss: 0 }),
-            pingWithConfig: vi.fn(),
-            isReachable: vi.fn(),
-          })
-        ),
-        Layer.provide(
-          questDBWith(() =>
-            Effect.fail(new DatabaseWriteError({ message: "DB unavailable" }))
+      const layer = monitorWith(
+        PingExecutorLive.pipe(
+          Layer.provide(
+            Layer.succeed(PingService, {
+              ping: (host: string) =>
+                Effect.succeed({
+                  host,
+                  alive: true,
+                  latency: 10,
+                  packetLoss: 0,
+                }),
+              pingWithConfig: vi.fn(),
+              isReachable: vi.fn(),
+            })
           )
         ),
-        Layer.provide(baseLayers)
+        questDBWith(() =>
+          Effect.fail(new DatabaseWriteError({ message: "DB unavailable" }))
+        )
       );
 
       return Effect.gen(function* () {

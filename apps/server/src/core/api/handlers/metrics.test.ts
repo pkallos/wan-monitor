@@ -13,6 +13,7 @@ import type {
   MetricRow,
   QueryMetricsParams,
 } from "@/infrastructure/database/questdb/model";
+import { invalidTimeRangeOf } from "@/test/invalid-time-range";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
 const createMockQuestDB = (mockData: MetricRow[]): QuestDBService => ({
@@ -93,8 +94,8 @@ describe("Metrics Handlers", () => {
           query: { startTime, endTime },
         });
 
-        expect(result.meta.startTime).toBe(startTime);
-        expect(result.meta.endTime).toBe(endTime);
+        expect(result.meta.startTime).toBe("2024-01-01T00:00:00.000Z");
+        expect(result.meta.endTime).toBe("2024-01-02T00:00:00.000Z");
       }).pipe(Effect.provide(QuestDBTest));
     });
 
@@ -262,6 +263,67 @@ describe("Metrics Handlers", () => {
         }).pipe(Effect.provide(QuestDBTest));
       }
     );
+  });
+
+  describe("getMetrics time window", () => {
+    const seenParamsLayer = (seen: QueryMetricsParams[]) =>
+      Layer.succeed(QuestDB, {
+        ...createMockQuestDB([]),
+        queryMetrics: (params: QueryMetricsParams) => {
+          seen.push(params);
+          return Effect.succeed([]);
+        },
+      });
+
+    it.effect("rejects a reversed range before querying", () => {
+      const seen: QueryMetricsParams[] = [];
+
+      return Effect.gen(function* () {
+        const error = yield* invalidTimeRangeOf(
+          getMetricsHandler({
+            query: {
+              startTime: "2024-01-02T00:00:00Z",
+              endTime: "2024-01-01T00:00:00Z",
+            },
+          })
+        );
+
+        expect(error.message).toContain("startTime");
+        expect(seen).toEqual([]);
+      }).pipe(Effect.provide(seenParamsLayer(seen)));
+    });
+
+    it.effect(
+      "queries the same explicit window it reports in meta when none is given",
+      () => {
+        const seen: QueryMetricsParams[] = [];
+        const fixedNow = new Date("2025-01-15T12:00:00Z").getTime();
+
+        return Effect.gen(function* () {
+          yield* TestClock.setTime(fixedNow);
+
+          const result = yield* getMetricsHandler({ query: {} });
+
+          expect(seen[0].startTime).toEqual(new Date(fixedNow - 3600000));
+          expect(seen[0].endTime).toEqual(new Date(fixedNow));
+          expect(result.meta.startTime).toBe(seen[0].startTime?.toISOString());
+          expect(result.meta.endTime).toBe(seen[0].endTime?.toISOString());
+        }).pipe(Effect.provide(seenParamsLayer(seen)));
+      }
+    );
+
+    it.effect("trails a lone endTime by the default span", () => {
+      const seen: QueryMetricsParams[] = [];
+
+      return Effect.gen(function* () {
+        yield* getMetricsHandler({
+          query: { endTime: "2024-01-01T10:00:00Z" },
+        });
+
+        expect(seen[0].startTime).toEqual(new Date("2024-01-01T09:00:00Z"));
+        expect(seen[0].endTime).toEqual(new Date("2024-01-01T10:00:00Z"));
+      }).pipe(Effect.provide(seenParamsLayer(seen)));
+    });
   });
 
   describe("getEarliestTimestamp", () => {

@@ -2,21 +2,28 @@ import { WanMonitorApi } from "@shared/api";
 import type { GetMetricsQueryParams } from "@shared/api/routes/metrics";
 import { Clock, Effect, type Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
+import {
+  resolveWindow,
+  type TimeWindow,
+  validateWindow,
+} from "@/core/analytics/window";
 import { mapQueryError } from "@/core/api/handlers/db-error";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
-export const getMetricsHandler = ({
-  query,
-}: {
-  query: Schema.Schema.Type<typeof GetMetricsQueryParams>;
-}) =>
+const DEFAULT_METRICS_SPAN_MS = 60 * 60 * 1000;
+
+const loadMetrics = (
+  query: Schema.Schema.Type<typeof GetMetricsQueryParams>,
+  { startMs, endMs }: TimeWindow
+) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
-    const now = yield* Clock.currentTimeMillis;
 
+    const startTime = new Date(startMs);
+    const endTime = new Date(endMs);
     const rawData = yield* db.queryMetrics({
-      startTime: query.startTime ? new Date(query.startTime) : undefined,
-      endTime: query.endTime ? new Date(query.endTime) : undefined,
+      startTime,
+      endTime,
       host: query.host,
       limit: query.limit,
       granularity: query.granularity,
@@ -45,12 +52,25 @@ export const getMetricsHandler = ({
     return {
       data,
       meta: {
-        startTime: query.startTime || new Date(now - 3600000).toISOString(),
-        endTime: query.endTime || new Date(now).toISOString(),
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
         count: data.length,
       },
     };
   }).pipe(Effect.catch(mapQueryError("Failed to query metrics")));
+
+export const getMetricsHandler = ({
+  query,
+}: {
+  query: Schema.Schema.Type<typeof GetMetricsQueryParams>;
+}) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const window = yield* validateWindow(
+      resolveWindow(query, now, DEFAULT_METRICS_SPAN_MS)
+    );
+    return yield* loadMetrics(query, window);
+  });
 
 export const getEarliestTimestampHandler = () =>
   Effect.gen(function* () {

@@ -140,13 +140,21 @@ const AuthServiceLayer = AuthServiceLive.pipe(
   Layer.provide(Layer.merge(ConfigLayer, JwtLayer))
 );
 // ...
+const SpeedTestRunnerLayer = SpeedTestRunnerLive.pipe(
+  Layer.provide(Layer.merge(QuestDBLayer, SpeedTestLayer))
+);
 const ApiServerLayer = ApiServerLive.pipe(
   Layer.provide(NodeHttpServerLayer),
   Layer.provide(
-    Layer.mergeAll(ConfigLayer, QuestDBLayer, PingExecutorLayer, JwtLayer, AuthServiceLayer, SpeedTestLayer)
+    Layer.mergeAll(ConfigLayer, QuestDBLayer, PingExecutorLayer, JwtLayer, AuthServiceLayer, SpeedTestRunnerLayer)
   )
 );
 ```
+
+A layer constant referenced from several layers is built once per `Effect.provide`, so every consumer
+sees the same instance. `SpeedTestRunnerLayer` relies on that: the network monitor and the API both
+receive it, and the one semaphore inside it is what keeps a scheduled and a manual speed test from
+running together.
 
 Each named `*Layer` constant is fully resolved (requires nothing further) before it's fed into the
 next. Read the graph top-to-bottom in `index.ts` to see the whole app's dependencies at a glance —

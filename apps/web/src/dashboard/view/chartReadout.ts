@@ -9,6 +9,7 @@ import {
   type SeriesFigures,
   seriesFigures,
 } from "@/dashboard/charts/stats";
+import { fixed } from "@/dashboard/format";
 import type { Model } from "@/dashboard/model";
 import { describeRange } from "@/dashboard/overview";
 import {
@@ -197,10 +198,14 @@ export const jitterReadout = (model: Model): ChartReadout =>
     format: (value) => `${twoDecimals(value)} ms`,
   });
 
-const speedDirection = (name: string, avg: string, peak: string): string =>
-  avg === "-"
+const speedDirection = (
+  name: string,
+  avg: number | null,
+  peak: number | null
+): string =>
+  avg === null
     ? `${name} has no data.`
-    : `${name} averages ${avg} Mbps and peaks at ${peak} Mbps.`;
+    : `${name} averages ${fixed(avg, 1)} Mbps and peaks at ${fixed(peak, 1)} Mbps.`;
 
 // A single test is a point on a scatter plot, so unlike the line charts there
 // is no minimum short of one.
@@ -210,7 +215,7 @@ export const speedReadout = (model: Model): ChartReadout =>
     onFailure: () => noticed(model, LOAD_FAILED),
     onData: (history) => {
       const stats = calculateSpeedStats(history);
-      return stats.avgDownload === "-" && stats.avgUpload === "-"
+      return stats.avgDownload === null && stats.avgUpload === null
         ? noticed(model, NO_DATA)
         : described(
             model,

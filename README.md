@@ -94,7 +94,7 @@ All configuration is done via environment variables.
 | `PING_TIMEOUT` | `5` | Ping timeout in seconds |
 | `PING_TRAIN_COUNT` | `10` | Number of packets per ping (for packet loss calculation) |
 | `SPEEDTEST_INTERVAL_SECONDS` | `3600` | How often to run speed tests (default: 1 hour) |
-| `SPEEDTEST_TIMEOUT_SECONDS` | `120` | Maximum time for a speed test before timeout |
+| `SPEEDTEST_TIMEOUT_SECONDS` | `120` | Maximum time for a speed test before timeout; the speedtest CLI is stopped when it is reached |
 
 ### Authentication
 
@@ -221,7 +221,7 @@ The theme, the selected date range, whether auto-refresh is paused, and the late
 This tool monitors your internet connection **from the device running the container**. Keep in mind:
 
 - **Local network issues affect readings**: If your WiFi is flaky or there's congestion on your LAN, this will show up in the metrics even if your WAN connection is fine.
-- **Speed tests use bandwidth**: Each hourly speed test consumes actual bandwidth. On metered connections, consider increasing `SPEEDTEST_INTERVAL_SECONDS`.
+- **Speed tests use bandwidth**: Each hourly speed test consumes actual bandwidth. On metered connections, consider increasing `SPEEDTEST_INTERVAL_SECONDS`. Only one test runs at a time, so a scheduled test that comes due during a manual one waits and runs right after it.
 - **Single vantage point**: This monitors from one location. It won't detect issues that only affect specific routes or destinations.
 - **Designed for home/small office use**: Not intended for enterprise network monitoring.
 - **Uptime is conditional on coverage**: A monitor that ran for one hour out of twenty-four can honestly report 100% uptime over roughly 4% coverage. Read the two numbers together; uptime alone says nothing about how much of the window it covers.
@@ -323,10 +323,14 @@ wan-monitor/
 | `/api/summary` | GET | Latency percentiles, loss and jitter for a range, uptime for the last 24h/7d/30d, per-host stats, speed test summary |
 | `/api/ping/trigger` | POST | Manually trigger a ping test |
 | `/api/ping/hosts` | GET | Get configured ping hosts and the ping and speed test intervals |
+| `/api/speedtest/trigger` | POST | Run a speed test now. Answers `SPEED_TEST_ALREADY_RUNNING` while any test, scheduled or manual, is running |
+| `/api/speedtest/status` | GET | Whether a speed test is running, scheduled or manual |
+| `/api/speedtest/history` | GET | Stored speed tests for a range |
 
 Query parameters for `/api/metrics`:
-- `startTime`: ISO timestamp
-- `endTime`: ISO timestamp
+- `startTime`: ISO 8601 timestamp, trailing the `endTime` by one hour when omitted
+- `endTime`: ISO 8601 timestamp, now when omitted
+- `limit`: Positive integer, the most rows to return
 - `granularity`: `1m`, `5m`, `15m`, `1h`, `6h`, `1d`
 - `host`: Filter by specific ping host
 - `source`: `ping` or `speedtest`. Filters to one measurement kind; aggregated queries need it to get one row per bucket
@@ -334,13 +338,15 @@ Query parameters for `/api/metrics`:
 
 With a `granularity`, each ping row also carries `latency_p50` and `latency_p95`, the approximate percentiles of the per-cycle mean latency in its bucket, the same population `/summary` uses. For one `host`, a bucket holds every reading of that host, as the host summary does. The bucket averages for latency, jitter and packet loss are means of per-cycle means: each ping cycle is first reduced to the mean across its hosts, a step a query for one `host` skips.
 
-The summary and outage endpoints are read-only aggregates over the same `network_metrics` table. They take `startTime` and `endTime`, ISO 8601 timestamps with a time and a zone (`2024-02-10T08:00:00Z`). Both default to the trailing 24 hours. A malformed timestamp, one whose UTC instant falls outside years 0000 to 9999, a `startTime` after the `endTime`, or a window wider than the endpoint allows (below) is rejected with a 400 before any query runs.
+Every endpoint that takes a range reads `startTime` and `endTime` as ISO 8601 timestamps with a time and a zone (`2024-02-10T08:00:00Z`): `/api/metrics`, `/api/speedtest/history`, `/api/connectivity-status`, `/api/summary` and `/api/connectivity-status/outages`. A missing `endTime` defaults to the current time, and a missing `startTime` trails the `endTime` by one hour for `/api/metrics` and `/api/speedtest/history` and by 24 hours for the other three. A malformed timestamp, one whose UTC instant falls outside years 0000 to 9999, a `startTime` after the `endTime`, a `limit` that is not a positive integer, or a window wider than the endpoint allows (below) is rejected with a 400 before any query runs. A reversed range answers with the `InvalidTimeRange` error; a malformed value fails request decoding instead.
+
+The summary and outage endpoints are read-only aggregates over the same `network_metrics` table.
 
 - `/api/summary`
   - `range` carries `latencyP50` and `latencyP95` (percentiles of per-cycle latency, the mean across hosts, so they are approximate), `avgPacketLoss`, `avgJitter`, `uptimePercentage`, `availabilityPercentage` and `coveragePercentage`.
   - `windows.last24h`, `last7d` and `last30d` give uptime anchored at `endTime`.
   - `hosts` has one entry for each ping host with samples in the window, so a window with no data returns `hosts: []`. Its `availabilityPercentage` is the share of that host's ping samples that were answered; a lossy but answered sample counts as answered. `lastStatus` is the host's newest sample in the range: `down`, `degraded` (loss at or over the degraded floor) or `up`.
-  - `speed` is in Mbps over successful tests (a stored 0 is a failed test): `downloadMedian` and `uploadMedian`, plus the test `count`.
+  - `speed` is in Mbps over tests that took a reading (an absent figure or a stored 0 is no reading): `downloadMedian` and `uploadMedian`, plus the test `count`.
 - `/api/connectivity-status/outages` returns `data` and `meta`, and covers at most 90 days per request (`MAX_OUTAGE_SPAN_DAYS`); `meta.startTime` and `meta.endTime` are the window actually queried. An outage is a run of consecutive non-up ping cycles. Runs separated by a single missing cycle are merged (cycle spacing is measured from the window's own cycles, not assumed from the configured interval), and an up cycle always ends a run. Its `status` is the worst status in the run (`down` if any cycle was down, otherwise `degraded`), `affectedHosts` lists the hosts that failed or were lossy, and `end` is the up cycle that recorded recovery when one came within the merge gap, otherwise one ping cycle after the last non-up cycle; either way it is clipped to the range end.
 
 ## Contributing

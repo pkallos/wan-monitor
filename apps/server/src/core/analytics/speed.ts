@@ -2,7 +2,7 @@ import type { SpeedSummary } from "@wan-monitor/shared";
 import { median } from "@/core/analytics/stats";
 import type { MetricRow } from "@/infrastructure/database/questdb/model";
 
-/** A failed test is stored as 0, not left unmeasured, so 0 means no reading. */
+/** An absent figure and a stored 0 both mean the test took no reading. */
 const isMeasured = (value: number | undefined): value is number =>
   value !== undefined && value > 0;
 

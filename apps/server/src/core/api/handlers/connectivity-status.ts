@@ -27,23 +27,17 @@ import { mapQueryError } from "@/core/api/handlers/db-error";
 import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 
-export const getConnectivityStatusHandler = ({
-  query,
-}: {
-  query: Schema.Schema.Type<typeof GetConnectivityStatusQuery>;
-}) =>
+const loadConnectivityStatus = (
+  query: Schema.Schema.Type<typeof GetConnectivityStatusQuery>,
+  { startMs, endMs }: TimeWindow
+) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
     const config = yield* ConfigService;
-    const now = yield* Clock.currentTimeMillis;
 
-    // The window is resolved once here and passed explicitly to the query, so
-    // the bucket grid coverage is measured against is the same grid the query
-    // sampled over.
-    const startTime = query.startTime
-      ? new Date(query.startTime)
-      : new Date(now - 24 * 60 * 60 * 1000);
-    const endTime = query.endTime ? new Date(query.endTime) : new Date(now);
+    // Resolved once so coverage is measured on the same bucket grid the query samples.
+    const startTime = new Date(startMs);
+    const endTime = new Date(endMs);
     const granularity = query.granularity ?? DEFAULT_GRANULARITY;
 
     const rows = yield* db.queryConnectivityStatus({
@@ -85,6 +79,19 @@ export const getConnectivityStatusHandler = ({
       },
     };
   }).pipe(Effect.catch(mapQueryError("Failed to query connectivity status")));
+
+export const getConnectivityStatusHandler = ({
+  query,
+}: {
+  query: Schema.Schema.Type<typeof GetConnectivityStatusQuery>;
+}) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const window = yield* validateWindow(
+      resolveWindow(query, now, SUMMARY_WINDOWS_MS.last24h)
+    );
+    return yield* loadConnectivityStatus(query, window);
+  });
 
 /**
  * Answers "is the link up right now", independent of any date range the

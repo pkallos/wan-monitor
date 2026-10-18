@@ -242,6 +242,23 @@ export const fixed = (
   suffix = ""
 ): string => (value === null ? "-" : `${value.toFixed(decimals)}${suffix}`);
 
+// Triple-digit speeds drop the decimal to stay compact.
+export const formatSpeed = (value: number | null | undefined): string =>
+  value === null || value === undefined
+    ? "-"
+    : value >= 100
+      ? value.toFixed(0)
+      : value.toFixed(1);
+
+/** "512 Mbps down", or "no download reading" when the test took none. */
+export const speedClause = (
+  value: number | null | undefined,
+  direction: "down" | "up"
+): string =>
+  value === null || value === undefined
+    ? `no ${direction === "down" ? "download" : "upload"} reading`
+    : `${formatSpeed(value)} Mbps ${direction}`;
+
 /** Whether `date` is exactly midnight in the viewer's time zone. */
 export const isLocalMidnight = (date: Date): boolean =>
   date.getHours() === 0 &&

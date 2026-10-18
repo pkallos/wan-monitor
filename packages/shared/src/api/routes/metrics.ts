@@ -1,5 +1,9 @@
-import { DbUnavailableErrorSchema } from "@shared/api/errors";
+import { DbUnavailableErrorSchema, InvalidTimeRange } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
+import {
+  IsoTimestampSchema,
+  PositiveIntFromStringSchema,
+} from "@shared/api/schemas";
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 
@@ -44,10 +48,10 @@ const MetaSchema = Schema.Struct({
 });
 
 export const GetMetricsQueryParams = Schema.Struct({
-  startTime: Schema.optional(Schema.String),
-  endTime: Schema.optional(Schema.String),
+  startTime: Schema.optional(IsoTimestampSchema),
+  endTime: Schema.optional(IsoTimestampSchema),
   host: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.NumberFromString),
+  limit: Schema.optional(PositiveIntFromStringSchema),
   granularity: Schema.optional(GranularitySchema),
   // Aggregated queries need this to get one row per bucket. See
   // `buildQueryMetrics`.
@@ -82,6 +86,7 @@ export const MetricsApiGroup = HttpApiGroup.make("metrics")
       query: GetMetricsQueryParams,
       success: GetMetricsResponse,
       error: [
+        InvalidTimeRange,
         HttpApiSchema.status(503)(DbUnavailableErrorSchema),
         Schema.String,
       ],

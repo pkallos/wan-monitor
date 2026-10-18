@@ -2,8 +2,7 @@ import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import { Array as Array_, Option, Order } from "effect";
 
-// Zero is a valid reading for every metric here (0% packet loss, 0ms-adjacent
-// latency), so the guard admits it.
+// Zero is a valid ping reading (0% packet loss), unlike speeds (see `isMeasured`).
 const isFiniteNonNegative = (value: number | undefined): value is number =>
   value !== undefined && value >= 0;
 
@@ -29,10 +28,7 @@ export const seriesFigures = (
   });
 
 export interface LatencyStats {
-  readonly current: string;
-  readonly avg: string;
-  readonly min: string;
-  readonly max: string;
+  readonly avg: number | null;
 }
 
 type LatencyRow = Pick<Metric, "latency" | "latency_p50">;
@@ -55,60 +51,46 @@ export const latencyLine = (
   );
 };
 
+const figureOf = (
+  figures: Option.Option<SeriesFigures>,
+  pick: (figures: SeriesFigures) => number
+): number | null => Option.getOrNull(Option.map(figures, pick));
+
 export const calculateLatencyStats = (
   data: ReadonlyArray<LatencyRow>
-): LatencyStats =>
-  Array_.match(latencyLine(data), {
-    onEmpty: () => ({ current: "-", avg: "-", min: "-", max: "-" }),
-    onNonEmpty: (latencies) => ({
-      current: Array_.lastNonEmpty(latencies).toFixed(1),
-      avg: average(latencies).toFixed(1),
-      min: Math.min(...latencies).toFixed(1),
-      max: max(latencies).toFixed(1),
-    }),
-  });
+): LatencyStats => ({
+  avg: figureOf(seriesFigures(latencyLine(data)), ({ avg }) => avg),
+});
 
 export interface SpeedStats {
-  readonly avgDownload: string;
-  readonly avgUpload: string;
-  readonly maxDownload: string;
-  readonly maxUpload: string;
+  readonly avgDownload: number | null;
+  readonly avgUpload: number | null;
+  readonly maxDownload: number | null;
+  readonly maxUpload: number | null;
 }
 
-// A series with no readings has no average, so it reads as "-" on its own
-// terms — the download and upload series are summarized independently and one
-// having data says nothing about the other.
-const summarize = (
-  values: ReadonlyArray<number>
-): { readonly avg: string; readonly max: string } =>
-  Array_.match(values, {
-    onEmpty: () => ({ avg: "-", max: "-" }),
-    onNonEmpty: (nonEmpty) => ({
-      avg: average(nonEmpty).toFixed(1),
-      max: max(nonEmpty).toFixed(1),
-    }),
-  });
+type SpeedRow = Pick<SpeedMetric, "download_speed" | "upload_speed">;
+
+/** An absent figure and a stored 0 both mean the test took no reading. */
+const isMeasured = (value: number | undefined): value is number =>
+  value !== undefined && value > 0;
+
+const measuredSpeeds = (
+  data: ReadonlyArray<SpeedRow>,
+  pick: (row: SpeedRow) => number | undefined
+): ReadonlyArray<number> => Array_.filter(Array_.map(data, pick), isMeasured);
 
 export const calculateSpeedStats = (
-  data: ReadonlyArray<Pick<SpeedMetric, "download_speed" | "upload_speed">>
+  data: ReadonlyArray<SpeedRow>
 ): SpeedStats => {
-  const downloads = Array_.filter(
-    Array_.map(data, (d) => d.download_speed),
-    isFiniteNonNegative
-  );
-  const uploads = Array_.filter(
-    Array_.map(data, (d) => d.upload_speed),
-    isFiniteNonNegative
-  );
-
-  const downloadSummary = summarize(downloads);
-  const uploadSummary = summarize(uploads);
+  const download = seriesFigures(measuredSpeeds(data, (d) => d.download_speed));
+  const upload = seriesFigures(measuredSpeeds(data, (d) => d.upload_speed));
 
   return {
-    avgDownload: downloadSummary.avg,
-    avgUpload: uploadSummary.avg,
-    maxDownload: downloadSummary.max,
-    maxUpload: uploadSummary.max,
+    avgDownload: figureOf(download, ({ avg }) => avg),
+    avgUpload: figureOf(upload, ({ avg }) => avg),
+    maxDownload: figureOf(download, ({ peak }) => peak),
+    maxUpload: figureOf(upload, ({ peak }) => peak),
   };
 };
 
@@ -123,25 +105,11 @@ const median = (values: ReadonlyArray<number>): number | null =>
     },
   });
 
-/** A failed speed test is stored as 0, which is no reading rather than a slow one. */
-const isMeasured = (value: number | undefined): value is number =>
-  value !== undefined && value > 0;
-
 export const speedMedians = (
-  data: ReadonlyArray<Pick<SpeedMetric, "download_speed" | "upload_speed">>
+  data: ReadonlyArray<SpeedRow>
 ): { readonly download: number | null; readonly upload: number | null } => ({
-  download: median(
-    Array_.filter(
-      Array_.map(data, (d) => d.download_speed),
-      isMeasured
-    )
-  ),
-  upload: median(
-    Array_.filter(
-      Array_.map(data, (d) => d.upload_speed),
-      isMeasured
-    )
-  ),
+  download: median(measuredSpeeds(data, (d) => d.download_speed)),
+  upload: median(measuredSpeeds(data, (d) => d.upload_speed)),
 });
 
 // Tests run hourly by default; a few seconds of drift and the odd slow test

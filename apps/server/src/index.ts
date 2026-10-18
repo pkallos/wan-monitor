@@ -26,6 +26,7 @@ import {
   NetworkMonitorLive,
 } from "@/core/monitoring/network-monitor";
 import { PingExecutorLive } from "@/core/monitoring/ping-executor";
+import { SpeedTestRunnerLive } from "@/core/monitoring/speed-test-runner";
 import { JwtServiceLive } from "@/infrastructure/auth/jwt";
 import { AuthServiceLive } from "@/infrastructure/auth/middleware";
 import { ConfigServiceLive } from "@/infrastructure/config/config";
@@ -52,9 +53,12 @@ const AuthServiceLayer = AuthServiceLive.pipe(
 const PingExecutorLayer = PingExecutorLive.pipe(
   Layer.provide(Layer.mergeAll(ConfigLayer, QuestDBLayer, PingLayer))
 );
+const SpeedTestRunnerLayer = SpeedTestRunnerLive.pipe(
+  Layer.provide(Layer.merge(QuestDBLayer, SpeedTestLayer))
+);
 const NetworkMonitorLayer = NetworkMonitorLive.pipe(
   Layer.provide(
-    Layer.mergeAll(ConfigLayer, QuestDBLayer, PingExecutorLayer, SpeedTestLayer)
+    Layer.mergeAll(ConfigLayer, PingExecutorLayer, SpeedTestRunnerLayer)
   )
 );
 const ApiServerLayer = ApiServerLive.pipe(
@@ -66,7 +70,7 @@ const ApiServerLayer = ApiServerLive.pipe(
       PingExecutorLayer,
       JwtLayer,
       AuthServiceLayer,
-      SpeedTestLayer
+      SpeedTestRunnerLayer
     )
   )
 );

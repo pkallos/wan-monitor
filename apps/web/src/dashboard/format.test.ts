@@ -11,6 +11,7 @@ import {
   formatTimeSpan,
   isLocalMidnight,
   isSameLocalDay,
+  speedClause,
 } from "@/dashboard/format";
 import { withTimeZone } from "@/dashboard/testFixtures";
 
@@ -36,6 +37,19 @@ describe("formatDuration", () => {
 
   test("clamps a negative span to zero", () => {
     expect(formatDuration(-5)).toBe("0s");
+  });
+});
+
+describe("speedClause", () => {
+  test("states a measured speed the way the stat rail does", () => {
+    expect(speedClause(512.4, "down")).toBe("512 Mbps down");
+    expect(speedClause(42.5, "up")).toBe("42.5 Mbps up");
+    expect(speedClause(0, "up")).toBe("0.0 Mbps up");
+  });
+
+  test("says no reading was taken instead of reporting 0", () => {
+    expect(speedClause(undefined, "down")).toBe("no download reading");
+    expect(speedClause(null, "up")).toBe("no upload reading");
   });
 });
 

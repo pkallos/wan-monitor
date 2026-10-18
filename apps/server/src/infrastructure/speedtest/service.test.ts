@@ -12,6 +12,7 @@ import {
   References,
 } from "effect";
 import { TestClock } from "effect/testing";
+import { vi } from "vitest";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
   DEFAULT_SPEEDTEST_TIMEOUT_SECONDS,
@@ -24,6 +25,7 @@ import {
   SpeedTestTimeoutError,
 } from "@/infrastructure/speedtest/service";
 import { makeTestAppConfig } from "@/test/config";
+import { executorYielding } from "@/test/speedtest-results";
 
 const isMacArm64 = process.platform === "darwin" && process.arch === "arm64";
 
@@ -215,12 +217,48 @@ describe("SpeedTest - timeout functionality", () => {
     return Effect.gen(function* () {
       const result = yield* service.runTest();
 
-      expect(result.downloadSpeed).toBe(0);
-      expect(result.uploadSpeed).toBe(0);
+      expect(result.downloadSpeed).toBeUndefined();
+      expect(result.uploadSpeed).toBeUndefined();
       expect(result.latency).toBe(0);
       expect(result.serverName).toBeUndefined();
       expect(result.isp).toBeUndefined();
       expect(result.externalIp).toBeUndefined();
+    }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
+  });
+
+  it.effect("leaves a measurement the CLI omitted unset instead of 0", () => {
+    const service = makeSpeedTestService(
+      executorYielding({
+        type: "result",
+        timestamp: new Date(),
+        download: {},
+        upload: {},
+        isp: "Test ISP",
+      }),
+      5
+    );
+
+    return Effect.gen(function* () {
+      const result = yield* service.runTest();
+
+      expect(result.downloadSpeed).toBeUndefined();
+      expect(result.uploadSpeed).toBeUndefined();
+      expect(result.latency).toBeUndefined();
+      expect(result.isp).toBe("Test ISP");
+    }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
+  });
+
+  it.effect("tolerates a CLI result with no download or upload object", () => {
+    const service = makeSpeedTestService(
+      executorYielding({ type: "result", timestamp: new Date() }),
+      5
+    );
+
+    return Effect.gen(function* () {
+      const result = yield* service.runTest();
+
+      expect(result.downloadSpeed).toBeUndefined();
+      expect(result.uploadSpeed).toBeUndefined();
     }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
   });
 
@@ -249,6 +287,69 @@ describe("SpeedTest - timeout functionality", () => {
         }
       }
     }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
+  });
+});
+
+describe("SpeedTest - cancelling the CLI", () => {
+  const silent = Layer.succeed(References.MinimumLogLevel, "None");
+
+  const hangingExecutor =
+    (onAbort: () => void): SpeedTestExecutor =>
+    (signal) => {
+      signal.addEventListener("abort", onAbort, { once: true });
+      return new Promise<never>(() => {});
+    };
+
+  it.effect("aborts the executor's signal when the test times out", () => {
+    const onAbort = vi.fn();
+    const service = makeSpeedTestService(hangingExecutor(onAbort), 30);
+
+    return Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(service.runTest());
+      yield* TestClock.adjust(Duration.seconds(29));
+      expect(onAbort).not.toHaveBeenCalled();
+
+      yield* TestClock.adjust(Duration.seconds(1));
+      const exit = yield* Fiber.await(fiber);
+
+      const error = Exit.isFailure(exit)
+        ? Cause.findErrorOption(exit.cause)
+        : Option.none();
+      expect(Option.getOrUndefined(error)).toBeInstanceOf(
+        SpeedTestTimeoutError
+      );
+      expect(onAbort).toHaveBeenCalledTimes(1);
+    }).pipe(Effect.provide(silent));
+  });
+
+  it.effect("aborts the executor's signal when the run is interrupted", () => {
+    const onAbort = vi.fn();
+    const service = makeSpeedTestService(hangingExecutor(onAbort), 30);
+
+    return Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(service.runTest());
+      yield* TestClock.adjust(Duration.seconds(1));
+      expect(onAbort).not.toHaveBeenCalled();
+
+      yield* Fiber.interrupt(fiber);
+
+      expect(onAbort).toHaveBeenCalledTimes(1);
+    }).pipe(Effect.provide(silent));
+  });
+
+  it.effect("leaves the signal alone when the test finishes in time", () => {
+    const onAbort = vi.fn();
+    const service = makeSpeedTestService((signal) => {
+      signal.addEventListener("abort", onAbort, { once: true });
+      return Promise.resolve(mockSpeedTestResult);
+    }, 30);
+
+    return Effect.gen(function* () {
+      yield* service.runTest();
+      yield* TestClock.adjust(Duration.seconds(60));
+
+      expect(onAbort).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(silent));
   });
 });
 

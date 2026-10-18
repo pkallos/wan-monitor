@@ -14,7 +14,7 @@ params, responses, errors) in `packages/shared`, so the server and web client st
 - **Context** — dependencies needed to decode/encode (usually `never`).
 
 `Schema.NumberFromString` is the classic example: `Type = number`, `Encoded = string`. It decodes a
-query-string `"50"` into `50`. Used for `limit` in `GetMetricsQueryParams`.
+query-string `"50"` into `50`. It is the base of `PositiveIntFromStringSchema`, which `limit` uses.
 
 ## Defining schemas
 
@@ -67,9 +67,11 @@ export const IsoTimestampSchema = Schema.String.check(
 );
 ```
 
-See `packages/shared/src/api/schemas.ts`, used by the `startTime` and `endTime` query fields in
-`packages/shared/src/api/routes/summary.ts`. The predicate is `isValidIsoTimestamp` in
-`packages/shared/src/timestamp.ts`.
+See `packages/shared/src/api/schemas.ts`, used by the `startTime` and `endTime` query fields in the
+route schemas under `packages/shared/src/api/routes/`. The predicate is `isValidIsoTimestamp` in
+`packages/shared/src/timestamp.ts`. `PositiveIntFromStringSchema` in the same file is a second
+example: it decodes a query-string number such as `limit` and rejects anything that is not a positive
+integer.
 
 ## Config-validated values
 

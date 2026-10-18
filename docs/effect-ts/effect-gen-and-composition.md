@@ -86,6 +86,23 @@ called as `Effect.forkChild(...)`) — both call shapes exist; a mechanical rena
 requires — if you're trying to run an effect and the type error says a service is still required,
 that's the compiler telling you a `Layer.provide` is missing, not a runner-API mismatch.
 
+## Cancelling a Promise on timeout or interrupt
+
+`Effect.timeout` and fiber interruption stop the Effect, not the Promise behind it. To stop the
+underlying work too, take the `AbortSignal` that `Effect.tryPromise` passes to `try` and hand it on:
+
+```ts
+Effect.tryPromise({
+  try: (signal) => executor(signal),
+  catch: (error) => new SpeedTestExecutionError({ message: String(error) }),
+}).pipe(Effect.timeout(Duration.seconds(120)));
+```
+
+The signal aborts when the timeout fires or the fiber is interrupted, and not after the Promise
+settles. Effect creates it only when `try` declares a parameter, so `try: () => executor()` and
+`try: executor` (with a zero-parameter `executor`) never receive one. See
+`makeSpeedTestService` and `liveExecutor` in `apps/server/src/infrastructure/speedtest/service.ts`.
+
 ## Anti-patterns
 
 - ❌ `Effect.runFork` at a process entry point: nothing handles SIGTERM, so scope finalizers never

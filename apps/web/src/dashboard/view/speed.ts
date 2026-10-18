@@ -9,6 +9,7 @@ import {
   SPEED_CHART_HOST_ID,
 } from "@/dashboard/charts/command";
 import { calculateSpeedStats } from "@/dashboard/charts/stats";
+import { fixed } from "@/dashboard/format";
 import { ClickedTriggerSpeedtest, type Message } from "@/dashboard/message";
 import type { Model } from "@/dashboard/model";
 import {
@@ -34,7 +35,7 @@ import { skeleton } from "@/ui/skeleton";
 const statItem = (
   h: HtmlBuilder<Message>,
   label: string,
-  value: string,
+  value: number | null,
   isLoading: boolean
 ): Html =>
   h.div(
@@ -45,7 +46,7 @@ const statItem = (
         ? skeleton(h, "mt-1 h-6 w-24")
         : h.p(
             [h.Class("mt-0.5 whitespace-nowrap text-base font-semibold")],
-            [`${value} Mbps`]
+            [`${fixed(value, 1)} Mbps`]
           ),
     ]
   );
