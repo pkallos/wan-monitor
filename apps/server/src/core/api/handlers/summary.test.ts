@@ -307,35 +307,28 @@ describe("Summary Handlers", () => {
       }
     );
 
-    it.effect(
-      "summarizes speed tests, ignoring failed tests stored as 0",
-      () => {
-        const speedtest = (download: number, upload: number): Metric => ({
-          timestamp: "2024-01-31T12:00:00Z",
-          source: "speedtest",
-          download_speed: download,
-          upload_speed: upload,
+    it.effect("summarizes speed tests, ignoring tests with no reading", () => {
+      const speedtest = (download?: number, upload?: number): Metric => ({
+        timestamp: "2024-01-31T12:00:00Z",
+        source: "speedtest",
+        download_speed: download,
+        upload_speed: upload,
+      });
+      const db: Partial<QuestDBService> = {
+        querySpeedtests: () =>
+          Effect.succeed([speedtest(), speedtest(100, 10), speedtest(300, 30)]),
+      };
+
+      return Effect.gen(function* () {
+        const { speed } = yield* getSummaryHandler({ query: summaryQuery });
+
+        expect(speed).toMatchObject({
+          downloadMedian: 200,
+          uploadMedian: 20,
+          count: 2,
         });
-        const db: Partial<QuestDBService> = {
-          querySpeedtests: () =>
-            Effect.succeed([
-              speedtest(0, 0),
-              speedtest(100, 10),
-              speedtest(300, 30),
-            ]),
-        };
-
-        return Effect.gen(function* () {
-          const { speed } = yield* getSummaryHandler({ query: summaryQuery });
-
-          expect(speed).toMatchObject({
-            downloadMedian: 200,
-            uploadMedian: 20,
-            count: 2,
-          });
-        }).pipe(Effect.provide(layers(db)));
-      }
-    );
+      }).pipe(Effect.provide(layers(db)));
+    });
 
     it.effect(
       "maps an unreachable database to the shared 503 error body",

@@ -47,6 +47,7 @@ export const makeTestAppConfig = (
     autoFlushInterval: 1000,
     requestTimeout: 10000,
     retryTimeout: 1000,
+    queryTimeout: 25000,
     ...overrides.database,
   },
   ping: {

@@ -1,7 +1,7 @@
 import { Sender } from "@questdb/nodejs-client";
 import { Context, Duration, Effect, Layer, Option, Ref, Result } from "effect";
-import { Pool } from "pg";
-import { ConfigService } from "@/infrastructure/config/config";
+import { Pool, type PoolConfig } from "pg";
+import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
 import {
   DatabaseConnectionError,
   DatabaseUnavailable,
@@ -22,17 +22,55 @@ export interface QuestDBRawConnection {
   readonly pgClient: Pool;
 }
 
-export interface QuestDBConnectionState {
-  readonly connection: Option.Option<QuestDBRawConnection>;
+export interface QuestDBConnectionState<
+  Connection extends QuestDBRawConnection = QuestDBRawConnection,
+> {
+  readonly connection: Option.Option<Connection>;
   readonly isConnecting: boolean;
   readonly lastError: Option.Option<{ message: string; timestamp: Date }>;
   readonly connectedSince: Option.Option<Date>;
 }
 
-// A sender flush never settles while QuestDB is down, so closing stops waiting after this long.
-const closeFlushTimeoutMs = 5000;
+/** Adds a one-connection pool so the health check never queues behind API queries. */
+interface OpenConnection extends QuestDBRawConnection {
+  readonly healthPool: Pool;
+}
 
-const initialState: QuestDBConnectionState = {
+const connectTimeoutMs = 5000;
+
+// Flushing the sender and ending a pool can hang while QuestDB is down, so closing stops waiting after this long.
+const closeTimeoutMs = 5000;
+
+// Lets the server's own cut-off at the query timeout fire first and leave the pooled connection usable.
+const clientTimeoutGraceMs = 5000;
+
+type PoolDatabaseConfig = Pick<
+  AppConfig["database"],
+  "host" | "pgPort" | "queryTimeout"
+>;
+
+// QuestDB reads statement_timeout only from `options`. connectionTimeoutMillis
+// also bounds the wait for a free pooled connection, so it follows the query timeout.
+export const queryPoolConfig = (database: PoolDatabaseConfig): PoolConfig => ({
+  ...pgConnectionSettings(database),
+  connectionTimeoutMillis: database.queryTimeout,
+  options: `-c statement_timeout=${database.queryTimeout}`,
+  query_timeout: database.queryTimeout + clientTimeoutGraceMs,
+  // Cap concurrent backing connections; QuestDB's pgwire handles multiple
+  // sessions, and the app's concurrency is bounded by parallel API reads.
+  max: 10,
+  idleTimeoutMillis: 30_000,
+});
+
+export const healthPoolConfig = (database: PoolDatabaseConfig): PoolConfig => ({
+  ...pgConnectionSettings(database),
+  connectionTimeoutMillis: connectTimeoutMs,
+  // Lets pg release a hung SELECT 1, so ending the pool can finish.
+  query_timeout: database.queryTimeout,
+  max: 1,
+});
+
+const initialState: QuestDBConnectionState<OpenConnection> = {
   connection: Option.none(),
   isConnecting: false,
   lastError: Option.none(),
@@ -46,6 +84,11 @@ export interface QuestDBConnectionService {
   >;
   readonly getState: Effect.Effect<QuestDBConnectionState>;
   readonly markDisconnected: (error: string) => Effect.Effect<void>;
+  /** A `SELECT 1` on the connection's own health pool, so it never waits behind API queries. */
+  readonly ping: Effect.Effect<
+    void,
+    DatabaseConnectionError | DatabaseUnavailable
+  >;
   readonly close: Effect.Effect<void>;
 }
 
@@ -58,14 +101,14 @@ const make = Effect.gen(function* () {
   const config = yield* ConfigService;
   const migrator = yield* SchemaMigrator;
 
-  const connectTimeoutMs = 5000;
   const reconnectIntervalMs = 2000;
   // Only an operator can fix a terminal migration error. Transient failures back
   // off to the same wait because each retry of a rewrite copies the whole table.
   const terminalMigrationRetryMs = 10 * 60 * 1000;
   const healthCheckIntervalMs = 5000;
 
-  const stateRef = yield* Ref.make<QuestDBConnectionState>(initialState);
+  const stateRef =
+    yield* Ref.make<QuestDBConnectionState<OpenConnection>>(initialState);
   const failedMigrationsRef = yield* Ref.make(0);
   const senderCreatedRef = yield* Ref.make(false);
 
@@ -86,23 +129,27 @@ const make = Effect.gen(function* () {
     return `tcp::addr=${host}:9009;auto_flush_rows=${autoFlushRows};auto_flush_interval=${autoFlushInterval};`;
   };
 
-  const closeConnection = (conn: QuestDBRawConnection): Effect.Effect<void> =>
+  const endPool = (pool: Pool): Effect.Effect<void> =>
+    Effect.promise(async () => {
+      try {
+        await pool.end();
+      } catch {}
+    }).pipe(Effect.timeout(Duration.millis(closeTimeoutMs)), Effect.ignore);
+
+  const closeConnection = (conn: OpenConnection): Effect.Effect<void> =>
     Effect.gen(function* () {
       yield* Effect.promise(async () => {
         try {
           await conn.sender.flush();
         } catch {}
-      }).pipe(
-        Effect.timeout(Duration.millis(closeFlushTimeoutMs)),
-        Effect.ignore
-      );
+      }).pipe(Effect.timeout(Duration.millis(closeTimeoutMs)), Effect.ignore);
       yield* Effect.promise(async () => {
         try {
           await conn.sender.close();
         } catch {}
-        try {
-          await conn.pgClient.end();
-        } catch {}
+      });
+      yield* Effect.all([endPool(conn.pgClient), endPool(conn.healthPool)], {
+        concurrency: "unbounded",
       });
     });
 
@@ -124,26 +171,28 @@ const make = Effect.gen(function* () {
         }),
     });
 
-    const pgClient = new Pool({
-      ...pgConnectionSettings(config.database),
-      connectionTimeoutMillis: connectTimeoutMs,
-      query_timeout: connectTimeoutMs,
-      statement_timeout: connectTimeoutMs,
-      // Cap concurrent backing connections; QuestDB's pgwire handles multiple
-      // sessions, and the app's concurrency is bounded by parallel API reads.
-      max: 10,
-      idleTimeoutMillis: 30_000,
-    });
+    const pgClient = new Pool(queryPoolConfig(config.database));
+    const healthPool = new Pool(healthPoolConfig(config.database));
 
-    // A Pool connects lazily, so the first query both establishes a backing
-    // connection and verifies the database is reachable.
+    // The health pool's first query opens its connection and proves the
+    // database is reachable; the query pool connects lazily. Bounded here so a
+    // failed attempt cleans up inside the loop's own timeout.
     yield* Effect.tryPromise({
-      try: () => pgClient.query("SELECT 1"),
+      try: () => healthPool.query("SELECT 1"),
       catch: (error) =>
         new DatabaseConnectionError({
           message: `Connection verification failed: ${errorMessage(error)}`,
         }),
     }).pipe(
+      Effect.timeoutOrElse({
+        duration: Duration.millis(connectTimeoutMs),
+        orElse: () =>
+          Effect.fail(
+            new DatabaseConnectionError({
+              message: `Connection verification timed out after ${connectTimeoutMs}ms`,
+            })
+          ),
+      }),
       Effect.catch((error) =>
         Effect.gen(function* () {
           yield* Effect.promise(async () => {
@@ -152,11 +201,9 @@ const make = Effect.gen(function* () {
             } catch {
               // ignore
             }
-            try {
-              await pgClient.end();
-            } catch {
-              // ignore
-            }
+          });
+          yield* Effect.all([endPool(pgClient), endPool(healthPool)], {
+            concurrency: "unbounded",
           });
           return yield* Effect.fail(error);
         })
@@ -165,7 +212,7 @@ const make = Effect.gen(function* () {
 
     yield* Effect.logInfo("QuestDB connection established");
 
-    return { sender, pgClient } satisfies QuestDBRawConnection;
+    return { sender, pgClient, healthPool } satisfies OpenConnection;
   });
 
   const markDisconnected = (error: string): Effect.Effect<void> =>
@@ -179,7 +226,7 @@ const make = Effect.gen(function* () {
           isConnecting: false,
           lastError: Option.some({ message: error, timestamp: new Date() }),
           connectedSince: Option.none(),
-        } satisfies QuestDBConnectionState,
+        } satisfies QuestDBConnectionState<OpenConnection>,
       ]);
 
       if (Option.isSome(previous)) {
@@ -189,8 +236,8 @@ const make = Effect.gen(function* () {
       yield* Effect.logWarning(`QuestDB disconnected: ${error}`);
     });
 
-  const attachPgErrorHandler = (pgClient: Pool): void => {
-    pgClient.on("error", (error: Error) => {
+  const attachPgErrorHandler = (pool: Pool): void => {
+    pool.on("error", (error: Error) => {
       Effect.runFork(markDisconnected(error.message));
     });
   };
@@ -271,6 +318,7 @@ const make = Effect.gen(function* () {
           const conn = result.value;
           yield* Ref.set(senderCreatedRef, true);
           attachPgErrorHandler(conn.pgClient);
+          attachPgErrorHandler(conn.healthPool);
 
           yield* Ref.set(stateRef, {
             connection: Option.some(conn),
@@ -297,11 +345,13 @@ const make = Effect.gen(function* () {
       } else {
         const conn = state.connection.value;
 
+        // QuestDB answers even SELECT 1 slowly while it runs long queries, so the
+        // check waits as long as a query may take.
         const healthOk = yield* Effect.tryPromise({
-          try: () => conn.pgClient.query("SELECT 1"),
+          try: () => conn.healthPool.query("SELECT 1"),
           catch: (error) => errorMessage(error),
         }).pipe(
-          Effect.timeout(Duration.millis(connectTimeoutMs)),
+          Effect.timeout(Duration.millis(config.database.queryTimeout)),
           Effect.match({
             onFailure: () => false,
             onSuccess: () => true,
@@ -342,7 +392,7 @@ const make = Effect.gen(function* () {
 
   yield* Effect.sleep(Duration.millis(100));
 
-  const getConnection = Effect.gen(function* () {
+  const getOpenConnection = Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
     if (Option.isNone(state.connection)) {
       const errorMsg = Option.isSome(state.lastError)
@@ -352,6 +402,22 @@ const make = Effect.gen(function* () {
     }
     return state.connection.value;
   });
+
+  const getConnection: QuestDBConnectionService["getConnection"] =
+    getOpenConnection;
+
+  const ping = getOpenConnection.pipe(
+    Effect.flatMap((conn) =>
+      Effect.tryPromise({
+        try: () => conn.healthPool.query("SELECT 1"),
+        catch: (error) =>
+          new DatabaseConnectionError({
+            message: `Health check failed: ${error}`,
+          }),
+      })
+    ),
+    Effect.asVoid
+  );
 
   const getState = Ref.get(stateRef);
 
@@ -367,6 +433,7 @@ const make = Effect.gen(function* () {
     getConnection,
     getState,
     markDisconnected,
+    ping,
     close,
   } satisfies QuestDBConnectionService;
 });

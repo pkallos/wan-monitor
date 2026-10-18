@@ -115,6 +115,7 @@ If a session is stored and the server cannot be reached when the dashboard loads
 | `LOG_LEVEL` | `info` | Minimum level to log: trace, debug, info, warn, error, fatal (any case). Any other value stops the server at startup. |
 | `DB_HOST` | `localhost` | QuestDB host |
 | `DB_PORT` | `9000` | QuestDB HTTP port |
+| `DB_QUERY_TIMEOUT` | `25000` | Longest, in milliseconds, that a database query, a wait for a free database connection, or the connection health check may take before it fails. Must be a positive whole number, or the server stops at startup. Raise it if long date ranges over a large history fail with a timeout. The dashboard refreshes every 30 seconds, so a value above that lets a slow dashboard's refreshes overlap. A connection attempt gives up after 10 seconds. |
 
 ### Database schema and migrations
 
@@ -128,10 +129,17 @@ A new install gets the table created. A database that predates the migrations ma
 - While it runs, `/api/health/ready` fails with "Migrating database schema (v2: conform-network-metrics)" and the dashboard shows its database-unavailable banner. No pings are recorded until it finishes. A rebuild runs only before the server opens its first connection for writing pings, so no write can reach the table it replaces; a server that has already opened that connection asks for a restart instead.
 - An interrupted rewrite is recovered on the next start or connection attempt, except in the states that need a person (below). While the server recovers it, the ready check names the step.
 
+Older versions stored a speed test that took no download or upload reading as 0. Migration v3 empties those zeros in `download_bandwidth` and `upload_bandwidth` on speed test rows, so averages, the speed chart and the last-test label treat them as no reading. Ping rows and every other column keep their values.
+
+- It updates the table in place without copying it, and only when a stored zero exists, so a new install or a second start leaves the table alone.
+- It compares the whole table before and after: total rows, rows per host and source, and the non-null count, sum or length of every column. Only the two non-null counts may change, each by exactly the number of zeros it emptied, and a column left with no values has no sum.
+- It takes about three seconds on 3 million rows and about four on 9.5 million, measured with QuestDB limited to 2 CPUs.
+
 The server refuses to connect, with the reason and the fix in its message and log, when:
 
 - the table has a column the server does not know;
 - a copy fails verification;
+- emptying the stored zeros changed anything else in the table. The failure is recorded in the ledger as a row with the negated version, so every later start refuses with the same message. Restore the snapshot taken before upgrading, or drop `network_metrics_migrations` to accept the table as it is;
 - a table is suspended, so its pending writes cannot be applied;
 - an interrupted rewrite left tables that need a person to decide which to keep;
 - the ledger records migrations but the table does not exist;

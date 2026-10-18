@@ -5,10 +5,15 @@ export class MigrationError extends Data.TaggedError("MigrationError")<{
   readonly step: string;
   readonly message: string;
   readonly kind: "transient" | "terminal";
+  /** The migration changed data before failing, so the runner records the failure and refuses to run it again. */
+  readonly sticky?: boolean;
 }> {}
 
 export const terminalError = (step: string, message: string): MigrationError =>
   new MigrationError({ step, message, kind: "terminal" });
+
+export const stickyError = (step: string, message: string): MigrationError =>
+  new MigrationError({ step, message, kind: "terminal", sticky: true });
 
 export const transientError = (step: string, message: string): MigrationError =>
   new MigrationError({ step, message, kind: "transient" });

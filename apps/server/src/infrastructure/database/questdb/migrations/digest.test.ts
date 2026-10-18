@@ -109,6 +109,15 @@ describe("digestMismatches", () => {
     ]);
   });
 
+  it("names the two sides with the given labels", () => {
+    expect(
+      digestMismatches(digestOf(), digestOf({ row_count: "3" }), [
+        "before",
+        "after",
+      ])
+    ).toEqual(["row_count: 4 in before, 3 in after"]);
+  });
+
   it("reports a value present on one side only", () => {
     expect(
       digestMismatches(digestOf(), digestOf({ min_timestamp: null }))

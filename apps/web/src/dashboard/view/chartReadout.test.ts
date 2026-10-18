@@ -346,16 +346,14 @@ describe("speedReadout", () => {
     );
   });
 
-  test("counts a failed test stored as 0 Mbps as no reading", () => {
-    expect(
-      speedReadout(
-        withSpeed([speed(1, { download_speed: 0, upload_speed: 0 })])
-      ).maybeNotice
-    ).toEqual(Option.some("No data in this range."));
+  test("counts a test with no readings as no data", () => {
+    expect(speedReadout(withSpeed([speed(1)])).maybeNotice).toEqual(
+      Option.some("No data in this range.")
+    );
     expect(
       speedReadout(
         withSpeed([
-          speed(1, { download_speed: 0, upload_speed: 0 }),
+          speed(1),
           speed(2, { download_speed: 100, upload_speed: 10 }),
         ])
       ).label

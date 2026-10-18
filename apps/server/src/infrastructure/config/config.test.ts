@@ -61,6 +61,7 @@ describe("ConfigService", () => {
       DB_AUTO_FLUSH_INTERVAL: "250",
       DB_REQUEST_TIMEOUT: "5000",
       DB_RETRY_TIMEOUT: "750",
+      DB_QUERY_TIMEOUT: "20000",
       PING_TIMEOUT: "3",
       PING_TRAIN_COUNT: "4",
       PING_INTERVAL_SECONDS: "15",
@@ -87,6 +88,7 @@ describe("ConfigService", () => {
         autoFlushInterval: 250,
         requestTimeout: 5000,
         retryTimeout: 750,
+        queryTimeout: 20000,
       },
       ping: {
         timeout: 3,
@@ -333,6 +335,35 @@ describe("ConfigService", () => {
 
         expect(message).toContain("JWT_EXPIRES_IN");
         expect(message).toContain("unit");
+      }
+    );
+  });
+
+  describe("DB_QUERY_TIMEOUT", () => {
+    it("defaults to 25 seconds", async () => {
+      const config = await loadConfig({});
+
+      expect(config.database.queryTimeout).toBe(25_000);
+    });
+
+    it("falls back to the default for an empty value", async () => {
+      const config = await loadConfig({ DB_QUERY_TIMEOUT: "" });
+
+      expect(config.database.queryTimeout).toBe(25_000);
+    });
+
+    it("reads milliseconds", async () => {
+      const config = await loadConfig({ DB_QUERY_TIMEOUT: "60000" });
+
+      expect(config.database.queryTimeout).toBe(60_000);
+    });
+
+    it.each(["0", "-1", "1.5", "abc", "30s"])(
+      "fails to load for %j and names the variable",
+      async (raw) => {
+        const message = await failureMessage({ DB_QUERY_TIMEOUT: raw });
+
+        expect(message).toContain("DB_QUERY_TIMEOUT");
       }
     );
   });

@@ -6,6 +6,7 @@ import {
 } from "@/infrastructure/database/questdb/migrations/registry";
 import { createNetworkMetrics } from "@/infrastructure/database/questdb/migrations/v1-create-network-metrics";
 import { conformNetworkMetrics } from "@/infrastructure/database/questdb/migrations/v2-conform-network-metrics";
+import { nullZeroSpeedtestSpeeds } from "@/infrastructure/database/questdb/migrations/v3-null-zero-speedtest-speeds";
 
 describe("migration registry", () => {
   it("numbers migrations densely and ascending from 1", () => {
@@ -26,6 +27,12 @@ describe("migration registry", () => {
   it("runs create-network-metrics before conform-network-metrics", () => {
     expect(MIGRATIONS[0]).toBe(createNetworkMetrics);
     expect(MIGRATIONS[1]).toBe(conformNetworkMetrics);
+  });
+
+  it("runs null-zero-speedtest-speeds after the schema is conformed", () => {
+    expect(MIGRATIONS.indexOf(nullZeroSpeedtestSpeeds)).toBeGreaterThan(
+      MIGRATIONS.indexOf(conformNetworkMetrics)
+    );
   });
 
   it("targets the declared columns, grouped by source and host", () => {

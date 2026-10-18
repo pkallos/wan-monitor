@@ -1,4 +1,11 @@
+import type { ColumnDefinition } from "@wan-monitor/shared/db-schema";
 import { Clock, Duration, Effect } from "effect";
+import {
+  digestGroupsSql,
+  digestTotalsSql,
+  type TableDigest,
+  toDigest,
+} from "@/infrastructure/database/questdb/migrations/digest";
 import {
   type MigrationContext,
   type MigrationError,
@@ -39,6 +46,18 @@ export const existingTables = (
     .pipe(
       Effect.map((rows) => new Set(rows.map((row) => String(row.table_name))))
     );
+
+export const readDigest = (
+  ctx: MigrationContext,
+  table: string,
+  columns: readonly ColumnDefinition[],
+  groupColumns: readonly string[]
+): Effect.Effect<TableDigest, MigrationError> =>
+  Effect.gen(function* () {
+    const totals = yield* ctx.query(digestTotalsSql(table, columns));
+    const groups = yield* ctx.query(digestGroupsSql(table, groupColumns));
+    return toDigest(totals[0] ?? {}, groups, groupColumns);
+  });
 
 const APPLY_DEADLINE_MINUTES = 30;
 const APPLY_DEADLINE_MS = APPLY_DEADLINE_MINUTES * 60_000;

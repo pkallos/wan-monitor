@@ -16,7 +16,7 @@ import {
   type QuestDBRawConnection,
 } from "@/infrastructure/database/questdb/connection";
 import {
-  DatabaseConnectionError,
+  type DatabaseConnectionError,
   DatabaseQueryError,
   DatabaseUnavailable,
   type DatabaseWriteError,
@@ -325,15 +325,7 @@ const make = Effect.gen(function* () {
 
   const health = () =>
     Effect.gen(function* () {
-      const conn = yield* connection.getConnection;
-
-      yield* Effect.tryPromise({
-        try: () => conn.pgClient.query("SELECT 1"),
-        catch: (error) =>
-          new DatabaseConnectionError({
-            message: `Health check failed: ${error}`,
-          }),
-      });
+      yield* connection.ping;
 
       const { connectedSince } = yield* connection.getState;
       const uptime = Option.isSome(connectedSince)

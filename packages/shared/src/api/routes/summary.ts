@@ -48,7 +48,7 @@ const HostSummarySchema = Schema.Struct({
   lastStatus: ConnectivityStatusSchema,
 });
 
-/** Speed figures are Mbps over successful tests; a stored 0 is a failed test. */
+/** Speed figures are Mbps over the tests that took a reading. */
 const SpeedSummarySchema = Schema.Struct({
   downloadMedian: NullableNumber,
   uploadMedian: NullableNumber,

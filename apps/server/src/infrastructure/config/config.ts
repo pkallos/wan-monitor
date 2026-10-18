@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { PositiveIntFromStringSchema } from "@shared/api/schemas";
 import {
   Config,
   Context,
@@ -29,6 +30,7 @@ export interface AppConfig {
     readonly autoFlushInterval: number;
     readonly requestTimeout: number;
     readonly retryTimeout: number;
+    readonly queryTimeout: number;
   };
   readonly ping: {
     readonly timeout: number;
@@ -193,6 +195,10 @@ const makeConfig = Effect.gen(function* () {
   const dbRetryTimeout = yield* Config.Number("DB_RETRY_TIMEOUT").pipe(
     Config.withDefault(1000)
   );
+  const dbQueryTimeout = yield* Config.schema(
+    PositiveIntFromStringSchema,
+    "DB_QUERY_TIMEOUT"
+  ).pipe(Config.withDefault(25_000));
 
   const pingTimeout = yield* Config.Number("PING_TIMEOUT").pipe(
     Config.withDefault(5)
@@ -254,6 +260,7 @@ const makeConfig = Effect.gen(function* () {
       autoFlushInterval: dbAutoFlushInterval,
       requestTimeout: dbRequestTimeout,
       retryTimeout: dbRetryTimeout,
+      queryTimeout: dbQueryTimeout,
     },
     ping: {
       timeout: pingTimeout,
