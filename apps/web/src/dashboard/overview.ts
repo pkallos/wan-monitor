@@ -17,6 +17,8 @@ import {
   formatDurationAgo,
   formatLongDuration,
   formatMonthDay,
+  formatSpeed,
+  speedClause,
 } from "@/dashboard/format";
 
 export type ConnectionState = ConnectivityStatus | "checking";
@@ -100,16 +102,6 @@ const chronological = <A extends { readonly timestamp: string }>(
   rows: ReadonlyArray<A>
 ): ReadonlyArray<A> =>
   Array_.sortWith(rows, (row) => Date.parse(row.timestamp), Order.Number);
-
-// A test can exist without one of its two measurements, and a genuine zero is
-// a reading, so each half falls back to "-" on its own. Triple-digit speeds
-// drop the decimal so the figures stay compact.
-const formatSpeed = (value: number | null | undefined): string =>
-  value === null || value === undefined
-    ? "-"
-    : value >= 100
-      ? value.toFixed(0)
-      : value.toFixed(1);
 
 /** One figure of the stat rail: a labelled number and the line under it. */
 export type RailStat = Readonly<{
@@ -248,14 +240,6 @@ export const speedCadenceText = (speedtestIntervalSeconds: number): string =>
 /** What the speed figures are when the history came in buckets: "Over 7 days or more, each point averages an hour of tests." */
 export const speedAveragesNote = (bucket: Granularity): string =>
   `Over ${formatLongDuration(SPEEDTEST_AGGREGATION_THRESHOLD_MS / 1000)} or more, each point averages ${BUCKET_AMOUNTS[bucket]} of tests.`;
-
-const speedClause = (
-  value: number | null | undefined,
-  direction: "down" | "up"
-): string =>
-  value === null || value === undefined
-    ? `no ${direction === "down" ? "download" : "upload"} reading`
-    : `${formatSpeed(value)} Mbps ${direction}`;
 
 /**
  * The newest test as a sentence: "Last test, Oct 15 at 2:00 PM: 100 Mbps down,

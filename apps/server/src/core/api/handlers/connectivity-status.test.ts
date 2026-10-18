@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { DB_UNAVAILABLE } from "@shared/api/errors";
 import { DEFAULT_GRANULARITY, MAX_OUTAGE_SPAN_DAYS } from "@wan-monitor/shared";
 import { Cause, Clock, Effect, Exit, Layer, Option } from "effect";
+import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 import { MAX_OUTAGES } from "@/core/analytics/outages";
 import {
@@ -211,6 +212,48 @@ describe("Connectivity Status Handlers", () => {
           endTime: new Date("2024-01-02T00:00:00Z"),
           granularity: "1h",
         });
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect("rejects a reversed range before querying", () => {
+      const onQuery = vi.fn();
+      const QuestDBTest = handlerLayers(createMockQuestDB([], onQuery));
+
+      return Effect.gen(function* () {
+        const error = yield* invalidTimeRangeOf(
+          getConnectivityStatusHandler({
+            query: {
+              startTime: "2024-01-02T00:00:00Z",
+              endTime: "2024-01-01T00:00:00Z",
+            },
+          })
+        );
+
+        expect(error.message).toContain("startTime");
+        expect(onQuery).not.toHaveBeenCalled();
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
+    it.effect("defaults the window to the trailing 24 hours", () => {
+      const onQuery = vi.fn();
+      const QuestDBTest = handlerLayers(createMockQuestDB([], onQuery));
+      const fixedNow = new Date("2025-01-15T12:00:00Z").getTime();
+
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(fixedNow);
+
+        const result = yield* getConnectivityStatusHandler({ query: {} });
+
+        expect(onQuery).toHaveBeenCalledWith(
+          expect.objectContaining({
+            startTime: new Date(fixedNow - 24 * 3600000),
+            endTime: new Date(fixedNow),
+          })
+        );
+        expect(result.meta.startTime).toBe(
+          new Date(fixedNow - 24 * 3600000).toISOString()
+        );
+        expect(result.meta.endTime).toBe(new Date(fixedNow).toISOString());
       }).pipe(Effect.provide(QuestDBTest));
     });
 

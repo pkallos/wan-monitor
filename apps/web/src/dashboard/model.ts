@@ -110,9 +110,9 @@ export type OutagesData = typeof OutagesData.Type;
 export const OutagesAsyncData = AsyncData.Schema(OutagesData, S.String);
 
 const SpeedtestTriggerResult = S.Struct({
-  downloadMbps: S.Number,
-  uploadMbps: S.Number,
-  pingMs: S.Number,
+  downloadMbps: S.optional(S.Number),
+  uploadMbps: S.optional(S.Number),
+  pingMs: S.optional(S.Number),
 });
 export const SpeedtestTriggerAsyncData = AsyncData.Schema(
   SpeedtestTriggerResult,

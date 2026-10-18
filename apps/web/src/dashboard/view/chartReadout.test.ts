@@ -341,6 +341,24 @@ describe("speedReadout", () => {
     );
   });
 
+  test("counts a failed test stored as 0 Mbps as no reading", () => {
+    expect(
+      speedReadout(
+        withSpeed([speed(1, { download_speed: 0, upload_speed: 0 })])
+      ).maybeNotice
+    ).toEqual(Option.some("No data in this range."));
+    expect(
+      speedReadout(
+        withSpeed([
+          speed(1, { download_speed: 0, upload_speed: 0 }),
+          speed(2, { download_speed: 100, upload_speed: 10 }),
+        ])
+      ).label
+    ).toBe(
+      "For the last 30 days. Download averages 100.0 Mbps and peaks at 100.0 Mbps. Upload averages 10.0 Mbps and peaks at 10.0 Mbps."
+    );
+  });
+
   test("says there is no data for an empty range", () => {
     expect(speedReadout(withSpeed([]))).toEqual({
       label: "For the last 30 days. No data in this range.",

@@ -8,3 +8,10 @@ export const IsoTimestampSchema = Schema.String.check(
       "Expected an ISO 8601 timestamp in years 0000 to 9999, such as 2024-02-10T08:00:00Z",
   })
 );
+
+/** A query-string positive integer, such as a row `limit`. */
+export const PositiveIntFromStringSchema = Schema.NumberFromString.check(
+  Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
+    message: "Expected a positive integer",
+  })
+);

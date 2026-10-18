@@ -129,9 +129,9 @@ export const FailedFetchPingHosts = m("FailedFetchPingHosts", {
 });
 
 export const SucceededTriggerSpeedtest = m("SucceededTriggerSpeedtest", {
-  downloadMbps: S.Number,
-  uploadMbps: S.Number,
-  pingMs: S.Number,
+  downloadMbps: S.optional(S.Number),
+  uploadMbps: S.optional(S.Number),
+  pingMs: S.optional(S.Number),
 });
 export const FailedTriggerSpeedtest = m("FailedTriggerSpeedtest", {
   message: S.String,

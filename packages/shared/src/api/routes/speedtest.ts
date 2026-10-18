@@ -1,13 +1,17 @@
-import { DbUnavailableErrorSchema } from "@shared/api/errors";
+import { DbUnavailableErrorSchema, InvalidTimeRange } from "@shared/api/errors";
 import { Authorization } from "@shared/api/middlewares/authorization";
 import { GranularitySchema } from "@shared/api/routes/metrics";
+import {
+  IsoTimestampSchema,
+  PositiveIntFromStringSchema,
+} from "@shared/api/schemas";
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 
 const SpeedTestResult = Schema.Struct({
-  downloadMbps: Schema.Number,
-  uploadMbps: Schema.Number,
-  pingMs: Schema.Number,
+  downloadMbps: Schema.optional(Schema.Number),
+  uploadMbps: Schema.optional(Schema.Number),
+  pingMs: Schema.optional(Schema.Number),
   jitter: Schema.optional(Schema.Number),
   server: Schema.optional(Schema.String),
   isp: Schema.optional(Schema.String),
@@ -62,9 +66,9 @@ export const SpeedMetricSchema = Schema.Struct({
 });
 
 export const SpeedTestHistoryQuery = Schema.Struct({
-  startTime: Schema.optional(Schema.String),
-  endTime: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.NumberFromString),
+  startTime: Schema.optional(IsoTimestampSchema),
+  endTime: Schema.optional(IsoTimestampSchema),
+  limit: Schema.optional(PositiveIntFromStringSchema),
   granularity: Schema.optional(GranularitySchema),
 });
 
@@ -105,6 +109,7 @@ export const SpeedTestApiGroup = HttpApiGroup.make("speedtest")
       query: SpeedTestHistoryQuery,
       success: SpeedTestHistoryResponse,
       error: [
+        InvalidTimeRange,
         HttpApiSchema.status(503)(DbUnavailableErrorSchema),
         Schema.String,
       ],

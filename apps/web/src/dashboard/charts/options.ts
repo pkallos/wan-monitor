@@ -8,7 +8,7 @@ import type { LatencyStats } from "@/dashboard/charts/stats";
 import { speedMedians, testsAreDense } from "@/dashboard/charts/stats";
 import type { TimelineSlot } from "@/dashboard/charts/timeline";
 import { FULL_ZOOM, type ZoomRange } from "@/dashboard/charts/zoom";
-import { isLocalMidnight } from "@/dashboard/format";
+import { fixed, isLocalMidnight } from "@/dashboard/format";
 import type { Incident } from "@/dashboard/incidents";
 
 // Mirrors echarts' own `PrimaryTimeUnit` (scale/Time.js): every tick on a
@@ -712,11 +712,11 @@ export const makeLatencyChartOption = ({
     palette
   );
   // The average only means something for the single all-hosts line.
-  const showsAverage = !isPerHost && stats.avg !== "-";
+  const average = isPerHost ? null : stats.avg;
   const shared = {
     markArea: markAreaOf(incidents, palette),
     markLine:
-      showsAverage || thresholds.length > 0 || incidents.length > 0
+      average !== null || thresholds.length > 0 || incidents.length > 0
         ? {
             symbol: "none",
             silent: true,
@@ -725,18 +725,18 @@ export const makeLatencyChartOption = ({
               type: "dashed" as const,
             },
             data: [
-              ...(showsAverage
-                ? [
+              ...(average === null
+                ? []
+                : [
                     {
-                      yAxis: Number(stats.avg),
+                      yAxis: average,
                       label: referenceLabel(
                         palette,
-                        `Avg ${stats.avg} ms`,
+                        `Avg ${fixed(average, 1)} ms`,
                         "insideEndTop"
                       ),
                     },
-                  ]
-                : []),
+                  ]),
               ...thresholds,
               ...incidentMarkLines(incidents, chipLabels, palette),
             ],

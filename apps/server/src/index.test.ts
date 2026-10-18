@@ -21,6 +21,7 @@ import { QuestDB } from "@/infrastructure/database/questdb";
 import { SpeedTestService } from "@/infrastructure/speedtest/types";
 import { makeTestAppConfig } from "@/test/config";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
+import { speedTestRunnerFrom } from "@/test/speedtest-runner";
 
 /**
  * Integration tests for server startup and lifecycle (index.ts)
@@ -146,8 +147,7 @@ describe("Server Lifecycle Integration Tests", () => {
 
     const NetworkMonitorTest = NetworkMonitorLive.pipe(
       Layer.provide(PingExecutorTest),
-      Layer.provide(QuestDBTest),
-      Layer.provide(SpeedTestServiceTest),
+      Layer.provide(speedTestRunnerFrom(SpeedTestServiceTest, QuestDBTest)),
       Layer.provide(ConfigServiceTest)
     );
 
@@ -348,8 +348,9 @@ describe("Server Lifecycle Integration Tests", () => {
         const ConfigServiceTest = createConfigServiceTest();
         const NetworkMonitorTest = NetworkMonitorLive.pipe(
           Layer.provide(PingExecutorTest),
-          Layer.provide(QuestDBFailingTest),
-          Layer.provide(SpeedTestServiceTest),
+          Layer.provide(
+            speedTestRunnerFrom(SpeedTestServiceTest, QuestDBFailingTest)
+          ),
           Layer.provide(ConfigServiceTest)
         );
 
@@ -395,8 +396,7 @@ describe("Server Lifecycle Integration Tests", () => {
       const ConfigServiceTest = createConfigServiceTest();
       const NetworkMonitorTest = NetworkMonitorLive.pipe(
         Layer.provide(EmptyPingExecutorTest),
-        Layer.provide(QuestDBTest),
-        Layer.provide(SpeedTestServiceTest),
+        Layer.provide(speedTestRunnerFrom(SpeedTestServiceTest, QuestDBTest)),
         Layer.provide(ConfigServiceTest)
       );
 
@@ -452,8 +452,9 @@ describe("Server Lifecycle Integration Tests", () => {
       const ConfigServiceTest = createConfigServiceTest();
       const NetworkMonitorTest = NetworkMonitorLive.pipe(
         Layer.provide(PingExecutorTest),
-        Layer.provide(QuestDBTestWithClose),
-        Layer.provide(SpeedTestServiceTest),
+        Layer.provide(
+          speedTestRunnerFrom(SpeedTestServiceTest, QuestDBTestWithClose)
+        ),
         Layer.provide(ConfigServiceTest)
       );
 

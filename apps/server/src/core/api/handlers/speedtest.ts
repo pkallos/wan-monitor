@@ -1,16 +1,20 @@
 import { WanMonitorApi } from "@shared/api";
 import type { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
-import { mbpsToBps } from "@shared/metrics";
 import type { SpeedMetric } from "@wan-monitor/shared";
-import { Clock, Effect, Ref, type Schema } from "effect";
+import { Clock, Effect, Option, Result, type Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
-import { mapQueryError } from "@/core/api/handlers/db-error";
-import { QuestDB } from "@/infrastructure/database/questdb";
 import {
-  SpeedTestExecutionError,
-  SpeedTestTimeoutError,
-} from "@/infrastructure/speedtest/errors";
-import { SpeedTestService } from "@/infrastructure/speedtest/service";
+  resolveWindow,
+  type TimeWindow,
+  validateWindow,
+} from "@/core/analytics/window";
+import { mapQueryError } from "@/core/api/handlers/db-error";
+import {
+  SpeedTestRunner,
+  type SpeedTestRunnerInterface,
+} from "@/core/monitoring/speed-test-runner";
+import { QuestDB } from "@/infrastructure/database/questdb";
+import { SpeedTestTimeoutError } from "@/infrastructure/speedtest/errors";
 
 const SpeedTestErrorCode = {
   ALREADY_RUNNING: "SPEED_TEST_ALREADY_RUNNING",
@@ -21,115 +25,77 @@ const SpeedTestErrorCode = {
 type SpeedTestErrorCode =
   (typeof SpeedTestErrorCode)[keyof typeof SpeedTestErrorCode];
 
-export const triggerSpeedTestHandler = (isRunningRef: Ref.Ref<boolean>) =>
+const failedResponse = (
+  nowMs: number,
+  code: SpeedTestErrorCode,
+  message: string
+) => ({
+  success: false as const,
+  timestamp: new Date(nowMs).toISOString(),
+  error: { code, message },
+});
+
+export const triggerSpeedTestHandler = (runner: SpeedTestRunnerInterface) =>
   Effect.gen(function* () {
-    const acquired = yield* Ref.modify(isRunningRef, (running) =>
-      running ? [false, true] : [true, true]
-    );
-
-    if (!acquired) {
-      const now = yield* Clock.currentTimeMillis;
-      return {
-        success: false as const,
-        timestamp: new Date(now).toISOString(),
-        error: {
-          code: SpeedTestErrorCode.ALREADY_RUNNING as SpeedTestErrorCode,
-          message: "A speed test is already in progress",
-        },
-      };
-    }
-
-    const speedTestService = yield* SpeedTestService;
-    const db = yield* QuestDB;
-
-    const result = yield* speedTestService.runTest().pipe(
-      Effect.matchEffect({
-        onFailure: (error) =>
-          Effect.gen(function* () {
-            const now = yield* Clock.currentTimeMillis;
-            let errorCode: SpeedTestErrorCode =
-              SpeedTestErrorCode.EXECUTION_FAILED;
-            let errorMessage = "Speed test execution failed";
-
-            if (error instanceof SpeedTestTimeoutError) {
-              errorCode = SpeedTestErrorCode.TIMEOUT;
-              errorMessage = `Speed test timed out after ${error.timeoutMs}ms`;
-            } else if (error instanceof SpeedTestExecutionError) {
-              errorMessage = error.message;
-            }
-
-            return {
-              success: false as const,
-              timestamp: new Date(now).toISOString(),
-              error: {
-                code: errorCode,
-                message: errorMessage,
-              },
-            };
-          }),
-        onSuccess: (testResult) =>
-          Effect.gen(function* () {
-            yield* db
-              .writeMetric({
-                timestamp: testResult.timestamp,
-                source: "speedtest" as const,
-                latency: testResult.latency,
-                jitter: testResult.jitter,
-                downloadBandwidth: mbpsToBps(testResult.downloadSpeed),
-                uploadBandwidth: mbpsToBps(testResult.uploadSpeed),
-                serverLocation: testResult.serverLocation,
-                isp: testResult.isp,
-                externalIp: testResult.externalIp,
-                internalIp: testResult.internalIp,
-              })
-              .pipe(
-                Effect.catch((dbError) =>
-                  Effect.logError(
-                    `Speed test DB write failed: ${dbError._tag} - ${dbError.message}`
-                  )
-                )
-              );
-
-            return {
-              success: true as const,
-              timestamp: testResult.timestamp.toISOString(),
-              result: {
-                downloadMbps: testResult.downloadSpeed,
-                uploadMbps: testResult.uploadSpeed,
-                pingMs: testResult.latency,
-                jitter: testResult.jitter,
-                server: testResult.serverLocation,
-                isp: testResult.isp,
-                externalIp: testResult.externalIp,
-              },
-            };
-          }),
-      }),
-      Effect.ensuring(Ref.set(isRunningRef, false))
-    );
-
-    return result;
-  });
-
-export const getSpeedTestHistoryHandler = ({
-  query,
-}: {
-  query: Schema.Schema.Type<typeof SpeedTestHistoryQuery>;
-}) =>
-  Effect.gen(function* () {
-    const db = yield* QuestDB;
+    const outcome = yield* runner.runIfIdle().pipe(Effect.result);
     const now = yield* Clock.currentTimeMillis;
 
-    const params = {
-      startTime: query.startTime ? new Date(query.startTime) : undefined,
-      endTime: query.endTime ? new Date(query.endTime) : undefined,
+    if (Result.isFailure(outcome)) {
+      const error = outcome.failure;
+      return error instanceof SpeedTestTimeoutError
+        ? failedResponse(
+            now,
+            SpeedTestErrorCode.TIMEOUT,
+            `Speed test timed out after ${error.timeoutMs}ms`
+          )
+        : failedResponse(
+            now,
+            SpeedTestErrorCode.EXECUTION_FAILED,
+            error.message
+          );
+    }
+
+    if (Option.isNone(outcome.success)) {
+      return failedResponse(
+        now,
+        SpeedTestErrorCode.ALREADY_RUNNING,
+        "A speed test is already in progress"
+      );
+    }
+
+    const { result } = outcome.success.value;
+    return {
+      success: true as const,
+      timestamp: result.timestamp.toISOString(),
+      result: {
+        downloadMbps: result.downloadSpeed,
+        uploadMbps: result.uploadSpeed,
+        pingMs: result.latency,
+        jitter: result.jitter,
+        server: result.serverLocation,
+        isp: result.isp,
+        externalIp: result.externalIp,
+      },
+    };
+  });
+
+const DEFAULT_HISTORY_SPAN_MS = 60 * 60 * 1000;
+
+const loadSpeedTestHistory = (
+  query: Schema.Schema.Type<typeof SpeedTestHistoryQuery>,
+  { startMs, endMs }: TimeWindow
+) =>
+  Effect.gen(function* () {
+    const db = yield* QuestDB;
+
+    const startTime = new Date(startMs);
+    const endTime = new Date(endMs);
+    const data = yield* db.querySpeedtests({
+      startTime,
+      endTime,
       limit: query.limit,
       granularity: query.granularity,
-    };
-
-    const data = yield* db
-      .querySpeedtests(params)
-      .pipe(Effect.catch(mapQueryError("Failed to query speedtest history")));
+    });
 
     const speedMetrics: SpeedMetric[] = data.map((m) => ({
       timestamp: m.timestamp,
@@ -148,18 +114,29 @@ export const getSpeedTestHistoryHandler = ({
     return {
       data: speedMetrics,
       meta: {
-        startTime:
-          params.startTime?.toISOString() ??
-          new Date(now - 3600000).toISOString(),
-        endTime: params.endTime?.toISOString() ?? new Date(now).toISOString(),
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
         count: data.length,
       },
     };
+  }).pipe(Effect.catch(mapQueryError("Failed to query speedtest history")));
+
+export const getSpeedTestHistoryHandler = ({
+  query,
+}: {
+  query: Schema.Schema.Type<typeof SpeedTestHistoryQuery>;
+}) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const window = yield* validateWindow(
+      resolveWindow(query, now, DEFAULT_HISTORY_SPAN_MS)
+    );
+    return yield* loadSpeedTestHistory(query, window);
   });
 
-export const getSpeedTestStatusHandler = (isRunningRef: Ref.Ref<boolean>) =>
+export const getSpeedTestStatusHandler = (runner: SpeedTestRunnerInterface) =>
   Effect.gen(function* () {
-    const isRunning = yield* Ref.get(isRunningRef);
+    const isRunning = yield* runner.isRunning();
     return { isRunning };
   });
 
@@ -168,13 +145,11 @@ export const SpeedTestGroupLive = HttpApiBuilder.group(
   "speedtest",
   (handlers) =>
     Effect.gen(function* () {
-      const isRunningRef = yield* Ref.make(false);
+      const runner = yield* SpeedTestRunner;
 
       return handlers
-        .handle("triggerSpeedTest", () => triggerSpeedTestHandler(isRunningRef))
-        .handle("getSpeedTestStatus", () =>
-          getSpeedTestStatusHandler(isRunningRef)
-        )
+        .handle("triggerSpeedTest", () => triggerSpeedTestHandler(runner))
+        .handle("getSpeedTestStatus", () => getSpeedTestStatusHandler(runner))
         .handle("getSpeedTestHistory", getSpeedTestHistoryHandler);
     })
 );

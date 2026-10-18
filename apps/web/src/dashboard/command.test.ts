@@ -814,6 +814,24 @@ describe("triggerSpeedtest", () => {
     });
   });
 
+  test("passes a missing measurement through as undefined, not 0", async () => {
+    const result = await triggerSpeedtest({ token: "abc" }).pipe(
+      Effect.provide(
+        mockHttpClient(200, {
+          success: true,
+          timestamp: "2026-07-26T00:30:00.000Z",
+          result: { downloadMbps: 500 },
+        })
+      ),
+      Effect.runPromise
+    );
+
+    expect(result).toEqual({
+      _tag: "SucceededTriggerSpeedtest",
+      downloadMbps: 500,
+    });
+  });
+
   test("maps an already-running trigger into FailedTriggerSpeedtest", async () => {
     const result = await triggerSpeedtest({ token: "abc" }).pipe(
       Effect.provide(

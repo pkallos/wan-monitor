@@ -24,7 +24,7 @@ const triggerButton = (page: Page) =>
 const successBody = JSON.stringify({
   success: true,
   timestamp: new Date().toISOString(),
-  result: { downloadMbps: 512.5, uploadMbps: 42.5, pingMs: 8 },
+  result: { downloadMbps: 512.4, uploadMbps: 42.5, pingMs: 8 },
 });
 
 const alreadyRunningBody = JSON.stringify({
@@ -97,9 +97,7 @@ test.describe("Speed test trigger", () => {
     await expect(page.getByText("Speed test complete")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(
-      page.getByText("Download: 512.5 Mbps, Upload: 42.5 Mbps")
-    ).toBeVisible();
+    await expect(page.getByText("512 Mbps down, 42.5 Mbps up")).toBeVisible();
     await expect(triggerButton(page)).toHaveText("Run speed test");
     await expect(triggerButton(page)).toBeEnabled();
 

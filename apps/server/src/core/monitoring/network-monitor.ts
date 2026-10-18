@@ -1,10 +1,7 @@
-import { mbpsToBps } from "@shared/metrics";
 import { Clock, Context, Effect, Layer, Ref, Schedule } from "effect";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
+import { SpeedTestRunner } from "@/core/monitoring/speed-test-runner";
 import { ConfigService } from "@/infrastructure/config/config";
-import { QuestDB } from "@/infrastructure/database/questdb";
-// Import from speedtest-service to avoid native module loading in tests
-import { SpeedTestService } from "@/infrastructure/speedtest/types";
 
 // ============================================================================
 // Internal Stats State (managed via Ref for atomic concurrent updates)
@@ -81,8 +78,7 @@ export const NetworkMonitorLive = Layer.effect(
   NetworkMonitor,
   Effect.gen(function* () {
     const pingExecutor = yield* PingExecutor;
-    const speedTestService = yield* SpeedTestService;
-    const db = yield* QuestDB;
+    const speedTestRunner = yield* SpeedTestRunner;
     const config = yield* ConfigService;
 
     const pingIntervalSeconds = config.ping.intervalSeconds;
@@ -124,9 +120,7 @@ export const NetworkMonitorLive = Layer.effect(
      * Execute a single speedtest cycle and update stats
      */
     const executeSpeedTestCycle = Effect.gen(function* () {
-      const timestamp = yield* Clock.currentTimeMillis;
-
-      const result = yield* speedTestService.runTest().pipe(
+      const { persisted } = yield* speedTestRunner.run().pipe(
         Effect.catchTags({
           SpeedTestExecutionError: (error) =>
             Effect.gen(function* () {
@@ -153,34 +147,12 @@ export const NetworkMonitorLive = Layer.effect(
         })
       );
 
-      // Write speed test result to database
-      const writeSucceeded = yield* db
-        .writeMetric({
-          timestamp: result.timestamp,
-          source: "speedtest" as const,
-          latency: result.latency,
-          jitter: result.jitter,
-          downloadBandwidth: mbpsToBps(result.downloadSpeed),
-          uploadBandwidth: mbpsToBps(result.uploadSpeed),
-          serverLocation: result.serverLocation,
-          isp: result.isp,
-          externalIp: result.externalIp,
-          internalIp: result.internalIp,
-        })
-        .pipe(
-          Effect.as(true as const),
-          Effect.catch((error) =>
-            Effect.logError(
-              `Speed test DB write failed: ${error._tag} - ${error.message}`
-            ).pipe(Effect.as(false as const))
-          )
-        );
-
+      const finishedAt = yield* Clock.currentTimeMillis;
       yield* Ref.update(statsRef, (s) => ({
         ...s,
-        lastSpeedTestTime: timestamp,
-        successfulSpeedTests: s.successfulSpeedTests + (writeSucceeded ? 1 : 0),
-        failedSpeedTests: s.failedSpeedTests + (writeSucceeded ? 0 : 1),
+        lastSpeedTestTime: finishedAt,
+        successfulSpeedTests: s.successfulSpeedTests + (persisted ? 1 : 0),
+        failedSpeedTests: s.failedSpeedTests + (persisted ? 0 : 1),
       }));
     });
 

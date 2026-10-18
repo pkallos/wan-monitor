@@ -2363,6 +2363,56 @@ describe("dashboard update — speedtest trigger", () => {
     );
   });
 
+  test("a successful trigger that took no upload reading says so rather than reporting 0 Mbps", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      speedtestTrigger: SpeedtestTriggerAsyncData.Loading(),
+    };
+
+    Story.story(
+      withContext,
+      Story.given(model),
+      Story.message(SucceededTriggerSpeedtest({ downloadMbps: 500 })),
+      Story.model((model) => {
+        expect(model.toast.entries[0]?.payload.description).toBe(
+          "500 Mbps down, no upload reading"
+        );
+      }),
+      Story.Command.resolveAll(
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
+      ),
+      resolveSummaryFetch(),
+      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
+    );
+  });
+
+  test("a successful trigger toasts its speeds the way the last-test label states them", () => {
+    const model = {
+      ...initModel(defaultSettings()),
+      speedtestTrigger: SpeedtestTriggerAsyncData.Loading(),
+    };
+
+    Story.story(
+      withContext,
+      Story.given(model),
+      Story.message(
+        SucceededTriggerSpeedtest({ downloadMbps: 512.4, uploadMbps: 42.5 })
+      ),
+      Story.model((model) => {
+        expect(model.toast.entries[0]?.payload.description).toBe(
+          "512 Mbps down, 42.5 Mbps up"
+        );
+      }),
+      Story.Command.resolveAll(
+        [FetchMetrics, succeededFetchMetrics()],
+        [FetchSpeedtestHistory, succeededFetchSpeedtestHistory()]
+      ),
+      resolveSummaryFetch(),
+      ToastTest.drainEntry({ entryId: "dashboard-toast-entry-0" })
+    );
+  });
+
   test("a failed trigger settles speedtestTrigger to Failure without refetching", () => {
     const model = {
       ...initModel(defaultSettings()),

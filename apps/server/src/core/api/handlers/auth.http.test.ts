@@ -1,8 +1,9 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiServiceLayer } from "@/core/api/service";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
+import { SpeedTestRunner } from "@/core/monitoring/speed-test-runner";
 import { JwtServiceLive } from "@/infrastructure/auth/jwt";
 import { AuthServiceLive } from "@/infrastructure/auth/middleware";
 import { ConfigService } from "@/infrastructure/config/config";
@@ -10,7 +11,6 @@ import {
   QuestDB,
   type QuestDBService,
 } from "@/infrastructure/database/questdb/service";
-import { SpeedTestService } from "@/infrastructure/speedtest/service";
 import { makeTestAppConfig } from "@/test/config";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
@@ -59,15 +59,17 @@ const mockPingExecutorLayer = Layer.succeed(PingExecutor, {
   executeHosts: () => Effect.succeed([]),
 });
 
-const mockSpeedTestServiceLayer = Layer.succeed(SpeedTestService, {
-  runTest: () =>
+const mockSpeedTestRunnerLayer = Layer.succeed(SpeedTestRunner, {
+  run: () =>
     Effect.succeed({
-      timestamp: new Date(),
-      downloadSpeed: 0,
-      uploadSpeed: 0,
-      latency: 0,
-      jitter: 0,
+      result: { timestamp: new Date() },
+      persisted: true,
     }),
+  runIfIdle: () =>
+    Effect.succeed(
+      Option.some({ result: { timestamp: new Date() }, persisted: true })
+    ),
+  isRunning: () => Effect.succeed(false),
 });
 
 type TestApp = {
@@ -107,7 +109,7 @@ const makeTestApp = (
     JwtLayer,
     Layer.succeed(QuestDB, mockQuestDB),
     mockPingExecutorLayer,
-    mockSpeedTestServiceLayer
+    mockSpeedTestRunnerLayer
   );
 
   const ProvidedApiLayer = ApiServiceLayer.pipe(
@@ -356,12 +358,39 @@ describe("Auth HTTP integration (real JWT flow)", () => {
           "/api/connectivity-status/outages",
           bounds("2024-01-01T00:00:00Z", "2024-04-01T00:00:00Z"),
         ],
+        ["/api/metrics", "startTime=garbage"],
+        ["/api/metrics", "endTime=2024-02-30T00:00:00Z"],
+        ["/api/metrics", reversed],
+        ["/api/metrics", "limit=-1"],
+        ["/api/metrics", "limit=1.5"],
+        ["/api/metrics", "limit=0"],
+        ["/api/speedtest/history", "startTime=garbage"],
+        ["/api/speedtest/history", "endTime=2024-02-30T00:00:00Z"],
+        ["/api/speedtest/history", reversed],
+        ["/api/speedtest/history", "limit=-1"],
+        ["/api/speedtest/history", "limit=1.5"],
+        ["/api/speedtest/history", "limit=0"],
+        ["/api/connectivity-status", "startTime=garbage"],
+        ["/api/connectivity-status", "endTime=2024-02-30T00:00:00Z"],
+        ["/api/connectivity-status", reversed],
       ])("rejects %s?%s with a 400", async (path, search) => {
         const token = await loginForToken(app);
 
         const res = await get(app, `${path}?${search}`, token);
 
         expect(res.status).toBe(400);
+      });
+
+      it.each([
+        "/api/metrics",
+        "/api/speedtest/history",
+        "/api/connectivity-status",
+      ])("tags a reversed range on %s as InvalidTimeRange", async (path) => {
+        const token = await loginForToken(app);
+
+        const res = await get(app, `${path}?${reversed}`, token);
+
+        expect(await res.json()).toMatchObject({ _tag: "InvalidTimeRange" });
       });
 
       it.each([
@@ -372,6 +401,18 @@ describe("Auth HTTP integration (real JWT flow)", () => {
         [
           "/api/summary",
           bounds("2023-01-01T00:00:00Z", "2024-02-01T00:00:00Z"),
+        ],
+        [
+          "/api/metrics",
+          `${bounds("2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z")}&limit=5`,
+        ],
+        [
+          "/api/speedtest/history",
+          `${bounds("2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z")}&limit=5`,
+        ],
+        [
+          "/api/connectivity-status",
+          bounds("2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z"),
         ],
       ])("accepts %s?%s", async (path, search) => {
         const token = await loginForToken(app);

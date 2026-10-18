@@ -198,7 +198,7 @@ the same `{ handler, dispose }` return shape. It needs the platform-default-serv
 merged alongside it as a sibling — `Layer.provide`, not `Layer.mergeAll` — plus an `HttpRouter`
 instance (`HttpRouter.layer`), which `toWebHandler` needs but `HttpServer.layerServices` doesn't supply.
 See `apps/server/src/core/api/handlers/auth.http.test.ts` for the full working composition, including
-mocked `QuestDB`/`PingExecutor`/`SpeedTestService` dependencies alongside a real `JwtService` and
+mocked `QuestDB`/`PingExecutor`/`SpeedTestRunner` dependencies alongside a real `JwtService` and
 `AuthService`.
 
 `HttpRouter.serve` (what `apps/server/src/core/api/server.ts` uses in production) unwraps every

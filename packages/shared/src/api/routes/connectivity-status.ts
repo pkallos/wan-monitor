@@ -108,8 +108,8 @@ const GetLiveConnectivityResponse = Schema.Struct({
 });
 
 export const GetConnectivityStatusQuery = Schema.Struct({
-  startTime: Schema.optional(Schema.String),
-  endTime: Schema.optional(Schema.String),
+  startTime: Schema.optional(IsoTimestampSchema),
+  endTime: Schema.optional(IsoTimestampSchema),
   granularity: Schema.optional(
     Schema.Literals(["1m", "5m", "15m", "1h", "6h", "1d"])
   ),
@@ -144,6 +144,7 @@ export const ConnectivityStatusApiGroup = HttpApiGroup.make(
       query: GetConnectivityStatusQuery,
       success: ConnectivityStatusResponse,
       error: [
+        InvalidTimeRange,
         HttpApiSchema.status(503)(DbUnavailableErrorSchema),
         Schema.String,
       ],

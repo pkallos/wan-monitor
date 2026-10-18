@@ -34,6 +34,7 @@ import {
   rangeFromBrush,
 } from "@/dashboard/dateRange";
 import * as DateRangePicker from "@/dashboard/dateRangePicker";
+import { speedClause } from "@/dashboard/format";
 import { assignIncidents } from "@/dashboard/incidents";
 import type { LatencyView } from "@/dashboard/latencyView";
 import { LatencyViewRadioGroup } from "@/dashboard/latencyViewRadioGroup";
@@ -1180,7 +1181,7 @@ export const update = (
             variant: "Success",
             payload: {
               title: "Speed test complete",
-              description: `Download: ${downloadMbps.toFixed(1)} Mbps, Upload: ${uploadMbps.toFixed(1)} Mbps`,
+              description: `${speedClause(downloadMbps, "down")}, ${speedClause(uploadMbps, "up")}`,
             },
           }
         );

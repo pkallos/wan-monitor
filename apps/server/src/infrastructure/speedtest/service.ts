@@ -27,7 +27,16 @@ import {
 
 export const DEFAULT_SPEEDTEST_TIMEOUT_SECONDS = 120;
 
-export type SpeedTestExecutor = () => ReturnType<typeof speedTest>;
+/** Runs one test; aborting `signal` must stop the underlying CLI. */
+export type SpeedTestExecutor = (
+  signal: AbortSignal
+) => ReturnType<typeof speedTest>;
+
+/** A bandwidth of 0 or none is no reading, so it has no Mbps figure. */
+const bandwidthToMbps = (
+  bytesPerSecond: number | undefined
+): number | undefined =>
+  bytesPerSecond ? (bytesPerSecond * 8) / 1_000_000 : undefined;
 
 export const makeSpeedTestService = (
   executor: SpeedTestExecutor,
@@ -43,7 +52,7 @@ export const makeSpeedTestService = (
         );
 
         const executeSpeedTest = Effect.tryPromise({
-          try: () => executor(),
+          try: (signal) => executor(signal),
           catch: (error) => {
             return new SpeedTestExecutionError({
               message: error instanceof Error ? error.message : String(error),
@@ -65,18 +74,14 @@ export const makeSpeedTestService = (
           )
         );
 
-        const downloadSpeedMbps = result.download.bandwidth
-          ? (result.download.bandwidth * 8) / 1_000_000
-          : 0;
-        const uploadSpeedMbps = result.upload.bandwidth
-          ? (result.upload.bandwidth * 8) / 1_000_000
-          : 0;
+        const downloadSpeedMbps = bandwidthToMbps(result.download?.bandwidth);
+        const uploadSpeedMbps = bandwidthToMbps(result.upload?.bandwidth);
 
         const speedTestResult: SpeedTestResult = {
           timestamp: new Date(),
           downloadSpeed: downloadSpeedMbps,
           uploadSpeed: uploadSpeedMbps,
-          latency: result.ping?.latency ?? 0,
+          latency: result.ping?.latency,
           jitter: result.ping?.jitter,
           serverId: result.server?.id?.toString(),
           serverName: result.server?.name,
@@ -89,8 +94,8 @@ export const makeSpeedTestService = (
 
         yield* Effect.logInfo(
           `Speed test complete:\n` +
-            `  Download: ${downloadSpeedMbps.toFixed(2)} Mbps\n` +
-            `  Upload: ${uploadSpeedMbps.toFixed(2)} Mbps\n` +
+            `  Download: ${downloadSpeedMbps?.toFixed(2) ?? "N/A"} Mbps\n` +
+            `  Upload: ${uploadSpeedMbps?.toFixed(2) ?? "N/A"} Mbps\n` +
             `  Latency: ${result.ping?.latency?.toFixed(2) ?? "N/A"} ms\n` +
             `  Jitter: ${result.ping?.jitter?.toFixed(2) ?? "N/A"} ms\n` +
             `  Server: ${result.server?.name ?? "Unknown"} (${result.server?.location ?? "Unknown"})\n` +
@@ -122,10 +127,15 @@ export const makeSpeedTestServiceLayer = (executor: SpeedTestExecutor) =>
     })
   );
 
-const liveExecutor: SpeedTestExecutor = () =>
-  speedTest({
+// speedtest-net cannot cancel during its first-run binary download (#416).
+export const liveExecutor: SpeedTestExecutor = (signal) => {
+  const cancel = speedTest.makeCancel();
+  signal.addEventListener("abort", () => cancel(), { once: true });
+  return speedTest({
     acceptLicense: true,
     acceptGdpr: true,
+    cancel,
   });
+};
 
 export const SpeedTestServiceLive = makeSpeedTestServiceLayer(liveExecutor);

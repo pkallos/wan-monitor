@@ -2,6 +2,8 @@ import {
   GetConnectivityStatusQuery,
   GetOutagesQuery,
 } from "@shared/api/routes/connectivity-status";
+import { GetMetricsQueryParams } from "@shared/api/routes/metrics";
+import { SpeedTestHistoryQuery } from "@shared/api/routes/speedtest";
 import { GetSummaryQuery } from "@shared/api/routes/summary";
 import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -9,6 +11,9 @@ import { describe, expect, it } from "vitest";
 describe.each([
   ["GetSummaryQuery", GetSummaryQuery],
   ["GetOutagesQuery", GetOutagesQuery],
+  ["GetMetricsQueryParams", GetMetricsQueryParams],
+  ["GetConnectivityStatusQuery", GetConnectivityStatusQuery],
+  ["SpeedTestHistoryQuery", SpeedTestHistoryQuery],
 ] as const)("%s time bounds", (_name, query) => {
   const decodeQuery = Schema.decodeUnknownResult(query);
 
@@ -44,14 +49,32 @@ describe.each([
   });
 });
 
-describe("existing routes", () => {
-  it("keep accepting free-form time bounds", () => {
-    expect(
-      Result.isSuccess(
-        Schema.decodeUnknownResult(GetConnectivityStatusQuery)({
-          startTime: "garbage",
-        })
-      )
-    ).toBe(true);
+describe.each([
+  ["GetMetricsQueryParams", GetMetricsQueryParams],
+  ["SpeedTestHistoryQuery", SpeedTestHistoryQuery],
+] as const)("%s limit", (_name, query) => {
+  const decodeQuery = Schema.decodeUnknownResult(query);
+
+  it.each(["1", "500"])("accepts the limit %j", (limit) => {
+    expect(Result.isSuccess(decodeQuery({ limit }))).toBe(true);
+  });
+
+  it.each(["-1", "1.5", "0", "abc", "", "9007199254740993"])(
+    "rejects the limit %j",
+    (limit) => {
+      expect(Result.isFailure(decodeQuery({ limit }))).toBe(true);
+    }
+  );
+
+  it("says what a valid limit looks like", () => {
+    const result = decodeQuery({ limit: "-1" });
+
+    expect(Result.isFailure(result) && String(result.failure)).toContain(
+      "Expected a positive integer"
+    );
+  });
+
+  it("accepts no limit", () => {
+    expect(Result.isSuccess(decodeQuery({}))).toBe(true);
   });
 });
