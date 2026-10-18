@@ -1,426 +1,153 @@
 # Agent Development Guidelines
 
-This document provides guidelines for AI agents working on the WAN Monitor project.
-
-## Project Overview
-
-WAN Monitor is a self-hosted network monitoring dashboard that tracks:
-- Network connectivity status
-- Latency (ping times)
-- Packet loss and jitter
-- Internet speed tests
-- Historical metrics with time-series visualization
-
-## Core Responsibilities
-
-Understand requirements before starting, follow existing conventions, test everything, and update docs when behavior changes. The sections below define how each of these is enforced.
+This file sets the rules for coding agents working in this repository. For what the product does and how to run it, see [README.md](./README.md).
 
 ## Always-On Rules
 
-These rules apply to every response and every change, regardless of task:
+These rules apply to every response and every change.
 
-- **No agent attribution in commits**: Never add `Co-Authored-By` or other agent/AI attribution to commit messages.
-- **No agent labels in GitHub metadata**: Never use `[cascade]`, `[codex]`, `[copilot]`, or similar agent labels in user-visible GitHub metadata (PR titles, descriptions, commit messages, comments) unless explicitly requested.
-- **PRs are ready for review by default**: Open PRs as ready for review, not drafts, unless the user explicitly asks for a draft.
-- **Verify dependency versions before adding them**: When adding a package dependency or framework integration, verify the current latest compatible version first with `pnpm view <pkg> version` (or current docs). Do not rely on remembered version numbers.
+- **No agent attribution in commits**: Never add `Co-Authored-By` or other agent or AI attribution to commit messages.
+- **No agent labels in GitHub metadata**: Never use `[cascade]`, `[codex]`, `[copilot]` or similar agent labels in user-visible GitHub metadata (PR titles, descriptions, commit messages, comments), unless the user explicitly asks for one.
+- **PRs are ready for review by default**: Open PRs as ready for review, not as drafts, unless the user explicitly asks for a draft.
+- **Verify dependency versions before adding them**: Before adding a package dependency or framework integration, check the current latest compatible version with `pnpm view <pkg> version` or the current docs. Do not rely on a remembered version.
 
 ## Final Status Block
 
-Every final response must end with a one-line status block using one of these indicators:
+End every final response with one status line: an indicator, then a short sentence about this task (never placeholder text).
 
-- `🟢` — the requested work unit is finished on the current branch (routine commit/PR/CI may remain).
-- `🟡` — non-routine work or a manual step is still pending.
-- `🔴` — blocked on user input.
-
-Write a short, task-specific status sentence after the indicator (never the literal placeholder text).
+- `🟢` The requested work unit is finished on the current branch. A routine commit, PR or CI run may remain.
+- `🟡` Non-routine work or a manual step is still pending.
+- `🔴` The task is blocked on user input.
 
 ## UI/Styling Standards
 
-- **Tailwind CSS**: Lean on Tailwind CSS styles for all styling (check documentation online if necessary) and keep it coherent
-- **Foldkit UI**: Lean on `@foldkit/ui` components (see `docs/foldkit/ui/`) before hand-rolling a widget
-- **TypeScript everywhere**: All source files are TypeScript. Do not add `.js` or `.mjs` source files.
-- **No native browser dialogs**: Never use `alert()`, `confirm()`, or `prompt()`. Use `@foldkit/ui`'s `Dialog` component instead.
-- **Optimistic UI by default**: Update local state/cache and navigate immediately, then roll back on error. Avoid click-blocking spinners except for destructive or irreversible operations.
+- **Tailwind CSS**: Style with Tailwind utility classes, consistent with the existing views.
+- **Foldkit UI**: Use a `@foldkit/ui` component ([catalog](https://foldkit.dev/ui/overview)) before hand-rolling a widget.
+- **TypeScript**: Write new source files in TypeScript. Do not add `.js` or `.mjs` source files.
+- **No native browser dialogs**: Never use `alert()`, `confirm()` or `prompt()`. Use `@foldkit/ui`'s `Dialog` component.
+- **Optimistic UI by default**: Update local state or cache and navigate immediately, then roll back on error. Reserve click-blocking spinners for destructive or irreversible operations.
 
 ## Development Workflow
 
-### 1. Task Planning
+Scope each task to one PR, and break large work into PR-sized pieces. If the user names an issue (GitHub or Linear), reference it in the PR.
 
-Before working on any feature:
-- A Linear task MUST be created in the **PHI project**
-- The task should include a **full detailed description** of what needs to be done
-- Tasks should be scoped to be completable in **one PR with a simple changeset**
-- Break down large features into multiple smaller, incremental tasks
-- Keep Linear status synchronized (see **Linear Task Status Management** section)
+### Branches
 
-### 2. Branch Management
+Branch from the tip of `origin/main`, not from a possibly stale local branch. Name the branch `<type>/<slug>`, where the type is `feat`, `fix`, `chore`, `docs` or `test`:
 
-For each task:
-- **Always create feature branches from the tip of `origin/main`** (not a potentially stale local branch):
-  ```bash
-  git fetch origin
-  git checkout -b feat/feature-name origin/main
-  ```
-
-- Use conventional branch naming:
-  - `feat/feature-name` - for new features
-  - `fix/bug-name` - for bug fixes
-  - `chore/task-name` - for maintenance tasks
-  - `docs/update-name` - for documentation updates
-  - `test/test-name` - for test additions/updates
-
-### 3. Commit Conventions
-
-**Use Conventional Commits format for all commits:**
-
-```
-<type>: <short description>
-
-<optional longer description>
-
-<optional footer with breaking changes>
+```bash
+git fetch origin
+git checkout -b feat/feature-name origin/main
 ```
 
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, missing semicolons, etc.)
-- `refactor`: Code refactoring without changing functionality
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks, dependency updates, etc.
-- `perf`: Performance improvements
-- `ci`: CI/CD configuration changes
+### Commits
 
-This convention governs commit hygiene; it does not drive releases. Release notes come from Changesets
-files (see step 2 of **Pull Request Process** below).
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>: <short description>`, with an optional body and an optional footer for breaking changes. The types are `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf` and `ci`. Changesets, not commit types, produce release notes; see [Releasing](./README.md#releasing).
 
-### 4. Single Commit Per Feature
+A task lands as one commit. Squash intermediate commits before every push, including pushes to an open PR, and write a descriptive message.
 
-All changes for a task must land as **ONE commit** before pushing. Squash any intermediate commits (see **Non-Interactive Commands** for how) and write a descriptive message. This single-commit rule applies to every push, including updates to an existing PR.
+Run `pnpm format` before every commit, so that `pnpm format:check` passes. The pre-commit hook runs lint-staged, which uses Biome to format only the staged `.ts`, `.tsx`, `.json` and `.jsonc` files. The hook does not replace `pnpm format`.
 
-### 5. Pull Request Process
+### Pull Requests
 
-When the feature is complete:
-
-1. **Verify locally (MANDATORY - DO NOT SKIP):**
-
-   Execute these commands IN ORDER and ensure ALL pass:
+1. Verify locally. Run these in order and fix any failure before pushing. CI (`.github/workflows/ci.yml`) runs these gates and more. When a command here differs from the one CI runs, follow CI.
 
    ```bash
-   # 1. Lint Check - must pass with zero errors (warnings acceptable)
    pnpm lint
-
-   # 2. Format Check - must pass, all files properly formatted
-   pnpm format
-
-   # 3. Unit Tests - must pass, all tests passing, no skipped tests
+   pnpm format:check
    pnpm test
-
-   # 4. Type Check - must pass with zero errors
    pnpm typecheck
-
-   # 5. Build - must succeed
+   pnpm typecheck:e2e
    pnpm build
-
-   # 6. Docker Build - must build successfully
    pnpm docker:build
-
-   # 7. Boot the image and wait for /api/health/ready (QuestDB and migrations included)
    pnpm docker:smoke
    ```
 
-   **CRITICAL:** If ANY step fails, fix it before pushing. Do NOT push with failing checks.
+   `pnpm lint` must report no errors and no warnings. All tests must pass, and none may be marked `.skip` or `.only`. `pnpm test` skips the QuestDB integration suites by design, so when you change the database layer, queries or migrations, also run `pnpm test:integration`, which starts its own QuestDB test container. `pnpm docker:smoke` boots the image and waits for `/api/health/ready`, which fails until QuestDB is connected and migrations have finished.
 
-2. **Add a changeset if the PR should appear in the release notes:**
-   ```bash
-   pnpm changeset
-   ```
-   Skip this only for changes with no user-facing or release-worthy effect (pure chores, docs, CI tweaks);
-   otherwise CI's changeset-check will fail the PR. Commit the generated `.changeset/*.md` file.
+2. Add a changeset (`pnpm changeset`) and commit the generated `.changeset/*.md` file, or label the PR `no-changeset` when it has no release-worthy effect.
 
-3. **Push the branch:**
-   ```bash
-   git push -u origin feat/your-feature-name
-   ```
+3. Push the branch with `git push -u origin <branch>`.
 
-4. **Open a Pull Request on GitHub:**
-   - Title should match the commit message
-   - Include detailed description of changes
-   - Reference the Linear task ID
-   - Add `@pkallos` as the reviewer
+4. Open the PR. Its title matches the commit message, and its description covers the changes in detail.
 
-5. **Review and Iterate:**
-   - @pkallos reviews and provides feedback; make changes in the same branch.
-   - Before every re-push (whether for review feedback or a CI failure): re-run the full verify list from step 1, review the changeset, then **squash into one commit** and force push: `git push -f origin branch-name`.
-   - For CI failures, read the logs, reproduce locally, fix, then re-run **all** checks — not just the one that failed. **NEVER push multiple "fix CI" commits.**
+5. Make review changes on the same branch. Before every re-push, whether for review feedback or a CI failure, re-run every check in step 1 (not only the check that failed), review the diff and the changeset file, then squash into one commit and force-push with `git push -f origin <branch>`. For a CI failure, read the logs and reproduce it locally first. Never push separate "fix CI" commits.
 
-6. **After Merge:**
-   - Delete the feature branch
-   - **Update the Linear task status to "Done"** (when user confirms PR is merged)
-   - Move on to the next task
+6. After the merge, delete the feature branch.
 
-### 6. Linear Task Status Management
+## Pre-Push Review
 
-**Keep Linear task statuses synchronized with actual work progress:**
+Before committing, run `git status` and `git diff` and review the whole change against the original goal, as a principal engineer would. Apply the feedback that fits the goal and the project standards.
 
-| When | Action |
-|------|--------|
-| Starting work on a task | Set status → **In Progress** |
-| PR is merged (user confirms) | Set status → **Done** |
-| Blocked on something | Update status + add comment explaining blocker |
-| Pausing to work on something else | Consider updating status |
+A commit holds only the production code and tests the task needs. Keep these out of it:
 
-**Important:** When the user tells you a PR has been merged, immediately update the corresponding Linear task status to "Done".
+- Markdown files created for context (`notes.md`, `progress.md`), debug files and temporary test files.
+- IDE files that are not already tracked, such as `.idea/`.
+- Commented-out code.
+- `console.log()` and other debug statements.
+- A `TODO` or `FIXME` with no corresponding issue.
 
-### 7. Linear Issue Tagging Guidelines
+Before pushing, confirm that each item below holds, and fix any that does not.
 
-**All Linear issues should be tagged consistently to enable filtering, prioritization, and organization.**
-
-#### Tagging Convention
-
-Use a **two-tier tagging system**:
-
-1. **Type tag** (required, exactly one): `Feature`, `Bug`, or `Improvement`
-2. **Area tags** (1-3 recommended): Component/domain-specific tags
-3. **Priority/Effort tags** (optional): Special characteristics
-
-#### Available Labels
-
-**Type Labels (choose exactly one):**
-
-- `Feature` - New functionality or capability
-- `Bug` - Defect, error, or incorrect behavior
-- `Improvement` - Enhancement to existing functionality
-
-**Area Labels (choose 1-3 that apply):**
-
-- `backend` - Server-side, API, database, Effect services
-- `frontend` - UI, Foldkit views, charts, styling
-- `devops` - Docker, CI/CD, deployment, infrastructure
-- `testing` - Test infrastructure, unit tests, E2E tests
-- `monitoring` - Ping, speedtest, metrics collection
-- `reliability` - Error handling, retries, resilience, health checks
-- `documentation` - README, guides, API docs, code comments
-- `performance` - Optimization, caching, efficiency improvements
-
-**Priority/Effort Labels (optional):**
-
-- `quick-win` - Small, high-impact tasks (< 2 hours)
-- `tech-debt` - Refactoring, cleanup, code quality
-- `breaking-change` - Requires migration or version bump
-
-#### Tagging Guidelines
-
-**When creating a new Linear issue:**
-
-1. Always add exactly one Type label (Feature, Bug, or Improvement)
-2. Add 1-3 Area labels that best describe the work scope
-3. Add Priority/Effort labels if applicable
-4. Be specific but not excessive - avoid over-tagging
-
-**Examples:** `["Feature", "backend"]` (API endpoint), `["Bug", "frontend"]` (UI fix), `["Improvement", "devops", "documentation", "quick-win"]` (docs), `["Improvement", "devops", "breaking-change"]` (CI migration).
-
-**Agent responsibility:** Verify tags before starting; add or correct labels when an issue is untagged, under-tagged, or its scope changes.
-
-## Pre-Push Review (MANDATORY)
-
-Before committing, run `git status` and `git diff` to review ALL changes. Review the entire changeset against the original goal, and give yourself a constructive code review as if you were a Principal Engineer. Implement feedback that aligns with the original goal and project standards.
-
-### Files to REMOVE (never commit these):
-- ❌ Markdown files created for context (e.g., `notes.md`, `progress.md`, `temp.md`)
-- ❌ Debug files (e.g., `debug.log`, `test-output.txt`)
-- ❌ IDE-specific files (e.g., `.vscode/`, `.idea/`)
-- ❌ Temporary test files (e.g., `temp.test.ts`, `scratch.tsx`)
-
-### Verify in All Files in the Changeset:
-- ✅ Contains only production code changes relevant to the task
-- ✅ Contains only relevant test files for the changes made
-- ✅ No commented-out code blocks
-- ✅ No `console.log()` or debug statements
-- ✅ No `TODO` or `FIXME` comments without corresponding issues
-
-### Quality Checklist (answer YES to ALL before pushing):
-
-- **Functionality**: Accomplishes the original goal, works in light/dark mode and across screen sizes, and handles edge cases.
-- **Code quality**: Readable, well-named, follows existing patterns, and free of avoidable duplication or needless complexity.
-- **Performance**: No unnecessary re-renders, no leaked listeners/timers, expensive work memoized.
-- **Security**: User input validated, no XSS vectors (secrets are covered in **Data & Migration Safety**).
-
-**If any answer is NO, fix it before pushing.**
+- **Functionality**: The change accomplishes the original goal, works in light and dark mode and across screen sizes, and handles edge cases.
+- **Code quality**: The code is readable, well named, consistent with existing patterns and free of avoidable duplication and needless complexity.
+- **Performance**: There are no unnecessary re-renders, no leaked listeners or timers and no expensive work left unmemoized.
+- **Security**: All user input is validated, and there are no XSS vectors.
 
 ## Data & Migration Safety
 
-WAN Monitor persists historical time-series metrics. Losing or corrupting that data is unacceptable.
-
-- **Every schema change is a new versioned migration**: Append it to `apps/server/src/infrastructure/database/questdb/migrations/registry.ts`. Never edit a shipped migration or the column list it freezes (such as `NETWORK_METRICS_V2_COLUMNS`). Changing `NETWORK_METRICS_COLUMNS` needs a new migration that brings existing tables to the new shape; the integration test "creates exactly the declared schema on an empty database" (`schema-migrator.integration.test.ts`) fails until there is one.
+- **Every schema change is a new versioned migration**: Append it to `apps/server/src/infrastructure/database/questdb/migrations/registry.ts`. Never edit a shipped migration or the column list it freezes, such as `NETWORK_METRICS_V2_COLUMNS`. Changing `NETWORK_METRICS_COLUMNS` (in `packages/shared/src/db-schema.ts`) needs a new migration that brings existing tables to the new shape. Until there is one, the integration test "creates exactly the declared schema on an empty database" (`schema-migrator.integration.test.ts`) fails under `pnpm test:integration`.
 - **Migrations are idempotent**: Each `up` must be safe to run again after a partial or repeated run.
-- **Prefer additive schema changes**: Add new columns or tables and backfill them. Never drop a column or table that still holds data, except the original table at the end of a verified rebuild or the rebuild's own unverified copy.
-- **Rewriting a table goes only through the verified rebuild**: Use `rebuildTable` (copy, prove the copy complete, swap, prove again, then drop the original). No production code outside `rebuildTable` and `recoverTableState` in `rebuild.ts` drops, renames or truncates a table.
-- **In-place value corrections are verified by a digest**: A migration that `UPDATE`s stored values reads `readDigest` before and after and fails with a sticky terminal `MigrationError`, which the runner records so it survives a retry, unless `digestMismatches` finds only the changes the correction predicts.
-- **No destructive operations against production data**: Never run ad hoc schema changes or destructive SQL against a live/production database. Only registered migrations run there.
-- **Never hardcode secrets**: Do not commit API keys, tokens, webhook URLs, or credential-looking literals in source, docs, tests, fixtures, or generated content. Use environment variables and obviously fake placeholders in examples.
+- **Prefer additive schema changes**: Add new columns or tables and backfill them. Never drop a column or table that still holds data. The only exceptions are a rebuild's original table once the rebuild is verified, and the rebuild's own copy while it is unverified.
+- **Rewrite a table only through the verified rebuild**: Use `rebuildTable`, which copies the table, proves the copy complete, swaps it in, proves it again, then drops the original. No production code outside `rebuildTable` and `recoverTableState` in `rebuild.ts` drops, renames or truncates a table.
+- **Verify in-place value corrections with a digest**: A migration that `UPDATE`s stored values calls `readDigest` before and after. The migration fails with a sticky terminal `MigrationError` unless `digestMismatches` finds only the changes the correction predicts. The runner records the error, so the failure survives a retry.
+- **No destructive operations against production data**: Never run ad hoc schema changes or destructive SQL against a live or production database. Only registered migrations run there.
+- **Never hardcode secrets**: Do not commit API keys, tokens, webhook URLs or credential-looking literals in source, docs, tests, fixtures or generated content. Use environment variables and obviously fake placeholders in examples.
 
 ## Code Quality Standards
 
-### Testing Standards
+### Testing
 
-**Requirements:**
-- **New features** must include unit tests for all new functions/components
-- **Bug fixes** must include regression tests
-- Tests must cover edge cases, not just happy paths
-- Aim for high test coverage on critical paths
-- Use Vitest for unit tests
+- A new feature ships with Vitest unit tests for all its new functions and components, and a bug fix ships with a regression test.
+- Tests cover edge cases, not only the happy path, and fail if the feature they cover breaks.
+- Never skip a test (`test.skip`, `it.skip`, `describe.skip`) or commit an `.only` test (`test.only`, `it.only`).
+- Never create a test that asserts nothing meaningful or covers only the happy path.
+- Never compromise functionality to make a test pass, unless you are fixing a real bug.
+- Never delete a test to make the suite pass, unless the code it covered was removed.
+- Never rewrite real code just to make a test pass, unless the test identified a real bug.
+- Keep tests and code in sync with each other.
 
-**Quality Standards (MANDATORY - NO EXCEPTIONS):**
+### Linting
 
-- **NEVER** skip tests (`test.skip`, `it.skip`, `describe.skip`)
-- **NEVER** commit `.only` tests (`test.only`, `it.only`)
-- **NEVER** create tests that don't assert anything meaningful
-- **NEVER** create happy-path-only tests; tests should provide meaningful value
-- **NEVER** compromise functionality to make tests pass (unless fixing a real bug)
-- **NEVER** delete tests to make tests pass (unless corresponding code was removed)
-- **NEVER** rewrite real code just to make tests pass (unless tests identified a real bug)
-- Tests should fail if the feature breaks
-- Tests should be maintainable and readable
-- Always keep tests in sync with code
-- Always keep code in sync with tests
-- Keep linting rules with minimal ignores
-
-### Linting Standards (MANDATORY - NO EXCEPTIONS)
-
-- **NEVER** add `biome-ignore` comments to the codebase. Fix the underlying lint violation instead of suppressing it.
-- If a rule genuinely needs to be relaxed, change the Biome configuration explicitly rather than scattering inline suppressions.
-- **NEVER** use `as unknown as` double casts. They defeat type safety — there is always a better way (fix the type, add a proper type guard, decode through a schema, or use `@ts-expect-error` in tests when deliberately exercising invalid input).
+- Never add `biome-ignore` comments. Fix the underlying lint violation.
+- If a rule genuinely needs to be relaxed, change the Biome configuration (`biome.json`) explicitly rather than scattering inline suppressions.
+- Never use `as unknown as` double casts, which defeat type safety. Fix the type, add a type guard, decode through a schema or use `@ts-expect-error` in a test that passes invalid input on purpose.
 
 ### Documentation
 
-- Update README.md when adding new features
-- Add JSDoc comments for complex functions
-- Update API documentation if backend changes are made
+- Update `README.md` in the same PR when you add a feature or change the configuration, the API or the user-visible behavior.
+- Add JSDoc comments to complex functions.
+- Docs describe current behavior. Change history goes in commits and changesets.
 
-## Non-Interactive Commands (CRITICAL)
+## Non-Interactive Commands
 
-**AI agents cannot interact with terminal prompts or editors.** Commands that open vim, nano, or wait for user input will hang indefinitely.
-
-All commands should be non-interactive. This is especially important for git operations like rebasing and squashing branches. Avoid interactive rebasing (`git rebase -i`), editors (`vim`, `nano`), and pagers (`less`, `more`). Always use flags like `--no-edit`, `-m`, or non-interactive alternatives.
+Run every command non-interactively. Agents cannot answer prompts, so a command that opens an editor, a pager or a prompt hangs forever. Avoid `git rebase -i`, `vim`, `nano`, `less` and `more`. When rebasing or squashing, pass non-interactive flags such as `--no-edit`.
 
 ### Commit Messages
 
-**NEVER pass multi-line commit messages as quoted `-m` strings.** Inline heredocs and multi-line quoted arguments are brittle in the agent shell (quoting/escaping breaks, and they can hang or corrupt the message). Instead, write the message to a temp file and use `-F`:
+Never pass a multi-line commit message as a quoted `-m` string or a heredoc; quoting breaks in the agent shell. Use your file-writing tool (not `echo` or a heredoc) to write the message to a file outside the repo, so it is never staged. Then commit with `-F`:
 
 ```bash
-# Write the message with the write_to_file tool (NOT via echo/heredoc):
-#   /tmp/commit-msg.txt
 git commit -F /tmp/commit-msg.txt
 git commit --amend -F /tmp/commit-msg.txt   # when amending
 ```
 
-- A single-line message may use `-m "..."`.
-- Any message with a body (multiple lines / blank lines) MUST use `-F <file>`.
-- The message file is a scratch artifact — write it outside the repo (e.g. `/tmp`) so it is never staged or committed.
+A one-line message may use `-m "..."`. A message with a body must use `-F <file>`.
 
 ## Effect-TS Best Practices
 
-**📚 Full reference library: [`docs/effect-ts/`](./docs/effect-ts/).** Before writing or reviewing
-Effect code, read the topic that matches your task — every pattern there is grounded in real files in
-this repo:
+Before writing or reviewing Effect code, read the matching topic in [`docs/effect-ts/`](./docs/effect-ts/README.md). Those docs are authoritative. When you change an Effect pattern in the code, update its doc in the same PR. Three rules apply everywhere:
 
-- [`docs/effect-ts/README.md`](./docs/effect-ts/README.md) — index, library versions, house rules
-- [`services-and-layers.md`](./docs/effect-ts/services-and-layers.md) — `Context.Service`, `Layer.*`, dependency graph
-- [`error-handling.md`](./docs/effect-ts/error-handling.md) — tagged errors, `catchTag`, wrapping Promises
-- [`effect-gen-and-composition.md`](./docs/effect-ts/effect-gen-and-composition.md) — `Effect.gen`, `pipe`, fibers, runners
-- [`schema.md`](./docs/effect-ts/schema.md) — `Schema.Struct`, deriving types, decode/encode
-- [`configuration.md`](./docs/effect-ts/configuration.md) — `Config`, `ConfigProvider`, test injection
-- [`http-api.md`](./docs/effect-ts/http-api.md) — `HttpApi*`, handlers, middleware, typed errors
-- [`testing.md`](./docs/effect-ts/testing.md) — `@effect/vitest`, `it.effect`, mock layers
-
-The rules below are the quick summary; the docs above are authoritative. Keep them in sync — if you
-change an Effect pattern in the codebase, update the matching doc in the same PR.
-
-This project uses Effect-TS for functional programming. Follow these idiomatic patterns:
-
-### Pattern Matching and Type Guards
-
-**❌ DON'T** check `_tag` directly:
-```typescript
-// Bad - direct _tag checks
-if (result._tag === 'Left') { ... }
-if (exit._tag === 'Failure') { ... }
-if (option._tag === 'Some') { ... }
-```
-
-**✅ DO** use Effect's type guards and pattern matching:
-
-```typescript
-// Result - use Result.match or type guards
-import { Result } from 'effect';
-
-// Pattern matching
-Result.match(result, {
-  onFailure: (error) => { /* handle error */ },
-  onSuccess: (value) => { /* handle success */ },
-});
-
-// Type guards
-if (Result.isFailure(result)) {
-  const error = result.failure;
-}
-if (Result.isSuccess(result)) {
-  const value = result.success;
-}
-
-// Exit - use Exit.match or type guards
-import { Exit } from 'effect';
-
-if (Exit.isFailure(exit)) {
-  const cause = exit.cause;
-}
-if (Exit.isSuccess(exit)) {
-  const value = exit.value;
-}
-
-// Option - use Option.match or type guards
-import { Option } from 'effect';
-
-if (Option.isSome(option)) {
-  const value = option.value;
-}
-if (Option.isNone(option)) {
-  // handle none
-}
-```
-
-### Error Definitions
-
-Define tagged errors with Effect's built-in constructors. **Never hand-roll a plain class with a manual `readonly _tag` field** — it doesn't extend `Error` (no stack traces, `instanceof Error` is false), has no value equality, and duplicates boilerplate.
-
-**Domain errors (in-process only)** — use `Data.TaggedError`:
-
-```typescript
-import { Data } from 'effect';
-
-export class PingTimeoutError extends Data.TaggedError('PingTimeoutError')<{
-  readonly host: string;
-  readonly timeoutMs: number;
-}> {}
-
-// Construction uses a props object:
-new PingTimeoutError({ host, timeoutMs });
-```
-
-Benefits: `_tag` is set automatically, the class extends `Error` (real stack traces + `instanceof Error`), you get value equality/hashing via `Data`, and a typed props constructor.
-
-**Serializable / API-boundary errors** — use `Schema.TaggedError` (so they encode/decode across the HTTP boundary), as in `packages/shared/src/api/middlewares/authorization.ts`:
-
-```typescript
-import { Schema } from "effect";
-
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
-  "Unauthorized",
-  { message: Schema.String },
-  { httpApiStatus: 401 }
-) {}
-```
-
-Rule of thumb: if the error only ever flows through the Effect error channel in-process, use `Data.TaggedError`. If it crosses a serialization boundary (HTTP response, worker message), use `Schema.TaggedError`. Discriminate either kind with `catchTag` / Effect type guards — never with direct `_tag` comparisons.
+- Never compare `_tag` on a `Result`, `Exit`, `Option` or error. Use `Result.isFailure` and `isSuccess`, `Exit.isFailure` and `isSuccess`, `Option.isSome` and `isNone`, the `match` function of each, or `Effect.catchTag`.
+- Errors that stay in-process extend `Data.TaggedError`. Errors that cross the HTTP boundary extend `Schema.TaggedError` with an `httpApiStatus` annotation. Never hand-roll a plain class with a manual `_tag` field.
+- Effect v4 has no `Either`. `Effect.result` returns a `Result`; narrow it with `Result.isFailure` or `Result.isSuccess`, then read `failure` or `success`.
