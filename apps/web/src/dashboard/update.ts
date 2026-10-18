@@ -185,30 +185,6 @@ const refetchEarliestDataForAllTime =
       ? refetchEarliestData(context)(model)
       : { model };
 
-const revalidateMetrics =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.revalidate(model.metrics), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { metrics: () => next }),
-        commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
-      }),
-    });
-
-const revalidateSpeedtestHistory =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.revalidate(model.speedtestHistory), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { speedtestHistory: () => next }),
-        commands: rangeFetches(model, [
-          fetchSpeedtestHistoryCommand(context, model),
-        ]),
-      }),
-    });
-
 // A tick retries what failed as well as refreshing what loaded, so one
 // transient failure does not stay on screen while auto-refresh reads "on". A
 // failure stays as it is while the retry is in flight, so a source that keeps
@@ -218,6 +194,30 @@ const revalidateOrRetry = <A, E>(
   data: AsyncData.AsyncData<A, E>
 ): Option.Option<AsyncData.AsyncData<A, E>> =>
   AsyncData.isFailure(data) ? Option.some(data) : AsyncData.revalidate(data);
+
+const revalidateOrRetryMetrics =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(revalidateOrRetry(model.metrics), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { metrics: () => next }),
+        commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
+      }),
+    });
+
+const revalidateOrRetrySpeedtestHistory =
+  (context: Context) =>
+  (model: Model): StepReturn =>
+    Option.match(revalidateOrRetry(model.speedtestHistory), {
+      onNone: () => ({ model }),
+      onSome: (next) => ({
+        model: modifyFields(model, { speedtestHistory: () => next }),
+        commands: rangeFetches(model, [
+          fetchSpeedtestHistoryCommand(context, model),
+        ]),
+      }),
+    });
 
 // A Stale live status is one the latest fetch could not confirm, so its
 // refetch starts from Loading rather than showing that value again while the
@@ -783,8 +783,8 @@ export const update = (
 
       TickedRefresh: () =>
         Update.combine(model, [
-          revalidateMetrics(context),
-          revalidateSpeedtestHistory(context),
+          revalidateOrRetryMetrics(context),
+          revalidateOrRetrySpeedtestHistory(context),
           revalidateOrRetryConnectivityStatus(context),
           revalidateLiveConnectivity(context),
           revalidateOrRetrySummary(context),
@@ -1184,18 +1184,25 @@ export const update = (
             },
           }
         );
+        const { model: reloaded, commands: reloadCommands = [] } =
+          Update.combine(
+            modifyFields(model, {
+              speedtestTrigger: () =>
+                AsyncData.Success({
+                  data: { downloadMbps, uploadMbps, pingMs },
+                }),
+              toast: () => toastModel,
+            }),
+            [
+              reloadMetrics(context),
+              reloadSpeedtestHistory(context),
+              reloadSummary(context),
+            ]
+          );
         return {
-          model: modifyFields(model, {
-            speedtestTrigger: () =>
-              AsyncData.Success({ data: { downloadMbps, uploadMbps, pingMs } }),
-            toast: () => toastModel,
-          }),
+          model: reloaded,
           commands: [
-            ...rangeFetches(model, [
-              fetchMetricsCommand(context, model),
-              fetchSpeedtestHistoryCommand(context, model),
-              fetchSummaryCommand(context, model),
-            ]),
+            ...reloadCommands,
             ...Command.mapMessages(toastCommands ?? [], (message) =>
               GotToastMessage({ message })
             ),

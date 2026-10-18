@@ -69,7 +69,7 @@ async function mockAuthEnabled(page: Page): Promise<void> {
     await route.fulfill({
       status: 401,
       contentType: "application/json",
-      body: JSON.stringify("Unauthorized"),
+      body: JSON.stringify({ _tag: "Unauthorized", message: "Invalid token" }),
     });
   });
 

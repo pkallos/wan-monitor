@@ -2,9 +2,19 @@ import { Menu } from "@foldkit/ui";
 import { Option } from "effect";
 import { Scene } from "foldkit";
 import { describe, test } from "vitest";
-import { ClearSession, Logout } from "@/auth/command";
-import { CompletedClearSession, CompletedLogout } from "@/auth/message";
-import { Checking, initLoggedOut, LoggedIn, Session } from "@/auth/model";
+import { ClearSession, FetchAuthStatus, Logout } from "@/auth/command";
+import {
+  CompletedClearSession,
+  CompletedLogout,
+  FailedFetchAuthStatus,
+} from "@/auth/message";
+import {
+  Checking,
+  initLoggedOut,
+  LoggedIn,
+  Session,
+  Unreachable,
+} from "@/auth/model";
 import { update } from "@/auth/update";
 import { view } from "@/auth/view";
 import {
@@ -54,6 +64,15 @@ const resolveMenuMounts = () => [
   ]),
 ];
 
+const unreachable = (retry: Unreachable["retry"]) =>
+  Unreachable({
+    token: "stored-token",
+    settings: defaultSettings(),
+    retry,
+  });
+
+const ANNOUNCEMENT = Scene.testId("unreachable-announcement");
+
 describe("auth view", () => {
   test("shows a loading indicator while checking auth status", () => {
     Scene.scene(
@@ -62,6 +81,78 @@ describe("auth view", () => {
         Checking({ maybeToken: Option.none(), settings: defaultSettings() })
       ),
       Scene.expect(Scene.role("status")).toExist()
+    );
+  });
+
+  test("tells the user the server cannot be reached instead of showing the login form", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(unreachable("Idle")),
+      Scene.expect(Scene.role("alert")).toHaveText("Cannot reach the server."),
+      Scene.expect(Scene.role("button", { name: "Retry" })).toBeEnabled(),
+      Scene.expect(Scene.role("button", { name: "Sign out" })).toExist(),
+      Scene.expect(Scene.role("button", { name: "Sign in" })).not.toExist(),
+      Scene.expect(ANNOUNCEMENT).toHaveText("")
+    );
+  });
+
+  test("Retry stays focusable while the check runs and announces it", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(unreachable("Idle")),
+      Scene.click(Scene.role("button", { name: "Retry" })),
+      Scene.expect(Scene.role("button", { name: "Retrying…" })).toBeDisabled(),
+      Scene.expect(Scene.role("button", { name: "Retrying…" })).toHaveAttr(
+        "aria-disabled",
+        "true"
+      ),
+      Scene.expect(Scene.role("button", { name: "Retrying…" })).not.toHaveAttr(
+        "disabled"
+      ),
+      Scene.expect(Scene.role("alert")).toHaveText("Cannot reach the server."),
+      Scene.expect(ANNOUNCEMENT).toHaveText("Retrying…"),
+      Scene.Command.resolve(
+        FetchAuthStatus,
+        FailedFetchAuthStatus({ error: "TransportError" })
+      )
+    );
+  });
+
+  test("a failed Retry announces that the server is still unreachable and re-enables Retry", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(unreachable("Idle")),
+      Scene.click(Scene.role("button", { name: "Retry" })),
+      Scene.Command.resolve(
+        FetchAuthStatus,
+        FailedFetchAuthStatus({ error: "TransportError" })
+      ),
+      Scene.expect(ANNOUNCEMENT).toHaveText("Still cannot reach the server."),
+      Scene.expect(Scene.role("button", { name: "Retry" })).toBeEnabled(),
+      Scene.expect(Scene.role("alert")).toHaveText("Cannot reach the server.")
+    );
+  });
+
+  test("the pending Retry keeps the disabled look in both themes", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(unreachable("Running")),
+      Scene.expect(Scene.role("button", { name: "Retrying…" })).toHaveClass(
+        "aria-disabled:opacity-50"
+      ),
+      Scene.expect(Scene.role("button", { name: "Retrying…" })).toHaveClass(
+        "aria-disabled:cursor-not-allowed"
+      )
+    );
+  });
+
+  test("Sign out from the unreachable screen shows the login form", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(unreachable("Idle")),
+      Scene.click(Scene.role("button", { name: "Sign out" })),
+      Scene.Command.resolve(ClearSession, CompletedClearSession()),
+      Scene.expect(Scene.role("button", { name: "Sign in" })).toExist()
     );
   });
 

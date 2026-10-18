@@ -4,6 +4,7 @@ import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
 import {
   ClearSession,
+  FetchAuthStatus,
   FetchMe,
   Login,
   Logout,
@@ -12,12 +13,16 @@ import {
 import {
   ChangedPassword,
   ChangedUsername,
+  ClickedRetryConnection,
+  ClickedSignOut,
   CompletedClearSession,
   CompletedLogout,
   CompletedSaveSession,
+  FailedFetchAuthStatus,
   FailedFetchMe,
   FailedLogin,
   GotDashboardMessage,
+  RejectedToken,
   SubmittedLogin,
   SucceededFetchAuthStatus,
   SucceededFetchMe,
@@ -30,6 +35,7 @@ import {
   LoggedOut,
   type Model,
   Session,
+  Unreachable,
 } from "@/auth/model";
 import { update } from "@/auth/update";
 import {
@@ -280,7 +286,7 @@ describe("auth update", () => {
           settings: defaultSettings(),
         })
       ),
-      Story.message(FailedFetchMe({ error: "unauthorized" })),
+      Story.message(RejectedToken()),
       Story.Command.expectExact(ClearSession),
       Story.Command.resolve(ClearSession, CompletedClearSession()),
       Story.model((model) => {
@@ -288,6 +294,328 @@ describe("auth update", () => {
       })
     );
   });
+
+  test("a stored token the server could not check is kept, with the session left in storage", () => {
+    const settings = defaultSettings();
+
+    Story.story(
+      update,
+      Story.given(
+        Checking({ maybeToken: Option.some("stored-token"), settings })
+      ),
+      Story.message(FailedFetchMe({ error: "TransportError" })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model).toEqual(
+          Unreachable({ token: "stored-token", settings, retry: "Idle" })
+        );
+      })
+    );
+  });
+
+  test("an unreachable server on the status check keeps a stored token", () => {
+    const settings = defaultSettings();
+
+    Story.story(
+      update,
+      Story.given(
+        Checking({ maybeToken: Option.some("stored-token"), settings })
+      ),
+      Story.message(FailedFetchAuthStatus({ error: "TransportError" })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model).toEqual(
+          Unreachable({ token: "stored-token", settings, retry: "Idle" })
+        );
+      })
+    );
+  });
+
+  test("an unreachable server on the status check with no stored token shows the login form", () => {
+    Story.story(
+      update,
+      Story.given(
+        Checking({ maybeToken: Option.none(), settings: defaultSettings() })
+      ),
+      Story.message(FailedFetchAuthStatus({ error: "TransportError" })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model._tag).toBe("LoggedOut");
+      })
+    );
+  });
+
+  test("retrying from Unreachable stays on that screen, checks the status again and then the token", () => {
+    const settings = defaultSettings();
+
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({ token: "stored-token", settings, retry: "Idle" })
+      ),
+      Story.message(ClickedRetryConnection()),
+      Story.Command.expectExact(FetchAuthStatus()),
+      Story.model((model) => {
+        expect(model).toEqual(
+          Unreachable({ token: "stored-token", settings, retry: "Running" })
+        );
+      }),
+      Story.Command.resolve(
+        FetchAuthStatus,
+        SucceededFetchAuthStatus({ authRequired: true })
+      ),
+      Story.Command.expectExact(FetchMe({ token: "stored-token" })),
+      Story.model((model) => {
+        expect(model).toEqual(
+          Unreachable({ token: "stored-token", settings, retry: "Running" })
+        );
+      }),
+      Story.Command.resolve(FetchMe, SucceededFetchMe({ username: "phil" })),
+      Story.model((model) => {
+        expect(Option.getOrThrow(assertLoggedIn(model).maybeSession)).toEqual(
+          Session.make({ token: "stored-token", username: "phil" })
+        );
+      }),
+      resolveDashboardEntry("stored-token")
+    );
+  });
+
+  test("a second Retry while one is running does nothing", () => {
+    const retrying = Unreachable({
+      token: "stored-token",
+      settings: defaultSettings(),
+      retry: "Running",
+    });
+
+    Story.story(
+      update,
+      Story.given(retrying),
+      Story.message(ClickedRetryConnection()),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model).toEqual(retrying);
+      })
+    );
+  });
+
+  test("a retry that still cannot reach the server stays Unreachable and records the failure", () => {
+    const settings = defaultSettings();
+
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({ token: "stored-token", settings, retry: "Idle" })
+      ),
+      Story.message(ClickedRetryConnection()),
+      Story.Command.resolve(
+        FetchAuthStatus,
+        FailedFetchAuthStatus({ error: "TransportError" })
+      ),
+      Story.model((model) => {
+        expect(model).toEqual(
+          Unreachable({ token: "stored-token", settings, retry: "Failed" })
+        );
+      })
+    );
+  });
+
+  test("a retry whose token check fails stays Unreachable and records the failure", () => {
+    const settings = defaultSettings();
+
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({ token: "stored-token", settings, retry: "Idle" })
+      ),
+      Story.message(ClickedRetryConnection()),
+      Story.Command.resolve(
+        FetchAuthStatus,
+        SucceededFetchAuthStatus({ authRequired: true })
+      ),
+      Story.Command.resolve(
+        FetchMe,
+        FailedFetchMe({ error: "TransportError" })
+      ),
+      Story.model((model) => {
+        expect(model).toEqual(
+          Unreachable({ token: "stored-token", settings, retry: "Failed" })
+        );
+      })
+    );
+  });
+
+  test("a retry that finds the token rejected clears the session", () => {
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({
+          token: "stale-token",
+          settings: defaultSettings(),
+          retry: "Idle",
+        })
+      ),
+      Story.message(ClickedRetryConnection()),
+      Story.Command.resolve(
+        FetchAuthStatus,
+        SucceededFetchAuthStatus({ authRequired: true })
+      ),
+      Story.Command.resolve(FetchMe, RejectedToken()),
+      Story.Command.expectExact(ClearSession),
+      Story.Command.resolve(ClearSession, CompletedClearSession()),
+      Story.model((model) => {
+        expect(model._tag).toBe("LoggedOut");
+      })
+    );
+  });
+
+  test("a retry that finds auth switched off enters the dashboard", () => {
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({
+          token: "stored-token",
+          settings: defaultSettings(),
+          retry: "Idle",
+        })
+      ),
+      Story.message(ClickedRetryConnection()),
+      Story.Command.resolve(
+        FetchAuthStatus,
+        SucceededFetchAuthStatus({ authRequired: false })
+      ),
+      Story.model((model) => {
+        expect(Option.isNone(assertLoggedIn(model).maybeSession)).toBe(true);
+      }),
+      resolveDashboardEntry("")
+    );
+  });
+
+  describe.each(["Idle", "Failed"] as const)(
+    "an Unreachable screen with retry %s",
+    (retry) => {
+      test.each([
+        ["FailedFetchMe", FailedFetchMe({ error: "TransportError" })],
+        ["FailedFetchAuthStatus", FailedFetchAuthStatus({ error: "boom" })],
+        ["RejectedToken", RejectedToken()],
+        ["SucceededFetchMe", SucceededFetchMe({ username: "phil" })],
+        [
+          "SucceededFetchAuthStatus",
+          SucceededFetchAuthStatus({ authRequired: true }),
+        ],
+      ] as const)("ignores a late %s", (_name, message) => {
+        const screen = Unreachable({
+          token: "stored-token",
+          settings: defaultSettings(),
+          retry,
+        });
+
+        Story.story(
+          update,
+          Story.given(screen),
+          Story.message(message),
+          Story.Command.expectNone(),
+          Story.model((model) => {
+            expect(model).toEqual(screen);
+          })
+        );
+      });
+
+      test("starts another retry when Retry is clicked", () => {
+        const settings = defaultSettings();
+
+        Story.story(
+          update,
+          Story.given(Unreachable({ token: "stored-token", settings, retry })),
+          Story.message(ClickedRetryConnection()),
+          Story.Command.expectExact(FetchAuthStatus()),
+          Story.model((model) => {
+            expect(model).toEqual(
+              Unreachable({ token: "stored-token", settings, retry: "Running" })
+            );
+          }),
+          Story.Command.resolve(
+            FetchAuthStatus,
+            FailedFetchAuthStatus({ error: "TransportError" })
+          )
+        );
+      });
+    }
+  );
+
+  test("an answer that arrives after Sign out leaves the login form alone", () => {
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({
+          token: "stored-token",
+          settings: defaultSettings(),
+          retry: "Running",
+        })
+      ),
+      Story.message(ClickedSignOut()),
+      Story.Command.expectExact(ClearSession),
+      Story.Command.resolve(ClearSession, CompletedClearSession()),
+      Story.message(SucceededFetchMe({ username: "phil" })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model._tag).toBe("LoggedOut");
+      }),
+      Story.message(RejectedToken()),
+      Story.Command.expectNone(),
+      Story.message(FailedFetchMe({ error: "TransportError" })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model._tag).toBe("LoggedOut");
+      })
+    );
+  });
+
+  test("signing out from Unreachable clears the stored session and shows the login form", () => {
+    Story.story(
+      update,
+      Story.given(
+        Unreachable({
+          token: "stored-token",
+          settings: defaultSettings(),
+          retry: "Idle",
+        })
+      ),
+      Story.message(ClickedSignOut()),
+      Story.Command.expectExact(ClearSession),
+      Story.Command.resolve(ClearSession, CompletedClearSession()),
+      Story.model((model) => {
+        expect(model._tag).toBe("LoggedOut");
+      })
+    );
+  });
+
+  test.each([
+    ["FailedFetchMe", FailedFetchMe({ error: "TransportError" })],
+    ["RejectedToken", RejectedToken()],
+    ["FailedFetchAuthStatus", FailedFetchAuthStatus({ error: "boom" })],
+    ["ClickedRetryConnection", ClickedRetryConnection()],
+    ["ClickedSignOut", ClickedSignOut()],
+  ] as const)(
+    "a late %s does not end a signed-in session",
+    (_name, message) => {
+      const model = LoggedIn({
+        maybeSession: Option.some(
+          Session.make({ token: "abc123", username: "phil" })
+        ),
+        dashboard: initDashboardModel(defaultSettings()),
+      });
+
+      Story.story(
+        update,
+        Story.given(model),
+        Story.message(message),
+        Story.Command.expectNone(),
+        Story.model((next) => {
+          expect(next).toEqual(model);
+        })
+      );
+    }
+  );
 
   test("changing the username field updates LoggedOut", () => {
     Story.story(

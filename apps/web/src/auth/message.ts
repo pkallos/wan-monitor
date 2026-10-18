@@ -15,6 +15,7 @@ export const SucceededFetchMe = m("SucceededFetchMe", {
 export const FailedFetchMe = m("FailedFetchMe", {
   error: S.String,
 });
+export const RejectedToken = m("RejectedToken");
 
 export const ChangedUsername = m("ChangedUsername", { value: S.String });
 export const ChangedPassword = m("ChangedPassword", { value: S.String });
@@ -24,6 +25,9 @@ export const SucceededLogin = m("SucceededLogin", {
   username: S.String,
 });
 export const FailedLogin = m("FailedLogin", { error: S.String });
+
+export const ClickedRetryConnection = m("ClickedRetryConnection");
+export const ClickedSignOut = m("ClickedSignOut");
 
 export const CompletedLogout = m("CompletedLogout");
 
@@ -41,11 +45,14 @@ export const Message = S.Union([
   FailedFetchAuthStatus,
   SucceededFetchMe,
   FailedFetchMe,
+  RejectedToken,
   ChangedUsername,
   ChangedPassword,
   SubmittedLogin,
   SucceededLogin,
   FailedLogin,
+  ClickedRetryConnection,
+  ClickedSignOut,
   CompletedLogout,
   CompletedSaveSession,
   FailedSaveSession,

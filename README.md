@@ -105,6 +105,8 @@ All configuration is done via environment variables.
 | `JWT_SECRET` | *(random per start)* | Secret for signing tokens. When unset, a random secret is generated at each start and sessions end on restart. Set it whenever a password is set, and to keep sessions across restarts. |
 | `JWT_EXPIRES_IN` | `24h` | How long login sessions last |
 
+If a session is stored and the server cannot be reached when the dashboard loads, the browser keeps the session and shows "Cannot reach the server" with Retry and Sign out buttons. The session continues if the token is still valid when the server answers; only a rejected token or Sign out ends it.
+
 ### Server & Database
 
 | Variable | Default | Description |
@@ -310,7 +312,8 @@ wan-monitor/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/health` | GET | Health check |
+| `/api/health/live` | GET | Liveness: the server process is up |
+| `/api/health/ready` | GET | Readiness: QuestDB is connected and migrations have finished |
 | `/api/auth/status` | GET | Check if auth is required |
 | `/api/auth/login` | POST | Login (returns JWT) |
 | `/api/metrics` | GET | Query ping and speedtest data |
