@@ -35,16 +35,17 @@ of v3's `Effect.zipRight` (same semantics: "run this, then run that, keep only t
 connectionLoop.pipe(
   Effect.catchCause((cause) =>
     Effect.logError("Connection loop crashed", cause).pipe(
-      Effect.andThen(Effect.sleep(Duration.seconds(5))),
-      Effect.andThen(connectionLoop)
+      Effect.andThen(Effect.sleep(Duration.seconds(5)))
     )
-  )
+  ),
+  Effect.forever
 );
 ```
 
-See `apps/server/src/infrastructure/database/questdb/connection.ts`. `Effect.andThen` also accepts a
-function (`Effect.andThen((a) => nextEffect(a))`), in which case it behaves like `flatMap` — pick
-whichever form reads more clearly at the call site.
+See `apps/server/src/infrastructure/database/questdb/connection.ts`. `Effect.forever` restarts the loop
+after each recovery, and interruption skips `catchCause`, so closing the scope still ends it.
+`Effect.andThen` also accepts a function (`Effect.andThen((a) => nextEffect(a))`), in which case it
+behaves like `flatMap` — pick whichever form reads more clearly at the call site.
 
 ## Forking fibers
 

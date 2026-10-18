@@ -67,8 +67,9 @@ effect.pipe(
 `Effect.catch` recovers from every error the effect can produce, regardless of tag (v4's rename of
 v3's `Effect.catchAll` — same "catch everything recoverable" semantics, just renamed since the source
 declares it internally as `catch_` and re-exports it as `catch`, a reserved-word workaround, not a
-different function). `Effect.catchCause` is the version that can also recover from defects and
-interruption (v3's `Effect.catchAllCause`).
+different function). `Effect.catchCause` is the version that also sees defects and interrupt causes
+(v3's `Effect.catchAllCause`). It cannot keep an interrupted fiber alive: once an interruptible fiber
+is interrupted, the runtime skips every failure handler, `catchCause` included.
 
 ```ts
 executeSpeedTest.pipe(

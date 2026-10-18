@@ -5,10 +5,12 @@ import {
   Deferred,
   Duration,
   Effect,
+  Exit,
   Fiber,
   Layer,
   Option,
   Result,
+  Scope,
 } from "effect";
 import { TestClock } from "effect/testing";
 import { Pool } from "pg";
@@ -69,6 +71,17 @@ const connectionLayer = (
     QuestDBConnectionOverMigrator,
     Layer.mergeAll(config, migrator)
   );
+
+/** Lets the real promises behind a successful connection settle. */
+const untilConnected = (connection: QuestDBConnectionService) =>
+  Effect.gen(function* () {
+    for (let polls = 0; polls < 200; polls += 1) {
+      if (Option.isSome((yield* connection.getState).connection)) return;
+      yield* Effect.promise(
+        () => new Promise((resolve) => setTimeout(resolve, 5))
+      );
+    }
+  });
 
 describe("QuestDBConnection integration tests", () => {
   beforeEach(() => {
@@ -607,17 +620,6 @@ describe("QuestDBConnection integration tests", () => {
         return Context.get(context, QuestDBConnection);
       });
 
-    /** Lets the real promises behind a successful connection settle. */
-    const untilConnected = (connection: QuestDBConnectionService) =>
-      Effect.gen(function* () {
-        for (let polls = 0; polls < 200; polls += 1) {
-          if (Option.isSome((yield* connection.getState).connection)) return;
-          yield* Effect.promise(
-            () => new Promise((resolve) => setTimeout(resolve, 5))
-          );
-        }
-      });
-
     it.effect(
       "retries a transient failure at the reconnect interval and not before",
       () => {
@@ -868,6 +870,96 @@ describe("QuestDBConnection integration tests", () => {
           expect(seen.length).toBeGreaterThan(1);
           expect(seen.every((allowed) => allowed)).toBe(true);
         });
+      });
+    });
+  });
+
+  describe("connection loop crashes", () => {
+    /** Builds the connection layer into a scope the test may close early. */
+    const connectInScope = (migrate: SchemaMigratorService["migrate"]) =>
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+        const building = yield* Effect.forkChild(
+          Layer.buildWithScope(
+            connectionLayer(TestConfigLayer, migratorLayer(migrate)),
+            scope
+          )
+        );
+        yield* TestClock.adjust(Duration.millis(100));
+        const context = yield* Fiber.join(building);
+        return {
+          scope,
+          connection: Context.get(context, QuestDBConnection),
+        };
+      });
+
+    it.effect("restarts the loop after every crash, not only the first", () => {
+      healthyConnection();
+      let attempts = 0;
+
+      return Effect.gen(function* () {
+        const { scope, connection } = yield* connectInScope(() =>
+          Effect.suspend(() => {
+            attempts += 1;
+            return attempts <= 2 ? Effect.die("boom") : Effect.void;
+          })
+        );
+        expect(attempts).toBe(1);
+
+        yield* TestClock.adjust(Duration.seconds(5));
+        expect(attempts).toBe(2);
+
+        yield* TestClock.adjust(Duration.seconds(5));
+        expect(attempts).toBe(3);
+        yield* untilConnected(connection);
+        expect(Option.isSome((yield* connection.getState).connection)).toBe(
+          true
+        );
+        expect(Sender.fromConfig).toHaveBeenCalledTimes(1);
+
+        yield* Scope.close(scope, Exit.void);
+      });
+    });
+
+    it.effect(
+      "stops the loop when the scope closes during a crash pause",
+      () => {
+        let attempts = 0;
+
+        return Effect.gen(function* () {
+          const { scope } = yield* connectInScope(() =>
+            Effect.suspend(() => {
+              attempts += 1;
+              return Effect.die("boom");
+            })
+          );
+          expect(attempts).toBe(1);
+
+          yield* Scope.close(scope, Exit.void);
+          yield* TestClock.adjust(Duration.minutes(1));
+
+          expect(attempts).toBe(1);
+        });
+      }
+    );
+
+    it.effect("stops the loop when the scope closes mid-iteration", () => {
+      let attempts = 0;
+
+      return Effect.gen(function* () {
+        const { scope } = yield* connectInScope(() =>
+          Effect.suspend(() => {
+            attempts += 1;
+            return Effect.fail(failing("transient"));
+          })
+        );
+        expect(attempts).toBe(1);
+
+        yield* Scope.close(scope, Exit.void);
+        yield* TestClock.adjust(Duration.minutes(1));
+
+        expect(attempts).toBe(1);
       });
     });
   });
