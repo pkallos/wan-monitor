@@ -18,13 +18,15 @@ const PingExecutionResult = Schema.Struct({
   success: Schema.Boolean,
   result: Schema.optional(PingResult),
   error: Schema.optional(Schema.String),
+  /** Set when the result row could not be stored; independent of `success`. */
+  writeError: Schema.optional(Schema.String),
 });
 
 const TriggerPingRequest = Schema.Struct({
   hosts: Schema.optional(Schema.Array(Schema.String)),
 });
 
-const TriggerPingResponse = Schema.Struct({
+export const TriggerPingResponse = Schema.Struct({
   success: Schema.Boolean,
   timestamp: Schema.String,
   results: Schema.Array(PingExecutionResult),

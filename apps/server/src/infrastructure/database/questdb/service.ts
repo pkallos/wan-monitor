@@ -1,5 +1,5 @@
 import type { DatabaseHealth, NetworkMetric } from "@shared/metrics";
-import { Context, Duration, Effect, Layer, Option } from "effect";
+import { Context, Duration, Effect, Layer, Option, Semaphore } from "effect";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
   QuestDBConnection,
@@ -7,8 +7,8 @@ import {
 } from "@/infrastructure/database/questdb/connection";
 import {
   DatabaseConnectionError,
-  DatabaseQueryError,
-  DatabaseWriteError,
+  type DatabaseQueryError,
+  type DatabaseWriteError,
   DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
@@ -51,8 +51,8 @@ import {
   type SqlQuerySpec,
 } from "@/infrastructure/database/questdb/queries";
 import {
-  errorMessage,
-  isLikelyConnectionError,
+  classifyQueryError,
+  classifyWriteError,
 } from "@/infrastructure/database/questdb/util";
 
 configurePgTypeParsers();
@@ -117,7 +117,7 @@ export class QuestDB extends Context.Service<QuestDB, QuestDBService>()(
 const make = Effect.gen(function* () {
   const connection = yield* QuestDBConnection;
   const config = yield* ConfigService;
-  const table = config.database.table;
+  const { table, protocol } = config.database;
   const ilpTimeoutMs =
     config.database.requestTimeout + config.database.retryTimeout;
 
@@ -139,6 +139,10 @@ const make = Effect.gen(function* () {
       })
     );
 
+  // The sender batches rows across calls and drops a rejected batch, so each
+  // row is flushed alone under this lock to tie a failure to its own row.
+  const writeLock = yield* Semaphore.make(1);
+
   const writeMetric = (
     metric: NetworkMetric
   ): Effect.Effect<void, DatabaseWriteError | DbUnavailable> =>
@@ -148,16 +152,11 @@ const make = Effect.gen(function* () {
       yield* withIlpTimeout(
         "write",
         Effect.tryPromise({
-          try: () => writeMetricToSender(conn.sender, metric, table),
-          catch: (error) => {
-            const msg = errorMessage(error);
-            if (isLikelyConnectionError(msg)) {
-              return new DbUnavailable({ message: msg });
-            }
-            return new DatabaseWriteError({
-              message: `Failed to write metric: ${msg}`,
-            });
+          try: async () => {
+            await writeMetricToSender(conn.sender, metric, table);
+            await conn.sender.flush();
           },
+          catch: classifyWriteError("write metric", protocol),
         })
       );
     }).pipe(
@@ -165,7 +164,8 @@ const make = Effect.gen(function* () {
         connection
           .markDisconnected(e.message)
           .pipe(Effect.andThen(Effect.fail(e)))
-      )
+      ),
+      writeLock.withPermits(1)
     );
 
   const queryMetrics = (
@@ -178,15 +178,7 @@ const make = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseQueryError({
-            message: `Failed to query metrics: ${msg}`,
-          });
-        },
+        catch: classifyQueryError("metrics"),
       });
 
       if (!result.rows || result.rows.length === 0) {
@@ -212,15 +204,7 @@ const make = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseQueryError({
-            message: `Failed to query speedtests: ${msg}`,
-          });
-        },
+        catch: classifyQueryError("speedtests"),
       });
 
       if (!result.rows || result.rows.length === 0) {
@@ -249,15 +233,7 @@ const make = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseQueryError({
-            message: `Failed to query connectivity status: ${msg}`,
-          });
-        },
+        catch: classifyQueryError("connectivity status"),
       });
 
       if (!result.rows || result.rows.length === 0) {
@@ -286,15 +262,7 @@ const make = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseQueryError({
-            message: `Failed to query live connectivity: ${msg}`,
-          });
-        },
+        catch: classifyQueryError("live connectivity"),
       });
 
       const row = result.rows?.[0];
@@ -318,15 +286,7 @@ const make = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseQueryError({
-            message: `Failed to query earliest timestamp: ${msg}`,
-          });
-        },
+        catch: classifyQueryError("earliest timestamp"),
       });
 
       return result.rows[0]?.timestamp ?? null;
@@ -349,15 +309,7 @@ const make = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseQueryError({
-            message: `Failed to query latest ping timestamp: ${msg}`,
-          });
-        },
+        catch: classifyQueryError("latest ping timestamp"),
       });
 
       return result.rows[0]?.timestamp ?? null;
@@ -381,15 +333,7 @@ const make = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseQueryError({
-            message: `Failed to query ${label}: ${msg}`,
-          });
-        },
+        catch: classifyQueryError(label),
       });
 
       return result.rows ?? [];
@@ -489,15 +433,7 @@ const make = Effect.gen(function* () {
           try: async () => {
             await conn.sender.flush();
           },
-          catch: (error) => {
-            const msg = errorMessage(error);
-            if (isLikelyConnectionError(msg)) {
-              return new DbUnavailable({ message: msg });
-            }
-            return new DatabaseWriteError({
-              message: `Failed to flush metrics: ${msg}`,
-            });
-          },
+          catch: classifyWriteError("flush metrics", protocol),
         })
       );
     }).pipe(

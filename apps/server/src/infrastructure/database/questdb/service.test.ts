@@ -1,9 +1,14 @@
+import {
+  createServer as createHttpServer,
+  type Server as HttpServer,
+} from "node:http";
+import { createServer, type Server } from "node:net";
 import { describe, expect, it } from "@effect/vitest";
 import { Sender } from "@questdb/nodejs-client";
 import type { NetworkMetric } from "@shared/metrics";
 import { Duration, Effect, Fiber, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
-import { Pool } from "pg";
+import { DatabaseError, Pool } from "pg";
 import { vi } from "vitest";
 import {
   QuestDBConnection,
@@ -26,11 +31,36 @@ const window = {
   endTime: new Date("2024-01-02T00:00:00Z"),
 };
 
+const systemError = (message: string, code: string) =>
+  Object.assign(new Error(message), { code });
+
 const queries: readonly [
   name: string,
   failureLabel: string,
   run: (db: QuestDBService) => Effect.Effect<unknown, unknown>,
 ][] = [
+  ["queryMetrics", "metrics", (db) => db.queryMetrics(window)],
+  ["querySpeedtests", "speedtests", (db) => db.querySpeedtests(window)],
+  [
+    "queryConnectivityStatus",
+    "connectivity status",
+    (db) => db.queryConnectivityStatus(window),
+  ],
+  [
+    "queryLiveConnectivity",
+    "live connectivity",
+    (db) => db.queryLiveConnectivity("2024-01-01T00:00:00.000Z"),
+  ],
+  [
+    "queryEarliestTimestamp",
+    "earliest timestamp",
+    (db) => db.queryEarliestTimestamp(),
+  ],
+  [
+    "queryLatestPingTimestamp",
+    "latest ping timestamp",
+    (db) => db.queryLatestPingTimestamp(),
+  ],
   ["querySummaryStats", "summary stats", (db) => db.querySummaryStats(window)],
   ["queryHostStats", "host stats", (db) => db.queryHostStats(window)],
   [
@@ -56,15 +86,20 @@ const withStubbedPgClient = <A, E>(
     disconnects: readonly string[],
     conn: QuestDBRawConnection
   ) => Effect.Effect<A, E>,
-  senderConfig = stubbedSenderConfig
+  senderConfig = stubbedSenderConfig,
+  protocol: "http" | "tcp" = "http"
 ) =>
   Effect.acquireUseRelease(
-    Effect.promise(
-      async (): Promise<QuestDBRawConnection> => ({
-        sender: await Sender.fromConfig(senderConfig),
+    Effect.promise(async (): Promise<QuestDBRawConnection> => {
+      const sender = await Sender.fromConfig(senderConfig);
+      if (senderConfig.startsWith("tcp")) {
+        await sender.connect();
+      }
+      return {
+        sender,
         pgClient: Object.assign(new Pool(), { query: vi.fn(respond) }),
-      })
-    ),
+      };
+    }),
     (conn) => {
       const disconnects: string[] = [];
       const connection = Layer.succeed(QuestDBConnection, {
@@ -87,7 +122,12 @@ const withStubbedPgClient = <A, E>(
       }).pipe(
         Effect.provide(
           QuestDBOverConnection.pipe(
-            Layer.provide(Layer.merge(connection, makeTestConfigLayer()))
+            Layer.provide(
+              Layer.merge(
+                connection,
+                makeTestConfigLayer({ database: { protocol } })
+              )
+            )
           )
         )
       );
@@ -102,7 +142,10 @@ const withStubbedPgClient = <A, E>(
 describe.each(queries)("%s", (_name, failureLabel, run) => {
   it.effect("fails with DbUnavailable and marks the connection down", () =>
     withStubbedPgClient(
-      () => Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:8812")),
+      () =>
+        Promise.reject(
+          systemError("connect ECONNREFUSED 127.0.0.1:8812", "ECONNREFUSED")
+        ),
       (db, disconnects) =>
         Effect.gen(function* () {
           const error = yield* Effect.flip(run(db));
@@ -116,6 +159,55 @@ describe.each(queries)("%s", (_name, failureLabel, run) => {
           );
         })
     )
+  );
+
+  it.effect(
+    "fails with DbUnavailable and a usable message when the error has no message",
+    () =>
+      withStubbedPgClient(
+        () =>
+          Promise.reject(
+            Object.assign(new AggregateError([]), { code: "ECONNREFUSED" })
+          ),
+        (db, disconnects) =>
+          Effect.gen(function* () {
+            const error = yield* Effect.flip(run(db));
+
+            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toMatchObject({ message: "ECONNREFUSED" });
+            expect(new Set(disconnects)).toEqual(new Set(["ECONNREFUSED"]));
+          })
+      )
+  );
+
+  it.effect.each([
+    ["pg query read timeout", new Error("Query read timeout")],
+    [
+      "server error naming connectivity_status",
+      new DatabaseError("column connectivity_status is invalid", 0, "error"),
+    ],
+    [
+      "client error that is not queryable",
+      new Error(
+        "Client has encountered a connection error and is not queryable"
+      ),
+    ],
+  ] as const)(
+    "treats a %s as a query error and leaves the connection up",
+    ([, failure]) =>
+      withStubbedPgClient(
+        () => Promise.reject(failure),
+        (db, disconnects) =>
+          Effect.gen(function* () {
+            const error = yield* Effect.flip(run(db));
+
+            expect(error).toBeInstanceOf(DatabaseQueryError);
+            expect(error).toMatchObject({
+              message: `Failed to query ${failureLabel}: ${failure.message}`,
+            });
+            expect(disconnects).toEqual([]);
+          })
+      )
   );
 
   it.effect(
@@ -230,7 +322,7 @@ describe("writeMetric", () => {
       (db, disconnects, conn) =>
         Effect.gen(function* () {
           vi.spyOn(conn.sender, "at").mockRejectedValue(
-            new Error("read ECONNRESET")
+            systemError("read ECONNRESET", "ECONNRESET")
           );
 
           const error = yield* Effect.flip(db.writeMetric(metric));
@@ -262,6 +354,168 @@ describe("writeMetric", () => {
             expect(disconnects).toEqual([]);
           })
       )
+  );
+
+  it.effect(
+    "fails with DatabaseWriteError and leaves the connection up when the sender reports a timeout",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "at").mockRejectedValue(
+              new Error("HTTP request timeout, no response from server in time")
+            );
+
+            const error = yield* Effect.flip(db.writeMetric(metric));
+
+            expect(error).toBeInstanceOf(DatabaseWriteError);
+            expect(error).toMatchObject({
+              message:
+                "Failed to write metric: HTTP request timeout, no response from server in time",
+            });
+            expect(disconnects).toEqual([]);
+          })
+      )
+  );
+
+  it.effect(
+    "fails with DbUnavailable and marks the connection down on any rejected write over TCP",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "at").mockRejectedValue(
+              new Error("TCP transport is not connected")
+            );
+
+            const error = yield* Effect.flip(db.writeMetric(metric));
+
+            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toMatchObject({
+              message: "TCP transport is not connected",
+            });
+            expect(disconnects).toEqual(["TCP transport is not connected"]);
+          }),
+        stubbedSenderConfig,
+        "tcp"
+      )
+  );
+
+  it.effect(
+    "fails with DbUnavailable when QuestDB has closed the ILP socket under a real TCP sender",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.promise(
+          () =>
+            new Promise<Server>((resolve) => {
+              const server = createServer((socket) => {
+                socket.on("data", () => undefined);
+                setTimeout(() => socket.end(), 50);
+              });
+              server.listen(0, "127.0.0.1", () => resolve(server));
+            })
+        ),
+        (server) => {
+          const address = server.address();
+          const port =
+            typeof address === "object" && address ? address.port : 0;
+          return withStubbedPgClient(
+            () => Promise.resolve({ rows: [] }),
+            (db, disconnects) =>
+              Effect.gen(function* () {
+                yield* Effect.promise(
+                  () => new Promise((resolve) => setTimeout(resolve, 300))
+                );
+
+                const error = yield* Effect.flip(db.writeMetric(metric));
+
+                expect(error).toBeInstanceOf(DbUnavailable);
+                expect(disconnects).toHaveLength(1);
+              }),
+            `tcp::addr=127.0.0.1:${port};auto_flush_rows=1;auto_flush_interval=0;`,
+            "tcp"
+          );
+        },
+        (server) =>
+          Effect.promise(
+            () => new Promise<void>((resolve) => server.close(() => resolve()))
+          )
+      )
+  );
+
+  it.effect(
+    "reports each row's own outcome when the sender would otherwise batch rows across calls",
+    () => {
+      const accepted: string[] = [];
+      const hostsIn = (body: string) =>
+        [...body.matchAll(/host=([^, ]+)/g)].map((match) => match[1] ?? "");
+
+      return Effect.acquireUseRelease(
+        Effect.promise(
+          () =>
+            new Promise<HttpServer>((resolve) => {
+              const server = createHttpServer((request, response) => {
+                const chunks: Buffer[] = [];
+                request.on("data", (chunk: Buffer) => chunks.push(chunk));
+                request.on("end", () => {
+                  const hosts = hostsIn(Buffer.concat(chunks).toString());
+                  if (hosts.includes("c")) {
+                    response.writeHead(400).end("rejected");
+                    return;
+                  }
+                  accepted.push(...hosts);
+                  response.writeHead(204).end();
+                });
+              });
+              server.listen(0, "127.0.0.1", () => resolve(server));
+            })
+        ),
+        (server) => {
+          const address = server.address();
+          const port =
+            typeof address === "object" && address ? address.port : 0;
+          const pause = Effect.promise(
+            () => new Promise((resolve) => setTimeout(resolve, 100))
+          );
+          return withStubbedPgClient(
+            () => Promise.resolve({ rows: [] }),
+            (db) =>
+              Effect.gen(function* () {
+                const writeAll = (hosts: readonly string[]) =>
+                  Effect.all(
+                    hosts.map((host) =>
+                      db.writeMetric({ ...metric, host }).pipe(
+                        Effect.as(`${host}:ok`),
+                        Effect.catch(() => Effect.succeed(`${host}:failed`))
+                      )
+                    ),
+                    { concurrency: "unbounded" }
+                  );
+
+                yield* pause;
+                const first = yield* writeAll(["a", "b"]);
+                yield* pause;
+                const second = yield* writeAll(["c", "d"]);
+
+                expect([...first, ...second]).toEqual([
+                  "a:ok",
+                  "b:ok",
+                  "c:failed",
+                  "d:ok",
+                ]);
+                expect([...accepted].sort()).toEqual(["a", "b", "d"]);
+              }),
+            `http::addr=127.0.0.1:${port};protocol_version=2;auto_flush_rows=100;auto_flush_interval=50;request_timeout=2000;retry_timeout=2000;`
+          );
+        },
+        (server) =>
+          Effect.promise(
+            () => new Promise<void>((resolve) => server.close(() => resolve()))
+          )
+      );
+    }
   );
 
   it.effect(
@@ -341,6 +595,67 @@ describe("writeMetric", () => {
 });
 
 describe("flush", () => {
+  it.effect("fails with DbUnavailable and marks the connection down", () =>
+    withStubbedPgClient(
+      () => Promise.resolve({ rows: [] }),
+      (db, disconnects, conn) =>
+        Effect.gen(function* () {
+          vi.spyOn(conn.sender, "flush").mockRejectedValue(
+            systemError("read ECONNRESET", "ECONNRESET")
+          );
+
+          const error = yield* Effect.flip(db.flush());
+
+          expect(error).toBeInstanceOf(DbUnavailable);
+          expect(error).toMatchObject({ message: "read ECONNRESET" });
+          expect(disconnects).toEqual(["read ECONNRESET"]);
+        })
+    )
+  );
+
+  it.effect(
+    "fails with DbUnavailable and marks the connection down on any rejected flush over TCP",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "flush").mockRejectedValue(
+              new Error("TCP transport is not connected")
+            );
+
+            const error = yield* Effect.flip(db.flush());
+
+            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(disconnects).toEqual(["TCP transport is not connected"]);
+          }),
+        stubbedSenderConfig,
+        "tcp"
+      )
+  );
+
+  it.effect(
+    "fails with DatabaseWriteError and leaves the connection up on a flush error",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "flush").mockRejectedValue(
+              new Error("invalid column: nope")
+            );
+
+            const error = yield* Effect.flip(db.flush());
+
+            expect(error).toBeInstanceOf(DatabaseWriteError);
+            expect(error).toMatchObject({
+              message: "Failed to flush metrics: invalid column: nope",
+            });
+            expect(disconnects).toEqual([]);
+          })
+      )
+  );
+
   it.effect(
     "fails with DbUnavailable once requestTimeout + retryTimeout elapse on a flush that never settles",
     () =>

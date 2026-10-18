@@ -1,10 +1,14 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Logger } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PingExecutor,
   PingExecutorLive,
 } from "@/core/monitoring/ping-executor";
-import { QuestDB } from "@/infrastructure/database/questdb";
+import {
+  DatabaseWriteError,
+  DbUnavailable,
+  QuestDB,
+} from "@/infrastructure/database/questdb";
 import {
   type PingError,
   PingHostUnreachableError,
@@ -51,6 +55,16 @@ const TestLive = Layer.provide(
   PingExecutorLive,
   Layer.mergeAll(TestConfigLive, MockPingServiceLive, MockQuestDBLive)
 );
+
+const captureLogs = () => {
+  const entries: { level: string; text: string }[] = [];
+  const layer = Logger.layer([
+    Logger.make<unknown, void>(({ logLevel, message }) => {
+      entries.push({ level: logLevel, text: String(message) });
+    }),
+  ]);
+  return { entries, layer };
+};
 
 describe("PingExecutor", () => {
   beforeEach(() => {
@@ -144,20 +158,18 @@ describe("PingExecutor", () => {
       expect(writtenMetric.connectivityStatus).toBe("down");
     });
 
-    it("should handle database write failure gracefully and return success=false with result", async () => {
+    it("should keep success true and report writeError when a good ping fails to write", async () => {
       const pingResult: PingResult = {
         host: "8.8.8.8",
         alive: true,
         latency: 15.5,
         packetLoss: 0,
       };
+      const logs = captureLogs();
 
       mockPing.mockReturnValue(Effect.succeed(pingResult));
       mockWriteMetric.mockReturnValue(
-        Effect.fail({
-          _tag: "DatabaseWriteError" as const,
-          message: "DB unavailable",
-        })
+        Effect.fail(new DatabaseWriteError({ message: "DB unavailable" }))
       );
 
       const program = Effect.gen(function* () {
@@ -165,15 +177,23 @@ describe("PingExecutor", () => {
         return yield* executor.executePing("8.8.8.8");
       });
 
-      const result = await Effect.runPromise(Effect.provide(program, TestLive));
+      const result = await Effect.runPromise(
+        program.pipe(Effect.provide(TestLive), Effect.provide(logs.layer))
+      );
 
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
       expect(result.host).toBe("8.8.8.8");
       expect(result.result).toEqual(pingResult);
-      expect(result.error).toContain("Database write failed");
+      expect(result.writeError).toBe("DB unavailable");
+      expect(result.error).toBeUndefined();
+      expect(logs.entries).toHaveLength(1);
+      expect(logs.entries[0]?.level).toBe("Error");
+      expect(logs.entries[0]?.text).toContain("8.8.8.8");
     });
 
-    it("should ignore database write errors when ping itself fails", async () => {
+    it("should log an error and report writeError when the down row cannot be written", async () => {
+      const logs = captureLogs();
+
       mockPing.mockReturnValue(
         Effect.fail(
           new PingHostUnreachableError({
@@ -183,10 +203,7 @@ describe("PingExecutor", () => {
         )
       );
       mockWriteMetric.mockReturnValue(
-        Effect.fail({
-          _tag: "DatabaseWriteError" as const,
-          message: "DB write failed",
-        })
+        Effect.fail(new DatabaseWriteError({ message: "DB write failed" }))
       );
 
       const program = Effect.gen(function* () {
@@ -194,11 +211,71 @@ describe("PingExecutor", () => {
         return yield* executor.executePing("unreachable.host");
       });
 
-      const result = await Effect.runPromise(Effect.provide(program, TestLive));
+      const result = await Effect.runPromise(
+        program.pipe(Effect.provide(TestLive), Effect.provide(logs.layer))
+      );
 
       expect(result.success).toBe(false);
       expect(result.host).toBe("unreachable.host");
       expect(result.error).toBe("PingHostUnreachableError");
+      expect(result.writeError).toBe("DB write failed");
+      expect(logs.entries).toHaveLength(1);
+      expect(logs.entries[0]?.level).toBe("Error");
+      expect(logs.entries[0]?.text).toContain("unreachable.host");
+      expect(logs.entries[0]?.text).toContain("DB write failed");
+    });
+
+    it("should name the failure tag in the log so an outage reads differently from a bad write", async () => {
+      const logs = captureLogs();
+
+      mockPing.mockReturnValue(
+        Effect.fail(
+          new PingHostUnreachableError({
+            host: "unreachable.host",
+            message: "Host unreachable",
+          })
+        )
+      );
+      mockWriteMetric.mockReturnValue(
+        Effect.fail(new DbUnavailable({ message: "QuestDB write timed out" }))
+      );
+
+      const program = Effect.gen(function* () {
+        const executor = yield* PingExecutor;
+        return yield* executor.executePing("unreachable.host");
+      });
+
+      await Effect.runPromise(
+        program.pipe(Effect.provide(TestLive), Effect.provide(logs.layer))
+      );
+
+      expect(logs.entries[0]?.text).toContain("DbUnavailable");
+    });
+
+    it("should neither log nor report writeError when the write succeeds", async () => {
+      const logs = captureLogs();
+
+      mockPing.mockReturnValue(
+        Effect.fail(
+          new PingHostUnreachableError({
+            host: "unreachable.host",
+            message: "Host unreachable",
+          })
+        )
+      );
+      mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+      const program = Effect.gen(function* () {
+        const executor = yield* PingExecutor;
+        return yield* executor.executePing("unreachable.host");
+      });
+
+      const result = await Effect.runPromise(
+        program.pipe(Effect.provide(TestLive), Effect.provide(logs.layer))
+      );
+
+      expect(result.writeError).toBeUndefined();
+      expect(logs.entries).toEqual([]);
     });
   });
 

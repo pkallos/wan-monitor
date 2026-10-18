@@ -29,6 +29,9 @@ export interface QuestDBConnectionState {
   readonly connectedSince: Option.Option<Date>;
 }
 
+// A sender flush never settles while QuestDB is down, so closing stops waiting after this long.
+const closeFlushTimeoutMs = 5000;
+
 const initialState: QuestDBConnectionState = {
   connection: Option.none(),
   isConnecting: false,
@@ -86,6 +89,11 @@ const make = Effect.gen(function* () {
         try {
           await conn.sender.flush();
         } catch {}
+      }).pipe(
+        Effect.timeout(Duration.millis(closeFlushTimeoutMs)),
+        Effect.ignore
+      );
+      yield* Effect.promise(async () => {
         try {
           await conn.sender.close();
         } catch {}
@@ -159,18 +167,21 @@ const make = Effect.gen(function* () {
 
   const markDisconnected = (error: string): Effect.Effect<void> =>
     Effect.gen(function* () {
-      const state = yield* Ref.get(stateRef);
+      // Taking the connection out of state first means overlapping disconnects
+      // never close it twice, nor close a connection made while this one closes.
+      const previous = yield* Ref.modify(stateRef, (state) => [
+        state.connection,
+        {
+          connection: Option.none(),
+          isConnecting: false,
+          lastError: Option.some({ message: error, timestamp: new Date() }),
+          connectedSince: Option.none(),
+        } satisfies QuestDBConnectionState,
+      ]);
 
-      if (Option.isSome(state.connection)) {
-        yield* closeConnection(state.connection.value).pipe(Effect.ignore);
+      if (Option.isSome(previous)) {
+        yield* closeConnection(previous.value).pipe(Effect.ignore);
       }
-
-      yield* Ref.set(stateRef, {
-        connection: Option.none(),
-        isConnecting: false,
-        lastError: Option.some({ message: error, timestamp: new Date() }),
-        connectedSince: Option.none(),
-      });
 
       yield* Effect.logWarning(`QuestDB disconnected: ${error}`);
     });
@@ -303,6 +314,16 @@ const make = Effect.gen(function* () {
     }
   });
 
+  yield* Effect.addFinalizer(() =>
+    Effect.gen(function* () {
+      const state = yield* Ref.get(stateRef);
+      if (Option.isSome(state.connection)) {
+        yield* closeConnection(state.connection.value);
+      }
+      yield* Effect.logInfo("QuestDB connection closed");
+    })
+  );
+
   // An interrupted fiber skips catchCause handlers, so closing the scope still
   // ends the loop instead of restarting it.
   yield* Effect.forkScoped(
@@ -314,16 +335,6 @@ const make = Effect.gen(function* () {
       ),
       Effect.forever
     )
-  );
-
-  yield* Effect.addFinalizer(() =>
-    Effect.gen(function* () {
-      const state = yield* Ref.get(stateRef);
-      if (Option.isSome(state.connection)) {
-        yield* closeConnection(state.connection.value);
-      }
-      yield* Effect.logInfo("QuestDB connection closed");
-    })
   );
 
   yield* Effect.sleep(Duration.millis(100));

@@ -13,6 +13,8 @@ export interface PingExecutionResult {
   readonly success: boolean;
   readonly result?: PingResult;
   readonly error?: string;
+  /** Set when the result row could not be stored; independent of `success`. */
+  readonly writeError?: string;
 }
 
 // ============================================================================
@@ -77,6 +79,19 @@ export const PingExecutorLive = Layer.effect(
     const pingService = yield* PingService;
     const db = yield* QuestDB;
 
+    const persist = (
+      host: string,
+      metric: NetworkMetric
+    ): Effect.Effect<{ readonly writeError?: string }> =>
+      db.writeMetric(metric).pipe(
+        Effect.as({}),
+        Effect.catch((error) =>
+          Effect.logError(
+            `Failed to store ping result for ${host}: ${error._tag} - ${error.message}`
+          ).pipe(Effect.as({ writeError: error.message }))
+        )
+      );
+
     // `timestamp` is shared across every host in one cycle (see `executeHosts`)
     // rather than stamped per-host at completion, so quorum queries can group
     // a cycle's rows by exact timestamp equality instead of a fragile
@@ -87,49 +102,39 @@ export const PingExecutorLive = Layer.effect(
     ): Effect.Effect<PingExecutionResult, never> =>
       pingService.ping(host).pipe(
         // Success path - write metric to database
-        Effect.flatMap((result) => {
-          const metric = pingResultToMetric(result, timestamp);
-          return db.writeMetric(metric).pipe(
+        Effect.flatMap((result) =>
+          persist(host, pingResultToMetric(result, timestamp)).pipe(
             Effect.map(
-              (): PingExecutionResult => ({
+              (write): PingExecutionResult => ({
                 host,
                 success: true,
                 result,
-              })
-            ),
-            Effect.catch((writeError) =>
-              Effect.succeed({
-                host,
-                success: false,
-                result,
-                error: `Database write failed: ${writeError.message}`,
+                ...write,
               })
             )
-          );
-        }),
+          )
+        ),
         // Failure path - write "down" metric with no latency (NULL in DB)
         // Omitting latency ensures avg() aggregations aren't skewed by failures
-        Effect.catch((pingError) => {
-          const errorMetric: NetworkMetric = {
+        Effect.catch((pingError) =>
+          persist(host, {
             timestamp,
             source: "ping",
             host,
             // latency omitted - no measurement available on failure
             packetLoss: 100,
             connectivityStatus: "down",
-          };
-
-          return db.writeMetric(errorMetric).pipe(
-            Effect.ignore,
+          }).pipe(
             Effect.map(
-              (): PingExecutionResult => ({
+              (write): PingExecutionResult => ({
                 host,
                 success: false,
                 error: pingError._tag,
+                ...write,
               })
             )
-          );
-        })
+          )
+        )
       );
 
     const executePing = (

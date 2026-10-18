@@ -15,6 +15,7 @@ interface StatsState {
   readonly lastPingTime: number | null;
   readonly successfulPings: number;
   readonly failedPings: number;
+  readonly failedWrites: number;
   readonly lastSpeedTestTime: number | null;
   readonly successfulSpeedTests: number;
   readonly failedSpeedTests: number;
@@ -25,6 +26,7 @@ const initialStats: StatsState = {
   lastPingTime: null,
   successfulPings: 0,
   failedPings: 0,
+  failedWrites: 0,
   lastSpeedTestTime: null,
   successfulSpeedTests: 0,
   failedSpeedTests: 0,
@@ -39,6 +41,8 @@ export interface MonitorStats {
   readonly lastPingTime: Date | null;
   readonly successfulPings: number;
   readonly failedPings: number;
+  /** Ping results whose row could not be stored; counted apart from `failedPings`. */
+  readonly failedWrites: number;
   readonly lastSpeedTestTime: Date | null;
   readonly successfulSpeedTests: number;
   readonly failedSpeedTests: number;
@@ -99,16 +103,20 @@ export const NetworkMonitorLive = Layer.effect(
 
       const successCount = results.filter((r) => r.success).length;
       const failCount = results.filter((r) => !r.success).length;
+      const failedWriteCount = results.filter(
+        (r) => r.writeError !== undefined
+      ).length;
 
       yield* Ref.update(statsRef, (s) => ({
         ...s,
         lastPingTime: timestamp,
         successfulPings: s.successfulPings + successCount,
         failedPings: s.failedPings + failCount,
+        failedWrites: s.failedWrites + failedWriteCount,
       }));
 
       yield* Effect.logInfo(
-        `Ping cycle completed: ${successCount} successful, ${failCount} failed`
+        `Ping cycle completed: ${successCount} successful, ${failCount} failed, ${failedWriteCount} failed writes`
       );
     });
 
@@ -240,6 +248,7 @@ export const NetworkMonitorLive = Layer.effect(
           lastPingTime: s.lastPingTime ? new Date(s.lastPingTime) : null,
           successfulPings: s.successfulPings,
           failedPings: s.failedPings,
+          failedWrites: s.failedWrites,
           lastSpeedTestTime: s.lastSpeedTestTime
             ? new Date(s.lastSpeedTestTime)
             : null,

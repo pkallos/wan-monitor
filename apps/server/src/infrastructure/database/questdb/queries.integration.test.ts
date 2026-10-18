@@ -1,6 +1,9 @@
 import type { NetworkMetric } from "@shared/metrics";
 import { Effect, Exit } from "effect";
+import { DatabaseError, Pool } from "pg";
 import { describe, expect, it } from "vitest";
+import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
+import { pgConnectionSettings } from "@/infrastructure/database/questdb/pgwire";
 import {
   createSeedDataset,
   seedDatabase,
@@ -11,6 +14,10 @@ import {
   setupIntegrationTest,
   teardownIntegrationTest,
 } from "@/infrastructure/database/questdb/test-utils/setup";
+import {
+  classifyQueryError,
+  isConnectionError,
+} from "@/infrastructure/database/questdb/util";
 
 describe("Metrics Aggregation Integration Tests", () => {
   const skipTests = !isQuestDBAvailable();
@@ -984,6 +991,37 @@ describe("Metrics Aggregation Integration Tests", () => {
         });
 
         await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+  });
+
+  describe("error classification", () => {
+    it.skipIf(skipTests)(
+      "classifies a query QuestDB rejects as a query error, not a disconnect",
+      async () => {
+        const pool = new Pool(
+          pgConnectionSettings({
+            host: process.env.DB_HOST ?? "localhost",
+            pgPort: Number(process.env.DB_PG_PORT ?? 8812),
+          })
+        );
+
+        try {
+          const error = await pool
+            .query("SELECT nope FROM table_that_does_not_exist")
+            .then(
+              () => undefined,
+              (failure: unknown) => failure
+            );
+
+          expect(error).toBeInstanceOf(DatabaseError);
+          expect(isConnectionError(error)).toBe(false);
+          expect(classifyQueryError("metrics")(error)).toBeInstanceOf(
+            DatabaseQueryError
+          );
+        } finally {
+          await pool.end();
+        }
       }
     );
   });
