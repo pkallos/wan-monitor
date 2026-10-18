@@ -94,7 +94,7 @@ All configuration is done via environment variables.
 | `PING_TIMEOUT` | `5` | Ping timeout in seconds |
 | `PING_TRAIN_COUNT` | `10` | Number of packets per ping (for packet loss calculation) |
 | `SPEEDTEST_INTERVAL_SECONDS` | `3600` | How often to run speed tests (default: 1 hour) |
-| `SPEEDTEST_TIMEOUT_SECONDS` | `120` | Maximum time for a speed test before timeout; the speedtest CLI is stopped when it is reached |
+| `SPEEDTEST_TIMEOUT_SECONDS` | `120` | Maximum time for a speed test before timeout; the speedtest CLI is stopped when it is reached. In the Docker image, nginx ends a `POST /api/speedtest/trigger` request after 300 seconds, which cancels that test, so keep this below 300 for manual tests (scheduled tests are unaffected) |
 
 ### Authentication
 
