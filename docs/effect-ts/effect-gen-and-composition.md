@@ -70,9 +70,12 @@ called as `Effect.forkChild(...)`) — both call shapes exist; a mechanical rena
 
 ## Running an effect
 
-- **`Effect.runFork(effect)`** — starts the effect as a fiber and returns immediately; used at the
-  program's entry point (`apps/server/src/index.ts`) and for fire-and-forget error recovery
-  (`connection.ts`'s `Effect.runFork(markDisconnected(error.message))` inside a synchronous callback).
+- **`NodeRuntime.runMain(effect)`** — the process entry point (`apps/server/src/index.ts`). It
+  interrupts the main fiber on SIGINT and SIGTERM so scope finalizers run, logs a failure's cause, and
+  exits with code 130 after an interrupt or 1 after a failure.
+- **`Effect.runFork(effect)`** — starts the effect as a fiber and returns immediately; used for
+  fire-and-forget error recovery (`connection.ts`'s `Effect.runFork(markDisconnected(error.message))`
+  inside a synchronous callback).
 - **`Effect.runPromise(effect)`** / **`Effect.runPromiseExit(effect)`** — used at the boundary between
   Effect and a non-Effect caller that wants a `Promise` (test files that `await` an Effect program;
   Foldkit's own runtime handles this boundary for `Command`/`flags` Effects in `apps/web`).
@@ -85,6 +88,8 @@ that's the compiler telling you a `Layer.provide` is missing, not a runner-API m
 
 ## Anti-patterns
 
+- ❌ `Effect.runFork` at a process entry point: nothing handles SIGTERM, so scope finalizers never
+  run, and a failed layer leaves the process exiting with code 0. Use `NodeRuntime.runMain`.
 - ❌ `async`/`await` and bare `Promise` chains for anything that should compose with the rest of an
   Effect program — wrap it at the boundary with `Effect.tryPromise`/`Effect.promise` and stay in
   `Effect` from there on.

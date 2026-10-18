@@ -18,6 +18,7 @@ for (const envPath of envPaths) {
   }
 }
 
+import { NodeRuntime } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
 import { ApiServerLive, NodeHttpServerLayer } from "@/core/api/server";
 import {
@@ -91,9 +92,4 @@ const program = Effect.gen(function* () {
 });
 
 // Run the program
-const runnable = program.pipe(
-  Effect.provide(MainLive),
-  Effect.tapCause(Effect.logError)
-);
-
-Effect.runFork(runnable);
+program.pipe(Effect.provide(MainLive), NodeRuntime.runMain);

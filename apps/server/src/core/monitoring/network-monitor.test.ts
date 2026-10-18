@@ -10,8 +10,10 @@ import {
 import {
   type PingExecutionResult,
   PingExecutor,
+  PingExecutorLive,
 } from "@/core/monitoring/ping-executor";
 import { DatabaseWriteError, QuestDB } from "@/infrastructure/database/questdb";
+import { PingService } from "@/infrastructure/ping/service";
 import {
   SpeedTestExecutionError,
   SpeedTestTimeoutError,
@@ -96,6 +98,7 @@ describe("NetworkMonitor", () => {
       expect(stats.lastPingTime).toBeNull();
       expect(stats.successfulPings).toBe(0);
       expect(stats.failedPings).toBe(0);
+      expect(stats.failedWrites).toBe(0);
       expect(stats.lastSpeedTestTime).toBeNull();
       expect(stats.successfulSpeedTests).toBe(0);
       expect(stats.failedSpeedTests).toBe(0);
@@ -554,6 +557,139 @@ describe("NetworkMonitor", () => {
         expect(stats.successfulSpeedTests).toBe(speedTestCallCount.value);
         expect(stats.failedSpeedTests).toBe(0);
       }).pipe(Effect.provide(ConcurrentTestLayer));
+    }
+  );
+});
+
+describe("NetworkMonitor ping write failures", () => {
+  const hosts = ["8.8.8.8", "1.1.1.1"];
+
+  const baseLayers = Layer.mergeAll(
+    Layer.succeed(SpeedTestService, {
+      runTest: vi.fn(() =>
+        Effect.fail(new SpeedTestExecutionError({ message: "Mock error" }))
+      ),
+    }),
+    makeTestConfigLayer({
+      ping: { hosts, timeout: 5000, intervalSeconds: 30 },
+      speedtest: { intervalSeconds: 3600, timeoutSeconds: 120 },
+      auth: { password: "testpassword", jwtExpiresIn: "1h" },
+    }),
+    Layer.succeed(References.MinimumLogLevel, "None")
+  );
+
+  const questDBWith = (
+    writeMetric: () => Effect.Effect<void, DatabaseWriteError>
+  ) =>
+    Layer.succeed(QuestDB, {
+      writeMetric,
+      flush: vi.fn(() => Effect.void),
+      queryMetrics: vi.fn(),
+      querySpeedtests: vi.fn(),
+      queryConnectivityStatus: vi.fn(),
+      queryLiveConnectivity: vi.fn(),
+      queryEarliestTimestamp: vi.fn(),
+      queryLatestPingTimestamp: vi.fn(),
+      ...emptyAnalyticsQueries,
+      health: vi.fn(),
+      close: vi.fn(),
+    });
+
+  const statsAfterCycles = Effect.gen(function* () {
+    const monitor = yield* NetworkMonitor;
+    const fiber = yield* Effect.forkChild(monitor.start());
+    yield* Effect.sleep("100 millis");
+    const stats = yield* monitor.getStats();
+    yield* Fiber.interrupt(fiber);
+    return stats;
+  });
+
+  const withExecutorResults = (results: readonly PingExecutionResult[]) => {
+    const cycles = { count: 0 };
+    const executor = Layer.succeed(PingExecutor, {
+      executePing: vi.fn(),
+      executeAll: () =>
+        Effect.sync(() => {
+          cycles.count += 1;
+          return results;
+        }),
+      executeHosts: vi.fn(),
+    });
+    const layer = NetworkMonitorLive.pipe(
+      Layer.provide(executor),
+      Layer.provide(questDBWith(() => Effect.void)),
+      Layer.provide(baseLayers)
+    );
+    return { cycles, layer };
+  };
+
+  it.live("counts a failed write apart from a failed ping", () => {
+    const { cycles, layer } = withExecutorResults([
+      { host: "8.8.8.8", success: true, writeError: "DB unavailable" },
+      { host: "1.1.1.1", success: true },
+    ]);
+
+    return Effect.gen(function* () {
+      const stats = yield* statsAfterCycles;
+
+      expect(cycles.count).toBeGreaterThan(0);
+      expect(stats.failedPings).toBe(0);
+      expect(stats.successfulPings).toBe(2 * cycles.count);
+      expect(stats.failedWrites).toBe(cycles.count);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.live(
+    "counts a lost down row as both a failed ping and a failed write",
+    () => {
+      const { cycles, layer } = withExecutorResults([
+        {
+          host: "8.8.8.8",
+          success: false,
+          error: "PingHostUnreachableError",
+          writeError: "DB write failed",
+        },
+        { host: "1.1.1.1", success: true },
+      ]);
+
+      return Effect.gen(function* () {
+        const stats = yield* statsAfterCycles;
+
+        expect(stats.failedPings).toBe(cycles.count);
+        expect(stats.successfulPings).toBe(cycles.count);
+        expect(stats.failedWrites).toBe(cycles.count);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.live(
+    "does not count successful pings as failed while the database is down",
+    () => {
+      const layer = NetworkMonitorLive.pipe(
+        Layer.provide(PingExecutorLive),
+        Layer.provide(
+          Layer.succeed(PingService, {
+            ping: (host: string) =>
+              Effect.succeed({ host, alive: true, latency: 10, packetLoss: 0 }),
+            pingWithConfig: vi.fn(),
+            isReachable: vi.fn(),
+          })
+        ),
+        Layer.provide(
+          questDBWith(() =>
+            Effect.fail(new DatabaseWriteError({ message: "DB unavailable" }))
+          )
+        ),
+        Layer.provide(baseLayers)
+      );
+
+      return Effect.gen(function* () {
+        const stats = yield* statsAfterCycles;
+
+        expect(stats.failedPings).toBe(0);
+        expect(stats.successfulPings).toBeGreaterThanOrEqual(hosts.length);
+        expect(stats.failedWrites).toBe(stats.successfulPings);
+      }).pipe(Effect.provide(layer));
     }
   );
 });

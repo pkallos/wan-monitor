@@ -8,6 +8,7 @@ import {
   Exit,
   Fiber,
   Layer,
+  Logger,
   Option,
   Result,
   Scope,
@@ -81,6 +82,25 @@ const untilConnected = (connection: QuestDBConnectionService) =>
         () => new Promise((resolve) => setTimeout(resolve, 5))
       );
     }
+  });
+
+/** Builds the connection layer into a scope the test may close early. */
+const connectInScope = (migrate: SchemaMigratorService["migrate"]) =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.make();
+    yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+    const building = yield* Effect.forkChild(
+      Layer.buildWithScope(
+        connectionLayer(TestConfigLayer, migratorLayer(migrate)),
+        scope
+      )
+    );
+    yield* TestClock.adjust(Duration.millis(100));
+    const context = yield* Fiber.join(building);
+    return {
+      scope,
+      connection: Context.get(context, QuestDBConnection),
+    };
   });
 
 describe("QuestDBConnection integration tests", () => {
@@ -875,25 +895,6 @@ describe("QuestDBConnection integration tests", () => {
   });
 
   describe("connection loop crashes", () => {
-    /** Builds the connection layer into a scope the test may close early. */
-    const connectInScope = (migrate: SchemaMigratorService["migrate"]) =>
-      Effect.gen(function* () {
-        const scope = yield* Scope.make();
-        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
-        const building = yield* Effect.forkChild(
-          Layer.buildWithScope(
-            connectionLayer(TestConfigLayer, migratorLayer(migrate)),
-            scope
-          )
-        );
-        yield* TestClock.adjust(Duration.millis(100));
-        const context = yield* Fiber.join(building);
-        return {
-          scope,
-          connection: Context.get(context, QuestDBConnection),
-        };
-      });
-
     it.effect("restarts the loop after every crash, not only the first", () => {
       healthyConnection();
       let attempts = 0;
@@ -963,4 +964,156 @@ describe("QuestDBConnection integration tests", () => {
       });
     });
   });
+});
+
+describe("closing a connection whose flush never settles", () => {
+  const flushBoundMs = 5000;
+
+  /** The first flush hangs, as an HTTP sender does while QuestDB is down. */
+  const connectionWithHungFlush = () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    const end = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const flush = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise<boolean>(() => undefined))
+      .mockResolvedValue(true);
+    vi.mocked(Sender.fromConfig).mockResolvedValue(asSender({ flush, close }));
+    mockPool({ query, end, on: vi.fn() });
+    return { close, end, query };
+  };
+
+  const settlePromises = Effect.promise(
+    () => new Promise((resolve) => setTimeout(resolve, 20))
+  );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.effect(
+    "markDisconnected closes the sender and pool once the flush bound passes",
+    () => {
+      const { close, end } = connectionWithHungFlush();
+
+      return Effect.gen(function* () {
+        const { connection } = yield* connectInScope(() => Effect.void);
+        yield* untilConnected(connection);
+
+        const fiber = yield* Effect.forkChild(
+          connection.markDisconnected("write timed out")
+        );
+        yield* TestClock.adjust(Duration.millis(flushBoundMs - 1));
+        yield* settlePromises;
+        const beforeBound = fiber.pollUnsafe();
+        yield* TestClock.adjust(Duration.millis(1));
+        yield* settlePromises;
+
+        expect(beforeBound).toBeUndefined();
+        expect(fiber.pollUnsafe()).toBeDefined();
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(end).toHaveBeenCalledTimes(1);
+      });
+    }
+  );
+
+  it.effect(
+    "closing the scope logs the close and ends the pool once the flush bound passes",
+    () => {
+      const { close, end } = connectionWithHungFlush();
+      const logs: string[] = [];
+      const logger = Logger.make<unknown, void>(({ message }) => {
+        logs.push(String(message));
+      });
+
+      return Effect.gen(function* () {
+        const { scope, connection } = yield* connectInScope(() => Effect.void);
+        yield* untilConnected(connection);
+
+        const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void));
+        yield* TestClock.adjust(Duration.millis(flushBoundMs));
+        yield* settlePromises;
+
+        expect(closing.pollUnsafe()).toBeDefined();
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(end).toHaveBeenCalledTimes(1);
+        expect(logs.join("\n")).toContain("QuestDB connection closed");
+      }).pipe(Effect.provide(Logger.layer([logger])));
+    }
+  );
+
+  it.effect("stops the health loop before the shutdown flush starts", () => {
+    const { query } = connectionWithHungFlush();
+
+    return Effect.gen(function* () {
+      const { scope, connection } = yield* connectInScope(() => Effect.void);
+      yield* untilConnected(connection);
+      yield* settlePromises;
+      const queriesBeforeClose = query.mock.calls.length;
+
+      yield* Effect.forkChild(Scope.close(scope, Exit.void));
+      yield* TestClock.adjust(Duration.millis(flushBoundMs));
+      yield* settlePromises;
+
+      expect(query).toHaveBeenCalledTimes(queriesBeforeClose);
+      expect(Sender.fromConfig).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it.effect(
+    "neither closes a connection twice nor orphans a newer one when disconnects overlap a reconnect",
+    () => {
+      const pools: { pool: Pool; end: ReturnType<typeof vi.fn> }[] = [];
+      let senders = 0;
+      vi.mocked(Sender.fromConfig).mockImplementation(async () => {
+        senders += 1;
+        const hangs = senders === 1;
+        return asSender({
+          flush: vi.fn(() =>
+            hangs
+              ? new Promise<boolean>(() => undefined)
+              : Promise.resolve(true)
+          ),
+          close: vi.fn().mockResolvedValue(undefined),
+        });
+      });
+      vi.mocked(Pool).mockImplementation(function (this: unknown) {
+        const end = vi.fn().mockResolvedValue(undefined);
+        const pool = asPool({
+          query: vi.fn().mockResolvedValue({ rows: [] }),
+          end,
+          on: vi.fn(),
+        });
+        pools.push({ pool, end });
+        return pool;
+      });
+
+      return Effect.gen(function* () {
+        const { connection } = yield* connectInScope(() => Effect.void);
+        yield* untilConnected(connection);
+        yield* settlePromises;
+
+        yield* TestClock.adjust(Duration.millis(1000));
+        yield* Effect.forkChild(connection.markDisconnected("first"));
+        yield* TestClock.adjust(Duration.millis(4500));
+        yield* settlePromises;
+        yield* Effect.forkChild(connection.markDisconnected("second"));
+        yield* TestClock.adjust(Duration.millis(500));
+        yield* settlePromises;
+        yield* TestClock.adjust(Duration.millis(4000));
+        yield* settlePromises;
+        yield* TestClock.adjust(Duration.millis(500));
+        yield* settlePromises;
+
+        const current = (yield* connection.getState).connection;
+        const currentPool = Option.isSome(current)
+          ? current.value.pgClient
+          : undefined;
+        expect(pools.length).toBeGreaterThan(1);
+        for (const { pool, end } of pools) {
+          expect(end).toHaveBeenCalledTimes(pool === currentPool ? 0 : 1);
+        }
+      });
+    }
+  );
 });

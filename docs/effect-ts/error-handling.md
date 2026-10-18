@@ -105,6 +105,16 @@ if (Result.isFailure(result)) {
 See `apps/server/src/infrastructure/auth/middleware.test.ts` and `apps/server/src/core/api/handlers/auth.test.ts`
 for the full pattern in use.
 
+## Classifying errors from foreign libraries
+
+Decide what a thrown value means from its structure, never from its message. A server error from `pg`
+is `instanceof DatabaseError`, and a lost socket carries a Node system error `code`. The classifiers in
+`apps/server/src/infrastructure/database/questdb/util.ts` turn them into `DatabaseQueryError`,
+`DatabaseWriteError` or `DbUnavailable` this way: a message search ("contains `timeout`") also matches a
+slow query or a column name, and a wrong `DbUnavailable` makes the service tear down its connection for
+every request. When a library signals a condition with a message alone (pg's `Connection terminated...`),
+match the one prefix the library raises and cover it with a test against the real client.
+
 ## Inspecting a `Cause`
 
 `Effect.exit`/`Effect.runSyncExit`/`Effect.runPromiseExit` give you an `Exit<A, E>`, whose `Failure`
@@ -156,6 +166,8 @@ and `apps/server/src/infrastructure/speedtest/service.test.ts` for real assertio
 - ❌ Discriminating errors with `result._tag === "..."` instead of `Result.isFailure` /
   `Effect.catchTag`.
 - ❌ Indexing `cause.reasons[0]` directly instead of `Cause.findErrorOption` / `.filter(isFailReason)`.
+- ❌ Classifying a foreign error by searching its message for words like `timeout` or `connect`
+  instead of checking its class or `code`.
 - ❌ Throwing a bare `Error` or rejecting a `Promise` across an `Effect` boundary instead of
   `Effect.fail(new SomeTaggedError(...))`.
 - ❌ Setting a response status by hand-checking the error's `_tag` in a handler instead of annotating
