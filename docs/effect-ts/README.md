@@ -19,7 +19,7 @@ trust a cached copy or a blog post written against v3.
 ## Libraries in use
 
 Versions live in the workspace `package.json` files (`apps/server`, `apps/web`, `packages/shared`, and
-the root and `apps/server` for `@effect/vitest`); this table deliberately carries none. The packages
+the root, `apps/server` and `apps/web` for `@effect/vitest`); this table deliberately carries none. The packages
 are pinned exactly, not with caret ranges, because Foldkit peer-pins `effect` to an exact version, so `effect`, the
 `@effect/*` packages, `foldkit` and `@foldkit/*` have to move together. Verify with
 `pnpm view <pkg> version` before bumping (see the "Verify dependency versions" rule in `AGENTS.md`),
@@ -30,7 +30,7 @@ for what changed first.
 | --- | --- | --- |
 | `effect` | server, web, shared | Core: `Effect`, `Layer`, `Context`, `Data`, `Config`, `Schema`, `Option`, `Result`, `Cause`, `Fiber`, `Logger`. Also `effect/http` and `effect/http-api` (see below) |
 | `@effect/platform-node` | server | `NodeHttpServer` — binds the HTTP API to a Node `http` server. The one platform package still separate from core in v4 |
-| `@effect/vitest` | root (dev), server (dev) | `it.effect` / `it.live` Vitest integration |
+| `@effect/vitest` | root (dev), server (dev), web (dev) | `it.effect` / `it.live` Vitest integration |
 
 `@effect/platform` and `@effect/schema` do not appear above on purpose. In v4, `@effect/platform`'s
 HTTP and HttpApi modules folded into core under `effect/http` and `effect/http-api`;

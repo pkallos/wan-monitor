@@ -36,7 +36,7 @@ const enterLoggedIn = (
 ): UpdateReturn => {
   const { model: dashboardModel, commands: dashboardCommands } =
     Dashboard.update(
-      Dashboard.initModel(settings),
+      Dashboard.initModel(settings, Date.now()),
       Dashboard.EnteredDashboard(),
       { token, now: Date.now }
     );
@@ -120,7 +120,10 @@ const updateDashboard = (
     commands: dashboardCommands,
     outMessage,
   } = Dashboard.update(model.dashboard, message, { token, now: Date.now });
-  const nextModel = modifyFields(model, { dashboard: () => dashboardModel });
+  const nextModel =
+    dashboardModel === model.dashboard
+      ? model
+      : modifyFields(model, { dashboard: () => dashboardModel });
   const commands = Command.mapMessages(dashboardCommands ?? [], (message) =>
     GotDashboardMessage({ message })
   );

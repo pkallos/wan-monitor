@@ -1,14 +1,29 @@
-import { Effect, Fiber, Stream } from "effect";
+import { it } from "@effect/vitest";
+import { type Duration, Effect, Fiber, Option, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { chartEvents } from "@/dashboard/charts/chartHost";
-import { initModel } from "@/dashboard/model";
+import { Interacted, TickedClock, WentIdle } from "@/dashboard/message";
 import {
+  LiveConnectivityAsyncData,
+  type Model,
+  initModel as realInitModel,
+} from "@/dashboard/model";
+import {
+  activityStreamFor,
   chartBrushStream,
+  clockDependenciesToStream,
+  clockModelToDependencies,
   dependenciesToStream,
   modelToDependencies,
   systemThemeDependenciesToStream,
 } from "@/dashboard/subscription";
 import { defaultSettings } from "@/storage";
+
+const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
+
+const initModel = (settings: Parameters<typeof realInitModel>[0]) =>
+  realInitModel(settings, NOW_MS);
 
 describe("modelToDependencies", () => {
   test("derives isPaused and isIdle from the Model", () => {
@@ -151,4 +166,231 @@ describe("chartBrushStream", () => {
       { _tag: "BrushedChartRange", startMs: 7000, endMs: 9000 },
     ]);
   });
+});
+
+describe("activityStreamFor", () => {
+  const ACTIVITY_TYPES = [
+    "mousemove",
+    "keydown",
+    "scroll",
+    "touchstart",
+    "click",
+  ];
+
+  afterEach(() => vi.restoreAllMocks());
+
+  const spyOnListeners = () => {
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const countOf = (spy: typeof add | typeof remove, type: string) =>
+      spy.mock.calls.filter(([calledType]) => calledType === type).length;
+    const untilAttached = Effect.yieldNow.pipe(
+      Effect.repeat({
+        until: () => ACTIVITY_TYPES.every((type) => countOf(add, type) > 0),
+      })
+    );
+    return { add, remove, countOf, untilAttached };
+  };
+
+  // The yield lets the stream take the event in before the clock moves.
+  const dispatch = (type: string) =>
+    Effect.sync(() => window.dispatchEvent(new Event(type))).pipe(
+      Effect.andThen(Effect.yieldNow)
+    );
+
+  it.effect.each([false, true])(
+    "attaches one window listener per activity type when isIdle is %s",
+    (isIdle) =>
+      Effect.gen(function* () {
+        const { add, countOf, untilAttached } = spyOnListeners();
+        const fiber = yield* Effect.forkChild(
+          Stream.runDrain(activityStreamFor({ isIdle }))
+        );
+        yield* untilAttached;
+        yield* Fiber.interrupt(fiber);
+
+        for (const type of ACTIVITY_TYPES) {
+          expect(countOf(add, type)).toBe(1);
+        }
+      })
+  );
+
+  it.effect(
+    "sends nothing for activity while active, then WentIdle after two quiet minutes",
+    () =>
+      Effect.gen(function* () {
+        const { untilAttached } = spyOnListeners();
+        const fiber = yield* Effect.forkChild(
+          Stream.runCollect(
+            activityStreamFor({ isIdle: false }).pipe(Stream.take(1))
+          )
+        );
+        yield* untilAttached;
+        yield* dispatch("mousemove");
+        yield* TestClock.adjust("119 seconds");
+        expect(fiber.pollUnsafe()).toBeUndefined();
+        yield* TestClock.adjust("1 second");
+
+        expect(Array.from(yield* Fiber.join(fiber))).toEqual([WentIdle()]);
+      })
+  );
+
+  it.effect("restarts the idle countdown on each sign of activity", () =>
+    Effect.gen(function* () {
+      const { untilAttached } = spyOnListeners();
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(
+          activityStreamFor({ isIdle: false }).pipe(Stream.take(1))
+        )
+      );
+      yield* untilAttached;
+      yield* TestClock.adjust("90 seconds");
+      yield* dispatch("keydown");
+      yield* TestClock.adjust("90 seconds");
+      expect(fiber.pollUnsafe()).toBeUndefined();
+      yield* TestClock.adjust("30 seconds");
+
+      expect(Array.from(yield* Fiber.join(fiber))).toEqual([WentIdle()]);
+    })
+  );
+
+  it.effect("counts down from the moment it starts, before any activity", () =>
+    Effect.gen(function* () {
+      const { untilAttached } = spyOnListeners();
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(
+          activityStreamFor({ isIdle: false }).pipe(Stream.take(1))
+        )
+      );
+      yield* untilAttached;
+      yield* TestClock.adjust("2 minutes");
+
+      expect(Array.from(yield* Fiber.join(fiber))).toEqual([WentIdle()]);
+    })
+  );
+
+  it.effect(
+    "sends one Interacted for the first activity while idle, then detaches",
+    () =>
+      Effect.gen(function* () {
+        const { remove, countOf, untilAttached } = spyOnListeners();
+        const fiber = yield* Effect.forkChild(
+          Stream.runCollect(activityStreamFor({ isIdle: true }))
+        );
+        yield* untilAttached;
+        yield* dispatch("mousemove");
+        yield* dispatch("keydown");
+
+        expect(Array.from(yield* Fiber.join(fiber))).toEqual([Interacted()]);
+        for (const type of ACTIVITY_TYPES) {
+          expect(countOf(remove, type)).toBe(1);
+        }
+      })
+  );
+});
+
+describe("clockModelToDependencies", () => {
+  const MINUTE_MS = 60_000;
+  const at = (overrides: Partial<Model>): Model => ({
+    ...initModel(defaultSettings()),
+    ...overrides,
+  });
+  const sample = (sampleAtMs: number) =>
+    LiveConnectivityAsyncData.Success({
+      data: { status: "up", maybeLastSampleAtMs: Option.some(sampleAtMs) },
+    });
+
+  test("counts seconds while the last update is under a minute old", () => {
+    expect(
+      clockModelToDependencies(
+        at({ maybeLastUpdatedMs: Option.some(NOW_MS - 59_000) })
+      )
+    ).toEqual({ resolution: "second" });
+  });
+
+  test("counts seconds while the last sample is under a minute old, however old the last update", () => {
+    expect(
+      clockModelToDependencies(
+        at({
+          maybeLastUpdatedMs: Option.some(NOW_MS - 10 * MINUTE_MS),
+          liveConnectivity: sample(NOW_MS - 5_000),
+        })
+      )
+    ).toEqual({ resolution: "second" });
+  });
+
+  test("counts minutes once every time on screen has passed a minute, which is when its text stops showing seconds", () => {
+    expect(
+      clockModelToDependencies(
+        at({
+          maybeLastUpdatedMs: Option.some(NOW_MS - MINUTE_MS),
+          liveConnectivity: sample(NOW_MS - 2 * MINUTE_MS),
+        })
+      )
+    ).toEqual({ resolution: "minute" });
+  });
+
+  test("counts minutes when nothing on screen says how long ago it was", () => {
+    expect(clockModelToDependencies(at({}))).toEqual({ resolution: "minute" });
+  });
+});
+
+describe("clockDependenciesToStream", () => {
+  const START_MS = Date.parse("2026-07-28T12:00:00.000Z");
+
+  const collectTicks = (
+    resolution: "second" | "minute",
+    steps: ReadonlyArray<Duration.Input>
+  ) =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(START_MS);
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(
+          clockDependenciesToStream({ resolution }).pipe(
+            Stream.take(steps.length + 1)
+          )
+        )
+      );
+      yield* Effect.yieldNow;
+      for (const step of steps) {
+        yield* TestClock.adjust(step);
+      }
+      return Array.from(yield* Fiber.join(fiber));
+    });
+
+  it.effect("reports the time at once and then every second", () =>
+    Effect.gen(function* () {
+      expect(yield* collectTicks("second", ["1 second", "1 second"])).toEqual([
+        TickedClock({ nowMs: START_MS }),
+        TickedClock({ nowMs: START_MS + 1000 }),
+        TickedClock({ nowMs: START_MS + 2000 }),
+      ]);
+    })
+  );
+
+  it.effect("reports the time at once and then every minute", () =>
+    Effect.gen(function* () {
+      expect(yield* collectTicks("minute", ["1 minute"])).toEqual([
+        TickedClock({ nowMs: START_MS }),
+        TickedClock({ nowMs: START_MS + 60_000 }),
+      ]);
+    })
+  );
+
+  it.effect("does not report again before a minute is up", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(START_MS);
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(
+          clockDependenciesToStream({ resolution: "minute" }).pipe(
+            Stream.take(2)
+          )
+        )
+      );
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("59 seconds");
+
+      expect(fiber.pollUnsafe()).toBeUndefined();
+    })
+  );
 });
