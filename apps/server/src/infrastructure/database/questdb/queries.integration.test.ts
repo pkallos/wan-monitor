@@ -1,17 +1,23 @@
 import type { NetworkMetric } from "@shared/metrics";
+import type { Metric } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { DatabaseError, Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
+import { SchemaMigrator } from "@/infrastructure/database/questdb/migrations/service";
 import { pgConnectionSettings } from "@/infrastructure/database/questdb/pgwire";
+import type { QuestDB } from "@/infrastructure/database/questdb/service";
 import {
   createSeedDataset,
   seedDatabase,
 } from "@/infrastructure/database/questdb/test-utils/seed";
 import {
+  createMigratorTestLayer,
   createTestLayer,
   isQuestDBAvailable,
+  queryQuestDB,
   setupIntegrationTest,
+  TEST_TABLE,
   teardownIntegrationTest,
 } from "@/infrastructure/database/questdb/test-utils/setup";
 import {
@@ -794,6 +800,88 @@ describe("Metrics Aggregation Integration Tests", () => {
           }
 
           yield* teardownIntegrationTest(db);
+        });
+
+        await Effect.runPromise(Effect.provide(program, testLayer));
+      }
+    );
+  });
+
+  describe("speed tests older versions stored as 0", () => {
+    const baseTime = new Date("2024-01-15T09:00:00Z");
+    const window = {
+      startTime: baseTime,
+      endTime: new Date(baseTime.getTime() + 3_600_000),
+    };
+    const real = {
+      timestamp: baseTime,
+      source: "speedtest" as const,
+      latency: 18,
+      downloadBandwidth: 250_000_000,
+      uploadBandwidth: 20_000_000,
+    };
+    const failedAt = new Date(baseTime.getTime() + 600_000);
+    const asOlderVersionsStoredIt = {
+      timestamp: failedAt,
+      source: "speedtest" as const,
+      latency: 22,
+      downloadBandwidth: 0,
+      uploadBandwidth: 0,
+    };
+    const asNowStored = {
+      timestamp: failedAt,
+      source: "speedtest" as const,
+      latency: 22,
+    };
+
+    const readBack = (db: QuestDB["Service"]) =>
+      Effect.gen(function* () {
+        const speeds = (rows: readonly Metric[]) =>
+          rows.map((row) => [row.download_speed, row.upload_speed]);
+        return {
+          rawViaMetrics: speeds(
+            yield* db.queryMetrics({ ...window, source: "speedtest" })
+          ),
+          rawViaSpeedtests: speeds(yield* db.querySpeedtests(window)),
+          bucketedViaMetrics: speeds(
+            yield* db.queryMetrics({
+              ...window,
+              source: "speedtest",
+              granularity: "1h",
+            })
+          ),
+          bucketedViaSpeedtests: speeds(
+            yield* db.querySpeedtests({ ...window, granularity: "1h" })
+          ),
+        };
+      });
+
+    const migrateTestTable = Effect.gen(function* () {
+      const migrator = yield* SchemaMigrator;
+      yield* migrator.migrate({ canRewriteTables: true });
+    }).pipe(Effect.provide(createMigratorTestLayer(TEST_TABLE)));
+
+    it.skipIf(skipTests)(
+      "read like tests that stored no reading, raw and averaged",
+      async () => {
+        const program = Effect.gen(function* () {
+          const db = yield* setupIntegrationTest();
+          yield* seedDatabase(db, [real, asNowStored]);
+          const expected = yield* readBack(db);
+          yield* teardownIntegrationTest(db);
+
+          yield* seedDatabase(db, [real, asOlderVersionsStoredIt]);
+          // The service layer already migrated the empty table, so the ledger
+          // is dropped to run the migrations against the seeded rows.
+          yield* Effect.promise(() =>
+            queryQuestDB(`DROP TABLE IF EXISTS ${TEST_TABLE}_migrations`)
+          );
+          yield* migrateTestTable;
+          const actual = yield* readBack(db);
+          yield* teardownIntegrationTest(db);
+
+          expect(actual).toEqual(expected);
+          expect(actual.bucketedViaSpeedtests).toEqual([[250, 20]]);
         });
 
         await Effect.runPromise(Effect.provide(program, testLayer));

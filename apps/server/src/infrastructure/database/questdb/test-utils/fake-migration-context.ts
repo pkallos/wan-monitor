@@ -44,6 +44,11 @@ interface FakeOptions {
     table: string,
     statements: readonly string[]
   ) => FakeDigest;
+  /** Rows for statements the fake does not model; return undefined to fall through to the built-in answers. */
+  readonly answers?: (
+    sql: string,
+    statements: readonly string[]
+  ) => readonly MigrationRow[] | undefined;
   readonly ledger?: readonly number[];
   /** Whether this process may rename and drop tables; defaults to true. */
   readonly canRewriteTables?: boolean;
@@ -61,6 +66,7 @@ const tableAfter = (sql: string, keyword: RegExp): string => {
 export const createFakeContext = (options: FakeOptions) => {
   const tables = new Set(options.tables ?? []);
   const ledger = [...(options.ledger ?? [])];
+  const failures = new Map<number, string>();
   const statements: string[] = [];
 
   const query: MigrationContext["query"] = (sql) =>
@@ -75,6 +81,8 @@ export const createFakeContext = (options: FakeOptions) => {
     options.digestFor?.(name, statements) ?? sameDigest;
 
   const answer = (sql: string): readonly MigrationRow[] => {
+    const scripted = options.answers?.(sql, statements);
+    if (scripted !== undefined) return scripted;
     if (sql.includes("FROM tables()")) {
       return [...tables]
         .filter((name) => sql.includes(`'${name}'`))
@@ -112,8 +120,24 @@ export const createFakeContext = (options: FakeOptions) => {
     if (sql.startsWith("SELECT max(version)")) {
       return [{ v: ledger.length === 0 ? null : Math.max(...ledger) }];
     }
+    if (sql.startsWith("SELECT name FROM") && sql.includes("_migrations")) {
+      const version = Number(tableAfter(sql, /WHERE version = -(\d+)$/));
+      const message = failures.get(version);
+      return message === undefined ? [] : [{ name: message }];
+    }
     if (sql.startsWith("INSERT INTO") && sql.includes("_migrations")) {
-      ledger.push(Number(tableAfter(sql, /VALUES \((\d+),/)));
+      const version = Number(tableAfter(sql, /VALUES \((-?\d+),/));
+      if (version < 0) {
+        failures.set(
+          -version,
+          tableAfter(
+            sql,
+            /VALUES \(-\d+, '((?:[^']|'')*)', now\(\)\)$/
+          ).replaceAll("''", "'")
+        );
+      } else {
+        ledger.push(version);
+      }
       return [];
     }
     if (/^CREATE TABLE IF NOT EXISTS/.test(sql)) {
@@ -138,6 +162,8 @@ export const createFakeContext = (options: FakeOptions) => {
     statements,
     tables,
     ledger,
+    /** Messages of recorded failures, by the version they stopped. */
+    failures,
   };
 };
 

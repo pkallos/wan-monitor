@@ -1,13 +1,18 @@
+import { Sender } from "@questdb/nodejs-client";
+import { ConnectivityStatusSchema, type NetworkMetric } from "@shared/metrics";
 import {
   buildCreateTableSql,
   NETWORK_METRICS_COLUMNS,
 } from "@wan-monitor/shared/db-schema";
-import { Cause, Effect, Exit, Option } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
 import {
+  type Migration,
   type MigrationContext,
   MigrationError,
+  stickyError,
 } from "@/infrastructure/database/questdb/migrations/migration";
 import {
   MIGRATIONS,
@@ -20,6 +25,7 @@ import {
   SchemaMigrator,
 } from "@/infrastructure/database/questdb/migrations/service";
 import { isDuplicateColumnError } from "@/infrastructure/database/questdb/migrations/v1-create-network-metrics";
+import { nullZeroSpeedtestSpeeds } from "@/infrastructure/database/questdb/migrations/v3-null-zero-speedtest-speeds";
 import { pgConnectionSettings } from "@/infrastructure/database/questdb/pgwire";
 import {
   createLegacyTable,
@@ -31,11 +37,14 @@ import {
   createMigratorTestLayer,
   dropTableFamily,
   isQuestDBAvailable,
+  QUESTDB_HTTP_URL,
   queryQuestDB,
   TEST_TABLE,
 } from "@/infrastructure/database/questdb/test-utils/setup";
 
 const skip = !isQuestDBAvailable();
+
+const ALL_VERSIONS = MIGRATIONS.map((migration) => migration.version);
 
 /**
  * QuestDB's ILP writer loses the next batch for a name whose table was dropped,
@@ -212,6 +221,105 @@ const expectedRows = (rows: readonly LegacyRow[]) =>
 const storedRows = async (table: string) =>
   sortedRows(await queryQuestDB(`SELECT ${FIELDS} FROM ${table}`));
 
+/**
+ * Speed tests as older versions stored them: a missing reading as 0. The ping
+ * row's zero bandwidth is synthetic: it proves the predicate is limited to
+ * speed test rows.
+ */
+const zeroFilledRows = (): LegacyRow[] => [
+  {
+    timestampMs: T0 + 1_000,
+    source: "speedtest",
+    connectivityStatus: "up",
+    downloadBandwidth: 0,
+    uploadBandwidth: 0,
+    latency: 0,
+    serverLocation: "Zürich, CH",
+    isp: "Example Fiber",
+    externalIp: "203.0.113.7",
+    internalIp: "192.168.1.10",
+  },
+  {
+    timestampMs: T0 + 3_601_000,
+    source: "speedtest",
+    connectivityStatus: "up",
+    downloadBandwidth: 180_000_000,
+    uploadBandwidth: 0,
+    latency: 12.5,
+  },
+  {
+    timestampMs: T0 + 7_201_000,
+    source: "speedtest",
+    connectivityStatus: "up",
+    downloadBandwidth: 250_000_000,
+    uploadBandwidth: 20_000_000,
+    latency: 18,
+    jitter: 0,
+  },
+  {
+    timestampMs: T0 + 500,
+    source: "ping",
+    host: "9.9.9.9",
+    latency: 0,
+    packetLoss: 0,
+    connectivityStatus: "up",
+    downloadBandwidth: 0,
+    uploadBandwidth: 0,
+  },
+];
+
+const withSpeedZerosEmptied = (rows: readonly LegacyRow[]): LegacyRow[] =>
+  rows.map((row) => {
+    if (row.source !== "speedtest") return row;
+    const { downloadBandwidth, uploadBandwidth, ...rest } = row;
+    return {
+      ...rest,
+      ...(downloadBandwidth === 0 ? {} : { downloadBandwidth }),
+      ...(uploadBandwidth === 0 ? {} : { uploadBandwidth }),
+    };
+  });
+
+const toMetric = (row: LegacyRow): NetworkMetric => ({
+  timestamp: new Date(row.timestampMs),
+  source: row.source,
+  host: row.host,
+  latency: row.latency,
+  jitter: row.jitter,
+  packetLoss: row.packetLoss,
+  connectivityStatus: Schema.is(ConnectivityStatusSchema)(
+    row.connectivityStatus
+  )
+    ? row.connectivityStatus
+    : undefined,
+  downloadBandwidth: row.downloadBandwidth,
+  uploadBandwidth: row.uploadBandwidth,
+  serverLocation: row.serverLocation,
+  isp: row.isp,
+  externalIp: row.externalIp,
+  internalIp: row.internalIp,
+});
+
+const writeThroughProductionWriter = async (
+  table: string,
+  rows: readonly LegacyRow[]
+): Promise<void> => {
+  const rowsBefore = await count(table);
+  const sender = await Sender.fromConfig(
+    `http::addr=${new URL(QUESTDB_HTTP_URL).host};`
+  );
+  try {
+    for (const row of rows) {
+      await writeMetricToSender(sender, toMetric(row), table);
+    }
+    await sender.flush();
+  } finally {
+    await sender.close();
+  }
+  await Effect.runPromise(
+    waitForRowCount(rowsBefore + rows.length, "30 seconds", table)
+  );
+};
+
 describe.skipIf(skip)(
   "SchemaMigrator against QuestDB",
   { timeout: 60_000 },
@@ -229,7 +337,7 @@ describe.skipIf(skip)(
       await migrate();
 
       expect(await columnsOf(family.table)).toEqual(canonicalColumns);
-      expect(await ledgerVersions()).toEqual([1, 2]);
+      expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
       expect(await tableNames()).toEqual([family.table, family.ledger].sort());
     });
 
@@ -261,7 +369,7 @@ describe.skipIf(skip)(
         expect(await tableNames()).toEqual(
           [family.table, family.ledger].sort()
         );
-        expect(await ledgerVersions()).toEqual([1, 2]);
+        expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
       },
       60_000
     );
@@ -296,7 +404,7 @@ describe.skipIf(skip)(
 
       expect(await tableId(family.table)).toBe(id);
       expect(await storedRows(family.table)).toEqual(rows);
-      expect(await ledgerVersions()).toEqual([1, 2]);
+      expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
     });
 
     it("adds missing columns without rebuilding the table, keeping what is stored", async () => {
@@ -378,7 +486,7 @@ describe.skipIf(skip)(
           ],
         ])
       );
-      expect(await ledgerVersions()).toEqual([1, 2]);
+      expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
     });
 
     it("replaces a stale copy left by an interrupted rebuild", async () => {
@@ -642,6 +750,219 @@ describe.skipIf(skip)(
           );
         }
       );
+    });
+
+    describe("v3: speed tests stored as 0", () => {
+      const withClient = async <T>(
+        use: (client: Client) => Promise<T>
+      ): Promise<T> => {
+        const client = await connectPgClient();
+        try {
+          return await use(client);
+        } finally {
+          await client.end();
+        }
+      };
+
+      const runV3 = (client: Client, canRewriteTables = true) =>
+        Effect.runPromise(
+          nullZeroSpeedtestSpeeds.up(
+            pgMigrationContext(client, family.table, canRewriteTables)
+          )
+        );
+
+      it("empties them on a rebuilt legacy table and changes nothing else", async () => {
+        const rows = [...legacyRows(), ...zeroFilledRows()];
+        await Effect.runPromise(createLegacyTable(family.table, rows));
+
+        await migrate();
+
+        expect(await storedRows(family.table)).toEqual(
+          expectedRows(withSpeedZerosEmptied(rows))
+        );
+        expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+        expect(await tableNames()).toEqual(
+          [family.table, family.ledger].sort()
+        );
+      });
+
+      it("empties them in place on a table written through the production writer", async () => {
+        const rows = [...legacyRows(), ...zeroFilledRows()];
+        await withClient((client) =>
+          Effect.runPromise(
+            runMigrations(pgMigrationContext(client, family.table, true), {
+              migrations: MIGRATIONS.slice(0, 2),
+              target: NETWORK_METRICS_SHAPE,
+            })
+          )
+        );
+        await writeThroughProductionWriter(family.table, rows);
+        const id = await tableId(family.table);
+        expect(await ledgerVersions()).toEqual([1, 2]);
+
+        await migrate();
+
+        expect(await tableId(family.table)).toBe(id);
+        expect(await storedRows(family.table)).toEqual(
+          expectedRows(withSpeedZerosEmptied(rows))
+        );
+        expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+      });
+
+      it("finishes a run that stopped between the two columns, and needs no rewrite permission", async () => {
+        const rows = zeroFilledRows();
+        await withClient((client) =>
+          Effect.runPromise(
+            runMigrations(pgMigrationContext(client, family.table, true), {
+              migrations: MIGRATIONS.slice(0, 2),
+              target: NETWORK_METRICS_SHAPE,
+            })
+          )
+        );
+        await writeThroughProductionWriter(family.table, rows);
+        await queryQuestDB(
+          `UPDATE ${family.table} SET download_bandwidth = NULL WHERE source = 'speedtest' AND download_bandwidth = 0`
+        );
+        const id = await tableId(family.table);
+
+        await withClient((client) => runV3(client, false));
+
+        expect(await tableId(family.table)).toBe(id);
+        expect(await storedRows(family.table)).toEqual(
+          expectedRows(withSpeedZerosEmptied(rows))
+        );
+      });
+
+      it("does nothing when no zero is stored", async () => {
+        await Effect.runPromise(
+          createLegacyTable(family.table, zeroFilledRows())
+        );
+        await migrate();
+        const id = await tableId(family.table);
+        const rows = await storedRows(family.table);
+        const txn = await queryQuestDB(
+          `SELECT sequencerTxn FROM wal_tables() WHERE name = '${family.table}'`
+        );
+
+        await withClient((client) => runV3(client));
+
+        expect(await tableId(family.table)).toBe(id);
+        expect(await storedRows(family.table)).toEqual(rows);
+        expect(
+          await queryQuestDB(
+            `SELECT sequencerTxn FROM wal_tables() WHERE name = '${family.table}'`
+          )
+        ).toEqual(txn);
+      });
+
+      it("accepts a column whose every stored value was a zero, so its sum becomes NULL", async () => {
+        const rows = legacyRows().map((row) =>
+          row.source === "speedtest" ? { ...row, uploadBandwidth: 0 } : row
+        );
+        await Effect.runPromise(createLegacyTable(family.table, rows));
+
+        await migrate();
+
+        expect(await storedRows(family.table)).toEqual(
+          expectedRows(withSpeedZerosEmptied(rows))
+        );
+        expect(
+          await queryQuestDB(
+            `SELECT count(upload_bandwidth), sum(upload_bandwidth) FROM ${family.table}`
+          )
+        ).toEqual([[0, null]]);
+        expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+      });
+
+      describe("when the update changed anything else", () => {
+        const damageAfterUpdate = (client: Client): MigrationContext => {
+          const live = pgMigrationContext(client, family.table, true);
+          return {
+            ...live,
+            query: (sql, params) =>
+              live
+                .query(sql, params)
+                .pipe(
+                  Effect.tap(() =>
+                    sql.startsWith(
+                      `UPDATE ${family.table} SET upload_bandwidth`
+                    )
+                      ? live.query(
+                          `UPDATE ${family.table} SET isp = 'changed' WHERE source = 'speedtest'`
+                        )
+                      : Effect.void
+                  )
+                ),
+          };
+        };
+
+        const damagedRun = async () => {
+          await Effect.runPromise(
+            createLegacyTable(family.table, zeroFilledRows())
+          );
+          return withClient((client) =>
+            Effect.runPromise(
+              Effect.flip(
+                runMigrations(damageAfterUpdate(client), {
+                  migrations: MIGRATIONS,
+                  target: NETWORK_METRICS_SHAPE,
+                })
+              )
+            )
+          );
+        };
+
+        it("refuses, pointing at the snapshot, and records the failure instead of the version", async () => {
+          const error = await damagedRun();
+
+          expect(error.kind).toBe("terminal");
+          expect(error.message).toContain("len_isp");
+          expect(error.message).toContain("snapshot");
+          expect(await ledgerVersions()).toEqual([-3, 1, 2]);
+        });
+
+        it("keeps refusing on every later start, and stops once the ledger is dropped", async () => {
+          await damagedRun();
+
+          for (let start = 0; start < 2; start += 1) {
+            const error = await migrationFailure();
+
+            expect(error.kind).toBe("terminal");
+            expect(error.message).toContain("earlier start");
+            expect(error.message).toContain("len_isp");
+          }
+          expect(await ledgerVersions()).toEqual([-3, 1, 2]);
+
+          await queryQuestDB(`DROP TABLE ${family.ledger}`);
+          await migrate();
+
+          expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+        });
+      });
+
+      it("stores a failure message that holds quotes and reads it back", async () => {
+        const quoted = `it's "damaged"`;
+        const damaging: Migration = {
+          version: 3,
+          name: "damaging",
+          up: () => Effect.fail(stickyError("verify", quoted)),
+        };
+
+        await withClient(async (client) => {
+          const ctx = pgMigrationContext(client, family.table, true);
+          const plan = {
+            migrations: [...MIGRATIONS.slice(0, 2), damaging],
+            target: NETWORK_METRICS_SHAPE,
+          };
+          await Effect.runPromise(Effect.flip(runMigrations(ctx, plan)));
+
+          const error = await Effect.runPromise(
+            Effect.flip(runMigrations(ctx, plan))
+          );
+
+          expect(error.message).toContain(quoted);
+        });
+      });
     });
 
     it("refuses a table that ILP recreated with the wrong types after the ledger was written", async () => {

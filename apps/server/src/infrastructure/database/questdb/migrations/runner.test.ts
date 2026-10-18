@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import { NETWORK_METRICS_COLUMNS } from "@wan-monitor/shared/db-schema";
 import { Effect } from "effect";
-import type {
-  Migration,
-  MigrationError,
+import {
+  type Migration,
+  type MigrationError,
+  stickyError,
 } from "@/infrastructure/database/questdb/migrations/migration";
 import { runMigrations } from "@/infrastructure/database/questdb/migrations/runner";
 import type { TableShape } from "@/infrastructure/database/questdb/migrations/schema";
@@ -369,6 +370,93 @@ describe("runMigrations", () => {
         "announce v2: step-2",
         "up v2",
       ]);
+    });
+  });
+
+  describe("a sticky failure", () => {
+    const setup = () =>
+      createFakeContext({ table: "metrics", tables: ["metrics"] });
+    const run = (
+      ctx: ReturnType<typeof setup>["ctx"],
+      migrations: readonly Migration[]
+    ) => runMigrations(ctx, { migrations, target });
+
+    it.effect(
+      "is recorded under the negated version, not as an applied one",
+      () => {
+        const { ctx, ledger, failures, statements } = setup();
+
+        return Effect.gen(function* () {
+          const error = yield* Effect.flip(
+            run(ctx, [
+              migration(1),
+              migration(2, stickyError("verify", "it's damaged")),
+            ])
+          );
+
+          expect(error.kind).toBe("terminal");
+          expect(ledger).toEqual([1]);
+          expect(failures.get(2)).toBe("it's damaged");
+          expect(statements).toContain(
+            "INSERT INTO metrics_migrations VALUES (-2, 'it''s damaged', now())"
+          );
+        });
+      }
+    );
+
+    it.effect(
+      "makes every retry refuse with the stored message and run nothing",
+      () => {
+        const { ctx, ledger, statements } = setup();
+
+        return Effect.gen(function* () {
+          yield* Effect.flip(
+            run(ctx, [
+              migration(1),
+              migration(2, stickyError("verify", "damaged")),
+            ])
+          );
+
+          for (let retry = 0; retry < 2; retry += 1) {
+            const error = yield* Effect.flip(
+              run(ctx, [migration(1), migration(2)])
+            );
+
+            expect(error.kind).toBe("terminal");
+            expect(error.message).toContain("Migration v2 (step-2)");
+            expect(error.message).toContain("damaged");
+            expect(error.message).toContain("drop metrics_migrations");
+          }
+          expect(statements.filter((sql) => sql === "-- up v2")).toHaveLength(
+            1
+          );
+          expect(ledger).toEqual([1]);
+        });
+      }
+    );
+
+    it.effect("is not recorded for a failure that is not sticky", () => {
+      const { ctx, failures } = setup();
+
+      return Effect.gen(function* () {
+        yield* Effect.flip(
+          run(ctx, [migration(1, terminal("needs a person"))])
+        );
+
+        expect(failures.size).toBe(0);
+      });
+    });
+
+    it.effect("is left out of the applied version", () => {
+      const { ctx, statements } = setup();
+
+      return Effect.gen(function* () {
+        yield* run(ctx, [migration(1)]);
+
+        expect(statements).toContain(
+          "SELECT max(version) AS v FROM metrics_migrations WHERE version > 0"
+        );
+      });
     });
   });
 });

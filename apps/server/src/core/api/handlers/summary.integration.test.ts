@@ -4,6 +4,7 @@ import { Effect, Layer, Schedule } from "effect";
 import { describe, expect, it } from "vitest";
 import { getOutagesHandler } from "@/core/api/handlers/connectivity-status";
 import { getSummaryHandler } from "@/core/api/handlers/summary";
+import { MIGRATIONS } from "@/infrastructure/database/questdb/migrations/registry";
 import { QuestDB } from "@/infrastructure/database/questdb/service";
 import {
   createLegacyTable,
@@ -125,18 +126,13 @@ describe("Summary Integration Tests", () => {
     }).flat();
   };
 
-  /** Mbps pairs at minutes 10, 20, 30 and 40; the third failed (stored as 0). */
+  /** Mbps pairs at minutes 10, 20, 30 and 40; the third failed and stored no reading. */
   const speedtests = (): NetworkMetric[] =>
-    [
-      [100, 20],
-      [200, 40],
-      [0, 0],
-      [300, 60],
-    ].map(([download, upload], i) => ({
+    [[100, 20], [200, 40], undefined, [300, 60]].map((mbps, i) => ({
       timestamp: new Date(T0 + (10 + i * 10) * MINUTE),
       source: "speedtest" as const,
-      downloadBandwidth: download * 1_000_000,
-      uploadBandwidth: upload * 1_000_000,
+      downloadBandwidth: mbps && mbps[0] * 1_000_000,
+      uploadBandwidth: mbps && mbps[1] * 1_000_000,
       connectivityStatus: "up" as const,
     }));
 
@@ -1045,7 +1041,9 @@ describe("Summary Integration Tests", () => {
 
         expect(before).toEqual(["TIMESTAMP_NS"]);
         expect(after).toEqual(["TIMESTAMP"]);
-        expect(ledger).toEqual([[1], [2]]);
+        expect(ledger).toEqual(
+          MIGRATIONS.map((migration) => [migration.version])
+        );
         expect(leftovers).toEqual([]);
         expect(period).toBe(CYCLE_MS);
         expect(outages).toEqual([

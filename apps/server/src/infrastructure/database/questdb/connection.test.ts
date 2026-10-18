@@ -17,17 +17,22 @@ import { TestClock } from "effect/testing";
 import { Pool } from "pg";
 import { vi } from "vitest";
 import {
+  healthPoolConfig,
   QuestDBConnection,
   QuestDBConnectionOverMigrator,
   type QuestDBConnectionService,
+  queryPoolConfig,
 } from "@/infrastructure/database/questdb/connection";
-import { DatabaseUnavailable } from "@/infrastructure/database/questdb/errors";
+import {
+  DatabaseConnectionError,
+  DatabaseUnavailable,
+} from "@/infrastructure/database/questdb/errors";
 import { MigrationError } from "@/infrastructure/database/questdb/migrations/migration";
 import {
   SchemaMigrator,
   type SchemaMigratorService,
 } from "@/infrastructure/database/questdb/migrations/service";
-import { makeTestConfigLayer } from "@/test/config";
+import { makeTestAppConfig, makeTestConfigLayer } from "@/test/config";
 
 vi.mock("@questdb/nodejs-client");
 vi.mock("pg");
@@ -37,6 +42,16 @@ const asPool = (mock: Partial<Pool>): Pool => mock as Pool;
 const mockPool = (mock: Partial<Pool>) => {
   vi.mocked(Pool).mockImplementation(function (this: unknown) {
     return asPool(mock);
+  });
+};
+
+/** Hands out `queryPool` for the query pool and `healthPool` for the health pool, told apart by `max`. */
+const mockPools = (queryPool: Partial<Pool>, healthPool: Partial<Pool>) => {
+  vi.mocked(Pool).mockImplementation(function (
+    this: unknown,
+    config?: { max?: number }
+  ) {
+    return asPool(config?.max === 1 ? healthPool : queryPool);
   });
 };
 
@@ -973,14 +988,18 @@ describe("closing a connection whose flush never settles", () => {
   const connectionWithHungFlush = () => {
     const close = vi.fn().mockResolvedValue(undefined);
     const end = vi.fn().mockResolvedValue(undefined);
+    const healthEnd = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockResolvedValue({ rows: [] });
     const flush = vi
       .fn()
       .mockImplementationOnce(() => new Promise<boolean>(() => undefined))
       .mockResolvedValue(true);
     vi.mocked(Sender.fromConfig).mockResolvedValue(asSender({ flush, close }));
-    mockPool({ query, end, on: vi.fn() });
-    return { close, end, query };
+    mockPools(
+      { query, end, on: vi.fn() },
+      { query, end: healthEnd, on: vi.fn() }
+    );
+    return { close, end, healthEnd, query };
   };
 
   const settlePromises = Effect.promise(
@@ -992,9 +1011,9 @@ describe("closing a connection whose flush never settles", () => {
   });
 
   it.effect(
-    "markDisconnected closes the sender and pool once the flush bound passes",
+    "markDisconnected closes the sender and both pools once the flush bound passes",
     () => {
-      const { close, end } = connectionWithHungFlush();
+      const { close, end, healthEnd } = connectionWithHungFlush();
 
       return Effect.gen(function* () {
         const { connection } = yield* connectInScope(() => Effect.void);
@@ -1013,14 +1032,15 @@ describe("closing a connection whose flush never settles", () => {
         expect(fiber.pollUnsafe()).toBeDefined();
         expect(close).toHaveBeenCalledTimes(1);
         expect(end).toHaveBeenCalledTimes(1);
+        expect(healthEnd).toHaveBeenCalledTimes(1);
       });
     }
   );
 
   it.effect(
-    "closing the scope logs the close and ends the pool once the flush bound passes",
+    "closing the scope logs the close and ends both pools once the flush bound passes",
     () => {
-      const { close, end } = connectionWithHungFlush();
+      const { close, end, healthEnd } = connectionWithHungFlush();
       const logs: string[] = [];
       const logger = Logger.make<unknown, void>(({ message }) => {
         logs.push(String(message));
@@ -1037,6 +1057,7 @@ describe("closing a connection whose flush never settles", () => {
         expect(closing.pollUnsafe()).toBeDefined();
         expect(close).toHaveBeenCalledTimes(1);
         expect(end).toHaveBeenCalledTimes(1);
+        expect(healthEnd).toHaveBeenCalledTimes(1);
         expect(logs.join("\n")).toContain("QuestDB connection closed");
       }).pipe(Effect.provide(Logger.layer([logger])));
     }
@@ -1063,7 +1084,12 @@ describe("closing a connection whose flush never settles", () => {
   it.effect(
     "neither closes a connection twice nor orphans a newer one when disconnects overlap a reconnect",
     () => {
-      const pools: { pool: Pool; end: ReturnType<typeof vi.fn> }[] = [];
+      interface PoolPair {
+        readonly queryPool: Pool;
+        readonly queryEnd: ReturnType<typeof vi.fn>;
+        readonly healthEnd: ReturnType<typeof vi.fn>;
+      }
+      const pairs: PoolPair[] = [];
       let senders = 0;
       vi.mocked(Sender.fromConfig).mockImplementation(async () => {
         senders += 1;
@@ -1077,14 +1103,23 @@ describe("closing a connection whose flush never settles", () => {
           close: vi.fn().mockResolvedValue(undefined),
         });
       });
-      vi.mocked(Pool).mockImplementation(function (this: unknown) {
+      vi.mocked(Pool).mockImplementation(function (
+        this: unknown,
+        config?: { max?: number }
+      ) {
         const end = vi.fn().mockResolvedValue(undefined);
         const pool = asPool({
           query: vi.fn().mockResolvedValue({ rows: [] }),
           end,
           on: vi.fn(),
         });
-        pools.push({ pool, end });
+        if (config?.max === 1) {
+          const pair = pairs.at(-1);
+          if (pair !== undefined)
+            pairs[pairs.length - 1] = { ...pair, healthEnd: end };
+        } else {
+          pairs.push({ queryPool: pool, queryEnd: end, healthEnd: vi.fn() });
+        }
         return pool;
       });
 
@@ -1109,11 +1144,382 @@ describe("closing a connection whose flush never settles", () => {
         const currentPool = Option.isSome(current)
           ? current.value.pgClient
           : undefined;
-        expect(pools.length).toBeGreaterThan(1);
-        for (const { pool, end } of pools) {
-          expect(end).toHaveBeenCalledTimes(pool === currentPool ? 0 : 1);
+        expect(pairs.length).toBeGreaterThan(1);
+        for (const { queryPool, queryEnd, healthEnd } of pairs) {
+          const expected = queryPool === currentPool ? 0 : 1;
+          expect(queryEnd).toHaveBeenCalledTimes(expected);
+          expect(healthEnd).toHaveBeenCalledTimes(expected);
         }
       });
     }
   );
+});
+
+describe("pool settings", () => {
+  const database = makeTestAppConfig({
+    database: { queryTimeout: 20_000 },
+  }).database;
+
+  describe("queryPoolConfig", () => {
+    it("lets the server cut a query off at the query timeout", () => {
+      expect(queryPoolConfig(database).options).toBe(
+        "-c statement_timeout=20000"
+      );
+    });
+
+    it("does not send statement_timeout as a startup parameter, which QuestDB ignores", () => {
+      expect(queryPoolConfig(database)).not.toHaveProperty("statement_timeout");
+    });
+
+    it("backs the server's cut-off with a later client-side one", () => {
+      const { query_timeout } = queryPoolConfig(database);
+
+      expect(query_timeout).toBeGreaterThan(20_000);
+    });
+
+    it("waits as long as a query may take for a free connection", () => {
+      expect(queryPoolConfig(database).connectionTimeoutMillis).toBe(20_000);
+    });
+
+    it("targets the pgwire port with ten connections", () => {
+      expect(queryPoolConfig(database)).toMatchObject({
+        host: "localhost",
+        port: 8812,
+        max: 10,
+        idleTimeoutMillis: 30_000,
+      });
+    });
+  });
+
+  describe("healthPoolConfig", () => {
+    it("holds a single connection that no query can take", () => {
+      expect(healthPoolConfig(database).max).toBe(1);
+    });
+
+    it("gives a hung health query the query timeout, after which pg releases the connection", () => {
+      expect(healthPoolConfig(database).query_timeout).toBe(20_000);
+    });
+
+    it("keeps the five second connect limit whatever the query timeout", () => {
+      for (const queryTimeout of [1_000, 20_000, 60_000]) {
+        const config = healthPoolConfig({ ...database, queryTimeout });
+
+        expect(config.connectionTimeoutMillis).toBe(5000);
+      }
+    });
+  });
+});
+
+describe("the health pool beside the query pool", () => {
+  const settlePromises = Effect.promise(
+    () => new Promise((resolve) => setTimeout(resolve, 20))
+  );
+
+  const neverSettles = () => new Promise<never>(() => undefined);
+
+  const okPool = (overrides: Partial<Pool> = {}): Partial<Pool> => ({
+    query: vi.fn().mockResolvedValue({ rows: [] }),
+    end: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+    ...overrides,
+  });
+
+  const mockSender = () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Sender.fromConfig).mockResolvedValue(
+      asSender({ flush: vi.fn().mockResolvedValue(undefined), close })
+    );
+    return { close };
+  };
+
+  const connected = Effect.gen(function* () {
+    const { connection } = yield* connectInScope(() => Effect.void);
+    yield* untilConnected(connection);
+    yield* settlePromises;
+    return connection;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.effect(
+    "stays connected while every query connection is busy for longer than the health timeout",
+    () => {
+      mockSender();
+      const queryPoolQuery = vi.fn().mockImplementation(neverSettles);
+      const healthQuery = vi.fn().mockResolvedValue({ rows: [] });
+      mockPools(
+        okPool({ query: queryPoolQuery }),
+        okPool({ query: healthQuery })
+      );
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+
+        for (let seconds = 0; seconds < 60; seconds += 5) {
+          yield* TestClock.adjust(Duration.seconds(5));
+          yield* settlePromises;
+        }
+
+        expect(Option.isSome((yield* connection.getState).connection)).toBe(
+          true
+        );
+        expect(healthQuery.mock.calls.length).toBeGreaterThanOrEqual(10);
+        expect(queryPoolQuery).not.toHaveBeenCalled();
+      });
+    }
+  );
+
+  it.effect(
+    "waits as long as a query may take for the health answer, then reconnects",
+    () => {
+      mockSender();
+      mockPools(
+        okPool(),
+        okPool({
+          query: vi
+            .fn()
+            .mockResolvedValueOnce({ rows: [] })
+            .mockImplementation(neverSettles),
+        })
+      );
+
+      return Effect.gen(function* () {
+        yield* connected;
+
+        yield* TestClock.adjust(Duration.millis(24_000));
+        yield* settlePromises;
+        const connectionsBefore = vi.mocked(Sender.fromConfig).mock.calls
+          .length;
+        yield* TestClock.adjust(Duration.millis(2_000));
+        yield* settlePromises;
+
+        expect(connectionsBefore).toBe(1);
+        expect(Sender.fromConfig).toHaveBeenCalledTimes(2);
+      });
+    }
+  );
+
+  it.effect("closes both pools when the connection goes", () => {
+    mockSender();
+    const queryEnd = vi.fn().mockResolvedValue(undefined);
+    const healthEnd = vi.fn().mockResolvedValue(undefined);
+    mockPools(okPool({ end: queryEnd }), okPool({ end: healthEnd }));
+
+    return Effect.gen(function* () {
+      const connection = yield* connected;
+
+      const closing = yield* Effect.forkChild(connection.close);
+      yield* TestClock.adjust(Duration.millis(5000));
+      yield* settlePromises;
+      yield* Fiber.join(closing);
+
+      expect(queryEnd).toHaveBeenCalledTimes(1);
+      expect(healthEnd).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it.effect(
+    "stops waiting for a pool that never finishes ending, so the disconnect completes",
+    () => {
+      mockSender();
+      mockPools(
+        okPool(),
+        okPool({
+          end: vi
+            .fn()
+            .mockImplementationOnce(neverSettles)
+            .mockResolvedValue(undefined),
+        })
+      );
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+
+        const fiber = yield* Effect.forkChild(
+          connection.markDisconnected("health check hung")
+        );
+        yield* TestClock.adjust(Duration.millis(4999));
+        yield* settlePromises;
+        const beforeBound = fiber.pollUnsafe();
+        yield* TestClock.adjust(Duration.millis(1));
+        yield* settlePromises;
+
+        expect(beforeBound).toBeUndefined();
+        expect(fiber.pollUnsafe()).toBeDefined();
+      });
+    }
+  );
+
+  describe.each([
+    ["query pool", "queryPool"],
+    ["health pool", "healthPool"],
+  ] as const)("the %s's error event", (_name, which) => {
+    it.effect("disconnects instead of crashing the process", () => {
+      mockSender();
+      const handlers: Record<
+        "queryPool" | "healthPool",
+        (error: Error) => void
+      > = { queryPool: () => undefined, healthPool: () => undefined };
+      const capture =
+        (key: keyof typeof handlers) => (event: string, handler: unknown) => {
+          if (event === "error" && typeof handler === "function") {
+            handlers[key] = (error) => handler(error);
+          }
+        };
+      mockPools(
+        okPool({ on: vi.fn().mockImplementation(capture("queryPool")) }),
+        okPool({ on: vi.fn().mockImplementation(capture("healthPool")) })
+      );
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+
+        handlers[which](new Error("idle client died"));
+        yield* settlePromises;
+
+        const state = yield* connection.getState;
+        expect(Option.isNone(state.connection)).toBe(true);
+        expect(Option.map(state.lastError, (error) => error.message)).toEqual(
+          Option.some("idle client died")
+        );
+      });
+    });
+  });
+
+  describe("verifying a new connection", () => {
+    it.effect(
+      "goes through the health pool and leaves the query pool unused",
+      () => {
+        mockSender();
+        const queryPoolQuery = vi.fn().mockResolvedValue({ rows: [] });
+        const healthQuery = vi.fn().mockResolvedValue({ rows: [] });
+        mockPools(
+          okPool({ query: queryPoolQuery }),
+          okPool({ query: healthQuery })
+        );
+
+        return Effect.gen(function* () {
+          yield* connected;
+
+          expect(healthQuery).toHaveBeenCalledWith("SELECT 1");
+          expect(queryPoolQuery).not.toHaveBeenCalled();
+        });
+      }
+    );
+
+    it.effect("closes the sender and both pools when it fails", () => {
+      const { close } = mockSender();
+      const queryEnd = vi.fn().mockResolvedValue(undefined);
+      const healthEnd = vi.fn().mockResolvedValue(undefined);
+      mockPools(
+        okPool({ end: queryEnd }),
+        okPool({
+          end: healthEnd,
+          query: vi.fn().mockRejectedValue(new Error("refused")),
+        })
+      );
+
+      return Effect.gen(function* () {
+        yield* connectInScope(() => Effect.void);
+        yield* settlePromises;
+
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(queryEnd).toHaveBeenCalledTimes(1);
+        expect(healthEnd).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it.effect("gives up after five seconds and still cleans up", () => {
+      const { close } = mockSender();
+      const queryEnd = vi.fn().mockResolvedValue(undefined);
+      const healthEnd = vi.fn().mockResolvedValue(undefined);
+      mockPools(
+        okPool({ end: queryEnd }),
+        okPool({
+          end: healthEnd,
+          query: vi.fn().mockImplementation(neverSettles),
+        })
+      );
+
+      return Effect.gen(function* () {
+        yield* connectInScope(() => Effect.void);
+        yield* TestClock.adjust(Duration.millis(4800));
+        yield* settlePromises;
+        const closedEarly = close.mock.calls.length;
+        yield* TestClock.adjust(Duration.millis(300));
+        yield* settlePromises;
+
+        expect(closedEarly).toBe(0);
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(queryEnd).toHaveBeenCalledTimes(1);
+        expect(healthEnd).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
+  describe("ping", () => {
+    it.effect("runs SELECT 1 on the health pool, not the query pool", () => {
+      mockSender();
+      const queryPoolQuery = vi.fn().mockResolvedValue({ rows: [] });
+      const healthQuery = vi.fn().mockResolvedValue({ rows: [] });
+      mockPools(
+        okPool({ query: queryPoolQuery }),
+        okPool({ query: healthQuery })
+      );
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+        const before = healthQuery.mock.calls.length;
+
+        yield* connection.ping;
+
+        expect(healthQuery.mock.calls.length).toBe(before + 1);
+        expect(queryPoolQuery).not.toHaveBeenCalled();
+      });
+    });
+
+    it.effect(
+      "fails with DatabaseConnectionError when the health query rejects",
+      () => {
+        mockSender();
+        let failNext = false;
+        mockPools(
+          okPool(),
+          okPool({
+            query: vi.fn().mockImplementation(async () => {
+              if (failNext) {
+                failNext = false;
+                throw new Error("boom");
+              }
+              return { rows: [] };
+            }),
+          })
+        );
+
+        return Effect.gen(function* () {
+          const connection = yield* connected;
+
+          failNext = true;
+          const error = yield* Effect.flip(connection.ping);
+
+          expect(error).toBeInstanceOf(DatabaseConnectionError);
+          expect(error.message).toBe("Health check failed: Error: boom");
+        });
+      }
+    );
+
+    it.effect("fails as unavailable while nothing is connected", () =>
+      Effect.gen(function* () {
+        const { connection } = yield* connectInScope(() =>
+          Effect.fail(failing("transient"))
+        );
+
+        const error = yield* Effect.flip(connection.ping);
+
+        expect(error).toBeInstanceOf(DatabaseUnavailable);
+      })
+    );
+  });
 });

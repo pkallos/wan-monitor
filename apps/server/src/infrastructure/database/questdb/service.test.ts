@@ -116,6 +116,7 @@ const withStubbedPgClient = <A, E>(
           Effect.sync(() => {
             disconnects.push(error);
           }),
+        ping: Effect.void,
         close: Effect.void,
       });
       return Effect.gen(function* () {
@@ -461,7 +462,10 @@ describe("queries over no rows", () => {
 
 describe("health", () => {
   const healthLayer = (
-    connection: Pick<QuestDBConnectionService, "getConnection" | "getState">
+    connection: Pick<
+      QuestDBConnectionService,
+      "getConnection" | "getState" | "ping"
+    >
   ) =>
     QuestDBOverConnection.pipe(
       Layer.provide(
@@ -483,50 +487,48 @@ describe("health", () => {
     connectedSince: Option.none(),
   };
 
-  it.effect("fails with the connection's own unavailable error", () =>
+  const failsWith = (error: DatabaseUnavailable | DatabaseConnectionError) =>
     Effect.gen(function* () {
       const db = yield* QuestDB;
-      const error = yield* Effect.flip(db.health());
 
-      expect(error).toBeInstanceOf(DatabaseUnavailable);
-      expect(error).toMatchObject({ message: "connect ECONNREFUSED" });
+      expect(yield* Effect.flip(db.health())).toBe(error);
     }).pipe(
       Effect.provide(
         healthLayer({
-          getConnection: Effect.fail(
-            new DatabaseUnavailable({ message: "connect ECONNREFUSED" })
-          ),
+          getConnection: Effect.fail(new DatabaseUnavailable({ message: "" })),
           getState: Effect.succeed(notConnected),
+          ping: Effect.fail(error),
         })
       )
-    )
+    );
+
+  it.effect("fails with the connection's own unavailable error", () =>
+    failsWith(new DatabaseUnavailable({ message: "connect ECONNREFUSED" }))
   );
 
-  it.effect("fails with DatabaseConnectionError when SELECT 1 rejects", () =>
-    withStubbedPgClient(
-      () => Promise.reject(new Error("boom")),
-      (db) =>
-        Effect.gen(function* () {
-          const error = yield* Effect.flip(db.health());
-
-          expect(error).toBeInstanceOf(DatabaseConnectionError);
-          expect(error).toMatchObject({
-            message: "Health check failed: Error: boom",
-          });
-        })
-    )
+  it.effect("fails with the connection's own health check error", () =>
+    failsWith(new DatabaseConnectionError({ message: "Health check failed" }))
   );
 
-  it.effect("reports connected when SELECT 1 succeeds", () =>
-    withStubbedPgClient(
-      () => Promise.resolve({ rows: [] }),
-      (db) =>
-        Effect.gen(function* () {
-          const health = yield* db.health();
+  it.effect("reports connected, with the uptime, once the ping succeeds", () =>
+    Effect.gen(function* () {
+      const db = yield* QuestDB;
 
-          expect(health.connected).toBe(true);
-          expect(health.uptime).toBe(0);
+      const health = yield* db.health();
+
+      expect(health.connected).toBe(true);
+      expect(health.uptime).toBeGreaterThan(0);
+    }).pipe(
+      Effect.provide(
+        healthLayer({
+          getConnection: Effect.fail(new DatabaseUnavailable({ message: "" })),
+          getState: Effect.succeed({
+            ...notConnected,
+            connectedSince: Option.some(new Date(Date.now() - 5000)),
+          }),
+          ping: Effect.void,
         })
+      )
     )
   );
 });

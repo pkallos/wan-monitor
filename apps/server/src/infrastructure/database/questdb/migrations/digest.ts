@@ -88,10 +88,13 @@ const sameFigure = (key: string, a: DigestValue, b: DigestValue): boolean => {
   );
 };
 
+/** `labels` name the two sides in each message. */
 export const digestMismatches = (
   source: TableDigest,
-  target: TableDigest
+  target: TableDigest,
+  labels: readonly [string, string] = ["source", "copy"]
 ): readonly string[] => {
+  const [from, to] = labels;
   const totalKeys = new Set([
     ...Object.keys(source.totals),
     ...Object.keys(target.totals),
@@ -106,11 +109,11 @@ export const digestMismatches = (
       const [a, b] = [source.totals[key] ?? null, target.totals[key] ?? null];
       return sameFigure(key, a, b)
         ? []
-        : [`${key}: ${a} in source, ${b} in copy`];
+        : [`${key}: ${a} in ${from}, ${b} in ${to}`];
     }),
     ...[...groupKeys].flatMap((key) => {
       const [a, b] = [source.groups[key] ?? 0, target.groups[key] ?? 0];
-      return a === b ? [] : [`rows for ${key}: ${a} in source, ${b} in copy`];
+      return a === b ? [] : [`rows for ${key}: ${a} in ${from}, ${b} in ${to}`];
     }),
   ];
 };

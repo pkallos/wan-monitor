@@ -110,10 +110,9 @@ describe("calculateSpeedStats", () => {
   });
 });
 
-describe("a 0 speed", () => {
-  // A stored 0 is no reading, not a slow one.
+describe("a test with no reading", () => {
   const rows = [
-    { download_speed: 0, upload_speed: 0 },
+    { download_speed: undefined, upload_speed: undefined },
     { download_speed: 100, upload_speed: 10 },
     { download_speed: 300, upload_speed: 30 },
   ];
@@ -128,16 +127,16 @@ describe("a 0 speed", () => {
     expect(speedMedians(rows)).toEqual({ download: 200, upload: 20 });
   });
 
-  test("leaves a series of only zeros with no figures", () => {
-    const zeros = [{ download_speed: 0, upload_speed: 0 }];
+  test("leaves a series of only unread tests with no figures", () => {
+    const unread = [{ download_speed: undefined, upload_speed: undefined }];
 
-    expect(calculateSpeedStats(zeros)).toEqual({
+    expect(calculateSpeedStats(unread)).toEqual({
       avgDownload: null,
       avgUpload: null,
       maxDownload: null,
       maxUpload: null,
     });
-    expect(speedMedians(zeros)).toEqual({ download: null, upload: null });
+    expect(speedMedians(unread)).toEqual({ download: null, upload: null });
   });
 });
 

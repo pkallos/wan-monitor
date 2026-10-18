@@ -2,7 +2,7 @@ import type { Metric } from "@shared/api/routes/metrics";
 import type { SpeedMetric } from "@shared/api/routes/speedtest";
 import { Array as Array_, Option, Order } from "effect";
 
-// Zero is a valid ping reading (0% packet loss), unlike speeds (see `isMeasured`).
+// Zero is a valid reading (0% packet loss).
 const isFiniteNonNegative = (value: number | undefined): value is number =>
   value !== undefined && value >= 0;
 
@@ -71,14 +71,11 @@ export interface SpeedStats {
 
 type SpeedRow = Pick<SpeedMetric, "download_speed" | "upload_speed">;
 
-/** An absent figure and a stored 0 both mean the test took no reading. */
-const isMeasured = (value: number | undefined): value is number =>
-  value !== undefined && value > 0;
-
 const measuredSpeeds = (
   data: ReadonlyArray<SpeedRow>,
   pick: (row: SpeedRow) => number | undefined
-): ReadonlyArray<number> => Array_.filter(Array_.map(data, pick), isMeasured);
+): ReadonlyArray<number> =>
+  Array_.filter(Array_.map(data, pick), isFiniteNonNegative);
 
 export const calculateSpeedStats = (
   data: ReadonlyArray<SpeedRow>

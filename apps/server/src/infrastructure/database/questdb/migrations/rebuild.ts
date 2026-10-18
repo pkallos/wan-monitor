@@ -1,16 +1,11 @@
 import { buildCreateTableSql } from "@wan-monitor/shared/db-schema";
 import { Effect } from "effect";
-import {
-  digestGroupsSql,
-  digestMismatches,
-  digestTotalsSql,
-  type TableDigest,
-  toDigest,
-} from "@/infrastructure/database/questdb/migrations/digest";
+import { digestMismatches } from "@/infrastructure/database/questdb/migrations/digest";
 import {
   awaitApplied,
   existingTables,
   listColumns,
+  readDigest,
   walStatus,
 } from "@/infrastructure/database/questdb/migrations/introspect";
 import {
@@ -26,21 +21,6 @@ import {
 
 const rebuildName = (table: string): string => `${table}__rebuild`;
 const previousName = (table: string): string => `${table}__previous`;
-
-const digestTable = (
-  ctx: MigrationContext,
-  table: string,
-  shape: TableShape,
-  sourceColumnNames: ReadonlySet<string>
-): Effect.Effect<TableDigest, MigrationError> =>
-  Effect.gen(function* () {
-    const columns = shape.columns.filter((column) =>
-      sourceColumnNames.has(column.name)
-    );
-    const totals = yield* ctx.query(digestTotalsSql(table, columns));
-    const groups = yield* ctx.query(digestGroupsSql(table, shape.groupColumns));
-    return toDigest(totals[0] ?? {}, groups, shape.groupColumns);
-  });
 
 /**
  * Proves `to` holds what `from` holds and returns the row count. `outcome`
@@ -68,8 +48,11 @@ const verifyCopy = (
       );
     }
     const sourceColumns = new Set(liveColumns.map((column) => column.name));
-    const source = yield* digestTable(ctx, from, shape, sourceColumns);
-    const copy = yield* digestTable(ctx, to, shape, sourceColumns);
+    const columns = shape.columns.filter((column) =>
+      sourceColumns.has(column.name)
+    );
+    const source = yield* readDigest(ctx, from, columns, shape.groupColumns);
+    const copy = yield* readDigest(ctx, to, columns, shape.groupColumns);
     const mismatches = digestMismatches(source, copy);
     if (mismatches.length > 0) {
       return yield* Effect.fail(

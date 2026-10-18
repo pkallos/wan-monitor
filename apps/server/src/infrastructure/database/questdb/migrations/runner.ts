@@ -33,16 +33,58 @@ const appliedVersion = (
   ctx: MigrationContext
 ): Effect.Effect<number, MigrationError> =>
   ctx
-    .query(`SELECT max(version) AS v FROM ${ledgerName(ctx.table)}`)
+    .query(
+      `SELECT max(version) AS v FROM ${ledgerName(ctx.table)} WHERE version > 0`
+    )
     .pipe(Effect.map((rows) => Number(rows[0]?.v ?? 0)));
+
+// A failed in-place migration is recorded as a row with the negated version.
+// Reads of applied versions ignore it; running the migration again refuses.
+const recordedFailure = (
+  ctx: MigrationContext,
+  migration: Migration
+): Effect.Effect<string | undefined, MigrationError> =>
+  ctx
+    .query(
+      `SELECT name FROM ${ledgerName(ctx.table)} WHERE version = ${-migration.version}`
+    )
+    .pipe(
+      Effect.map((rows) =>
+        rows[0] === undefined ? undefined : String(rows[0].name)
+      )
+    );
+
+const recordFailure = (
+  ctx: MigrationContext,
+  migration: Migration,
+  message: string
+): Effect.Effect<void, MigrationError> =>
+  Effect.asVoid(
+    ctx.query(
+      `INSERT INTO ${ledgerName(ctx.table)} VALUES (${-migration.version}, '${message.replaceAll("'", "''")}', now())`
+    )
+  );
 
 const apply = (
   ctx: MigrationContext,
   migration: Migration
 ): Effect.Effect<void, MigrationError> =>
   Effect.gen(function* () {
+    const earlier = yield* recordedFailure(ctx, migration);
+    if (earlier !== undefined) {
+      return yield* Effect.fail(
+        terminal(
+          `Migration v${migration.version} (${migration.name}) failed verification on an earlier start and is not run again. ${earlier} To accept the table as it is instead, drop ${ledgerName(ctx.table)} and restart.`
+        )
+      );
+    }
     const [elapsed] = yield* Effect.timed(
       migration.up(ctx).pipe(
+        Effect.tapError((error) =>
+          error.sticky === true
+            ? recordFailure(ctx, migration, error.message)
+            : Effect.void
+        ),
         Effect.mapError(
           (error) =>
             new MigrationError({

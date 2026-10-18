@@ -34,15 +34,22 @@ describe("summarizeSpeed", () => {
     });
   });
 
-  it("ignores failed tests stored as 0 so they don't drag the figures down", () => {
-    const summary = summarizeSpeed([test(0, 0), test(100, 10), test(300, 30)]);
+  it("ignores tests with no reading so they don't drag the figures down", () => {
+    const summary = summarizeSpeed([
+      test(undefined, undefined),
+      test(100, 10),
+      test(300, 30),
+    ]);
 
     expect(summary.downloadMedian).toBe(200);
     expect(summary.count).toBe(2);
   });
 
-  it("is all null when every test failed", () => {
-    const summary = summarizeSpeed([test(0, 0), test(0, 0)]);
+  it("is all null when no test took a reading", () => {
+    const summary = summarizeSpeed([
+      test(undefined, undefined),
+      test(undefined, undefined),
+    ]);
 
     expect(summary.downloadMedian).toBeNull();
     expect(summary.uploadMedian).toBeNull();
@@ -50,7 +57,7 @@ describe("summarizeSpeed", () => {
   });
 
   it("counts a partial result toward the direction that was measured", () => {
-    const summary = summarizeSpeed([test(100, 0), test(undefined, 40)]);
+    const summary = summarizeSpeed([test(100, undefined), test(undefined, 40)]);
 
     expect(summary.downloadMedian).toBe(100);
     expect(summary.uploadMedian).toBe(40);

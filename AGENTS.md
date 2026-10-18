@@ -257,6 +257,7 @@ WAN Monitor persists historical time-series metrics. Losing or corrupting that d
 - **Migrations are idempotent**: Each `up` must be safe to run again after a partial or repeated run.
 - **Prefer additive schema changes**: Add new columns or tables and backfill them. Never drop a column or table that still holds data, except the original table at the end of a verified rebuild or the rebuild's own unverified copy.
 - **Rewriting a table goes only through the verified rebuild**: Use `rebuildTable` (copy, prove the copy complete, swap, prove again, then drop the original). No production code outside `rebuildTable` and `recoverTableState` in `rebuild.ts` drops, renames or truncates a table.
+- **In-place value corrections are verified by a digest**: A migration that `UPDATE`s stored values reads `readDigest` before and after and fails with a sticky terminal `MigrationError`, which the runner records so it survives a retry, unless `digestMismatches` finds only the changes the correction predicts.
 - **No destructive operations against production data**: Never run ad hoc schema changes or destructive SQL against a live/production database. Only registered migrations run there.
 - **Never hardcode secrets**: Do not commit API keys, tokens, webhook URLs, or credential-looking literals in source, docs, tests, fixtures, or generated content. Use environment variables and obviously fake placeholders in examples.
 

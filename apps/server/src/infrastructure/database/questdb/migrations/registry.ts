@@ -6,11 +6,13 @@ import {
   conformNetworkMetrics,
   NETWORK_METRICS_GROUP_COLUMNS,
 } from "@/infrastructure/database/questdb/migrations/v2-conform-network-metrics";
+import { nullZeroSpeedtestSpeeds } from "@/infrastructure/database/questdb/migrations/v3-null-zero-speedtest-speeds";
 
 /** Every migration, oldest first. A schema change is a new entry appended here. */
 export const MIGRATIONS: readonly Migration[] = [
   createNetworkMetrics,
   conformNetworkMetrics,
+  nullZeroSpeedtestSpeeds,
 ];
 
 /** What the table must look like once every migration has run. */
