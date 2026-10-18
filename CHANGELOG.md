@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.2
+
+### Patch Changes
+
+- [#408](https://github.com/pkallos/wan-monitor/pull/408) [`4fb6401`](https://github.com/pkallos/wan-monitor/commit/4fb6401394d364a6b79d80f2125d89a56078a02e) Thanks [@pkallos](https://github.com/pkallos)! - Stop the server crashing when QuestDB comes back after an outage, and resume pings within the write timeout instead of stalling
+
+- [#406](https://github.com/pkallos/wan-monitor/pull/406) [`8ade49f`](https://github.com/pkallos/wan-monitor/commit/8ade49f5da81ebf969d5ed89a5946984b4967586) Thanks [@pkallos](https://github.com/pkallos)! - Sign sessions with a random secret generated at each start, instead of a public default, when JWT_SECRET is unset; installs that set a password without JWT_SECRET now log users out on every restart until it is set. Login credentials are compared in constant time.
+
+- [#407](https://github.com/pkallos/wan-monitor/pull/407) [`86dd044`](https://github.com/pkallos/wan-monitor/commit/86dd044e42d8c0541c4d1dc107e4be0802ca3f12) Thanks [@pkallos](https://github.com/pkallos)! - Keep reconnecting to QuestDB after repeated connection loop crashes.
+
+- [#410](https://github.com/pkallos/wan-monitor/pull/410) [`48b0567`](https://github.com/pkallos/wan-monitor/commit/48b0567b782c7540f117c80149868ce9f0f7becd) Thanks [@pkallos](https://github.com/pkallos)! - Retry failed chart loads on the next refresh, keep you signed in and offer Retry when the server is unreachable on reload, and fail the Docker build on a bad QuestDB download
+
+- [#415](https://github.com/pkallos/wan-monitor/pull/415) [`092b586`](https://github.com/pkallos/wan-monitor/commit/092b5862b7d9fb42278540fe3baa0548afe18c61) Thanks [@pkallos](https://github.com/pkallos)! - Stop slow queries from taking the API offline, keep pinging when QuestDB drops mid-write, flush pending metrics when the server is stopped, and log lost ping writes instead of counting them as failed pings.
+
+- [#414](https://github.com/pkallos/wan-monitor/pull/414) [`605af39`](https://github.com/pkallos/wan-monitor/commit/605af3914587c178a405fea2da91357a4065660c) Thanks [@pkallos](https://github.com/pkallos)! - Reject malformed or reversed time ranges and bad limits with a 400 on the metrics, speed test history and connectivity status routes, run speed tests one at a time and stop the speedtest CLI when a test times out, and leave a missing speed test measurement empty instead of storing 0.
+
 ## 1.3.1
 
 ### Patch Changes
