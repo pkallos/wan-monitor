@@ -3,12 +3,16 @@ import type { NetworkMetric } from "@shared/metrics";
 import {
   Clock,
   Deferred,
+  type Duration,
   Effect,
+  Exit,
   Fiber,
   Layer,
   Option,
   References,
+  Scope,
 } from "effect";
+import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 import {
   type MonitorStats,
@@ -33,6 +37,9 @@ import { SpeedTestService } from "@/infrastructure/speedtest/types";
 import { makeTestConfigLayer } from "@/test/config";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 import { speedTestRunnerFrom } from "@/test/speedtest-runner";
+
+// TestClock starts at epoch 0, which the monitor's stats treat as "unset".
+const BOOT_TIME = Date.parse("2026-01-01T00:00:00Z");
 
 describe("NetworkMonitor", () => {
   const mockPingResults: readonly PingExecutionResult[] = [
@@ -89,7 +96,7 @@ describe("NetworkMonitor", () => {
   const MockConfig = makeTestConfigLayer({
     ping: { hosts: ["8.8.8.8", "1.1.1.1"], timeout: 5000, intervalSeconds: 30 },
     speedtest: { intervalSeconds: 3600, timeoutSeconds: 120 },
-    auth: { password: "testpassword", jwtExpiresIn: "1h" },
+    auth: { password: "testpassword" },
   });
 
   const TestLayer = NetworkMonitorLive.pipe(
@@ -115,62 +122,23 @@ describe("NetworkMonitor", () => {
     }).pipe(Effect.provide(TestLayer))
   );
 
-  it.live("should start monitoring and update stats after initial ping", () =>
+  it.effect("runs one ping cycle at boot and records its stats", () =>
     Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
       const monitor = yield* NetworkMonitor;
 
-      // Fork the start and interrupt after assertions
-      const fiber = yield* Effect.forkChild(monitor.start());
-
-      // Wait briefly for async effects
-      yield* Effect.sleep("100 millis");
+      yield* monitor.start();
+      yield* TestClock.adjust("5 seconds");
 
       const stats: MonitorStats = yield* monitor.getStats();
-
-      expect(stats.uptime).toBeGreaterThan(0);
-      expect(stats.lastPingTime).toBeInstanceOf(Date);
-      // The scheduled task runs immediately after start, so we get 2 cycles x 2 hosts = 4
-      expect(stats.successfulPings).toBeGreaterThanOrEqual(2);
+      expect(stats.uptime).toBe(5000);
+      expect(stats.lastPingTime).toEqual(new Date(BOOT_TIME));
+      expect(stats.successfulPings).toBe(mockPingResults.length);
       expect(stats.failedPings).toBe(0);
-
-      // Interrupt the background monitor
-      yield* Fiber.interrupt(fiber);
     }).pipe(Effect.provide(TestLayer))
   );
 
-  it.live("should respect custom ping interval from config", () => {
-    const CustomPingConfig = makeTestConfigLayer({
-      ping: {
-        hosts: ["8.8.8.8", "1.1.1.1"],
-        timeout: 5000,
-        intervalSeconds: 30,
-      },
-      speedtest: { intervalSeconds: 3600, timeoutSeconds: 120 },
-      auth: { password: "testpassword", jwtExpiresIn: "1h" },
-    });
-
-    const CustomPingTestLayer = NetworkMonitorLive.pipe(
-      Layer.provide(MockPingExecutor),
-      Layer.provide(speedTestRunnerFrom(MockSpeedTestService, MockQuestDB)),
-      Layer.provide(CustomPingConfig),
-      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
-    );
-
-    return Effect.gen(function* () {
-      const monitor = yield* NetworkMonitor;
-      const fiber = yield* Effect.forkChild(monitor.start());
-      yield* Effect.sleep("100 millis");
-      const stats: MonitorStats = yield* monitor.getStats();
-
-      // Should have run initial ping
-      expect(stats.successfulPings).toBeGreaterThan(0);
-
-      // Interrupt the background monitor
-      yield* Fiber.interrupt(fiber);
-    }).pipe(Effect.provide(CustomPingTestLayer));
-  });
-
-  it.live("should handle ping executor returning empty results", () => {
+  it.effect("should handle ping executor returning empty results", () => {
     const EmptyResultsPingExecutor = Layer.succeed(PingExecutor, {
       executePing: vi.fn(),
       executeAll: () => Effect.succeed([]),
@@ -185,17 +153,15 @@ describe("NetworkMonitor", () => {
     );
 
     return Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
       const monitor = yield* NetworkMonitor;
-      const fiber = yield* Effect.forkChild(monitor.start());
 
-      yield* Effect.sleep("100 millis");
+      yield* monitor.start();
 
       const stats: MonitorStats = yield* monitor.getStats();
       expect(stats.successfulPings).toBe(0);
       expect(stats.failedPings).toBe(0);
-      expect(stats.lastPingTime).not.toBeNull();
-
-      yield* Fiber.interrupt(fiber);
+      expect(stats.lastPingTime).toEqual(new Date(BOOT_TIME));
     }).pipe(Effect.provide(EmptyResultsTestLayer));
   });
 
@@ -207,7 +173,7 @@ describe("NetworkMonitor", () => {
         intervalSeconds: 30,
       },
       speedtest: { intervalSeconds: 10, timeoutSeconds: 120 },
-      auth: { password: "testpassword", jwtExpiresIn: "1h" },
+      auth: { password: "testpassword" },
     });
 
     const SpeedTestTestLayer = NetworkMonitorLive.pipe(
@@ -230,7 +196,7 @@ describe("NetworkMonitor", () => {
     }).pipe(Effect.provide(SpeedTestTestLayer));
   });
 
-  it.live("should handle partial ping failures in results", () => {
+  it.effect("should handle partial ping failures in results", () => {
     const MixedResultsPingExecutor = Layer.succeed(PingExecutor, {
       executePing: vi.fn(),
       executeAll: () =>
@@ -263,16 +229,14 @@ describe("NetworkMonitor", () => {
     );
 
     return Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
       const monitor = yield* NetworkMonitor;
-      const fiber = yield* Effect.forkChild(monitor.start());
 
-      yield* Effect.sleep("100 millis");
+      yield* monitor.start();
 
       const stats: MonitorStats = yield* monitor.getStats();
       expect(stats.successfulPings).toBe(1);
       expect(stats.failedPings).toBe(1);
-
-      yield* Fiber.interrupt(fiber);
     }).pipe(Effect.provide(MixedResultsTestLayer));
   });
 
@@ -315,7 +279,7 @@ describe("NetworkMonitor", () => {
               intervalSeconds: 30,
             },
             speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
-            auth: { password: "testpassword", jwtExpiresIn: "1h" },
+            auth: { password: "testpassword" },
           })
         ),
         Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
@@ -324,8 +288,6 @@ describe("NetworkMonitor", () => {
       return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
-        // Keep the parent fiber alive (as index.ts does with Effect.never) so the
-        // forked monitoring loops are not interrupted when start() returns.
         const fiber = yield* Effect.forkChild(
           Effect.gen(function* () {
             yield* monitor.start();
@@ -400,7 +362,7 @@ describe("NetworkMonitor", () => {
             intervalSeconds: 30,
           },
           speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
-          auth: { password: "testpassword", jwtExpiresIn: "1h" },
+          auth: { password: "testpassword" },
         })
       ),
       Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
@@ -409,7 +371,6 @@ describe("NetworkMonitor", () => {
     return Effect.gen(function* () {
       const monitor = yield* NetworkMonitor;
 
-      // Keep the parent fiber alive so the forked speed-test loop survives.
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           yield* monitor.start();
@@ -451,7 +412,7 @@ describe("NetworkMonitor", () => {
             intervalSeconds: 30,
           },
           speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
-          auth: { password: "testpassword", jwtExpiresIn: "1h" },
+          auth: { password: "testpassword" },
         })
       ),
       Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
@@ -620,7 +581,7 @@ describe("NetworkMonitor", () => {
           intervalSeconds: 1,
         },
         speedtest: { intervalSeconds: 1, timeoutSeconds: 120 },
-        auth: { password: "testpassword", jwtExpiresIn: "1h" },
+        auth: { password: "testpassword" },
       });
 
       const ConcurrentTestLayer = NetworkMonitorLive.pipe(
@@ -686,7 +647,7 @@ describe("NetworkMonitor ping write failures", () => {
     makeTestConfigLayer({
       ping: { hosts, timeout: 5000, intervalSeconds: 30 },
       speedtest: { intervalSeconds: 3600, timeoutSeconds: 120 },
-      auth: { password: "testpassword", jwtExpiresIn: "1h" },
+      auth: { password: "testpassword" },
     }),
     Layer.succeed(References.MinimumLogLevel, "None")
   );
@@ -719,13 +680,10 @@ describe("NetworkMonitor ping write failures", () => {
       Layer.provide(baseLayers)
     );
 
-  const statsAfterCycles = Effect.gen(function* () {
+  const statsAfterBoot = Effect.gen(function* () {
     const monitor = yield* NetworkMonitor;
-    const fiber = yield* Effect.forkChild(monitor.start());
-    yield* Effect.sleep("100 millis");
-    const stats = yield* monitor.getStats();
-    yield* Fiber.interrupt(fiber);
-    return stats;
+    yield* monitor.start();
+    return yield* monitor.getStats();
   });
 
   const withExecutorResults = (results: readonly PingExecutionResult[]) => {
@@ -753,9 +711,9 @@ describe("NetworkMonitor ping write failures", () => {
     ]);
 
     return Effect.gen(function* () {
-      const stats = yield* statsAfterCycles;
+      const stats = yield* statsAfterBoot;
 
-      expect(cycles.count).toBeGreaterThan(0);
+      expect(cycles.count).toBe(1);
       expect(stats.failedPings).toBe(0);
       expect(stats.successfulPings).toBe(2 * cycles.count);
       expect(stats.failedWrites).toBe(cycles.count);
@@ -776,7 +734,7 @@ describe("NetworkMonitor ping write failures", () => {
       ]);
 
       return Effect.gen(function* () {
-        const stats = yield* statsAfterCycles;
+        const stats = yield* statsAfterBoot;
 
         expect(stats.failedPings).toBe(cycles.count);
         expect(stats.successfulPings).toBe(cycles.count);
@@ -810,12 +768,243 @@ describe("NetworkMonitor ping write failures", () => {
       );
 
       return Effect.gen(function* () {
-        const stats = yield* statsAfterCycles;
+        const stats = yield* statsAfterBoot;
 
         expect(stats.failedPings).toBe(0);
         expect(stats.successfulPings).toBeGreaterThanOrEqual(hosts.length);
         expect(stats.failedWrites).toBe(stats.successfulPings);
       }).pipe(Effect.provide(layer));
     }
+  );
+});
+
+describe("NetworkMonitor loops", () => {
+  const pingResults: readonly PingExecutionResult[] = [
+    {
+      host: "8.8.8.8",
+      success: true,
+      result: {
+        host: "8.8.8.8",
+        alive: true,
+        latency: 10,
+        packetLoss: 0,
+        stddev: 1,
+      },
+    },
+    {
+      host: "1.1.1.1",
+      success: true,
+      result: {
+        host: "1.1.1.1",
+        alive: true,
+        latency: 12,
+        packetLoss: 0,
+        stddev: 1,
+      },
+    },
+  ];
+
+  const database = Layer.succeed(QuestDB, {
+    writeMetric: vi.fn(() => Effect.void),
+    flush: vi.fn(() => Effect.void),
+    queryMetrics: vi.fn(),
+    querySpeedtests: vi.fn(),
+    queryConnectivityStatus: vi.fn(),
+    queryLiveConnectivity: vi.fn(),
+    queryEarliestTimestamp: vi.fn(),
+    queryLatestPingTimestamp: vi.fn(),
+    ...emptyAnalyticsQueries,
+    health: vi.fn(),
+    close: vi.fn(),
+  });
+
+  const countingSpeedTest = () => {
+    const calls = { count: 0 };
+    const layer = Layer.succeed(SpeedTestService, {
+      runTest: () =>
+        Effect.suspend(() => {
+          calls.count += 1;
+          return Effect.fail(
+            new SpeedTestExecutionError({ message: "Mock error" })
+          );
+        }),
+    });
+    return { calls, layer };
+  };
+
+  const monitorOver = (
+    executor: Layer.Layer<PingExecutor>,
+    pingIntervalSeconds: number,
+    speedTest: Layer.Layer<SpeedTestService> = countingSpeedTest().layer
+  ) =>
+    NetworkMonitorLive.pipe(
+      Layer.provide(executor),
+      Layer.provide(speedTestRunnerFrom(speedTest, database)),
+      Layer.provide(
+        makeTestConfigLayer({
+          ping: {
+            hosts: ["8.8.8.8", "1.1.1.1"],
+            intervalSeconds: pingIntervalSeconds,
+          },
+          speedtest: { intervalSeconds: 60 },
+        })
+      ),
+      Layer.provide(Layer.succeed(References.MinimumLogLevel, "None"))
+    );
+
+  const countingExecutor = (cycleDuration?: Duration.Input) => {
+    const calls = { count: 0 };
+    const layer = Layer.succeed(PingExecutor, {
+      executePing: vi.fn(),
+      executeAll: () =>
+        Effect.suspend(() => {
+          calls.count += 1;
+          return cycleDuration === undefined
+            ? Effect.succeed(pingResults)
+            : Effect.sleep(cycleDuration).pipe(Effect.as(pingResults));
+        }),
+      executeHosts: vi.fn(),
+    });
+    return { calls, layer };
+  };
+
+  it.effect("runs exactly one ping cycle at boot", () => {
+    const { calls, layer } = countingExecutor();
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
+      const monitor = yield* NetworkMonitor;
+
+      yield* monitor.start();
+      yield* TestClock.adjust("1 second");
+
+      expect(calls.count).toBe(1);
+      expect((yield* monitor.getStats()).successfulPings).toBe(2);
+    }).pipe(Effect.provide(monitorOver(layer, 30)));
+  });
+
+  it.effect("runs one more ping cycle per configured interval", () => {
+    const { calls, layer } = countingExecutor();
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
+      const monitor = yield* NetworkMonitor;
+      yield* monitor.start();
+
+      yield* TestClock.adjust("14 seconds");
+      expect(calls.count).toBe(1);
+
+      yield* TestClock.adjust("1 second");
+      expect(calls.count).toBe(2);
+
+      yield* TestClock.adjust("15 seconds");
+      expect(calls.count).toBe(3);
+    }).pipe(Effect.provide(monitorOver(layer, 15)));
+  });
+
+  it.effect("holds a fixed cadence when a ping cycle takes time", () => {
+    const { calls, layer } = countingExecutor("8 seconds");
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
+      const monitor = yield* NetworkMonitor;
+      yield* Effect.forkChild(monitor.start());
+
+      // Boot cycle ends at 8s; the loop's first run is one interval later.
+      yield* TestClock.adjust("38 seconds");
+      expect(calls.count).toBe(2);
+
+      // A spaced schedule would wait out the 8s cycle and start the third
+      // run at 76s.
+      yield* TestClock.adjust("30 seconds");
+      expect(calls.count).toBe(3);
+    }).pipe(Effect.provide(monitorOver(layer, 30)));
+  });
+
+  it.effect("keeps the loops running after the starting fiber ends", () => {
+    const { calls, layer } = countingExecutor();
+    const speed = countingSpeedTest();
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
+      const monitor = yield* NetworkMonitor;
+
+      yield* Fiber.join(yield* Effect.forkChild(monitor.start()));
+
+      yield* TestClock.adjust("30 seconds");
+      expect(calls.count).toBe(2);
+      expect(speed.calls.count).toBe(1);
+
+      yield* TestClock.adjust("30 seconds");
+      expect(calls.count).toBe(3);
+      expect(speed.calls.count).toBe(2);
+    }).pipe(Effect.provide(monitorOver(layer, 30, speed.layer)));
+  });
+
+  it.effect("stops the loops when the provided scope closes", () => {
+    const { calls, layer } = countingExecutor();
+    const speed = countingSpeedTest();
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
+      const monitor = yield* NetworkMonitor;
+      const scope = yield* Scope.make();
+
+      yield* monitor.start().pipe(Scope.provide(scope));
+      yield* TestClock.adjust("1 second");
+      yield* Scope.close(scope, Exit.void);
+      yield* TestClock.adjust("300 seconds");
+
+      expect(calls.count).toBe(1);
+      expect(speed.calls.count).toBe(1);
+    }).pipe(Effect.provide(monitorOver(layer, 30, speed.layer)));
+  });
+
+  // Same shape as index.ts (scoped program inside Effect.provide), which can't
+  // be imported without starting the server.
+  it.effect("stops the loops before the layers they depend on release", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(BOOT_TIME);
+      const events: string[] = [];
+      const secondCycleStarted = yield* Deferred.make<void>();
+      let cycles = 0;
+      const executor = Layer.effect(
+        PingExecutor,
+        Effect.gen(function* () {
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              events.push("executor released");
+            })
+          );
+          return {
+            executePing: vi.fn(),
+            executeHosts: vi.fn(),
+            executeAll: () =>
+              Effect.suspend(() => {
+                cycles += 1;
+                return cycles === 1
+                  ? Effect.succeed(pingResults)
+                  : Deferred.succeed(secondCycleStarted, undefined).pipe(
+                      Effect.andThen(Effect.never),
+                      Effect.onInterrupt(() =>
+                        Effect.sync(() => {
+                          events.push("cycle interrupted");
+                        })
+                      )
+                    );
+              }),
+          };
+        })
+      );
+
+      yield* Effect.gen(function* () {
+        const monitor = yield* NetworkMonitor;
+        yield* monitor.start();
+        yield* TestClock.adjust("30 seconds");
+        yield* Deferred.await(secondCycleStarted);
+      }).pipe(Effect.scoped, Effect.provide(monitorOver(executor, 30)));
+
+      expect(events).toEqual(["cycle interrupted", "executor released"]);
+    })
   );
 });

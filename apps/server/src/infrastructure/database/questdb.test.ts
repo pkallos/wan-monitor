@@ -117,7 +117,7 @@ describe("QuestDB Integration", () => {
       const BadConfigLive = makeTestConfigLayer({
         database: { host: "nonexistent-host" },
         ping: { hosts: ["8.8.8.8", "1.1.1.1"] },
-        auth: { password: "testpassword", jwtExpiresIn: "1h" },
+        auth: { password: "testpassword" },
       });
 
       const MainLive = Layer.provide(QuestDBLive, BadConfigLive);

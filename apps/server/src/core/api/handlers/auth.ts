@@ -6,7 +6,7 @@ import {
   MissingCredentials,
 } from "@shared/api/errors";
 import { AuthenticatedUser } from "@shared/api/middlewares/authorization";
-import { Effect } from "effect";
+import { Effect, Option, Redacted } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { JwtService } from "@/infrastructure/auth/jwt";
 import { ConfigService } from "@/infrastructure/config/config";
@@ -35,7 +35,8 @@ export const loginHandler = ({
       );
     }
 
-    if (!config.auth.password) {
+    const configuredPassword = config.auth.password;
+    if (Option.isNone(configuredPassword)) {
       return yield* Effect.fail(
         new AuthNotConfigured({
           message:
@@ -50,7 +51,7 @@ export const loginHandler = ({
     );
     const passwordMatches = secureEquals(
       payload.password,
-      config.auth.password
+      Redacted.value(configuredPassword.value)
     );
     if (!(usernameMatches && passwordMatches)) {
       return yield* Effect.fail(
@@ -78,7 +79,7 @@ export const meHandler = () =>
     const config = yield* ConfigService;
     const user = yield* AuthenticatedUser;
 
-    if (!config.auth.password) {
+    if (Option.isNone(config.auth.password)) {
       return {
         username: user.username,
         authenticated: false,
@@ -95,7 +96,7 @@ export const statusHandler = () =>
   Effect.gen(function* () {
     const config = yield* ConfigService;
     return {
-      authRequired: Boolean(config.auth.password),
+      authRequired: Option.isSome(config.auth.password),
     };
   });
 

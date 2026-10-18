@@ -1,4 +1,4 @@
-import { Layer } from "effect";
+import { Layer, Option, Redacted } from "effect";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
 
 /**
@@ -11,8 +11,22 @@ export interface TestConfigOverrides {
   database?: Partial<AppConfig["database"]>;
   ping?: Partial<AppConfig["ping"]>;
   speedtest?: Partial<AppConfig["speedtest"]>;
-  auth?: Partial<AppConfig["auth"]>;
+  /** `password` and `jwtSecret` are plain strings here; an empty password disables auth. */
+  auth?: {
+    username?: string;
+    password?: string;
+    jwtSecret?: string;
+    jwtExpiresInSeconds?: number;
+  };
+  logging?: Partial<AppConfig["logging"]>;
 }
+
+const passwordOption = (
+  password: string | undefined
+): AppConfig["auth"]["password"] =>
+  password === undefined || password === ""
+    ? Option.none()
+    : Option.some(Redacted.make(password));
 
 /**
  * Build an {@link AppConfig} for tests from shared defaults plus per-section
@@ -48,12 +62,12 @@ export const makeTestAppConfig = (
     ...overrides.speedtest,
   },
   auth: {
-    username: "admin",
-    password: "",
-    jwtSecret: "test-secret",
-    jwtExpiresIn: "24h",
-    ...overrides.auth,
+    username: overrides.auth?.username ?? "admin",
+    password: passwordOption(overrides.auth?.password),
+    jwtSecret: Redacted.make(overrides.auth?.jwtSecret ?? "test-secret"),
+    jwtExpiresInSeconds: overrides.auth?.jwtExpiresInSeconds ?? 86_400,
   },
+  logging: { level: "Info", ...overrides.logging },
 });
 
 /**

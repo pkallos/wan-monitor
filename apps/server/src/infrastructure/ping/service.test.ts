@@ -28,7 +28,7 @@ const mockProbe = ping.promise.probe as ReturnType<typeof vi.fn>;
 // Test config layer
 const TestConfigLive = makeTestConfigLayer({
   ping: { hosts: ["8.8.8.8", "1.1.1.1"] },
-  auth: { password: "testpassword", jwtExpiresIn: "1h" },
+  auth: { password: "testpassword" },
 });
 
 const TestPingServiceLive = Layer.provide(PingServiceLive, TestConfigLive);

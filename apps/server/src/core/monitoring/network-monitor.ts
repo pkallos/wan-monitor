@@ -1,4 +1,12 @@
-import { Clock, Context, Effect, Layer, Ref, Schedule } from "effect";
+import {
+  Clock,
+  Context,
+  Effect,
+  Layer,
+  Ref,
+  Schedule,
+  type Scope,
+} from "effect";
 import { PingExecutor } from "@/core/monitoring/ping-executor";
 import { SpeedTestRunner } from "@/core/monitoring/speed-test-runner";
 import { ConfigService } from "@/infrastructure/config/config";
@@ -51,9 +59,10 @@ export interface MonitorStats {
 
 export interface NetworkMonitorInterface {
   /**
-   * Start the periodic monitoring (ping every 30s by default)
+   * Runs one ping cycle, then starts the periodic ping and speed test loops.
+   * The loops run until the provided Scope closes.
    */
-  readonly start: () => Effect.Effect<void, never>;
+  readonly start: () => Effect.Effect<void, never, Scope.Scope>;
 
   /**
    * Get current monitoring statistics
@@ -171,23 +180,15 @@ export const NetworkMonitorLive = Layer.effect(
           `Starting network monitor (ping interval: ${pingIntervalSeconds}s)`
         );
 
-        // Run initial ping immediately
         yield* executePingCycle;
 
-        // Schedule periodic pings
-        const schedule = Schedule.spaced(`${pingIntervalSeconds} seconds`);
-
+        // fixed, not spaced: cycle starts stay on the interval grid instead of
+        // drifting by each cycle's length; outage detection reads that period.
         yield* executePingCycle.pipe(
-          Effect.catch((error) =>
-            Effect.logError(`Ping cycle error: ${error}`).pipe(
-              Effect.flatMap(() => Effect.void)
-            )
-          ),
-          Effect.repeat(schedule),
-          Effect.forkChild
+          Effect.schedule(Schedule.fixed(`${pingIntervalSeconds} seconds`)),
+          Effect.forkScoped
         );
 
-        // Schedule periodic speed tests
         yield* Effect.logInfo(
           `Starting speed test monitor (interval: ${speedTestIntervalSeconds}s)`
         );
@@ -197,12 +198,10 @@ export const NetworkMonitorLive = Layer.effect(
 
         yield* executeSpeedTestCycle.pipe(
           Effect.catch((error) =>
-            Effect.logError(`Speed test cycle error: ${error}`).pipe(
-              Effect.flatMap(() => Effect.void)
-            )
+            Effect.logError(`Speed test cycle error: ${error}`)
           ),
           Effect.repeat(speedTestSchedule),
-          Effect.forkChild
+          Effect.forkScoped
         );
 
         yield* Effect.logInfo("Network monitor started successfully");

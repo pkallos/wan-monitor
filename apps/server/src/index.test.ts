@@ -4,10 +4,10 @@ import {
   Data,
   Effect,
   Exit,
-  Fiber,
   Layer,
   Option,
   References,
+  Scope,
 } from "effect";
 import {
   NetworkMonitor,
@@ -48,7 +48,7 @@ describe("Server Lifecycle Integration Tests", () => {
           hosts: ["8.8.8.8", "1.1.1.1", "cloudflare.com"],
           timeout: 5000,
         },
-        auth: { password: "testpassword", jwtExpiresIn: "1h" },
+        auth: { password: "testpassword" },
       }),
       ...config,
     };
@@ -177,18 +177,14 @@ describe("Server Lifecycle Integration Tests", () => {
           expect(config.server.port).toBe(0);
 
           // Start monitoring (mimics index.ts behavior)
-          const fiber = yield* Effect.forkChild(monitor.start());
+          yield* monitor.start();
 
-          // Wait briefly for async effects
           yield* Effect.sleep("100 millis");
 
           // Verify monitoring is running
           const stats = yield* monitor.getStats();
           expect(stats.uptime).toBeGreaterThan(0);
           expect(stats.successfulPings).toBeGreaterThanOrEqual(1);
-
-          // Clean shutdown
-          yield* Fiber.interrupt(fiber);
         }).pipe(Effect.provide(createTestLayer()))
     );
 
@@ -216,13 +212,11 @@ describe("Server Lifecycle Integration Tests", () => {
         expect(config.ping.hosts).toEqual(["8.8.8.8"]);
 
         // Start and verify it works
-        const fiber = yield* Effect.forkChild(monitor.start());
+        yield* monitor.start();
         yield* Effect.sleep("100 millis");
 
         const stats = yield* monitor.getStats();
         expect(stats.uptime).toBeGreaterThan(0);
-
-        yield* Fiber.interrupt(fiber);
       }).pipe(Effect.provide(createTestLayer(customConfig)));
     });
 
@@ -261,7 +255,7 @@ describe("Server Lifecycle Integration Tests", () => {
         const monitor = yield* NetworkMonitor;
 
         // Start monitoring
-        const fiber = yield* Effect.forkChild(monitor.start());
+        yield* monitor.start();
 
         // Wait for monitoring to run
         yield* Effect.sleep("150 millis");
@@ -272,23 +266,6 @@ describe("Server Lifecycle Integration Tests", () => {
         expect(stats.lastPingTime).toBeInstanceOf(Date);
         expect(stats.successfulPings).toBeGreaterThanOrEqual(1);
         expect(stats.failedPings).toBe(0);
-
-        yield* Fiber.interrupt(fiber);
-      }).pipe(Effect.provide(createTestLayer()))
-    );
-
-    it.live("should handle NetworkMonitor interruption gracefully", () =>
-      Effect.gen(function* () {
-        const monitor = yield* NetworkMonitor;
-
-        const fiber = yield* Effect.forkChild(monitor.start());
-        yield* Effect.sleep("50 millis");
-
-        // Gracefully interrupt
-        const interruptExit = yield* Effect.exit(Fiber.interrupt(fiber));
-
-        // Should complete successfully
-        expect(Exit.isSuccess(interruptExit)).toBe(true);
       }).pipe(Effect.provide(createTestLayer()))
     );
 
@@ -296,7 +273,7 @@ describe("Server Lifecycle Integration Tests", () => {
       Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
-        const fiber = yield* Effect.forkChild(monitor.start());
+        yield* monitor.start();
 
         // Check stats multiple times
         yield* Effect.sleep("50 millis");
@@ -311,8 +288,6 @@ describe("Server Lifecycle Integration Tests", () => {
         expect(stats2.successfulPings).toBeGreaterThanOrEqual(
           stats1.successfulPings
         );
-
-        yield* Fiber.interrupt(fiber);
       }).pipe(Effect.provide(createTestLayer()))
     );
   });
@@ -412,16 +387,12 @@ describe("Server Lifecycle Integration Tests", () => {
 
       return Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
-        const fiber = yield* Effect.forkChild(monitor.start());
-
-        yield* Effect.sleep("100 millis");
+        yield* monitor.start();
 
         const stats = yield* monitor.getStats();
         expect(stats.successfulPings).toBe(0);
         expect(stats.failedPings).toBe(0);
         expect(stats.lastPingTime).not.toBeNull();
-
-        yield* Fiber.interrupt(fiber);
       }).pipe(Effect.provide(TestLayer));
     });
   });
@@ -472,15 +443,11 @@ describe("Server Lifecycle Integration Tests", () => {
         const monitor = yield* NetworkMonitor;
         const questdb = yield* QuestDB;
 
-        const fiber = yield* Effect.forkChild(monitor.start());
-        yield* Effect.sleep("50 millis");
+        yield* monitor.start();
 
         // Verify database is accessible
         const health = yield* questdb.health();
         expect(health.connected).toBe(true);
-
-        // Interrupt and cleanup
-        yield* Fiber.interrupt(fiber);
 
         // Note: Layer cleanup happens automatically when Effect completes
         expect(questdb.close).toBeDefined();
@@ -491,17 +458,16 @@ describe("Server Lifecycle Integration Tests", () => {
       Effect.gen(function* () {
         const monitor = yield* NetworkMonitor;
 
-        const fiber = yield* Effect.forkChild(monitor.start());
-        yield* Effect.sleep("50 millis");
+        const scope = yield* Scope.make();
+        yield* monitor.start().pipe(Scope.provide(scope));
 
-        // Multiple interrupt attempts should be safe (idempotent)
-        const interrupt1 = Effect.exit(Fiber.interrupt(fiber));
-        const interrupt2 = Effect.exit(Fiber.interrupt(fiber));
+        const [exit1, exit2] = yield* Effect.all([
+          Effect.exit(Scope.close(scope, Exit.void)),
+          Effect.exit(Scope.close(scope, Exit.void)),
+        ]);
 
-        const [exit1, exit2] = yield* Effect.all([interrupt1, interrupt2]);
-
-        expect(Exit.isSuccess(exit1) || Exit.hasInterrupts(exit1)).toBe(true);
-        expect(Exit.isSuccess(exit2) || Exit.hasInterrupts(exit2)).toBe(true);
+        expect(Exit.isSuccess(exit1)).toBe(true);
+        expect(Exit.isSuccess(exit2)).toBe(true);
       }).pipe(Effect.provide(createTestLayer()))
     );
   });

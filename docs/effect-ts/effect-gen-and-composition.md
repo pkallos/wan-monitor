@@ -52,21 +52,24 @@ behaves like `flatMap` — pick whichever form reads more clearly at the call si
 | Combinator | Lifetime | Use it when |
 | --- | --- | --- |
 | `Effect.forkChild` | Attached to the **parent fiber's** scope. Interrupted when the parent terminates ("auto supervision" — no fiber leaks). | The common case: a background task that should die with whatever started it. v4's rename of v3's `Effect.fork` — identical semantics, confirmed by the source doc verbatim. |
-| `Effect.forkScoped` | Attached to the **enclosing `Scope`**. Interrupted when that scope closes, independent of the parent fiber's own lifetime. | A resource-lifecycle task started inside a `Layer.effect` constructor, meant to run for as long as the layer is alive — see `questdb/connection.ts`'s retry loop. |
-| `Effect.forkDetach` | Attached to the **global scope**. Outlives the fiber that forked it. | A genuine daemon that should keep running after its caller returns — rare; most "background work" in this codebase wants `forkChild`, not this. |
+| `Effect.forkScoped` | Attached to the **enclosing `Scope`**. Interrupted when that scope closes, independent of the parent fiber's own lifetime. | A task meant to run for as long as a scope is open: a `Layer.effect` constructor's background loop (`questdb/connection.ts`'s retry loop), or the monitor's ping and speed test loops, which `NetworkMonitor.start()` forks into the caller's `Scope`. |
+| `Effect.forkDetach` | Attached to the **global scope**. Outlives the fiber that forked it. | A genuine daemon that should keep running after its caller returns — rare; prefer `forkScoped` or `forkChild`, which have an owner that ends them. |
 
 ```ts
 // apps/server/src/core/monitoring/network-monitor.ts
 yield* executePingCycle.pipe(
-  Effect.catch((error) => Effect.logError(`Ping cycle error: ${error}`).pipe(Effect.flatMap(() => Effect.void))),
-  Effect.repeat(schedule),
-  Effect.forkChild
+  Effect.schedule(Schedule.fixed(`${pingIntervalSeconds} seconds`)),
+  Effect.forkScoped
 );
 ```
 
-Note the point-free form above (`Effect.forkChild` passed bare at the end of a `.pipe()` chain, not
-called as `Effect.forkChild(...)`) — both call shapes exist; a mechanical rename script matching only
+Note the point-free form above (`Effect.forkScoped` passed bare at the end of a `.pipe()` chain, not
+called as `Effect.forkScoped(...)`) — both call shapes exist; a mechanical rename script matching only
 `Effect.fork(` misses this one, since there's no `(` to match.
+
+`start()` has `Scope` in its requirements, so the loops end when the caller's scope closes. In
+`index.ts` the program runs under `Effect.scoped` inside `Effect.provide(MainLive)`: the loops stop
+first, then the layers they use (QuestDB) are released.
 
 ## Running an effect
 

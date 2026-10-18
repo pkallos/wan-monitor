@@ -29,7 +29,10 @@ import { PingExecutorLive } from "@/core/monitoring/ping-executor";
 import { SpeedTestRunnerLive } from "@/core/monitoring/speed-test-runner";
 import { JwtServiceLive } from "@/infrastructure/auth/jwt";
 import { AuthServiceLive } from "@/infrastructure/auth/middleware";
-import { ConfigServiceLive } from "@/infrastructure/config/config";
+import {
+  ConfigServiceLive,
+  MinimumLogLevelLive,
+} from "@/infrastructure/config/config";
 import { QuestDBLive } from "@/infrastructure/database/questdb";
 import { PingServiceLive } from "@/infrastructure/ping/service";
 import { SpeedTestServiceLive } from "@/infrastructure/speedtest/service";
@@ -76,24 +79,22 @@ const ApiServerLayer = ApiServerLive.pipe(
 );
 
 // Combine all layers for main program
-// Only include top-level layers - dependencies are already provided within them
-const MainLive = Layer.mergeAll(
-  ConfigLayer, // Used directly by program
-  NetworkMonitorLayer, // Used directly by program (includes QuestDB, PingExecutor, SpeedTest, Ping)
-  ApiServerLayer // Starts HTTP server automatically (includes all API dependencies)
+// Only include top-level layers - dependencies are already provided within them.
+// provideMerge, not provide: the program fiber and the monitor loops it forks
+// need the log level too.
+const MainLive = Layer.mergeAll(NetworkMonitorLayer, ApiServerLayer).pipe(
+  Layer.provideMerge(MinimumLogLevelLive.pipe(Layer.provide(ConfigLayer)))
 );
 
-// Main server program
+// The scope closes before MainLive releases QuestDB, so the loops stop first.
 const program = Effect.gen(function* () {
   const networkMonitor = yield* NetworkMonitor;
 
-  // Start network monitoring
   yield* networkMonitor.start();
-  yield* Effect.log("Network monitoring started");
 
   // Keep server running until interrupted
   return yield* Effect.never;
-});
+}).pipe(Effect.scoped);
 
 // Run the program
 program.pipe(Effect.provide(MainLive), NodeRuntime.runMain);
