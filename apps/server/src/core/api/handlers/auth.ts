@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { WanMonitorApi } from "@shared/api";
 import {
   AuthNotConfigured,
@@ -9,6 +10,13 @@ import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { JwtService } from "@/infrastructure/auth/jwt";
 import { ConfigService } from "@/infrastructure/config/config";
+
+// Hashing first gives timingSafeEqual equal-length inputs whatever the caller sent.
+const secureEquals = (a: string, b: string): boolean =>
+  timingSafeEqual(
+    createHash("sha256").update(a).digest(),
+    createHash("sha256").update(b).digest()
+  );
 
 export const loginHandler = ({
   payload,
@@ -36,10 +44,15 @@ export const loginHandler = ({
       );
     }
 
-    if (
-      payload.username !== config.auth.username ||
-      payload.password !== config.auth.password
-    ) {
+    const usernameMatches = secureEquals(
+      payload.username,
+      config.auth.username
+    );
+    const passwordMatches = secureEquals(
+      payload.password,
+      config.auth.password
+    );
+    if (!(usernameMatches && passwordMatches)) {
       return yield* Effect.fail(
         new InvalidCredentials({ message: "Invalid username or password" })
       );

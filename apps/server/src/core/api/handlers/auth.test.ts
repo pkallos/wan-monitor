@@ -106,6 +106,50 @@ describe("Auth Handlers", () => {
       }).pipe(Effect.provide(TestLayers));
     });
 
+    it.effect("fails with a wrong username and the correct password", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createMockConfig("admin", "test-password")
+      );
+      const JwtServiceTest = Layer.succeed(JwtService, createMockJwtService());
+      const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
+
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          loginHandler({
+            payload: { username: "someone-else", password: "test-password" },
+          })
+        );
+
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(InvalidCredentials);
+        }
+      }).pipe(Effect.provide(TestLayers));
+    });
+
+    it.effect("fails when only a prefix of the password matches", () => {
+      const ConfigServiceTest = Layer.succeed(
+        ConfigService,
+        createMockConfig("admin", "test-password")
+      );
+      const JwtServiceTest = Layer.succeed(JwtService, createMockJwtService());
+      const TestLayers = Layer.mergeAll(ConfigServiceTest, JwtServiceTest);
+
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          loginHandler({
+            payload: { username: "admin", password: "test-passwor" },
+          })
+        );
+
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(InvalidCredentials);
+        }
+      }).pipe(Effect.provide(TestLayers));
+    });
+
     it.effect("fails with invalid credentials", () => {
       const ConfigServiceTest = Layer.succeed(
         ConfigService,

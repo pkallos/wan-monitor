@@ -163,7 +163,7 @@ ENV SPEEDTEST_TIMEOUT_SECONDS=120
 # Authentication configuration (no defaults - set at runtime for security)
 # ENV WAN_MONITOR_USERNAME=admin  # Default is 'admin' if not set
 # ENV WAN_MONITOR_PASSWORD=       # Required to enable auth
-# ENV JWT_SECRET=                 # Required for secure token signing
+# ENV JWT_SECRET=                 # Random per start if unset; set to keep sessions across restarts
 # ENV JWT_EXPIRES_IN=24h          # Default is '24h' if not set
 
 # Health check
