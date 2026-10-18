@@ -5,10 +5,10 @@ import { describe, expect, test } from "vitest";
 import { Custom, Preset } from "@/dashboard/dateRange";
 import {
   HostLatencyAsyncData,
-  initModel,
   MetricsAsyncData,
   type Model,
   PingHostsAsyncData,
+  initModel as realInitModel,
   SpeedtestHistoryAsyncData,
 } from "@/dashboard/model";
 import { DEFAULT_REQUEST } from "@/dashboard/testFixtures";
@@ -20,6 +20,11 @@ import {
   speedReadout,
 } from "@/dashboard/view/chartReadout";
 import { defaultSettings } from "@/storage";
+
+const NOW_MS = Date.UTC(2026, 6, 28, 12);
+
+const initModel = (settings: Parameters<typeof realInitModel>[0]) =>
+  realInitModel(settings, NOW_MS);
 
 const ping = (minute: number, fields: Partial<Metric> = {}): Metric => ({
   timestamp: new Date(Date.UTC(2026, 6, 28, 10, minute)).toISOString(),

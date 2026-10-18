@@ -27,7 +27,7 @@ const lastUpdatedIndicator = (h: HtmlBuilder<Message>, model: Model): Html =>
         onSome: (lastUpdatedMs) =>
           h.span(
             [h.DataAttribute("testid", "last-updated")],
-            [`Updated ${formatDurationAgo(Date.now() - lastUpdatedMs)}.`]
+            [`Updated ${formatDurationAgo(model.nowMs - lastUpdatedMs)}.`]
           ),
       }),
     ]

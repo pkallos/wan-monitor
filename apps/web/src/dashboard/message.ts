@@ -173,6 +173,7 @@ export const GotToastMessage = m("GotToastMessage", {
 
 export const EnteredDashboard = m("EnteredDashboard");
 export const TickedRefresh = m("TickedRefresh");
+export const TickedClock = m("TickedClock", { nowMs: S.Number });
 export const ClickedTogglePause = m("ClickedTogglePause");
 export const Interacted = m("Interacted");
 export const WentIdle = m("WentIdle");
@@ -268,6 +269,7 @@ export const Message = S.Union([
   GotToastMessage,
   EnteredDashboard,
   TickedRefresh,
+  TickedClock,
   ClickedTogglePause,
   Interacted,
   WentIdle,

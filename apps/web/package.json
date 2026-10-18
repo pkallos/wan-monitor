@@ -25,6 +25,7 @@
     "lucide": "^1.57.0"
   },
   "devDependencies": {
+    "@effect/vitest": "4.0.0",
     "@foldkit/vite-plugin": "0.27.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.19.2",

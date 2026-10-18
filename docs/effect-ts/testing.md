@@ -75,6 +75,11 @@ yield* TestClock.adjust(Duration.seconds(44));
 Only meaningful under `it.effect` (which provides the fake clock `TestEnv` implicitly); using
 `TestClock` under `it.live` has nothing to hook into, since `it.live` doesn't install it.
 
+`apps/web` tests its Foldkit Subscription streams the same way (`apps/web/src/dashboard/subscription.test.ts`):
+fork the stream with `Effect.forkChild`, yield until the listener is attached, dispatch the DOM event,
+`Effect.yieldNow` so the stream takes it in, then `TestClock.adjust`. Check an unfinished stream with
+`fiber.pollUnsafe()`, which is `undefined` until the fiber exits.
+
 ## Suppressing log noise
 
 ```ts

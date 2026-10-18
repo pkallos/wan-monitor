@@ -244,7 +244,7 @@ const topBar = (
             view: DateRangePicker.view,
             viewInputs: {
               appliedSelection: model.dateRange,
-              nowMs: Date.now(),
+              nowMs: model.nowMs,
               maybeEarliestDataMs: model.maybeEarliestDataMs,
             },
             toParentMessage: (message) =>
@@ -620,7 +620,7 @@ export const pageHeader = (
 
 /** The status-tinted field under the top bar: the live status with the range's uptime, the history ribbon, and the stat rail. */
 export const statusField = (h: HtmlBuilder<Message>, model: Model): Html => {
-  const nowMs = Date.now();
+  const { nowMs } = model;
   return h.div(
     [h.Class("border-b border-field-rule bg-field")],
     [

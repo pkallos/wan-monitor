@@ -1,7 +1,7 @@
 import { Menu } from "@foldkit/ui";
 import { Option } from "effect";
 import { Story } from "foldkit";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   ClearSession,
   FetchAuthStatus,
@@ -55,8 +55,9 @@ import {
   FetchSpeedtestHistory,
   FetchSummary,
   GotMenuMessage,
-  initModel as initDashboardModel,
+  Interacted,
   Preset,
+  initModel as realInitDashboardModel,
   SpeedtestTriggerAsyncData,
   SucceededFetchConnectivityStatus,
   SucceededFetchEarliestData,
@@ -70,6 +71,12 @@ import { MENU_ITEMS } from "@/dashboard/menu";
 import { DEFAULT_REQUEST } from "@/dashboard/testFixtures";
 import { ToastTest } from "@/dashboard/toast";
 import { defaultSettings, type Settings } from "@/storage";
+
+const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
+
+const initDashboardModel = (
+  settings: Parameters<typeof realInitDashboardModel>[0]
+) => realInitDashboardModel(settings, NOW_MS);
 
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 
@@ -1009,5 +1016,49 @@ describe("auth update — stale messages arriving in the wrong state", () => {
         expect(model._tag).toBe("LoggedOut");
       })
     );
+  });
+});
+
+describe("auth update: a dashboard message that changes nothing", () => {
+  const loggedIn = (isIdle: boolean) =>
+    LoggedIn({
+      maybeSession: Option.none(),
+      dashboard: { ...initDashboardModel(defaultSettings()), isIdle },
+    });
+
+  test("keeps the same LoggedIn model when the dashboard returns its own", () => {
+    const model = loggedIn(false);
+
+    expect(
+      update(model, GotDashboardMessage({ message: Interacted() })).model
+    ).toBe(model);
+  });
+
+  test("replaces the LoggedIn model when the dashboard changes", () => {
+    const model = loggedIn(true);
+    const { model: next } = update(
+      model,
+      GotDashboardMessage({ message: Interacted() })
+    );
+
+    expect(next).not.toBe(model);
+    expect(assertLoggedIn(next).dashboard.isIdle).toBe(false);
+  });
+});
+
+describe("auth update: the dashboard's clock", () => {
+  test("starts holding the wall clock at the moment of login", () => {
+    const LOGIN_MS = Date.parse("2026-07-28T12:00:00.000Z");
+    vi.spyOn(Date, "now").mockReturnValue(LOGIN_MS);
+    try {
+      const { model } = update(
+        Checking({ maybeToken: Option.none(), settings: defaultSettings() }),
+        SucceededFetchAuthStatus({ authRequired: false })
+      );
+
+      expect(assertLoggedIn(model).dashboard.nowMs).toBe(LOGIN_MS);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

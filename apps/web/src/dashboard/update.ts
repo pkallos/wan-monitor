@@ -88,69 +88,6 @@ const rangeFetches = (
 ): ReadonlyArray<Command.Command<Message>> =>
   isAwaitingEarliestData(model) ? [] : commands;
 
-const fetchMetricsCommand = (context: Context, model: Model) =>
-  FetchMetrics({ token: context.token, ...rangeRequest(model) });
-
-const fetchSpeedtestHistoryCommand = (context: Context, model: Model) =>
-  FetchSpeedtestHistory({ token: context.token, ...rangeRequest(model) });
-
-const fetchConnectivityStatusCommand = (context: Context, model: Model) =>
-  FetchConnectivityStatus({ token: context.token, ...rangeRequest(model) });
-
-const fetchSummaryCommand = (context: Context, model: Model) =>
-  FetchSummary({ token: context.token, ...rangeRequest(model) });
-
-const fetchOutagesCommand = (context: Context, model: Model) =>
-  FetchOutages({ token: context.token, ...rangeRequest(model) });
-
-const enterMetrics =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.loadIfMissing(model.metrics), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { metrics: () => next }),
-        commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
-      }),
-    });
-
-const enterSpeedtestHistory =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.loadIfMissing(model.speedtestHistory), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { speedtestHistory: () => next }),
-        commands: rangeFetches(model, [
-          fetchSpeedtestHistoryCommand(context, model),
-        ]),
-      }),
-    });
-
-const enterConnectivityStatus =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.loadIfMissing(model.connectivityStatus), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { connectivityStatus: () => next }),
-        commands: rangeFetches(model, [
-          fetchConnectivityStatusCommand(context, model),
-        ]),
-      }),
-    });
-
-const enterLiveConnectivity =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.loadIfMissing(model.liveConnectivity), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { liveConnectivity: () => next }),
-        commands: [FetchLiveConnectivity({ token: context.token })],
-      }),
-    });
-
 // Re-asserts the model's theme onto `<html>` so it matches even if the boot
 // script's pre-hydration paint (`index.html`) somehow diverged from it.
 const applyThemeOnEnter = (model: Model): StepReturn => ({
@@ -158,21 +95,10 @@ const applyThemeOnEnter = (model: Model): StepReturn => ({
   commands: [ApplyTheme({ theme: model.theme })],
 });
 
-const enterEarliestData =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(model.maybeEarliestDataMs, {
-      onNone: () => ({
-        model,
-        commands: [FetchEarliestData({ token: context.token })],
-      }),
-      onSome: () => ({ model }),
-    });
-
-// Asks again while the start of "All time" is unknown, so a fetch that failed,
-// or that ran before the monitor wrote its first sample, does not leave "All
-// time" on its fallback window for good.
-const refetchEarliestData =
+// Asks while the start of "All time" is unknown, so a fetch that failed, or that
+// ran before the monitor wrote its first sample, does not leave "All time" on
+// its fallback window for good.
+const fetchEarliestDataIfUnknown =
   (context: Context) =>
   (model: Model): StepReturn =>
     Option.isNone(model.maybeEarliestDataMs)
@@ -183,7 +109,7 @@ const refetchEarliestDataForAllTime =
   (context: Context) =>
   (model: Model): StepReturn =>
     isAllTime(model.dateRange)
-      ? refetchEarliestData(context)(model)
+      ? fetchEarliestDataIfUnknown(context)(model)
       : { model };
 
 // A tick retries what failed as well as refreshing what loaded, so one
@@ -195,128 +121,6 @@ const revalidateOrRetry = <A, E>(
   data: AsyncData.AsyncData<A, E>
 ): Option.Option<AsyncData.AsyncData<A, E>> =>
   AsyncData.isFailure(data) ? Option.some(data) : AsyncData.revalidate(data);
-
-const revalidateOrRetryMetrics =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(revalidateOrRetry(model.metrics), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { metrics: () => next }),
-        commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
-      }),
-    });
-
-const revalidateOrRetrySpeedtestHistory =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(revalidateOrRetry(model.speedtestHistory), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { speedtestHistory: () => next }),
-        commands: rangeFetches(model, [
-          fetchSpeedtestHistoryCommand(context, model),
-        ]),
-      }),
-    });
-
-// A Stale live status is one the latest fetch could not confirm, so its
-// refetch starts from Loading rather than showing that value again while the
-// request is in flight.
-const revalidateLive = <A, E>(
-  live: AsyncData.AsyncData<A, E>
-): Option.Option<AsyncData.AsyncData<A, E>> =>
-  AsyncData.isStale(live)
-    ? Option.some(AsyncData.Loading())
-    : revalidateOrRetry(live);
-
-const revalidateLiveConnectivity =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(revalidateLive(model.liveConnectivity), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { liveConnectivity: () => next }),
-        commands: [FetchLiveConnectivity({ token: context.token })],
-      }),
-    });
-
-const revalidateOrRetryConnectivityStatus =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(revalidateOrRetry(model.connectivityStatus), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { connectivityStatus: () => next }),
-        commands: rangeFetches(model, [
-          fetchConnectivityStatusCommand(context, model),
-        ]),
-      }),
-    });
-
-const revalidateOrRetrySummary =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(revalidateOrRetry(model.summary), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { summary: () => next }),
-        commands: rangeFetches(model, [fetchSummaryCommand(context, model)]),
-      }),
-    });
-
-const revalidateOrRetryOutages =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(revalidateOrRetry(model.outages), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { outages: () => next }),
-        commands: rangeFetches(model, [fetchOutagesCommand(context, model)]),
-      }),
-    });
-
-const enterSummary =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.loadIfMissing(model.summary), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { summary: () => next }),
-        commands: rangeFetches(model, [fetchSummaryCommand(context, model)]),
-      }),
-    });
-
-const enterOutages =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.loadIfMissing(model.outages), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { outages: () => next }),
-        commands: rangeFetches(model, [fetchOutagesCommand(context, model)]),
-      }),
-    });
-
-const enterPingHosts =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(AsyncData.loadIfMissing(model.pingHosts), {
-      onNone: () => ({ model }),
-      onSome: (next) => ({
-        model: modifyFields(model, { pingHosts: () => next }),
-        commands: [FetchPingHosts({ token: context.token })],
-      }),
-    });
-
-// The host list is static config: a loaded one is kept, and only a failed one
-// is asked for again.
-const retryPingHosts =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    AsyncData.isFailure(model.pingHosts)
-      ? { model, commands: [FetchPingHosts({ token: context.token })] }
-      : { model };
 
 // The time range changing means the current window's data (or in-flight
 // fetch) belongs to a query that no longer applies, so this always starts a
@@ -330,70 +134,6 @@ const forceReload = <A, E>(
     onSome: (value) => AsyncData.Refreshing({ data: value }),
   });
 
-const reloadMetrics =
-  (context: Context) =>
-  (model: Model): StepReturn => ({
-    model: modifyFields(model, { metrics: () => forceReload(model.metrics) }),
-    commands: rangeFetches(model, [fetchMetricsCommand(context, model)]),
-  });
-
-const reloadSummary =
-  (context: Context) =>
-  (model: Model): StepReturn => ({
-    model: modifyFields(model, { summary: () => forceReload(model.summary) }),
-    commands: rangeFetches(model, [fetchSummaryCommand(context, model)]),
-  });
-
-const reloadOutages =
-  (context: Context) =>
-  (model: Model): StepReturn => ({
-    model: modifyFields(model, { outages: () => forceReload(model.outages) }),
-    commands: rangeFetches(model, [fetchOutagesCommand(context, model)]),
-  });
-
-const reloadPingHosts =
-  (context: Context) =>
-  (model: Model): StepReturn => ({
-    model: modifyFields(model, {
-      pingHosts: () => forceReload(model.pingHosts),
-    }),
-    commands: [FetchPingHosts({ token: context.token })],
-  });
-
-const reloadSpeedtestHistory =
-  (context: Context) =>
-  (model: Model): StepReturn => ({
-    model: modifyFields(model, {
-      speedtestHistory: () => forceReload(model.speedtestHistory),
-    }),
-    commands: rangeFetches(model, [
-      fetchSpeedtestHistoryCommand(context, model),
-    ]),
-  });
-
-const reloadConnectivityStatus =
-  (context: Context) =>
-  (model: Model): StepReturn => ({
-    model: modifyFields(model, {
-      connectivityStatus: () => forceReload(model.connectivityStatus),
-    }),
-    commands: rangeFetches(model, [
-      fetchConnectivityStatusCommand(context, model),
-    ]),
-  });
-
-const reloadLiveConnectivity =
-  (context: Context) =>
-  (model: Model): StepReturn => ({
-    model: modifyFields(model, {
-      liveConnectivity: () =>
-        AsyncData.isStale(model.liveConnectivity)
-          ? AsyncData.Loading()
-          : forceReload(model.liveConnectivity),
-    }),
-    commands: [FetchLiveConnectivity({ token: context.token })],
-  });
-
 // The per-host latency lines need the host list, and are only fetched while
 // the latency chart is in that view.
 const configuredHostNames = (model: Model): ReadonlyArray<string> =>
@@ -402,47 +142,210 @@ const configuredHostNames = (model: Model): ReadonlyArray<string> =>
     onSome: ({ hosts }) => hosts,
   });
 
-const fetchHostLatencyCommand = (context: Context, model: Model) =>
-  FetchHostLatency({
-    token: context.token,
-    ...rangeRequest(model),
-    hosts: configuredHostNames(model),
-  });
-
 const canFetchHostLatency = (model: Model): boolean =>
   model.latencyView === "perHost" && configuredHostNames(model).length > 0;
 
-const loadHostLatency =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    canFetchHostLatency(model)
-      ? {
-          model: modifyFields(model, {
-            hostLatency: () => forceReload(model.hostLatency),
-          }),
-          commands: rangeFetches(model, [
-            fetchHostLatencyCommand(context, model),
-          ]),
-        }
-      : { model };
+type Transition<A, E> = (
+  data: AsyncData.AsyncData<A, E>
+) => Option.Option<AsyncData.AsyncData<A, E>>;
 
-const revalidateHostLatency =
-  (context: Context) =>
-  (model: Model): StepReturn =>
-    Option.match(
-      canFetchHostLatency(model)
-        ? revalidateOrRetry(model.hostLatency)
-        : Option.none(),
-      {
+const neverLoad = <A, E>(): Option.Option<AsyncData.AsyncData<A, E>> =>
+  Option.none();
+
+const retryFailure = <A, E>(
+  data: AsyncData.AsyncData<A, E>
+): Option.Option<AsyncData.AsyncData<A, E>> =>
+  AsyncData.isFailure(data) ? Option.some(data) : Option.none();
+
+const reloadAlways = <A, E>(
+  data: AsyncData.AsyncData<A, E>
+): Option.Option<AsyncData.AsyncData<A, E>> => Option.some(forceReload(data));
+
+// A Stale live status is one the latest fetch could not confirm, so its
+// refetch starts from Loading rather than showing that value again while the
+// request is in flight.
+const restartingStale =
+  <A, E>(next: Transition<A, E>): Transition<A, E> =>
+  (data) =>
+    AsyncData.isStale(data) ? Option.some(AsyncData.Loading()) : next(data);
+
+// A range-scoped fetch waits on `rangeFetches` and reruns whenever the range moves.
+type ResourceFetch =
+  | Readonly<{
+      scope: "range";
+      fetch: (
+        token: string,
+        request: RangeRequest,
+        model: Model
+      ) => Command.Command<Message>;
+    }>
+  | Readonly<{
+      scope: "global";
+      fetch: (token: string) => Command.Command<Message>;
+    }>;
+
+type ResourceSpec<A, E> = ResourceFetch &
+  Readonly<{
+    read: (model: Model) => AsyncData.AsyncData<A, E>;
+    write: (model: Model, next: AsyncData.AsyncData<A, E>) => Model;
+    isWanted: (model: Model) => boolean;
+    enter: Transition<A, E>;
+    tick: Transition<A, E>;
+    reload: Transition<A, E>;
+  }>;
+
+type LifecycleStep = (context: Context) => (model: Model) => StepReturn;
+
+type Resource = Readonly<{
+  scope: ResourceFetch["scope"];
+  enter: LifecycleStep;
+  tick: LifecycleStep;
+  reload: LifecycleStep;
+}>;
+
+const always = (): boolean => true;
+
+const resource = <A, E>(spec: ResourceSpec<A, E>): Resource => {
+  const fetchCommands = (
+    context: Context,
+    model: Model
+  ): ReadonlyArray<Command.Command<Message>> =>
+    spec.scope === "range"
+      ? rangeFetches(model, [
+          spec.fetch(context.token, rangeRequest(model), model),
+        ])
+      : [spec.fetch(context.token)];
+
+  const step =
+    (transition: Transition<A, E>): LifecycleStep =>
+    (context) =>
+    (model) => {
+      if (!spec.isWanted(model)) return { model };
+      const current = spec.read(model);
+      return Option.match(transition(current), {
         onNone: () => ({ model }),
         onSome: (next) => ({
-          model: modifyFields(model, { hostLatency: () => next }),
-          commands: rangeFetches(model, [
-            fetchHostLatencyCommand(context, model),
-          ]),
+          model: next === current ? model : spec.write(model, next),
+          commands: fetchCommands(context, model),
         }),
-      }
-    );
+      });
+    };
+
+  return {
+    scope: spec.scope,
+    enter: step(spec.enter),
+    tick: step(spec.tick),
+    reload: step(spec.reload),
+  };
+};
+
+const METRICS = resource({
+  scope: "range",
+  fetch: (token, request) => FetchMetrics({ token, ...request }),
+  read: (model) => model.metrics,
+  write: (model, metrics) => modifyFields(model, { metrics: () => metrics }),
+  isWanted: always,
+  enter: AsyncData.loadIfMissing,
+  tick: revalidateOrRetry,
+  reload: reloadAlways,
+});
+
+const SPEEDTEST_HISTORY = resource({
+  scope: "range",
+  fetch: (token, request) => FetchSpeedtestHistory({ token, ...request }),
+  read: (model) => model.speedtestHistory,
+  write: (model, speedtestHistory) =>
+    modifyFields(model, { speedtestHistory: () => speedtestHistory }),
+  isWanted: always,
+  enter: AsyncData.loadIfMissing,
+  tick: revalidateOrRetry,
+  reload: reloadAlways,
+});
+
+const CONNECTIVITY_STATUS = resource({
+  scope: "range",
+  fetch: (token, request) => FetchConnectivityStatus({ token, ...request }),
+  read: (model) => model.connectivityStatus,
+  write: (model, connectivityStatus) =>
+    modifyFields(model, { connectivityStatus: () => connectivityStatus }),
+  isWanted: always,
+  enter: AsyncData.loadIfMissing,
+  tick: revalidateOrRetry,
+  reload: reloadAlways,
+});
+
+const LIVE_CONNECTIVITY = resource({
+  scope: "global",
+  fetch: (token) => FetchLiveConnectivity({ token }),
+  read: (model) => model.liveConnectivity,
+  write: (model, liveConnectivity) =>
+    modifyFields(model, { liveConnectivity: () => liveConnectivity }),
+  isWanted: always,
+  enter: AsyncData.loadIfMissing,
+  tick: restartingStale(revalidateOrRetry),
+  reload: restartingStale(reloadAlways),
+});
+
+const SUMMARY = resource({
+  scope: "range",
+  fetch: (token, request) => FetchSummary({ token, ...request }),
+  read: (model) => model.summary,
+  write: (model, summary) => modifyFields(model, { summary: () => summary }),
+  isWanted: always,
+  enter: AsyncData.loadIfMissing,
+  tick: revalidateOrRetry,
+  reload: reloadAlways,
+});
+
+const OUTAGES = resource({
+  scope: "range",
+  fetch: (token, request) => FetchOutages({ token, ...request }),
+  read: (model) => model.outages,
+  write: (model, outages) => modifyFields(model, { outages: () => outages }),
+  isWanted: always,
+  enter: AsyncData.loadIfMissing,
+  tick: revalidateOrRetry,
+  reload: reloadAlways,
+});
+
+// The host list is static config, so a tick only retries a failed one.
+const PING_HOSTS = resource({
+  scope: "global",
+  fetch: (token) => FetchPingHosts({ token }),
+  read: (model) => model.pingHosts,
+  write: (model, pingHosts) =>
+    modifyFields(model, { pingHosts: () => pingHosts }),
+  isWanted: always,
+  enter: AsyncData.loadIfMissing,
+  tick: retryFailure,
+  reload: reloadAlways,
+});
+
+// Loaded from `SucceededFetchPingHosts` and `selectLatencyView`, not on entry:
+// it needs the host list first.
+const HOST_LATENCY = resource({
+  scope: "range",
+  fetch: (token, request, model) =>
+    FetchHostLatency({ token, ...request, hosts: configuredHostNames(model) }),
+  read: (model) => model.hostLatency,
+  write: (model, hostLatency) =>
+    modifyFields(model, { hostLatency: () => hostLatency }),
+  isWanted: canFetchHostLatency,
+  enter: neverLoad,
+  tick: revalidateOrRetry,
+  reload: reloadAlways,
+});
+
+const RESOURCES = [
+  METRICS,
+  SPEEDTEST_HISTORY,
+  CONNECTIVITY_STATUS,
+  LIVE_CONNECTIVITY,
+  SUMMARY,
+  OUTAGES,
+  PING_HOSTS,
+  HOST_LATENCY,
+];
 
 // Per-host results that land after the viewer switched back to all hosts have
 // nothing left to feed, and a stale failure would raise a banner Retry can't
@@ -450,24 +353,15 @@ const revalidateHostLatency =
 const answersPerHostView = (model: Model, request: RangeRequest): boolean =>
   model.latencyView === "perHost" && answersCurrentRange(model, request);
 
-// Every resource whose fetch is scoped to the selected range. Each path that
-// moves the range reloads this one list, so a resource added here is reloaded
-// by all of them.
-const RANGE_SCOPED_RELOADS = [
-  reloadMetrics,
-  reloadSpeedtestHistory,
-  reloadConnectivityStatus,
-  reloadSummary,
-  reloadOutages,
-  loadHostLatency,
-];
+// Every path that moves the range reloads this one list.
+const RANGE_SCOPED = RESOURCES.filter(({ scope }) => scope === "range");
 
 const reloadRangeScoped =
   (context: Context) =>
   (model: Model): StepReturn =>
     Update.combine(
       model,
-      RANGE_SCOPED_RELOADS.map((reload) => reload(context))
+      RANGE_SCOPED.map(({ reload }) => reload(context))
     );
 
 const incidentsOf = (model: Model) =>
@@ -707,7 +601,7 @@ const selectLatencyView =
       hostLatency: () => HostLatencyAsyncData.Idle(),
     });
     const { model: loaded, commands: fetchCommands } =
-      loadHostLatency(context)(nextModel);
+      HOST_LATENCY.reload(context)(nextModel);
     return {
       model: loaded,
       commands: [
@@ -771,29 +665,21 @@ export const update = (
     M.tags({
       EnteredDashboard: () =>
         Update.combine(model, [
-          enterMetrics(context),
-          enterSpeedtestHistory(context),
-          enterConnectivityStatus(context),
-          enterLiveConnectivity(context),
-          enterEarliestData(context),
-          enterSummary(context),
-          enterOutages(context),
-          enterPingHosts(context),
+          ...RESOURCES.map(({ enter }) => enter(context)),
+          fetchEarliestDataIfUnknown(context),
           applyThemeOnEnter,
         ]),
 
       TickedRefresh: () =>
         Update.combine(model, [
-          revalidateOrRetryMetrics(context),
-          revalidateOrRetrySpeedtestHistory(context),
-          revalidateOrRetryConnectivityStatus(context),
-          revalidateLiveConnectivity(context),
-          revalidateOrRetrySummary(context),
-          revalidateOrRetryOutages(context),
-          retryPingHosts(context),
-          revalidateHostLatency(context),
+          ...RESOURCES.map(({ tick }) => tick(context)),
           refetchEarliestDataForAllTime(context),
         ]),
+
+      TickedClock: ({ nowMs }) =>
+        nowMs === model.nowMs
+          ? { model }
+          : { model: modifyFields(model, { nowMs: () => nowMs }) },
 
       GotDateRangePickerMessage: ({ message: pickerMessage }) => {
         const {
@@ -842,10 +728,8 @@ export const update = (
 
       ClickedRefreshNow: () =>
         Update.combine(model, [
-          reloadRangeScoped(context),
-          reloadLiveConnectivity(context),
-          reloadPingHosts(context),
-          refetchEarliestData(context),
+          ...RESOURCES.map(({ reload }) => reload(context)),
+          fetchEarliestDataIfUnknown(context),
         ]),
 
       SucceededFetchMetrics: ({
@@ -996,7 +880,7 @@ export const update = (
             AsyncData.settle(model.pingHosts, Result.succeed(hosts)),
         });
         return AsyncData.isIdle(nextModel.hostLatency)
-          ? Update.combine(nextModel, [loadHostLatency(context)])
+          ? Update.combine(nextModel, [HOST_LATENCY.reload(context)])
           : { model: nextModel };
       },
       FailedFetchPingHosts: ({ error }) => ({
@@ -1024,10 +908,16 @@ export const update = (
         };
       },
 
-      Interacted: () => ({
-        model: modifyFields(model, { isIdle: () => false }),
-      }),
-      WentIdle: () => ({ model: modifyFields(model, { isIdle: () => true }) }),
+      // Foldkit re-renders on any new model reference, so a message that
+      // changes nothing returns the model it was given.
+      Interacted: () =>
+        model.isIdle
+          ? { model: modifyFields(model, { isIdle: () => false }) }
+          : { model },
+      WentIdle: () =>
+        model.isIdle
+          ? { model }
+          : { model: modifyFields(model, { isIdle: () => true }) },
 
       GotLatencyViewMessage: ({ message: radioMessage }) => {
         const {
@@ -1194,11 +1084,9 @@ export const update = (
                 }),
               toast: () => toastModel,
             }),
-            [
-              reloadMetrics(context),
-              reloadSpeedtestHistory(context),
-              reloadSummary(context),
-            ]
+            [METRICS, SPEEDTEST_HISTORY, SUMMARY].map(({ reload }) =>
+              reload(context)
+            )
           );
         return {
           model: reloaded,

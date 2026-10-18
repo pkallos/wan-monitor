@@ -124,6 +124,8 @@ export const Model = S.Struct({
   dateRangePicker: DateRangePicker.Model,
   isPaused: S.Boolean,
   isIdle: S.Boolean,
+  /** The wall clock as of login or the last clock tick. Views read the time only from here. */
+  nowMs: S.Number,
   metrics: MetricsAsyncData.schema,
   maybeMetricsWindow: S.Option(TimelineWindow),
   speedtestHistory: SpeedtestHistoryAsyncData.schema,
@@ -188,11 +190,12 @@ export const isAwaitingEarliestData = (
 // Settings are hydrated at boot (see `@/storage` and `auth/flags.ts`) and
 // passed in already resolved, so the model is never born with a default it
 // has to fetch and can't race the first data fetch.
-export const initModel = (settings: Settings): Model => ({
+export const initModel = (settings: Settings, nowMs: number): Model => ({
   dateRange: settings.dateRange,
   dateRangePicker: DateRangePicker.init({ id: "date-range-picker" }),
   isPaused: settings.isPaused,
   isIdle: false,
+  nowMs,
   metrics: MetricsAsyncData.Idle(),
   maybeMetricsWindow: Option.none(),
   speedtestHistory: SpeedtestHistoryAsyncData.Idle(),

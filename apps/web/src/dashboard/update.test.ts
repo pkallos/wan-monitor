@@ -86,6 +86,7 @@ import {
   SucceededMountPacketLossChart,
   SucceededMountSpeedChart,
   SucceededTriggerSpeedtest,
+  TickedClock,
   TickedRefresh,
   ToggledConnectivitySegment,
   UnhoveredConnectivitySegment,
@@ -94,12 +95,12 @@ import {
 import {
   ConnectivityStatusAsyncData,
   HostLatencyAsyncData,
-  initModel,
   LiveConnectivityAsyncData,
   MetricsAsyncData,
   type Model,
   OutagesAsyncData,
   PingHostsAsyncData,
+  initModel as realInitModel,
   SpeedtestHistoryAsyncData,
   SpeedtestTriggerAsyncData,
   SummaryAsyncData,
@@ -108,7 +109,9 @@ import {
   DEFAULT_REQUEST,
   hostsResponse,
   loadedInsights,
+  outagesData,
   outagesResponse,
+  summaryData,
   summaryResponse,
 } from "@/dashboard/testFixtures";
 import { Toast, ToastTest } from "@/dashboard/toast";
@@ -117,6 +120,9 @@ import { connectionOf } from "@/dashboard/view/derived";
 import { defaultSettings } from "@/storage";
 
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
+const initModel = (settings: Parameters<typeof realInitModel>[0]) =>
+  realInitModel(settings, NOW_MS);
+
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 
 // A fetch resolves its window once and carries the result on its success
@@ -4062,5 +4068,425 @@ describe("dashboard update: brushing a range", () => {
       withContext(narrowed, SelectedQuickRange({ preset: "last7d" })).model
         .maybeRangeBeforeBrush
     ).toEqual(Option.none());
+  });
+});
+
+describe("dashboard update: each resource's fetch lifecycle", () => {
+  const STATES = [
+    "Idle",
+    "Loading",
+    "Refreshing",
+    "Success",
+    "Failure",
+    "Stale",
+  ] as const;
+  type StateName = (typeof STATES)[number];
+
+  type Builders<A> = Readonly<{
+    Idle: () => AsyncData.AsyncData<A, string>;
+    Loading: () => AsyncData.AsyncData<A, string>;
+    Refreshing: (
+      payload: Readonly<{ data: A }>
+    ) => AsyncData.AsyncData<A, string>;
+    Failure: (
+      payload: Readonly<{ error: string }>
+    ) => AsyncData.AsyncData<A, string>;
+    Stale: (
+      payload: Readonly<{ error: string; data: A }>
+    ) => AsyncData.AsyncData<A, string>;
+    Success: (payload: Readonly<{ data: A }>) => AsyncData.AsyncData<A, string>;
+  }>;
+
+  type ResourceName =
+    | "metrics"
+    | "speed history"
+    | "connectivity status"
+    | "live connectivity"
+    | "summary"
+    | "outages"
+    | "ping hosts"
+    | "host latency";
+  type Outcome = readonly [state: StateName, fetches: boolean];
+  type Outcomes = Readonly<Record<StateName, Outcome>>;
+
+  const lifecycleCase = <A>(spec: {
+    readonly resource: ResourceName;
+    readonly fetchName: string;
+    readonly scope: "range" | "global";
+    readonly builders: Builders<A>;
+    readonly data: A;
+    readonly read: (model: Model) => AsyncData.AsyncData<A, string>;
+    readonly write: (
+      model: Model,
+      next: AsyncData.AsyncData<A, string>
+    ) => Model;
+  }) => {
+    const states: Readonly<Record<StateName, AsyncData.AsyncData<A, string>>> =
+      {
+        Idle: spec.builders.Idle(),
+        Loading: spec.builders.Loading(),
+        Refreshing: spec.builders.Refreshing({ data: spec.data }),
+        Failure: spec.builders.Failure({ error: "boom" }),
+        Stale: spec.builders.Stale({ error: "boom", data: spec.data }),
+        Success: spec.builders.Success({ data: spec.data }),
+      };
+    return {
+      resource: spec.resource,
+      fetchName: spec.fetchName,
+      scope: spec.scope,
+      given: (base: Model, state: StateName): Model =>
+        spec.write(base, states[state]),
+      expectState: (model: Model, state: StateName) =>
+        expect(spec.read(model)).toEqual(states[state]),
+    };
+  };
+
+  // Per-host latency is only fetched in the per-host view once hosts are
+  // known, so every case runs against a model where that holds.
+  const base = (): Model => ({
+    ...initModel(defaultSettings()),
+    latencyView: "perHost",
+    pingHosts: PingHostsAsyncData.Success({ data: hostsResponse() }),
+  });
+
+  const hostLatencyCase = lifecycleCase({
+    resource: "host latency",
+    fetchName: "FetchHostLatency",
+    scope: "range",
+    builders: HostLatencyAsyncData,
+    data: {
+      series: [],
+      window: { ...METRICS_WINDOW, request: DEFAULT_REQUEST },
+    },
+    read: (model) => model.hostLatency,
+    write: (model, hostLatency) => ({ ...model, hostLatency }),
+  });
+
+  const CASES = [
+    lifecycleCase({
+      resource: "metrics",
+      fetchName: "FetchMetrics",
+      scope: "range",
+      builders: MetricsAsyncData,
+      data: [],
+      read: (model) => model.metrics,
+      write: (model, metrics) => ({ ...model, metrics }),
+    }),
+    lifecycleCase({
+      resource: "speed history",
+      fetchName: "FetchSpeedtestHistory",
+      scope: "range",
+      builders: SpeedtestHistoryAsyncData,
+      data: [],
+      read: (model) => model.speedtestHistory,
+      write: (model, speedtestHistory) => ({ ...model, speedtestHistory }),
+    }),
+    lifecycleCase({
+      resource: "connectivity status",
+      fetchName: "FetchConnectivityStatus",
+      scope: "range",
+      builders: ConnectivityStatusAsyncData,
+      data: {
+        request: DEFAULT_REQUEST,
+        points: [],
+        maybeUptimePercentage: Option.some(100),
+        maybeAvailabilityPercentage: Option.some(100),
+        coveragePercentage: 100,
+        startTimeMs: 0,
+        endTimeMs: 3_600_000,
+        granularity: "1m" as const,
+      },
+      read: (model) => model.connectivityStatus,
+      write: (model, connectivityStatus) => ({ ...model, connectivityStatus }),
+    }),
+    lifecycleCase({
+      resource: "live connectivity",
+      fetchName: "FetchLiveConnectivity",
+      scope: "global",
+      builders: LiveConnectivityAsyncData,
+      data: { status: "up" as const, maybeLastSampleAtMs: Option.none() },
+      read: (model) => model.liveConnectivity,
+      write: (model, liveConnectivity) => ({ ...model, liveConnectivity }),
+    }),
+    lifecycleCase({
+      resource: "summary",
+      fetchName: "FetchSummary",
+      scope: "range",
+      builders: SummaryAsyncData,
+      data: summaryData(),
+      read: (model) => model.summary,
+      write: (model, summary) => ({ ...model, summary }),
+    }),
+    lifecycleCase({
+      resource: "outages",
+      fetchName: "FetchOutages",
+      scope: "range",
+      builders: OutagesAsyncData,
+      data: outagesData(),
+      read: (model) => model.outages,
+      write: (model, outages) => ({ ...model, outages }),
+    }),
+    lifecycleCase({
+      resource: "ping hosts",
+      fetchName: "FetchPingHosts",
+      scope: "global",
+      builders: PingHostsAsyncData,
+      data: hostsResponse(),
+      read: (model) => model.pingHosts,
+      write: (model, pingHosts) => ({ ...model, pingHosts }),
+    }),
+    hostLatencyCase,
+  ];
+
+  const nameList = (commands: ReadonlyArray<{ name: string }> = []) =>
+    commands.map(({ name }) => name);
+
+  const retries: Outcomes = {
+    Idle: ["Idle", false],
+    Loading: ["Loading", false],
+    Refreshing: ["Refreshing", false],
+    Success: ["Refreshing", true],
+    Failure: ["Failure", true],
+    Stale: ["Refreshing", true],
+  };
+  const liveRetries: Outcomes = { ...retries, Stale: ["Loading", true] };
+  const failuresOnly: Outcomes = {
+    Idle: ["Idle", false],
+    Loading: ["Loading", false],
+    Refreshing: ["Refreshing", false],
+    Success: ["Success", false],
+    Failure: ["Failure", true],
+    Stale: ["Stale", false],
+  };
+  const TICK: Readonly<Record<ResourceName, Outcomes>> = {
+    metrics: retries,
+    "speed history": retries,
+    "connectivity status": retries,
+    "live connectivity": liveRetries,
+    summary: retries,
+    outages: retries,
+    "ping hosts": failuresOnly,
+    "host latency": retries,
+  };
+
+  const loadsOnce: Outcomes = {
+    Idle: ["Loading", true],
+    Loading: ["Loading", false],
+    Refreshing: ["Refreshing", false],
+    Success: ["Success", false],
+    Failure: ["Loading", true],
+    Stale: ["Stale", false],
+  };
+  const neverOnEnter: Outcomes = {
+    Idle: ["Idle", false],
+    Loading: ["Loading", false],
+    Refreshing: ["Refreshing", false],
+    Success: ["Success", false],
+    Failure: ["Failure", false],
+    Stale: ["Stale", false],
+  };
+  const ENTER: Readonly<Record<ResourceName, Outcomes>> = {
+    metrics: loadsOnce,
+    "speed history": loadsOnce,
+    "connectivity status": loadsOnce,
+    "live connectivity": loadsOnce,
+    summary: loadsOnce,
+    outages: loadsOnce,
+    "ping hosts": loadsOnce,
+    "host latency": neverOnEnter,
+  };
+
+  const always: Outcomes = {
+    Idle: ["Loading", true],
+    Loading: ["Loading", true],
+    Refreshing: ["Refreshing", true],
+    Success: ["Refreshing", true],
+    Failure: ["Loading", true],
+    Stale: ["Refreshing", true],
+  };
+  const liveAlways: Outcomes = { ...always, Stale: ["Loading", true] };
+  const RELOAD: Readonly<Record<ResourceName, Outcomes>> = {
+    metrics: always,
+    "speed history": always,
+    "connectivity status": always,
+    "live connectivity": liveAlways,
+    summary: always,
+    outages: always,
+    "ping hosts": always,
+    "host latency": always,
+  };
+
+  const rows = (outcomes: Readonly<Record<ResourceName, Outcomes>>) =>
+    CASES.flatMap((resourceCase) =>
+      STATES.map((state) => ({
+        resourceCase,
+        state,
+        expected: outcomes[resourceCase.resource][state],
+      }))
+    );
+
+  describe("a refresh tick", () => {
+    test.each(rows(TICK))(
+      "$resourceCase.resource in $state",
+      ({ resourceCase, state, expected: [nextState, fetches] }) => {
+        const { model, commands } = withContext(
+          resourceCase.given(base(), state),
+          TickedRefresh()
+        );
+
+        resourceCase.expectState(model, nextState);
+        expect(nameList(commands)).toEqual(
+          fetches ? [resourceCase.fetchName] : []
+        );
+      }
+    );
+
+    test("a tick that only retries failures keeps the same model", () => {
+      const failed = CASES.reduce(
+        (model, resourceCase) => resourceCase.given(model, "Failure"),
+        base()
+      );
+      const result = withContext(failed, TickedRefresh());
+
+      expect(result.model).toBe(failed);
+      expect(nameList(result.commands).length).toBeGreaterThan(0);
+    });
+
+    test("a tick leaves a resource that is already in flight alone", () => {
+      const pending = CASES.reduce(
+        (model, resourceCase) => resourceCase.given(model, "Refreshing"),
+        base()
+      );
+
+      expect(nameList(withContext(pending, TickedRefresh()).commands)).toEqual(
+        []
+      );
+    });
+  });
+
+  describe("entering the dashboard", () => {
+    test.each(rows(ENTER))(
+      "$resourceCase.resource in $state",
+      ({ resourceCase, state, expected: [nextState, fetches] }) => {
+        const { model, commands } = withContext(
+          resourceCase.given(base(), state),
+          EnteredDashboard()
+        );
+
+        resourceCase.expectState(model, nextState);
+        expect(
+          nameList(commands).filter((name) => name === resourceCase.fetchName)
+        ).toEqual(fetches ? [resourceCase.fetchName] : []);
+      }
+    );
+  });
+
+  describe("Refresh now", () => {
+    test.each(rows(RELOAD))(
+      "$resourceCase.resource in $state",
+      ({ resourceCase, state, expected: [nextState, fetches] }) => {
+        const { model, commands } = withContext(
+          resourceCase.given(base(), state),
+          ClickedRefreshNow()
+        );
+
+        resourceCase.expectState(model, nextState);
+        expect(
+          nameList(commands).filter((name) => name === resourceCase.fetchName)
+        ).toEqual(fetches ? [resourceCase.fetchName] : []);
+      }
+    );
+  });
+
+  describe("while 'All time' waits for the earliest datapoint", () => {
+    const awaiting = (): Model => ({
+      ...base(),
+      dateRange: Preset({ preset: "allTime" }),
+    });
+    // Range-scoped resources move to their next state but hold their fetch;
+    // the unknown start is asked for again, whatever else is on screen.
+    const AWAITING: Readonly<
+      Record<ResourceName, readonly [StateName, ReadonlyArray<string>]>
+    > = {
+      metrics: ["Refreshing", []],
+      "speed history": ["Refreshing", []],
+      "connectivity status": ["Refreshing", []],
+      "live connectivity": ["Refreshing", ["FetchLiveConnectivity"]],
+      summary: ["Refreshing", []],
+      outages: ["Refreshing", []],
+      "ping hosts": ["Success", []],
+      "host latency": ["Refreshing", []],
+    };
+
+    test.each(CASES)("a tick on $resource", (resourceCase) => {
+      const [nextState, fetches] = AWAITING[resourceCase.resource];
+      const { model, commands } = withContext(
+        resourceCase.given(awaiting(), "Success"),
+        TickedRefresh()
+      );
+
+      resourceCase.expectState(model, nextState);
+      expect([...nameList(commands)].sort()).toEqual(
+        ["FetchEarliestData", ...fetches].sort()
+      );
+    });
+  });
+
+  describe("per-host latency", () => {
+    test.each([
+      ["the latency chart shows all hosts", { latencyView: "all" as const }],
+      ["no host is configured", { pingHosts: PingHostsAsyncData.Idle() }],
+    ])("is left alone on a tick or a reload when %s", (_, overrides) => {
+      const model: Model = {
+        ...hostLatencyCase.given(base(), "Failure"),
+        ...overrides,
+      };
+
+      for (const message of [TickedRefresh(), ClickedRefreshNow()]) {
+        const result = withContext(model, message);
+        expect(nameList(result.commands)).not.toContain("FetchHostLatency");
+        expect(result.model.hostLatency).toEqual(model.hostLatency);
+      }
+    });
+  });
+});
+
+describe("dashboard update: activity that changes nothing", () => {
+  test("interacting while already active keeps the same model and starts nothing", () => {
+    const model = initModel(defaultSettings());
+    const result = withContext(model, Interacted());
+
+    expect(result.model).toBe(model);
+    expect(result.commands).toBeUndefined();
+  });
+
+  test("going idle while already idle keeps the same model", () => {
+    const model = { ...initModel(defaultSettings()), isIdle: true };
+
+    expect(withContext(model, WentIdle()).model).toBe(model);
+  });
+});
+
+describe("dashboard update: the clock", () => {
+  test("a model is born holding the time it was given", () => {
+    expect(initModel(defaultSettings()).nowMs).toBe(NOW_MS);
+  });
+
+  test("a clock tick stores the time and starts nothing", () => {
+    const result = withContext(
+      initModel(defaultSettings()),
+      TickedClock({ nowMs: NOW_MS + 1000 })
+    );
+
+    expect(result.model.nowMs).toBe(NOW_MS + 1000);
+    expect(result.commands).toBeUndefined();
+  });
+
+  test("a tick that carries the time already held keeps the same model", () => {
+    const model = initModel(defaultSettings());
+
+    expect(withContext(model, TickedClock({ nowMs: NOW_MS })).model).toBe(
+      model
+    );
   });
 });

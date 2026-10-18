@@ -60,17 +60,18 @@ import {
   SucceededMountLatencyChart,
   SucceededMountPacketLossChart,
   SucceededMountSpeedChart,
+  TickedClock,
   TickedRefresh,
 } from "@/dashboard/message";
 import {
   ConnectivityStatusAsyncData,
   HostLatencyAsyncData,
-  initModel,
   LiveConnectivityAsyncData,
   MetricsAsyncData,
   type Model,
   OutagesAsyncData,
   PingHostsAsyncData,
+  initModel as realInitModel,
   SpeedtestHistoryAsyncData,
   SpeedtestTriggerAsyncData,
   SummaryAsyncData,
@@ -94,6 +95,9 @@ import { view as dashboardView } from "@/dashboard/view";
 import { defaultSettings } from "@/storage";
 
 const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
+const initModel = (settings: Parameters<typeof realInitModel>[0]) =>
+  realInitModel(settings, NOW_MS);
+
 const DEFAULT_DATE_RANGE = Preset({ preset: "last30d" });
 
 // Each fetch resolves its window once and reports it back on the success
@@ -367,22 +371,17 @@ describe("dashboard view", () => {
   });
 
   test("says how long ago the last sample was taken", () => {
-    vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
-    try {
-      Scene.scene(
-        { update: boundUpdate, view },
-        Scene.given({
-          ...initModel(defaultSettings()),
-          liveConnectivity: liveConnectivity("up"),
-        }),
-        acknowledgeAllChartMounts(),
-        Scene.expect(Scene.testId("last-sample")).toHaveText(
-          "Last checked 30 seconds ago"
-        )
-      );
-    } finally {
-      vi.restoreAllMocks();
-    }
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given({
+        ...initModel(defaultSettings()),
+        liveConnectivity: liveConnectivity("up"),
+      }),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.testId("last-sample")).toHaveText(
+        "Last checked 30 seconds ago"
+      )
+    );
   });
 
   test.each([
@@ -411,35 +410,27 @@ describe("dashboard view", () => {
     });
 
     test("puts the pill and the open incident in one polite status region", () => {
-      vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
-      try {
-        Scene.scene(
-          { update: boundUpdate, view },
-          Scene.given({
-            ...initModel(defaultSettings()),
-            ...loadedInsights(),
-            liveConnectivity: liveConnectivity("down"),
-            outages: OutagesAsyncData.Success({
-              data: outagesData(outagesResponse([RUNNING])),
-            }),
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given({
+          ...initModel(defaultSettings()),
+          ...loadedInsights(),
+          liveConnectivity: liveConnectivity("down"),
+          outages: OutagesAsyncData.Success({
+            data: outagesData(outagesResponse([RUNNING])),
           }),
-          acknowledgeAllChartMounts(),
-          resolveAllChartSyncs(),
-          Scene.expect(Scene.testId("live-status")).toHaveAttr(
-            "role",
-            "status"
+        }),
+        acknowledgeAllChartMounts(),
+        resolveAllChartSyncs(),
+        Scene.expect(Scene.testId("live-status")).toHaveAttr("role", "status"),
+        Scene.inside(
+          Scene.testId("live-status"),
+          Scene.expect(Scene.testId("connection-status")).toContainText(
+            "Offline"
           ),
-          Scene.inside(
-            Scene.testId("live-status"),
-            Scene.expect(Scene.testId("connection-status")).toContainText(
-              "Offline"
-            ),
-            Scene.expect(Scene.testId("open-incident")).toExist()
-          )
-        );
-      } finally {
-        vi.restoreAllMocks();
-      }
+          Scene.expect(Scene.testId("open-incident")).toExist()
+        )
+      );
     });
 
     test("keeps the region mounted while the status changes from Online to Offline", () => {
@@ -514,21 +505,16 @@ describe("dashboard view", () => {
     });
 
     test("reads No data, not the status the failed fetch could not confirm", () => {
-      vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
-      try {
-        Scene.scene(
-          { update: boundUpdate, view },
-          Scene.given({
-            ...initModel(defaultSettings()),
-            liveConnectivity: staleStatus("up"),
-          }),
-          acknowledgeAllChartMounts(),
-          Scene.expect(Scene.testId("connection-status")).toHaveText("No data"),
-          Scene.expect(Scene.testId("last-sample")).not.toExist()
-        );
-      } finally {
-        vi.restoreAllMocks();
-      }
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given({
+          ...initModel(defaultSettings()),
+          liveConnectivity: staleStatus("up"),
+        }),
+        acknowledgeAllChartMounts(),
+        Scene.expect(Scene.testId("connection-status")).toHaveText("No data"),
+        Scene.expect(Scene.testId("last-sample")).not.toExist()
+      );
     });
 
     test("names no open incident from a status it could not confirm", () => {
@@ -610,23 +596,18 @@ describe("dashboard view", () => {
     });
 
     test("names when it began, the failing hosts and the worst loss while the connection is degraded", () => {
-      vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
-      try {
-        Scene.scene(
-          { update: boundUpdate, view },
-          Scene.given(withLog("degraded", [RUNNING])),
-          acknowledgeAllChartMounts(),
-          resolveAllChartSyncs(),
-          Scene.expect(Scene.testId("open-incident")).toContainText(
-            formatClock(Date.parse(RUNNING.start))
-          ),
-          Scene.expect(Scene.testId("open-incident")).toContainText(
-            ", 8.8.8.8 has lost up to 30% of packets."
-          )
-        );
-      } finally {
-        vi.restoreAllMocks();
-      }
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given(withLog("degraded", [RUNNING])),
+        acknowledgeAllChartMounts(),
+        resolveAllChartSyncs(),
+        Scene.expect(Scene.testId("open-incident")).toContainText(
+          formatClock(Date.parse(RUNNING.start))
+        ),
+        Scene.expect(Scene.testId("open-incident")).toContainText(
+          ", 8.8.8.8 has lost up to 30% of packets."
+        )
+      );
     });
 
     test("allows the newest cycle to be as late as two of the configured ping intervals", () => {
@@ -1843,8 +1824,6 @@ describe("dashboard view", () => {
   });
 
   test("opening the date range picker, choosing a preset, and applying it changes the selected range and reloads data", () => {
-    vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
-
     const appliedRange = Preset({ preset: "last7d" });
     const initialLabel = formatDateRangeLabel(
       getDateRangeWindow(DEFAULT_DATE_RANGE, NOW_MS)
@@ -2670,22 +2649,17 @@ describe("dashboard view: insights", () => {
           ...labels.map((label) => Scene.expect(Scene.text(label)).toExist())
         );
 
-      vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
-      try {
-        withTimeZone("UTC", () => {
-          show(endingNow, axisLabels("11:00 AM", "12:00 PM"));
-          showAtRibbonWidth(200)(
-            endingNow,
-            axisLabels("11:00 AM"),
-            Scene.inside(
-              Scene.testId("availability-card"),
-              Scene.expect(Scene.text("12:00 PM")).not.toExist()
-            )
-          );
-        });
-      } finally {
-        vi.restoreAllMocks();
-      }
+      withTimeZone("UTC", () => {
+        show(endingNow, axisLabels("11:00 AM", "12:00 PM"));
+        showAtRibbonWidth(200)(
+          endingNow,
+          axisLabels("11:00 AM"),
+          Scene.inside(
+            Scene.testId("availability-card"),
+            Scene.expect(Scene.text("12:00 PM")).not.toExist()
+          )
+        );
+      });
     });
 
     test("lays a short range out as plain rows of tappable cells for narrow screens", () => {
@@ -2724,7 +2698,7 @@ describe("dashboard view: insights", () => {
     test("stacks a multi-day hourly range into one row per local day, an hour to a cell", () => {
       withTimeZone("UTC", () => {
         show(
-          ribbonModel(60),
+          { ...ribbonModel(60), nowMs: Date.parse("2026-08-05T12:00:00.000Z") },
           Scene.expect(Scene.testId("ribbon-day-stack")).toExist(),
           Scene.expect(Scene.testId("ribbon-wrapped-rows")).not.toExist(),
           Scene.expectAll(Scene.all.testId("ribbon-day-row")).toHaveCount(3),
@@ -3837,23 +3811,18 @@ describe("dashboard view: insights", () => {
 
   describe("footer and banner", () => {
     test("the footer says only when the dashboard last updated", () => {
-      vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
-      try {
-        show(
-          { ...settled(), maybeLastUpdatedMs: Option.some(NOW_MS - 3000) },
-          Scene.expect(Scene.testId("last-updated")).toHaveText(
-            "Updated 3 seconds ago."
-          ),
-          Scene.expect(Scene.text(/speed test (hourly|every)/)).not.toExist(),
-          Scene.expect(Scene.text(/Coverage/)).not.toExist(),
-          Scene.expect(Scene.text(/auto-refresh on/)).not.toExist(),
-          Scene.expectAll(
-            Scene.all.selector('footer span[aria-hidden="true"]')
-          ).toBeEmpty()
-        );
-      } finally {
-        vi.restoreAllMocks();
-      }
+      show(
+        { ...settled(), maybeLastUpdatedMs: Option.some(NOW_MS - 3000) },
+        Scene.expect(Scene.testId("last-updated")).toHaveText(
+          "Updated 3 seconds ago."
+        ),
+        Scene.expect(Scene.text(/speed test (hourly|every)/)).not.toExist(),
+        Scene.expect(Scene.text(/Coverage/)).not.toExist(),
+        Scene.expect(Scene.text(/auto-refresh on/)).not.toExist(),
+        Scene.expectAll(
+          Scene.all.selector('footer span[aria-hidden="true"]')
+        ).toBeEmpty()
+      );
     });
 
     test("the footer leaves a paused dashboard to the header chip", () => {
@@ -3888,5 +3857,53 @@ describe("dashboard view: insights", () => {
         )
       );
     });
+  });
+});
+
+describe("dashboard view: the clock", () => {
+  const model = {
+    ...initModel(defaultSettings()),
+    liveConnectivity: liveConnectivity("up"),
+    maybeLastUpdatedMs: Option.some(NOW_MS - 3000),
+  };
+
+  test("the elapsed times advance on a clock tick, with no other message", () => {
+    Scene.scene(
+      { update: boundUpdate, view },
+      Scene.given(model),
+      acknowledgeAllChartMounts(),
+      Scene.expect(Scene.testId("last-updated")).toHaveText(
+        "Updated 3 seconds ago."
+      ),
+      Scene.expect(Scene.testId("last-sample")).toHaveText(
+        "Last checked 30 seconds ago"
+      ),
+      Scene.Subscription.emit(TickedClock({ nowMs: NOW_MS + 2000 })),
+      Scene.expect(Scene.testId("last-updated")).toHaveText(
+        "Updated 5 seconds ago."
+      ),
+      Scene.expect(Scene.testId("last-sample")).toHaveText(
+        "Last checked 32 seconds ago"
+      )
+    );
+  });
+
+  test("the views read the time from the model, not the wall clock", () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW_MS + 3_600_000);
+    try {
+      Scene.scene(
+        { update: boundUpdate, view },
+        Scene.given(model),
+        acknowledgeAllChartMounts(),
+        Scene.expect(Scene.testId("last-updated")).toHaveText(
+          "Updated 3 seconds ago."
+        ),
+        Scene.expect(Scene.testId("last-sample")).toHaveText(
+          "Last checked 30 seconds ago"
+        )
+      );
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

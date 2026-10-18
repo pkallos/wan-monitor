@@ -18,7 +18,7 @@ import {
 import { update } from "@/auth/update";
 import { view } from "@/auth/view";
 import {
-  initModel as initDashboardModel,
+  initModel as realInitDashboardModel,
   SucceededMountJitterChart,
   SucceededMountLatencyChart,
   SucceededMountPacketLossChart,
@@ -70,6 +70,12 @@ const unreachable = (retry: Unreachable["retry"]) =>
     settings: defaultSettings(),
     retry,
   });
+
+const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
+
+const initDashboardModel = (
+  settings: Parameters<typeof realInitDashboardModel>[0]
+) => realInitDashboardModel(settings, NOW_MS);
 
 const ANNOUNCEMENT = Scene.testId("unreachable-announcement");
 

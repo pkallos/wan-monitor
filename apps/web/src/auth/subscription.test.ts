@@ -1,20 +1,35 @@
+import { it } from "@effect/vitest";
 import { Effect, Fiber, Option, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { GotDashboardMessage } from "@/auth/message";
 import { Checking, initLoggedOut, LoggedIn } from "@/auth/model";
 import {
+  activityDependenciesToStream,
+  activityModelToDependencies,
   chartBrushDependenciesToStream,
+  clockDependenciesToStream,
+  clockModelToDependencies,
   dependenciesToStream,
+  loggedInModelToDependencies,
   modelToDependencies,
   systemThemeDependenciesToStream,
   systemThemeModelToDependencies,
 } from "@/auth/subscription";
 import {
   ChangedSystemTheme,
-  initModel as initDashboardModel,
+  Interacted,
+  initModel as realInitDashboardModel,
+  TickedClock,
 } from "@/dashboard";
 import { chartEvents } from "@/dashboard/charts/chartHost";
 import { defaultSettings } from "@/storage";
+
+const NOW_MS = Date.parse("2026-07-28T12:00:00.000Z");
+
+const initDashboardModel = (
+  settings: Parameters<typeof realInitDashboardModel>[0]
+) => realInitDashboardModel(settings, NOW_MS);
 
 describe("modelToDependencies", () => {
   test("is never logged in while Checking or LoggedOut", () => {
@@ -185,4 +200,153 @@ describe("chartBrushDependenciesToStream", () => {
       },
     ]);
   });
+});
+
+describe("activityModelToDependencies", () => {
+  const loggedIn = (isIdle: boolean) =>
+    LoggedIn({
+      maybeSession: Option.none(),
+      dashboard: { ...initDashboardModel(defaultSettings()), isIdle },
+    });
+
+  test("is never logged in or idle while Checking or LoggedOut", () => {
+    const states = [
+      Checking({ maybeToken: Option.none(), settings: defaultSettings() }),
+      initLoggedOut(defaultSettings()),
+    ];
+
+    for (const state of states) {
+      expect(activityModelToDependencies(state)).toEqual({
+        isLoggedIn: false,
+        isIdle: false,
+      });
+    }
+  });
+
+  test("carries isIdle from the embedded dashboard once LoggedIn", () => {
+    expect(activityModelToDependencies(loggedIn(false))).toEqual({
+      isLoggedIn: true,
+      isIdle: false,
+    });
+    expect(activityModelToDependencies(loggedIn(true))).toEqual({
+      isLoggedIn: true,
+      isIdle: true,
+    });
+  });
+});
+
+describe("loggedInModelToDependencies", () => {
+  test("ignores pause and idle, so what it gates keeps running through both", () => {
+    expect(
+      loggedInModelToDependencies(
+        LoggedIn({
+          maybeSession: Option.none(),
+          dashboard: {
+            ...initDashboardModel(defaultSettings()),
+            isPaused: true,
+            isIdle: true,
+          },
+        })
+      )
+    ).toEqual({ isLoggedIn: true });
+    expect(
+      loggedInModelToDependencies(initLoggedOut(defaultSettings()))
+    ).toEqual({ isLoggedIn: false });
+  });
+});
+
+describe("activityDependenciesToStream", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.effect.each([false, true])(
+    "is empty while not logged in, with isIdle %s",
+    (isIdle) =>
+      Effect.gen(function* () {
+        const add = vi.spyOn(window, "addEventListener");
+        const events = yield* Stream.runCollect(
+          activityDependenciesToStream({ isLoggedIn: false, isIdle })
+        );
+
+        expect(Array.from(events)).toEqual([]);
+        expect(add).not.toHaveBeenCalled();
+      })
+  );
+
+  it.effect("wraps the first activity while idle for the dashboard", () =>
+    Effect.gen(function* () {
+      const add = vi.spyOn(window, "addEventListener");
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(
+          activityDependenciesToStream({ isLoggedIn: true, isIdle: true })
+        )
+      );
+      yield* Effect.yieldNow.pipe(
+        Effect.repeat({ until: () => add.mock.calls.length > 0 })
+      );
+      window.dispatchEvent(new Event("mousemove"));
+
+      expect(Array.from(yield* Fiber.join(fiber))).toEqual([
+        GotDashboardMessage({ message: Interacted() }),
+      ]);
+    })
+  );
+});
+
+describe("clockModelToDependencies", () => {
+  test("is not logged in, counting minutes, while Checking or LoggedOut", () => {
+    const states = [
+      Checking({ maybeToken: Option.none(), settings: defaultSettings() }),
+      initLoggedOut(defaultSettings()),
+    ];
+
+    for (const state of states) {
+      expect(clockModelToDependencies(state)).toEqual({
+        isLoggedIn: false,
+        resolution: "minute",
+      });
+    }
+  });
+
+  test("takes the resolution the embedded dashboard needs once LoggedIn, paused or not", () => {
+    const dashboard = {
+      ...initDashboardModel(defaultSettings()),
+      isPaused: true,
+      isIdle: true,
+      maybeLastUpdatedMs: Option.some(NOW_MS - 1000),
+    };
+
+    expect(
+      clockModelToDependencies(
+        LoggedIn({ maybeSession: Option.none(), dashboard })
+      )
+    ).toEqual({ isLoggedIn: true, resolution: "second" });
+  });
+});
+
+describe("clockDependenciesToStream", () => {
+  it.effect("is empty while not logged in", () =>
+    Effect.gen(function* () {
+      const events = yield* Stream.runCollect(
+        clockDependenciesToStream({ isLoggedIn: false, resolution: "second" })
+      );
+
+      expect(Array.from(events)).toEqual([]);
+    })
+  );
+
+  it.effect("wraps each tick of the dashboard clock while logged in", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(5000);
+      const events = yield* Stream.runCollect(
+        clockDependenciesToStream({
+          isLoggedIn: true,
+          resolution: "second",
+        }).pipe(Stream.take(1))
+      );
+
+      expect(Array.from(events)).toEqual([
+        GotDashboardMessage({ message: TickedClock({ nowMs: 5000 }) }),
+      ]);
+    })
+  );
 });
