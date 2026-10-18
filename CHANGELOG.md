@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+### Patch Changes
+
+- [#365](https://github.com/pkallos/wan-monitor/pull/365) [`9a3c1d3`](https://github.com/pkallos/wan-monitor/commit/9a3c1d3cebb93f9ed95102f8441c9e872595305a) Thanks [@pkallos](https://github.com/pkallos)! - Fix outage durations that ran about a thousand ping cycles too long on databases whose metrics table has nanosecond timestamps, end each outage at the ping cycle that recorded its recovery, and add versioned startup migrations that rebuild such a table into the declared schema.
+
 ## 1.3.0
 
 ### Minor Changes
