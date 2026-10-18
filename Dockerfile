@@ -117,6 +117,7 @@ COPY --from=builder /tmp/server-deploy/node_modules /app/node_modules
 
 # Copy configuration files
 COPY docker/nginx.prod.conf /etc/nginx/sites-available/default
+COPY docker/nginx.security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Remove default nginx config
