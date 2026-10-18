@@ -5,7 +5,7 @@ export const writeMetricToSender = (
   sender: Sender,
   metric: NetworkMetric,
   table = "network_metrics"
-): void => {
+): Promise<void> => {
   let row = sender.table(table).symbol("source", metric.source);
 
   if (metric.host) row = row.symbol("host", metric.host);
@@ -29,5 +29,5 @@ export const writeMetricToSender = (
   if (metric.internalIp)
     row = row.stringColumn("internal_ip", metric.internalIp);
 
-  row.at(BigInt(metric.timestamp.getTime()) * 1_000_000n, "ns");
+  return row.at(BigInt(metric.timestamp.getTime()) * 1_000_000n, "ns");
 };

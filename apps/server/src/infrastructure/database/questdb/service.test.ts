@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Sender } from "@questdb/nodejs-client";
-import { Effect, Layer, Option } from "effect";
+import type { NetworkMetric } from "@shared/metrics";
+import { Duration, Effect, Fiber, Layer, Option } from "effect";
+import { TestClock } from "effect/testing";
 import { Pool } from "pg";
 import { vi } from "vitest";
 import {
@@ -9,6 +11,7 @@ import {
 } from "@/infrastructure/database/questdb/connection";
 import {
   DatabaseQueryError,
+  DatabaseWriteError,
   DbUnavailable,
 } from "@/infrastructure/database/questdb/errors";
 import {
@@ -38,24 +41,27 @@ const queries: readonly [
   ["queryCyclePeriod", "cycle period", (db) => db.queryCyclePeriod(window)],
 ];
 
+const stubbedSenderConfig = "http::addr=localhost:9;protocol_version=2;";
+
 /**
  * Runs `use` against the QuestDB service wired to a connection whose Postgres
  * client answers every query with `respond`, and reports each message the
- * service passed to `markDisconnected`.
+ * service passed to `markDisconnected`. The sender is built from
+ * `senderConfig`, which points at a closed port.
  */
 const withStubbedPgClient = <A, E>(
   respond: (sql: string) => Promise<{ rows: Record<string, unknown>[] }>,
   use: (
     db: QuestDBService,
-    disconnects: readonly string[]
-  ) => Effect.Effect<A, E>
+    disconnects: readonly string[],
+    conn: QuestDBRawConnection
+  ) => Effect.Effect<A, E>,
+  senderConfig = stubbedSenderConfig
 ) =>
   Effect.acquireUseRelease(
     Effect.promise(
       async (): Promise<QuestDBRawConnection> => ({
-        sender: await Sender.fromConfig(
-          "http::addr=localhost:9;protocol_version=2;"
-        ),
+        sender: await Sender.fromConfig(senderConfig),
         pgClient: Object.assign(new Pool(), { query: vi.fn(respond) }),
       })
     ),
@@ -77,7 +83,7 @@ const withStubbedPgClient = <A, E>(
       });
       return Effect.gen(function* () {
         const db = yield* QuestDB;
-        return yield* use(db, disconnects);
+        return yield* use(db, disconnects, conn);
       }).pipe(
         Effect.provide(
           QuestDBOverConnection.pipe(
@@ -193,5 +199,168 @@ describe("queryOutageRuns", () => {
           expect(runs.map((run) => run.had_down)).toEqual([false, true]);
         })
     )
+  );
+});
+
+describe("writeMetric", () => {
+  const metric: NetworkMetric = {
+    timestamp: new Date("2024-01-01T00:00:00Z"),
+    source: "ping",
+    host: "8.8.8.8",
+    latency: 12,
+  };
+  const writeTimeoutMs = 11_000;
+  const timeoutMessage = `QuestDB write timed out after ${writeTimeoutMs}ms`;
+
+  const neverSettles = () => new Promise<void>(() => undefined);
+
+  const runUntilTimeout = <E>(call: Effect.Effect<unknown, E>) =>
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(Effect.flip(call));
+      yield* TestClock.adjust(Duration.millis(writeTimeoutMs - 1));
+      const beforeTimeout = fiber.pollUnsafe();
+      yield* TestClock.adjust(Duration.millis(1));
+      const error = yield* Fiber.join(fiber);
+      return { beforeTimeout, error };
+    });
+
+  it.effect("fails with DbUnavailable and marks the connection down", () =>
+    withStubbedPgClient(
+      () => Promise.resolve({ rows: [] }),
+      (db, disconnects, conn) =>
+        Effect.gen(function* () {
+          vi.spyOn(conn.sender, "at").mockRejectedValue(
+            new Error("read ECONNRESET")
+          );
+
+          const error = yield* Effect.flip(db.writeMetric(metric));
+
+          expect(error).toBeInstanceOf(DbUnavailable);
+          expect(error).toMatchObject({ message: "read ECONNRESET" });
+          expect(disconnects).toEqual(["read ECONNRESET"]);
+        })
+    )
+  );
+
+  it.effect(
+    "fails with DatabaseWriteError and leaves the connection up on a write error",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "at").mockRejectedValue(
+              new Error("invalid column: nope")
+            );
+
+            const error = yield* Effect.flip(db.writeMetric(metric));
+
+            expect(error).toBeInstanceOf(DatabaseWriteError);
+            expect(error).toMatchObject({
+              message: "Failed to write metric: invalid column: nope",
+            });
+            expect(disconnects).toEqual([]);
+          })
+      )
+  );
+
+  it.effect(
+    "fails with DbUnavailable once requestTimeout + retryTimeout elapse on a write that never settles",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "at").mockImplementation(neverSettles);
+
+            const { beforeTimeout, error } = yield* runUntilTimeout(
+              db.writeMetric(metric)
+            );
+
+            expect(beforeTimeout).toBeUndefined();
+            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toMatchObject({ message: timeoutMessage });
+            expect(disconnects).toEqual([timeoutMessage]);
+          })
+      )
+  );
+
+  it.effect(
+    "fails with DbUnavailable when the real sender cannot reach QuestDB and the flush never settles",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects) =>
+          Effect.gen(function* () {
+            const { error } = yield* runUntilTimeout(db.writeMetric(metric));
+
+            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toMatchObject({ message: timeoutMessage });
+            expect(disconnects).toEqual([timeoutMessage]);
+          }),
+        "http::addr=127.0.0.1:9;protocol_version=1;auto_flush_rows=1;request_timeout=10000;retry_timeout=1000;"
+      )
+  );
+
+  it.effect(
+    "leaves no unhandled rejection when a timed-out write rejects later",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, _disconnects, conn) => {
+          const unhandled: unknown[] = [];
+          const onUnhandled = (reason: unknown) => {
+            unhandled.push(reason);
+          };
+          let rejectWrite: (reason: Error) => void = () => undefined;
+          // A vi.fn spy would attach its own rejection handler to the promise
+          // and hide an unhandled rejection, so replace the method directly.
+          conn.sender.at = () =>
+            new Promise<void>((_resolve, reject) => {
+              rejectWrite = reject;
+            });
+
+          return Effect.gen(function* () {
+            process.on("unhandledRejection", onUnhandled);
+            yield* runUntilTimeout(db.writeMetric(metric));
+
+            rejectWrite(new Error("connect ECONNREFUSED 127.0.0.1:9000"));
+            yield* Effect.promise(
+              () => new Promise((resolve) => setImmediate(resolve))
+            );
+
+            expect(unhandled).toEqual([]);
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => process.off("unhandledRejection", onUnhandled))
+            )
+          );
+        }
+      )
+  );
+});
+
+describe("flush", () => {
+  it.effect(
+    "fails with DbUnavailable once requestTimeout + retryTimeout elapse on a flush that never settles",
+    () =>
+      withStubbedPgClient(
+        () => Promise.resolve({ rows: [] }),
+        (db, disconnects, conn) =>
+          Effect.gen(function* () {
+            vi.spyOn(conn.sender, "flush").mockImplementation(
+              () => new Promise<boolean>(() => undefined)
+            );
+
+            const fiber = yield* Effect.forkChild(Effect.flip(db.flush()));
+            yield* TestClock.adjust(Duration.millis(11_000));
+            const error = yield* Fiber.join(fiber);
+
+            const message = "QuestDB flush timed out after 11000ms";
+            expect(error).toBeInstanceOf(DbUnavailable);
+            expect(error).toMatchObject({ message });
+            expect(disconnects).toEqual([message]);
+          })
+      )
   );
 });

@@ -1,5 +1,5 @@
 import type { DatabaseHealth, NetworkMetric } from "@shared/metrics";
-import { Context, Effect, Layer, Option } from "effect";
+import { Context, Duration, Effect, Layer, Option } from "effect";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
   QuestDBConnection,
@@ -118,6 +118,26 @@ const make = Effect.gen(function* () {
   const connection = yield* QuestDBConnection;
   const config = yield* ConfigService;
   const table = config.database.table;
+  const ilpTimeoutMs =
+    config.database.requestTimeout + config.database.retryTimeout;
+
+  // undici retries refused connections indefinitely and ignores retry_timeout,
+  // so a sender call against a down QuestDB never settles on its own.
+  const withIlpTimeout = <A, E, R>(
+    operation: "write" | "flush",
+    effect: Effect.Effect<A, E, R>
+  ) =>
+    effect.pipe(
+      Effect.timeoutOrElse({
+        duration: Duration.millis(ilpTimeoutMs),
+        orElse: () =>
+          Effect.fail(
+            new DbUnavailable({
+              message: `QuestDB ${operation} timed out after ${ilpTimeoutMs}ms`,
+            })
+          ),
+      })
+    );
 
   const writeMetric = (
     metric: NetworkMetric
@@ -125,20 +145,21 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const conn = yield* connection.getConnection;
 
-      yield* Effect.tryPromise({
-        try: async () => {
-          writeMetricToSender(conn.sender, metric, table);
-        },
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseWriteError({
-            message: `Failed to write metric: ${msg}`,
-          });
-        },
-      });
+      yield* withIlpTimeout(
+        "write",
+        Effect.tryPromise({
+          try: () => writeMetricToSender(conn.sender, metric, table),
+          catch: (error) => {
+            const msg = errorMessage(error);
+            if (isLikelyConnectionError(msg)) {
+              return new DbUnavailable({ message: msg });
+            }
+            return new DatabaseWriteError({
+              message: `Failed to write metric: ${msg}`,
+            });
+          },
+        })
+      );
     }).pipe(
       Effect.catchTag("DbUnavailable", (e) =>
         connection
@@ -462,20 +483,23 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const conn = yield* connection.getConnection;
 
-      yield* Effect.tryPromise({
-        try: async () => {
-          await conn.sender.flush();
-        },
-        catch: (error) => {
-          const msg = errorMessage(error);
-          if (isLikelyConnectionError(msg)) {
-            return new DbUnavailable({ message: msg });
-          }
-          return new DatabaseWriteError({
-            message: `Failed to flush metrics: ${msg}`,
-          });
-        },
-      });
+      yield* withIlpTimeout(
+        "flush",
+        Effect.tryPromise({
+          try: async () => {
+            await conn.sender.flush();
+          },
+          catch: (error) => {
+            const msg = errorMessage(error);
+            if (isLikelyConnectionError(msg)) {
+              return new DbUnavailable({ message: msg });
+            }
+            return new DatabaseWriteError({
+              message: `Failed to flush metrics: ${msg}`,
+            });
+          },
+        })
+      );
     }).pipe(
       Effect.catchTag("DbUnavailable", (e) =>
         connection

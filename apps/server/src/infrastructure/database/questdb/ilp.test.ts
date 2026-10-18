@@ -16,13 +16,13 @@ describe("ILP integration tests", () => {
       floatColumn: vi.fn(() => sender),
       intColumn: vi.fn(() => sender),
       stringColumn: vi.fn(() => sender),
-      at: vi.fn(() => sender),
+      at: vi.fn(() => Promise.resolve()),
     });
     return sender as Sender;
   };
 
   describe("writeMetricToSender", () => {
-    it("should write complete ping metric with all fields", () => {
+    it("should write complete ping metric with all fields", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -34,7 +34,7 @@ describe("ILP integration tests", () => {
         connectivityStatus: "up",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics");
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
@@ -52,7 +52,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should write complete speedtest metric with all fields", () => {
+    it("should write complete speedtest metric with all fields", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -67,7 +67,7 @@ describe("ILP integration tests", () => {
         internalIp: "192.168.1.100",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics");
       expect(sender.symbol).toHaveBeenCalledWith("source", "speedtest");
@@ -97,14 +97,14 @@ describe("ILP integration tests", () => {
       expect(sender.at).toHaveBeenCalled();
     });
 
-    it("should handle minimal ping metric with only required fields", () => {
+    it("should handle minimal ping metric with only required fields", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
         source: "ping",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics");
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
@@ -114,7 +114,7 @@ describe("ILP integration tests", () => {
       expect(sender.intColumn).not.toHaveBeenCalled();
     });
 
-    it("should skip undefined host field", () => {
+    it("should skip undefined host field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -122,14 +122,14 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.symbol).toHaveBeenCalledWith("source", "speedtest");
       expect(sender.symbol).not.toHaveBeenCalledWith("host", expect.anything());
       expect(sender.floatColumn).toHaveBeenCalledWith("latency", 15.5);
     });
 
-    it("should skip undefined latency field", () => {
+    it("should skip undefined latency field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -137,7 +137,7 @@ describe("ILP integration tests", () => {
         host: "8.8.8.8",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
       expect(sender.floatColumn).not.toHaveBeenCalledWith(
@@ -146,7 +146,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined jitter field", () => {
+    it("should skip undefined jitter field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -154,7 +154,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.floatColumn).toHaveBeenCalledWith("latency", 15.5);
       expect(sender.floatColumn).not.toHaveBeenCalledWith(
@@ -163,7 +163,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined packetLoss field", () => {
+    it("should skip undefined packetLoss field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -171,7 +171,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.floatColumn).not.toHaveBeenCalledWith(
         "packet_loss",
@@ -179,7 +179,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined connectivityStatus field", () => {
+    it("should skip undefined connectivityStatus field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -187,7 +187,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.stringColumn).not.toHaveBeenCalledWith(
         "connectivity_status",
@@ -195,7 +195,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined downloadBandwidth field", () => {
+    it("should skip undefined downloadBandwidth field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -203,7 +203,7 @@ describe("ILP integration tests", () => {
         uploadBandwidth: 50_000_000,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.intColumn).toHaveBeenCalledWith(
         "upload_bandwidth",
@@ -215,7 +215,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined uploadBandwidth field", () => {
+    it("should skip undefined uploadBandwidth field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -223,7 +223,7 @@ describe("ILP integration tests", () => {
         downloadBandwidth: 100_000_000,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.intColumn).toHaveBeenCalledWith(
         "download_bandwidth",
@@ -235,7 +235,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined serverLocation field", () => {
+    it("should skip undefined serverLocation field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -243,7 +243,7 @@ describe("ILP integration tests", () => {
         isp: "Test ISP",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.stringColumn).toHaveBeenCalledWith("isp", "Test ISP");
       expect(sender.stringColumn).not.toHaveBeenCalledWith(
@@ -252,7 +252,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined isp field", () => {
+    it("should skip undefined isp field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -260,7 +260,7 @@ describe("ILP integration tests", () => {
         serverLocation: "Test Location",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.stringColumn).toHaveBeenCalledWith(
         "server_location",
@@ -272,7 +272,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined externalIp field", () => {
+    it("should skip undefined externalIp field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -280,7 +280,7 @@ describe("ILP integration tests", () => {
         internalIp: "192.168.1.100",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.stringColumn).toHaveBeenCalledWith(
         "internal_ip",
@@ -292,7 +292,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should skip undefined internalIp field", () => {
+    it("should skip undefined internalIp field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -300,7 +300,7 @@ describe("ILP integration tests", () => {
         externalIp: "1.2.3.4",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.stringColumn).toHaveBeenCalledWith(
         "external_ip",
@@ -312,7 +312,7 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should handle zero values correctly", () => {
+    it("should handle zero values correctly", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -322,14 +322,14 @@ describe("ILP integration tests", () => {
         packetLoss: 0,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.floatColumn).toHaveBeenCalledWith("latency", 0);
       expect(sender.floatColumn).toHaveBeenCalledWith("jitter", 0);
       expect(sender.floatColumn).toHaveBeenCalledWith("packet_loss", 0);
     });
 
-    it("should convert timestamp to nanoseconds correctly", () => {
+    it("should convert timestamp to nanoseconds correctly", async () => {
       const sender = createMockSender();
       const timestamp = new Date("2024-01-01T12:00:00.000Z");
       const metric: NetworkMetric = {
@@ -337,13 +337,13 @@ describe("ILP integration tests", () => {
         source: "ping",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       const expectedNanos = BigInt(timestamp.getTime()) * 1_000_000n;
       expect(sender.at).toHaveBeenCalledWith(expectedNanos, "ns");
     });
 
-    it("should handle metric with mixed optional and required fields", () => {
+    it("should handle metric with mixed optional and required fields", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -353,7 +353,7 @@ describe("ILP integration tests", () => {
         connectivityStatus: "degraded",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.symbol).toHaveBeenCalledWith("source", "ping");
       expect(sender.symbol).toHaveBeenCalledWith("host", "1.1.1.1");
@@ -372,32 +372,46 @@ describe("ILP integration tests", () => {
       );
     });
 
-    it("should default to the network_metrics table when none is provided", () => {
+    it("should default to the network_metrics table when none is provided", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
         source: "ping",
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics");
     });
 
-    it("should write to a custom table when one is provided", () => {
+    it("should write to a custom table when one is provided", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
         source: "ping",
       };
 
-      writeMetricToSender(sender, metric, "network_metrics_test_2");
+      await writeMetricToSender(sender, metric, "network_metrics_test_2");
 
       expect(sender.table).toHaveBeenCalledWith("network_metrics_test_2");
       expect(sender.table).not.toHaveBeenCalledWith("network_metrics");
     });
 
-    it("should chain sender calls in correct order", () => {
+    it("should reject when the sender fails to flush the row", async () => {
+      const sender = createMockSender();
+      const flushError = new Error("connect ECONNREFUSED 127.0.0.1:9000");
+      vi.mocked(sender.at).mockRejectedValueOnce(flushError);
+      const metric: NetworkMetric = {
+        timestamp: new Date("2024-01-01T12:00:00.000Z"),
+        source: "ping",
+      };
+
+      await expect(writeMetricToSender(sender, metric)).rejects.toBe(
+        flushError
+      );
+    });
+
+    it("should chain sender calls in correct order", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {
         timestamp: new Date("2024-01-01T12:00:00.000Z"),
@@ -406,7 +420,7 @@ describe("ILP integration tests", () => {
         latency: 15.5,
       };
 
-      writeMetricToSender(sender, metric);
+      await writeMetricToSender(sender, metric);
 
       const callOrder = vi.mocked(sender.table).mock.invocationCallOrder[0];
       expect(callOrder).toBeLessThan(
