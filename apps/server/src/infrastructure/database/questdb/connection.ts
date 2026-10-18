@@ -303,14 +303,16 @@ const make = Effect.gen(function* () {
     }
   });
 
+  // An interrupted fiber skips catchCause handlers, so closing the scope still
+  // ends the loop instead of restarting it.
   yield* Effect.forkScoped(
     connectionLoop.pipe(
       Effect.catchCause((cause) =>
         Effect.logError("Connection loop crashed", cause).pipe(
-          Effect.andThen(Effect.sleep(Duration.seconds(5))),
-          Effect.andThen(connectionLoop)
+          Effect.andThen(Effect.sleep(Duration.seconds(5)))
         )
-      )
+      ),
+      Effect.forever
     )
   );
 
