@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1
+
+### Patch Changes
+
+- [#433](https://github.com/pkallos/wan-monitor/pull/433) [`9bb32dc`](https://github.com/pkallos/wan-monitor/commit/9bb32dc8c996f2dfa3207edff12925c65984e620) Thanks [@pkallos](https://github.com/pkallos)! - Update effect to 4.0.5 and build the server with tsup 9.
+
 ## 1.5.0
 
 ### Minor Changes
