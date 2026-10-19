@@ -34,7 +34,7 @@ export const TriggerPingResponse = Schema.Struct({
 
 export const GetHostsResponse = Schema.Struct({
   hosts: Schema.Array(Schema.String),
-  /** Configured seconds between ping cycles. */
+  /** Configured seconds between ping rounds. */
   pingIntervalSeconds: Schema.Number,
   /** Configured seconds between scheduled speed tests. */
   speedtestIntervalSeconds: Schema.Number,

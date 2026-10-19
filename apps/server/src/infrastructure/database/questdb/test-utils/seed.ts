@@ -1,7 +1,11 @@
+import { Sender } from "@questdb/nodejs-client";
 import type { NetworkMetric } from "@shared/metrics";
 import { Data, type Duration, Effect, Schedule } from "effect";
+import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
+import { SchemaMigrator } from "@/infrastructure/database/questdb/migrations/service";
 import type { QuestDBService } from "@/infrastructure/database/questdb/service";
 import {
+  createMigratorTestLayer,
   QUESTDB_HTTP_URL,
   TEST_TABLE,
 } from "@/infrastructure/database/questdb/test-utils/setup";
@@ -222,7 +226,8 @@ export const waitForRowCount = (
  */
 export const seedDatabase = (
   db: QuestDBService,
-  metrics: NetworkMetric[]
+  metrics: readonly NetworkMetric[],
+  table: string = TEST_TABLE
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
     // Write all metrics sequentially to ensure deterministic ordering
@@ -238,7 +243,50 @@ export const seedDatabase = (
     // Wait until the seeded rows are actually queryable rather than sleeping a
     // fixed interval. Callers truncate the table before seeding, so the table
     // should converge to exactly `metrics.length` rows.
-    yield* waitForRowCount(metrics.length);
+    yield* waitForRowCount(metrics.length, "15 seconds", table);
+  });
+
+/**
+ * Create `table` through the real migrations, so it carries its ledger, and
+ * write `metrics` into it in one ILP batch with the writer's own row encoding.
+ * For cases that need their own table and thousands of rows, which
+ * `seedDatabase`'s one-flush-per-row path cannot absorb in a test's time.
+ */
+export const seedTable = (
+  table: string,
+  metrics: readonly NetworkMetric[]
+): Effect.Effect<void, SeedError> =>
+  Effect.gen(function* () {
+    yield* Effect.gen(function* () {
+      const migrator = yield* SchemaMigrator;
+      yield* migrator.migrate({ canRewriteTables: false });
+    }).pipe(
+      Effect.provide(createMigratorTestLayer(table)),
+      Effect.mapError(
+        (error) =>
+          new SeedError({ message: `Failed to create ${table}: ${error}` })
+      )
+    );
+    yield* Effect.tryPromise({
+      try: async () => {
+        const sender = await Sender.fromConfig(
+          `http::addr=${new URL(QUESTDB_HTTP_URL).host};`
+        );
+        try {
+          for (const metric of metrics) {
+            await writeMetricToSender(sender, metric, table);
+          }
+          await sender.flush();
+        } finally {
+          await sender.close();
+        }
+      },
+      catch: (error) =>
+        new SeedError({
+          message: `Failed to write rows to ${table}: ${error}`,
+        }),
+    });
+    yield* waitForRowCount(metrics.length, "60 seconds", table);
   });
 
 /** A run of evenly spaced ping samples for one host, generated in SQL. */

@@ -196,6 +196,59 @@ describe("ILP integration tests", () => {
       );
     });
 
+    it("should write the ping duration as a float column", async () => {
+      const sender = createMockSender();
+
+      await writeMetricToSender(
+        sender,
+        {
+          timestamp: new Date("2024-01-01T12:00:00.000Z"),
+          source: "ping",
+          host: "8.8.8.8",
+          durationMs: 2412.5,
+        },
+        NETWORK_METRICS_TABLE
+      );
+
+      expect(sender.floatColumn).toHaveBeenCalledWith("duration_ms", 2412.5);
+    });
+
+    it("should write a zero duration rather than skip it", async () => {
+      const sender = createMockSender();
+
+      await writeMetricToSender(
+        sender,
+        {
+          timestamp: new Date("2024-01-01T12:00:00.000Z"),
+          source: "ping",
+          host: "8.8.8.8",
+          durationMs: 0,
+        },
+        NETWORK_METRICS_TABLE
+      );
+
+      expect(sender.floatColumn).toHaveBeenCalledWith("duration_ms", 0);
+    });
+
+    it("should write no duration column when the metric has none", async () => {
+      const sender = createMockSender();
+
+      await writeMetricToSender(
+        sender,
+        {
+          timestamp: new Date("2024-01-01T12:00:00.000Z"),
+          source: "speedtest",
+          downloadBandwidth: 1,
+        },
+        NETWORK_METRICS_TABLE
+      );
+
+      expect(sender.floatColumn).not.toHaveBeenCalledWith(
+        "duration_ms",
+        expect.anything()
+      );
+    });
+
     it("should skip undefined downloadBandwidth field", async () => {
       const sender = createMockSender();
       const metric: NetworkMetric = {

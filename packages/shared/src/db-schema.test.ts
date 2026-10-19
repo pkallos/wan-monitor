@@ -26,6 +26,15 @@ describe("buildCreateTableSql", () => {
     }
   });
 
+  it("ends with the ping duration column, where ADD COLUMN places it", () => {
+    expect(NETWORK_METRICS_COLUMNS[NETWORK_METRICS_COLUMNS.length - 1]).toEqual(
+      {
+        name: "duration_ms",
+        type: "DOUBLE",
+      }
+    );
+  });
+
   it("includes the speedtest columns the queries read", () => {
     expect(allColumnNames).toContain("download_bandwidth");
     expect(allColumnNames).toContain("upload_bandwidth");

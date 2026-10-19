@@ -192,9 +192,8 @@ export const peakText = (peakLatency: number | null): string =>
   peakLatency === null ? "-" : `${peakLatency.toFixed(0)} ms`;
 
 /**
- * How stale the newest cycle may be while the live status still reports it:
- * the live status's own window, so a log fetched in that gap can end an
- * outage slightly before the fetch.
+ * How long before the fetch an outage may have ended and still read as open:
+ * the live window, which is how long the newest ping stands.
  */
 const openIncidentSlackMs = (
   maybePingIntervalSeconds: Option.Option<number>
@@ -206,11 +205,10 @@ const openIncidentSlackMs = (
   });
 
 /**
- * The incident still running, if there is one. A running outage ends one cycle
- * after its newest non-up cycle, clipped to the range end, so it is open when
- * the range reaches the present and the outage ends at or near the time the
- * log was fetched. A range that ended earlier has nothing running in it, and
- * the live status then confirms the connection has not recovered since.
+ * The incident still running, if there is one: the newest outage, when the
+ * live status is degraded or down, the range reaches the present, and the
+ * outage ends at or near the time the log was fetched. A range that ended
+ * before the fetch has no running incident.
  */
 export const openIncident = (
   { log, fetchedAtMs }: Pick<OutagesData, "log" | "fetchedAtMs">,

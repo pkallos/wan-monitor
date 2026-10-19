@@ -11,10 +11,9 @@ import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 
 /**
- * States the live indicator can report. Extends the historical
- * `up`/`down`/`degraded` classification with `noInfo`, which means the monitor
- * itself reported nothing inside the trailing window — silence about the WAN,
- * not an outage.
+ * The states the live indicator can report: `up`, `down` and `degraded`, plus
+ * `noInfo`, which means no host has a standing ping. It signals silence about
+ * the WAN, not an outage.
  */
 export const LiveConnectivityStatusSchema = Schema.Literals([
   "up",
@@ -39,29 +38,29 @@ const ConnectivityStatusMeta = Schema.Struct({
   endTime: Schema.String,
   count: Schema.Number,
   /**
-   * Strictly `up` cycles over all cycles; degraded cycles count against it.
-   * Null when the window contains no ping cycles at all: nothing was watching,
-   * so the question is unanswerable rather than answered with 0%.
+   * Time that was up over the window's monitored time; degraded time counts
+   * against it. Null when the window holds no monitored time at all: nothing
+   * was watching, so the question is unanswerable rather than answered with 0%.
    */
   uptimePercentage: Schema.NullOr(Schema.Number),
   /**
-   * `up` + `degraded` cycles over all cycles — reachable-but-lossy counts as
+   * Up plus degraded time over monitored time: reachable-but-lossy counts as
    * available. Null under the same no-data condition as `uptimePercentage`.
    */
   availabilityPercentage: Schema.NullOr(Schema.Number),
-  /** Buckets the requested window spans at the requested granularity. */
+  /** Number of buckets the requested window touches at the requested granularity, partial first and last buckets included. */
   expectedBuckets: Schema.Number,
-  /** Buckets that actually contain ping cycles. Never exceeds `expectedBuckets`. */
+  /** Buckets that hold monitored time. */
   observedBuckets: Schema.Number,
   /**
-   * `observedBuckets` over `expectedBuckets`, as a percentage. How much of the
-   * window the monitor was running for, which is the denominator the uptime
-   * figure is conditional on.
+   * `observedBuckets` over `expectedBuckets`, as a percentage capped at 100.
+   * How much of the window the monitor held data for. The uptime figure covers
+   * only that time.
    */
   coveragePercentage: Schema.Number,
-  /** Ping cycles observed across the window — the uptime denominator. */
-  observedCycles: Schema.Number,
-  /** Configured seconds between ping cycles, so callers can judge the gap size. */
+  /** Seconds of the window with ping data: the uptime denominator. */
+  observedSeconds: Schema.Number,
+  /** Configured seconds between ping rounds, so callers can judge the gap size. */
   expectedSampleIntervalSeconds: Schema.Number,
 });
 
@@ -69,12 +68,12 @@ const OutageSchema = Schema.Struct({
   start: Schema.String,
   end: Schema.String,
   durationSeconds: Schema.Number,
-  /** Worst cycle status in the outage: `down` if any cycle was down. */
+  /** Worst state in the outage: `down` if any of its time was down. */
   status: Schema.Literals(["down", "degraded"]),
-  /** Hosts that failed or exceeded the loss floor in any of the outage's cycles. */
+  /** Hosts that failed or lost packets for a meaningful part of the outage. */
   affectedHosts: Schema.Array(Schema.String),
   maxPacketLoss: Schema.Number,
-  /** Highest latency reading during the outage; null when every sample failed. */
+  /** Highest latency reading during the outage; null when every ping failed. */
   peakLatency: Schema.NullOr(Schema.Number),
 });
 
@@ -97,10 +96,11 @@ const ConnectivityStatusResponse = Schema.Struct({
 
 const GetLiveConnectivityResponse = Schema.Struct({
   status: LiveConnectivityStatusSchema,
-  /** Timestamp of the newest ping cycle, or of the last one ever recorded when
-   *  the window is empty. Null only when the monitor has never written a ping. */
+  /** Timestamp of the newest ping row ever recorded. Null only when the
+   *  monitor has never written a ping. */
   lastSampleAt: Schema.NullOr(Schema.String),
-  /** Width of the trailing window the status was derived from, in seconds. */
+  /** How long the newest ping stands with no newer one, at the configured
+   *  interval, in seconds. */
   windowSeconds: Schema.Number,
 });
 

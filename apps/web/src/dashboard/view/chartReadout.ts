@@ -66,7 +66,7 @@ const ms = (value: number): string => `${oneDecimal(value)} ms`;
 const twoDecimals = (value: number): string => value.toFixed(2);
 
 // The figures are taken over the plotted buckets, so the subject says so: the
-// stat rail reports the range's own average, which weights every ping cycle.
+// stat rail reports the range's own average, which weights every ping.
 const bucketFigures = (
   subject: string,
   { avg, peak }: SeriesFigures,

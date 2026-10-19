@@ -17,6 +17,7 @@ const endpoints = [
   ["/api/connectivity-status/live", "queryLiveConnectivity"],
   ["/api/connectivity-status/outages", "queryOutageRuns"],
   ["/api/summary", "querySummaryStats"],
+  ["/api/summary", "queryWindowUptime"],
   ["/api/speedtest/history", "querySpeedtests"],
 ] as const satisfies readonly [string, keyof QuestDBService][];
 

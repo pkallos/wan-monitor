@@ -1,4 +1,5 @@
 import {
+  buildAddColumnSql,
   type ColumnDefinition,
   DESIGNATED_TIMESTAMP,
 } from "@wan-monitor/shared/db-schema";
@@ -66,11 +67,45 @@ export const describeDrift = (drift: SchemaDrift): readonly string[] => [
   ...(drift.designatedOk
     ? []
     : [
-        `the designated timestamp is not ${DESIGNATED_TIMESTAMP} of type TIMESTAMP`,
+        `the designated timestamp is not the ${DESIGNATED_TIMESTAMP} column of type TIMESTAMP`,
       ]),
   ...drift.extra.map((name) => `unexpected column ${name}`),
   ...drift.missing.map((name) => `missing column ${name}`),
 ];
+
+/**
+ * Each remedy is a step the operator takes without dropping the migration
+ * ledger: add the columns the table lacks, drop extra columns once their data
+ * is no longer needed, and restore from a backup anything that needs a
+ * rewrite.
+ */
+export const driftRemedies = (
+  drift: SchemaDrift,
+  table: string,
+  target: readonly ColumnDefinition[]
+): readonly string[] => {
+  const addable = target.filter(
+    (column) =>
+      drift.missing.includes(column.name) &&
+      column.name !== DESIGNATED_TIMESTAMP
+  );
+  const needsBackup =
+    needsRebuild(drift) || drift.missing.includes(DESIGNATED_TIMESTAMP);
+  return [
+    ...addable.map(
+      (column) =>
+        `Add ${column.name} with \`${buildAddColumnSql(column, table)}\`.`
+    ),
+    ...(drift.extra.length > 0
+      ? [
+          `Unexpected columns (${drift.extra.join(", ")}) are never dropped automatically: drop them yourself once their data is no longer needed.`,
+        ]
+      : []),
+    ...(needsBackup
+      ? [`Restore ${table} from a backup taken before its schema diverged.`]
+      : []),
+  ];
+};
 
 /** A column the source lacks is filled with NULL. */
 export const rebuildCopySql = (

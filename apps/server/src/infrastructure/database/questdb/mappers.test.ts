@@ -1,19 +1,21 @@
 import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
-  attachOutageHosts,
-  toCyclePeriodMs,
   toMetric,
+  toOutageRuns,
+  toWindowUptimes,
 } from "@/infrastructure/database/questdb/mappers";
 import {
   ConnectivityStatusRowSchema,
   HostStatsRowSchema,
   LiveConnectivityRowSchema,
   MetricRowSchema,
-  OutageHostRowSchema,
-  type OutageRunRow,
-  OutageRunRowSchema,
+  type OutageRunHostRow,
+  OutageRunHostRowSchema,
   SummaryStatsRowSchema,
+  stateOf,
+  WAN_STATE,
+  WindowUptimeRowSchema,
 } from "@/infrastructure/database/questdb/model";
 
 const metricFrom = (row: Record<string, unknown>) =>
@@ -236,61 +238,42 @@ describe("MetricRowSchema with toMetric", () => {
 describe("ConnectivityStatusRowSchema", () => {
   const decode = Schema.decodeUnknownSync(ConnectivityStatusRowSchema);
   const row = {
-    timestamp: "2024-01-01T12:00:00.000Z",
-    up_count: 45,
-    down_count: 3,
-    degraded_count: 2,
-    total_count: 50,
+    bucket: "2024-01-01T12:00:00.000Z",
+    up_micros: 45_000_000,
+    degraded_micros: 2_000_000,
+    down_micros: 3_000_000,
   };
 
-  it("should map complete connectivity status row", () => {
+  it("should map a complete ribbon bucket", () => {
     expect(decode(row)).toEqual(row);
   });
 
-  it("should handle zero counts", () => {
-    const zero = {
-      ...row,
-      up_count: 0,
-      down_count: 0,
-      degraded_count: 0,
-      total_count: 0,
-    };
+  it("should handle zero durations", () => {
+    const zero = { ...row, up_micros: 0, degraded_micros: 0, down_micros: 0 };
 
     expect(decode(zero)).toEqual(zero);
   });
 
-  it("should convert the LONG counts pg returns as strings", () => {
+  it("should convert the LONG sums pg returns as strings", () => {
     expect(
       decode({
         ...row,
-        up_count: "42",
-        down_count: "5",
-        degraded_count: "3",
-        total_count: "50",
+        up_micros: "42000000",
+        degraded_micros: "5",
+        down_micros: 3,
       })
     ).toEqual({
       ...row,
-      up_count: 42,
-      down_count: 5,
-      degraded_count: 3,
-      total_count: 50,
-    });
-  });
-
-  it("should handle mixed count types", () => {
-    expect(
-      decode({ ...row, up_count: 30, down_count: "10", total_count: 40 })
-    ).toMatchObject({
-      up_count: 30,
-      down_count: 10,
-      total_count: 40,
+      up_micros: 42_000_000,
+      degraded_micros: 5,
+      down_micros: 3,
     });
   });
 
   it.each([null, undefined, "many"])(
-    "should reject the count %j rather than read it as 0",
-    (up_count) => {
-      expect(rejects(ConnectivityStatusRowSchema, { ...row, up_count })).toBe(
+    "should reject the duration %j rather than read it as 0",
+    (up_micros) => {
+      expect(rejects(ConnectivityStatusRowSchema, { ...row, up_micros })).toBe(
         true
       );
     }
@@ -298,31 +281,57 @@ describe("ConnectivityStatusRowSchema", () => {
 });
 
 describe("LiveConnectivityRowSchema", () => {
-  it.each(["up", "down", "degraded"] as const)(
-    "should map a %s cycle",
-    (status) => {
-      const row = {
-        timestamp: "2024-01-01T12:00:00.000Z",
-        cycle_status: status,
-      };
+  it.each([
+    [1, 1],
+    ["2", 2],
+    [3, 3],
+  ])("should map the state code %j", (state, expected) => {
+    expect(
+      Schema.decodeUnknownSync(LiveConnectivityRowSchema)({ state })
+    ).toEqual({ state: expected });
+  });
 
-      expect(Schema.decodeUnknownSync(LiveConnectivityRowSchema)(row)).toEqual(
-        row
-      );
+  it.each([null, undefined, "sideways"])(
+    "should reject the state %j rather than read it as up",
+    (state) => {
+      expect(rejects(LiveConnectivityRowSchema, { state })).toBe(true);
     }
   );
+});
 
-  it.each([null, "sideways"])(
-    "should reject the status %j rather than read it as up",
-    (cycle_status) => {
-      expect(
-        rejects(LiveConnectivityRowSchema, {
-          timestamp: "2024-01-01T12:00:00.000Z",
-          cycle_status,
-        })
-      ).toBe(true);
+describe("stateOf", () => {
+  it.each([
+    [WAN_STATE.up, "up"],
+    [WAN_STATE.degraded, "degraded"],
+    [WAN_STATE.down, "down"],
+  ] as const)("should name state code %i %s", (code, status) => {
+    expect(stateOf(code)).toBe(status);
+  });
+
+  it.each([WAN_STATE.noData, 4, -1])(
+    "should read code %i as no status",
+    (code) => {
+      expect(stateOf(code)).toBeNull();
     }
   );
+});
+
+describe("WindowUptimeRowSchema", () => {
+  it("should map up and observed durations per window, keeping nulls null", () => {
+    expect(
+      Schema.decodeUnknownSync(WindowUptimeRowSchema)({
+        up_0: "86400000000",
+        observed_0: 86_400_000_000,
+        up_1: null,
+        observed_1: null,
+      })
+    ).toEqual({
+      up_0: 86_400_000_000,
+      observed_0: 86_400_000_000,
+      up_1: null,
+      observed_1: null,
+    });
+  });
 });
 
 describe("SummaryStatsRowSchema", () => {
@@ -378,20 +387,26 @@ describe("HostStatsRowSchema", () => {
   });
 });
 
-describe("OutageRunRowSchema", () => {
-  const decode = Schema.decodeUnknownSync(OutageRunRowSchema);
+describe("OutageRunHostRowSchema", () => {
+  const decode = Schema.decodeUnknownSync(OutageRunHostRowSchema);
   const row = {
     run_id: "3",
-    start_time: "2024-01-01T12:00:00.000Z",
-    last_time: "2024-01-01T12:05:00.000Z",
-    recovered_time: "2024-01-01T12:05:30.000Z",
+    start_time: "2024-01-01T12:00:00.000000Z",
+    end_time: "2024-01-01T12:05:00.000000Z",
     had_down: 1,
+    host: "8.8.8.8",
+    affected: 1,
     max_packet_loss: 100,
     peak_latency: 40,
   };
 
-  it("should map a run's span, worst loss and peak latency", () => {
-    expect(decode(row)).toEqual({ ...row, run_id: 3, had_down: true });
+  it("should map a run's span, a host's part in it, worst loss and peak latency", () => {
+    expect(decode(row)).toEqual({
+      ...row,
+      run_id: 3,
+      had_down: true,
+      affected: true,
+    });
   });
 
   it.each([
@@ -399,80 +414,129 @@ describe("OutageRunRowSchema", () => {
     ["0", false],
     [1, true],
     ["2", true],
-  ])("should read had_down %j as %j", (had_down, expected) => {
-    expect(decode({ ...row, had_down }).had_down).toBe(expected);
+  ])("should read the flags %j as %j", (flag, expected) => {
+    const result = decode({ ...row, had_down: flag, affected: flag });
+
+    expect(result.had_down).toBe(expected);
+    expect(result.affected).toBe(expected);
   });
 
-  it("should keep a missing loss, latency and recovery null", () => {
+  it("should keep a missing loss and latency null", () => {
     const result = decode({
       ...row,
-      recovered_time: null,
       max_packet_loss: null,
       peak_latency: null,
     });
 
     expect(result.max_packet_loss).toBeNull();
     expect(result.peak_latency).toBeNull();
-    expect(result.recovered_time).toBeNull();
   });
 });
 
-describe("attachOutageHosts", () => {
-  const run = (runId: number): OutageRunRow => ({
+describe("toOutageRuns", () => {
+  const hostRow = (
+    runId: number,
+    host: string,
+    over: Partial<OutageRunHostRow> = {}
+  ): OutageRunHostRow => ({
     run_id: runId,
     start_time: `start-${runId}`,
-    last_time: `last-${runId}`,
-    recovered_time: null,
+    end_time: `end-${runId}`,
     had_down: true,
+    host,
+    affected: true,
     max_packet_loss: 100,
     peak_latency: null,
+    ...over,
   });
 
-  it("should list every affected host under its own run", () => {
-    const result = attachOutageHosts(
-      [run(1), run(2), run(3)],
-      [
-        { run_id: 1, host: "8.8.8.8" },
-        { run_id: 1, host: "1.1.1.1" },
-        { run_id: 3, host: "8.8.8.8" },
-      ]
-    );
+  it("should group rows by run in order, listing the affected hosts of each", () => {
+    const result = toOutageRuns([
+      hostRow(1, "1.1.1.1"),
+      hostRow(1, "8.8.8.8"),
+      hostRow(3, "8.8.8.8", { had_down: false, end_time: "end-3b" }),
+    ]);
 
-    expect(result.map((row) => row.affected_hosts)).toEqual([
-      ["8.8.8.8", "1.1.1.1"],
-      [],
-      ["8.8.8.8"],
+    expect(result.map((run) => [run.run_id, run.affected_hosts])).toEqual([
+      [1, ["1.1.1.1", "8.8.8.8"]],
+      [3, ["8.8.8.8"]],
+    ]);
+    expect(result[0]).toMatchObject({
+      start_time: "start-1",
+      end_time: "end-1",
+    });
+    expect(result[1]?.had_down).toBe(false);
+  });
+
+  it("should leave out a host that stood without failing or losing packets", () => {
+    const [run] = toOutageRuns([
+      hostRow(1, "8.8.8.8"),
+      hostRow(1, "1.1.1.1", { affected: false }),
+    ]);
+
+    expect(run?.affected_hosts).toEqual(["8.8.8.8"]);
+  });
+
+  it("should take the worst loss and the highest latency over every row of the run, affected or not", () => {
+    const [run] = toOutageRuns([
+      hostRow(1, "8.8.8.8", { max_packet_loss: 40, peak_latency: 30 }),
+      hostRow(1, "1.1.1.1", {
+        affected: false,
+        max_packet_loss: 10,
+        peak_latency: 90,
+      }),
+      hostRow(1, "cloudflare.com", {
+        max_packet_loss: null,
+        peak_latency: null,
+      }),
+    ]);
+
+    expect(run?.max_packet_loss).toBe(40);
+    expect(run?.peak_latency).toBe(90);
+  });
+
+  it("should keep loss and latency null when every row has none", () => {
+    const [run] = toOutageRuns([
+      hostRow(1, "8.8.8.8", { max_packet_loss: null, peak_latency: null }),
+    ]);
+
+    expect(run?.max_packet_loss).toBeNull();
+    expect(run?.peak_latency).toBeNull();
+  });
+
+  it("should return nothing for no rows", () => {
+    expect(toOutageRuns([])).toEqual([]);
+  });
+});
+
+describe("toWindowUptimes", () => {
+  it("should read each window's columns in order", () => {
+    expect(
+      toWindowUptimes(
+        {
+          up_0: 5,
+          observed_0: 10,
+          up_1: 7,
+          observed_1: 8,
+          up_2: 0,
+          observed_2: 9,
+        },
+        3
+      )
+    ).toEqual([
+      { up_micros: 5, observed_micros: 10 },
+      { up_micros: 7, observed_micros: 8 },
+      { up_micros: 0, observed_micros: 9 },
     ]);
   });
 
-  it("should ignore affected hosts whose run was not returned", () => {
-    const result = attachOutageHosts(
-      [run(1)],
-      [{ run_id: 9, host: "8.8.8.8" }]
-    );
-
-    expect(result).toEqual([{ ...run(1), affected_hosts: [] }]);
-  });
-});
-
-describe("OutageHostRowSchema", () => {
-  it("should map a run id and host", () => {
-    expect(
-      Schema.decodeUnknownSync(OutageHostRowSchema)({
-        run_id: "2",
-        host: "8.8.8.8",
-      })
-    ).toEqual({ run_id: 2, host: "8.8.8.8" });
-  });
-});
-
-describe("toCyclePeriodMs", () => {
-  it("should convert microseconds to whole milliseconds", () => {
-    expect(toCyclePeriodMs(40_500_223)).toBe(40_500);
-    expect(toCyclePeriodMs(59_999_700)).toBe(60_000);
-  });
-
-  it("should read null as no measurable period", () => {
-    expect(toCyclePeriodMs(null)).toBeNull();
+  it("should read a null sum, or an absent row, as no time", () => {
+    expect(toWindowUptimes({ up_0: null, observed_0: null }, 1)).toEqual([
+      { up_micros: 0, observed_micros: 0 },
+    ]);
+    expect(toWindowUptimes({}, 2)).toEqual([
+      { up_micros: 0, observed_micros: 0 },
+      { up_micros: 0, observed_micros: 0 },
+    ]);
   });
 });

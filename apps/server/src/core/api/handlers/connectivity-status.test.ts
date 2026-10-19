@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import { DbUnavailable } from "@shared/api/errors";
+import type { ConnectivityStatus } from "@shared/metrics";
 import { DEFAULT_GRANULARITY, MAX_OUTAGE_SPAN_DAYS } from "@wan-monitor/shared";
-import { Cause, Clock, Effect, Exit, Layer, Option } from "effect";
+import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 import { MAX_OUTAGES } from "@/core/analytics/outages";
@@ -17,18 +18,33 @@ import {
 } from "@/infrastructure/database/questdb";
 import type {
   ConnectivityStatusRow,
-  LiveConnectivityRow,
   OutageRun,
-  QueryMetricsParams,
-  QueryOutageParams,
+  QueryConnectivityParams,
+  QueryStateParams,
 } from "@/infrastructure/database/questdb/model";
 import { makeTestConfigLayer } from "@/test/config";
 import { invalidTimeRangeOf } from "@/test/invalid-time-range";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
+const NOW = Date.parse("2024-01-03T00:00:00Z");
+const MICROS = 1_000_000;
+
+/** The clock every handler reads; the TestClock starts at the epoch. */
+const atNow = (nowMs = NOW) => TestClock.setTime(nowMs);
+
+const bucketRow = (
+  bucket: string,
+  seconds: { up?: number; degraded?: number; down?: number }
+): ConnectivityStatusRow => ({
+  bucket,
+  up_micros: (seconds.up ?? 0) * MICROS,
+  degraded_micros: (seconds.degraded ?? 0) * MICROS,
+  down_micros: (seconds.down ?? 0) * MICROS,
+});
+
 const createMockQuestDB = (
-  mockRows: unknown[],
-  onQuery?: (params: QueryMetricsParams) => void
+  mockRows: readonly ConnectivityStatusRow[],
+  onQuery?: (params: QueryConnectivityParams) => void
 ): QuestDBService => ({
   health: () =>
     Effect.succeed({ connected: true, version: "1.0.0", uptime: 100 }),
@@ -38,7 +54,7 @@ const createMockQuestDB = (
   querySpeedtests: () => Effect.succeed([]),
   queryConnectivityStatus: (params) => {
     onQuery?.(params);
-    return Effect.succeed(mockRows as readonly ConnectivityStatusRow[]);
+    return Effect.succeed(mockRows);
   },
   queryLiveConnectivity: () => Effect.succeed(null),
   queryEarliestTimestamp: () => Effect.succeed(null),
@@ -48,18 +64,20 @@ const createMockQuestDB = (
 });
 
 const createMockLiveQuestDB = (options: {
-  readonly liveRow?: LiveConnectivityRow;
+  readonly state?: ConnectivityStatus;
   readonly latestPingTimestamp?: string;
-  readonly onLiveQuery?: (sinceIso: string) => void;
+  readonly onLiveQuery?: (
+    params: Pick<QueryStateParams, "nowMs" | "intervalMs" | "hosts">
+  ) => void;
   readonly onLatestPingQuery?: () => void;
   readonly liveUnavailable?: boolean;
 }): QuestDBService => ({
   ...createMockQuestDB([]),
-  queryLiveConnectivity: (sinceIso) => {
-    options.onLiveQuery?.(sinceIso);
+  queryLiveConnectivity: (params) => {
+    options.onLiveQuery?.(params);
     return options.liveUnavailable
       ? Effect.fail(new DatabaseUnavailable({ message: "connection refused" }))
-      : Effect.succeed(options.liveRow ?? null);
+      : Effect.succeed(options.state ?? null);
   },
   queryLatestPingTimestamp: () => {
     options.onLatestPingQuery?.();
@@ -67,59 +85,54 @@ const createMockLiveQuestDB = (options: {
   },
 });
 
-const handlerLayers = (db: QuestDBService, pingIntervalSeconds = 30) =>
+const handlerLayers = (
+  db: QuestDBService,
+  pingIntervalSeconds = 30,
+  hosts: readonly string[] = ["8.8.8.8", "1.1.1.1"]
+) =>
   Layer.mergeAll(
     Layer.succeed(QuestDB, db),
-    makeTestConfigLayer({ ping: { intervalSeconds: pingIntervalSeconds } })
+    makeTestConfigLayer({
+      ping: { intervalSeconds: pingIntervalSeconds, hosts: [...hosts] },
+    })
   );
 
 describe("Connectivity Status Handlers", () => {
   describe("getConnectivityStatus", () => {
-    it.effect("calculates status and percentages correctly", () => {
-      const mockRows = [
-        {
-          timestamp: "2024-01-01T00:00:00Z",
-          up_count: 10,
-          down_count: 0,
-          degraded_count: 0,
-          total_count: 10,
-        },
-        {
-          timestamp: "2024-01-01T01:00:00Z",
-          up_count: 8,
-          down_count: 2,
-          degraded_count: 0,
-          total_count: 10,
-        },
-      ];
-      const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
+    it.effect(
+      "calculates status and percentages from time in each state",
+      () => {
+        const mockRows = [
+          bucketRow("2024-01-01T00:00:00Z", { up: 3600 }),
+          bucketRow("2024-01-01T01:00:00Z", { up: 2880, down: 720 }),
+        ];
+        const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
-      return Effect.gen(function* () {
-        const result = yield* getConnectivityStatusHandler({ query: {} });
+        return Effect.gen(function* () {
+          yield* atNow();
+          const result = yield* getConnectivityStatusHandler({ query: {} });
 
-        expect(result.data).toHaveLength(2);
-        expect(result.data[0].status).toBe("up");
-        expect(result.data[0].upPercentage).toBe(100);
-        expect(result.data[1].status).toBe("down");
-        expect(result.data[1].downPercentage).toBe(20);
-        expect(result.meta.uptimePercentage).toBe(90);
-        expect(result.meta.availabilityPercentage).toBe(90);
-      }).pipe(Effect.provide(QuestDBTest));
-    });
+          expect(result.data).toHaveLength(2);
+          expect(result.data[0].timestamp).toBe("2024-01-01T00:00:00Z");
+          expect(result.data[0].status).toBe("up");
+          expect(result.data[0].upPercentage).toBe(100);
+          expect(result.data[1].status).toBe("down");
+          expect(result.data[1].downPercentage).toBe(20);
+          expect(result.data[1].upPercentage).toBe(80);
+          expect(result.meta.uptimePercentage).toBe(90);
+          expect(result.meta.availabilityPercentage).toBe(90);
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
 
     it.effect("handles degraded status", () => {
       const mockRows = [
-        {
-          timestamp: "2024-01-01T00:00:00Z",
-          up_count: 7,
-          down_count: 0,
-          degraded_count: 3,
-          total_count: 10,
-        },
+        bucketRow("2024-01-01T00:00:00Z", { up: 2520, degraded: 1080 }),
       ];
       const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
       return Effect.gen(function* () {
+        yield* atNow();
         const result = yield* getConnectivityStatusHandler({ query: {} });
 
         expect(result.data[0].status).toBe("degraded");
@@ -128,20 +141,15 @@ describe("Connectivity Status Handlers", () => {
     });
 
     it.effect(
-      "a single degraded cycle out of a large coarse bucket stays up, not degraded",
+      "under 5% degraded time in a coarse bucket stays up, not degraded",
       () => {
         const mockRows = [
-          {
-            timestamp: "2024-01-01T00:00:00Z",
-            up_count: 119,
-            down_count: 0,
-            degraded_count: 1,
-            total_count: 120,
-          },
+          bucketRow("2024-01-01T00:00:00Z", { up: 3_430, degraded: 170 }),
         ];
         const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
         return Effect.gen(function* () {
+          yield* atNow();
           const result = yield* getConnectivityStatusHandler({ query: {} });
 
           expect(result.data[0].status).toBe("up");
@@ -150,20 +158,15 @@ describe("Connectivity Status Handlers", () => {
     );
 
     it.effect(
-      "a sustained share of degraded cycles in a coarse bucket still reads as degraded",
+      "a sustained share of degraded time in a coarse bucket still reads as degraded",
       () => {
         const mockRows = [
-          {
-            timestamp: "2024-01-01T00:00:00Z",
-            up_count: 108,
-            down_count: 0,
-            degraded_count: 12,
-            total_count: 120,
-          },
+          bucketRow("2024-01-01T00:00:00Z", { up: 3_240, degraded: 360 }),
         ];
         const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
         return Effect.gen(function* () {
+          yield* atNow();
           const result = yield* getConnectivityStatusHandler({ query: {} });
 
           expect(result.data[0].status).toBe("degraded");
@@ -175,17 +178,12 @@ describe("Connectivity Status Handlers", () => {
       "availabilityPercentage counts degraded as available, unlike uptimePercentage",
       () => {
         const mockRows = [
-          {
-            timestamp: "2024-01-01T00:00:00Z",
-            up_count: 7,
-            down_count: 0,
-            degraded_count: 3,
-            total_count: 10,
-          },
+          bucketRow("2024-01-01T00:00:00Z", { up: 2520, degraded: 1080 }),
         ];
         const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
         return Effect.gen(function* () {
+          yield* atNow();
           const result = yield* getConnectivityStatusHandler({ query: {} });
 
           expect(result.meta.uptimePercentage).toBe(70);
@@ -194,26 +192,36 @@ describe("Connectivity Status Handlers", () => {
       }
     );
 
-    it.effect("converts query start/end times to Dates before querying", () => {
-      const onQuery = vi.fn();
-      const QuestDBTest = handlerLayers(createMockQuestDB([], onQuery));
+    it.effect(
+      "passes the window, the clock, the interval and the hosts to the query",
+      () => {
+        const onQuery = vi.fn();
+        const QuestDBTest = handlerLayers(createMockQuestDB([], onQuery), 45, [
+          "8.8.8.8",
+          "example.org",
+        ]);
 
-      return Effect.gen(function* () {
-        yield* getConnectivityStatusHandler({
-          query: {
-            startTime: "2024-01-01T00:00:00Z",
-            endTime: "2024-01-02T00:00:00Z",
+        return Effect.gen(function* () {
+          yield* atNow();
+          yield* getConnectivityStatusHandler({
+            query: {
+              startTime: "2024-01-01T00:00:00Z",
+              endTime: "2024-01-02T00:00:00Z",
+              granularity: "1h",
+            },
+          });
+
+          expect(onQuery).toHaveBeenCalledWith({
+            startTime: new Date("2024-01-01T00:00:00Z"),
+            endTime: new Date("2024-01-02T00:00:00Z"),
             granularity: "1h",
-          },
-        });
-
-        expect(onQuery).toHaveBeenCalledWith({
-          startTime: new Date("2024-01-01T00:00:00Z"),
-          endTime: new Date("2024-01-02T00:00:00Z"),
-          granularity: "1h",
-        });
-      }).pipe(Effect.provide(QuestDBTest));
-    });
+            nowMs: NOW,
+            intervalMs: 45_000,
+            hosts: ["8.8.8.8", "example.org"],
+          });
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
 
     it.effect("rejects a reversed range before querying", () => {
       const onQuery = vi.fn();
@@ -240,7 +248,7 @@ describe("Connectivity Status Handlers", () => {
       const fixedNow = new Date("2025-01-15T12:00:00Z").getTime();
 
       return Effect.gen(function* () {
-        yield* TestClock.setTime(fixedNow);
+        yield* atNow(fixedNow);
 
         const result = yield* getConnectivityStatusHandler({ query: {} });
 
@@ -248,6 +256,7 @@ describe("Connectivity Status Handlers", () => {
           expect.objectContaining({
             startTime: new Date(fixedNow - 24 * 3600000),
             endTime: new Date(fixedNow),
+            nowMs: fixedNow,
           })
         );
         expect(result.meta.startTime).toBe(
@@ -264,6 +273,7 @@ describe("Connectivity Status Handlers", () => {
         const QuestDBTest = handlerLayers(createMockQuestDB([], onQuery));
 
         return Effect.gen(function* () {
+          yield* atNow();
           yield* getConnectivityStatusHandler({ query: {} });
 
           // The handler must resolve the window and granularity itself, so the
@@ -275,31 +285,11 @@ describe("Connectivity Status Handlers", () => {
       }
     );
 
-    it.effect("falls back to a count of 1 to avoid division by zero", () => {
-      const mockRows = [
-        {
-          timestamp: "2024-01-01T00:00:00Z",
-          up_count: 0,
-          down_count: 0,
-          degraded_count: 0,
-          total_count: 0,
-        },
-      ];
-      const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
-
-      return Effect.gen(function* () {
-        const result = yield* getConnectivityStatusHandler({ query: {} });
-
-        expect(result.data[0].upPercentage).toBe(0);
-        expect(result.data[0].downPercentage).toBe(0);
-        expect(result.data[0].degradedPercentage).toBe(0);
-      }).pipe(Effect.provide(QuestDBTest));
-    });
-
     it.effect("reports null uptime when there are no rows, not 0%", () => {
       const QuestDBTest = handlerLayers(createMockQuestDB([]));
 
       return Effect.gen(function* () {
+        yield* atNow();
         const result = yield* getConnectivityStatusHandler({
           query: {
             startTime: "2024-01-01T00:00:00Z",
@@ -313,7 +303,7 @@ describe("Connectivity Status Handlers", () => {
         // no ratio to report at all.
         expect(result.meta.uptimePercentage).toBeNull();
         expect(result.meta.availabilityPercentage).toBeNull();
-        expect(result.meta.observedCycles).toBe(0);
+        expect(result.meta.observedSeconds).toBe(0);
         expect(result.meta.observedBuckets).toBe(0);
         expect(result.meta.expectedBuckets).toBe(24);
         expect(result.meta.coveragePercentage).toBe(0);
@@ -323,20 +313,13 @@ describe("Connectivity Status Handlers", () => {
     it.effect(
       "reports full uptime over partial coverage when the monitor ran for part of the window",
       () => {
-        // One hour of a 24-hour window: the monitor was up and the link was
-        // clean for every cycle it recorded, and silent for the other 23 hours.
-        const mockRows = [
-          {
-            timestamp: "2024-01-01T00:00:00Z",
-            up_count: 120,
-            down_count: 0,
-            degraded_count: 0,
-            total_count: 120,
-          },
-        ];
+        // One hour of a 24-hour window: the link was clean for all the time
+        // the monitor recorded, and silent for the other 23 hours.
+        const mockRows = [bucketRow("2024-01-01T00:00:00Z", { up: 3600 })];
         const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
         return Effect.gen(function* () {
+          yield* atNow();
           const result = yield* getConnectivityStatusHandler({
             query: {
               startTime: "2024-01-01T00:00:00Z",
@@ -346,10 +329,10 @@ describe("Connectivity Status Handlers", () => {
           });
 
           // Uptime is conditional on coverage: 100% is the honest answer for
-          // the cycles that were observed...
+          // the time that was observed...
           expect(result.meta.uptimePercentage).toBe(100);
           expect(result.meta.availabilityPercentage).toBe(100);
-          expect(result.meta.observedCycles).toBe(120);
+          expect(result.meta.observedSeconds).toBe(3600);
 
           // ...and coverage is what stops that from reading as "100% uptime
           // over the whole day".
@@ -361,29 +344,18 @@ describe("Connectivity Status Handlers", () => {
     );
 
     it.effect(
-      "weights uptime by observed cycles, not by how many buckets they land in",
+      "weights uptime by observed time, not by how many buckets it lands in",
       () => {
-        // A busy bucket and a sparse one: 90 up of 100 cycles is 90%, whereas
-        // averaging the two buckets' rates would give 70%.
+        // A busy bucket and a sparse one: 90 up of 100 seconds is 90%, whereas
+        // averaging the two buckets' rates would give 45%.
         const mockRows = [
-          {
-            timestamp: "2024-01-01T00:00:00Z",
-            up_count: 90,
-            down_count: 5,
-            degraded_count: 5,
-            total_count: 100,
-          },
-          {
-            timestamp: "2024-01-01T01:00:00Z",
-            up_count: 0,
-            down_count: 1,
-            degraded_count: 0,
-            total_count: 1,
-          },
+          bucketRow("2024-01-01T00:00:00Z", { up: 90, degraded: 5, down: 5 }),
+          bucketRow("2024-01-01T01:00:00Z", { down: 1 }),
         ];
         const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
         return Effect.gen(function* () {
+          yield* atNow();
           const result = yield* getConnectivityStatusHandler({
             query: {
               startTime: "2024-01-01T00:00:00Z",
@@ -392,7 +364,7 @@ describe("Connectivity Status Handlers", () => {
             },
           });
 
-          expect(result.meta.observedCycles).toBe(101);
+          expect(result.meta.observedSeconds).toBe(101);
           expect(result.meta.uptimePercentage).toBeCloseTo(
             (90 / 101) * 100,
             10
@@ -410,16 +382,13 @@ describe("Connectivity Status Handlers", () => {
       // The SQL filter's `timestamp <= end` can return one bucket more than the
       // half-open [start, end) grid expects when the window ends exactly on a
       // boundary. Coverage stays a percentage rather than exceeding 100.
-      const mockRows = [0, 1, 2].map((hour) => ({
-        timestamp: `2024-01-01T0${hour}:00:00Z`,
-        up_count: 10,
-        down_count: 0,
-        degraded_count: 0,
-        total_count: 10,
-      }));
+      const mockRows = [0, 1, 2].map((hour) =>
+        bucketRow(`2024-01-01T0${hour}:00:00Z`, { up: 10 })
+      );
       const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
 
       return Effect.gen(function* () {
+        yield* atNow();
         const result = yield* getConnectivityStatusHandler({
           query: {
             startTime: "2024-01-01T00:00:00Z",
@@ -434,10 +403,47 @@ describe("Connectivity Status Handlers", () => {
       }).pipe(Effect.provide(QuestDBTest));
     });
 
+    it.effect.each([
+      [
+        "reads full coverage when every bucket up to now, the current partial one included, holds time",
+        [
+          bucketRow("2024-01-01T00:00:00Z", { up: 3600 }),
+          bucketRow("2024-01-01T01:00:00Z", { up: 1800 }),
+        ],
+        100,
+      ],
+      [
+        "expects the current partial bucket, so a window with no data in it reads below full coverage",
+        [bucketRow("2024-01-01T00:00:00Z", { up: 3600 })],
+        50,
+      ],
+    ] as const)(
+      "counts expected buckets only up to now when the window ends later: %s",
+      ([, mockRows, coverage]) => {
+        const QuestDBTest = handlerLayers(createMockQuestDB(mockRows));
+
+        return Effect.gen(function* () {
+          yield* atNow(Date.parse("2024-01-01T01:30:00Z"));
+          const result = yield* getConnectivityStatusHandler({
+            query: {
+              startTime: "2024-01-01T00:00:00Z",
+              endTime: "2024-01-02T00:00:00Z",
+              granularity: "1h",
+            },
+          });
+
+          expect(result.meta.expectedBuckets).toBe(2);
+          expect(result.meta.coveragePercentage).toBe(coverage);
+          expect(result.meta.endTime).toBe("2024-01-02T00:00:00.000Z");
+        }).pipe(Effect.provide(QuestDBTest));
+      }
+    );
+
     it.effect("reports the configured ping interval as the sample rate", () => {
       const QuestDBTest = handlerLayers(createMockQuestDB([]), 45);
 
       return Effect.gen(function* () {
+        yield* atNow();
         const result = yield* getConnectivityStatusHandler({ query: {} });
 
         expect(result.meta.expectedSampleIntervalSeconds).toBe(45);
@@ -446,54 +452,25 @@ describe("Connectivity Status Handlers", () => {
   });
 
   describe("getLiveConnectivity", () => {
-    it.effect("passes the newest cycle's status and timestamp through", () => {
-      const db = createMockLiveQuestDB({
-        liveRow: {
-          timestamp: "2024-01-01T00:00:30.000Z",
-          cycle_status: "up",
-        },
-      });
+    it.effect.each(["up", "degraded", "down"] as const)(
+      "reports a %s state with the newest ping's timestamp",
+      (state) => {
+        const db = createMockLiveQuestDB({
+          state,
+          latestPingTimestamp: "2024-01-01T00:00:30.000Z",
+        });
 
-      return Effect.gen(function* () {
-        const result = yield* getLiveConnectivityHandler();
+        return Effect.gen(function* () {
+          const result = yield* getLiveConnectivityHandler();
 
-        expect(result.status).toBe("up");
-        expect(result.lastSampleAt).toBe("2024-01-01T00:00:30.000Z");
-      }).pipe(Effect.provide(handlerLayers(db)));
-    });
-
-    it.effect("reports a fully-down cycle as down, never as noInfo", () => {
-      const db = createMockLiveQuestDB({
-        liveRow: {
-          timestamp: "2024-01-01T00:00:30.000Z",
-          cycle_status: "down",
-        },
-      });
-
-      return Effect.gen(function* () {
-        const result = yield* getLiveConnectivityHandler();
-
-        expect(result.status).toBe("down");
-      }).pipe(Effect.provide(handlerLayers(db)));
-    });
-
-    it.effect("reports a lossy cycle as degraded", () => {
-      const db = createMockLiveQuestDB({
-        liveRow: {
-          timestamp: "2024-01-01T00:00:30.000Z",
-          cycle_status: "degraded",
-        },
-      });
-
-      return Effect.gen(function* () {
-        const result = yield* getLiveConnectivityHandler();
-
-        expect(result.status).toBe("degraded");
-      }).pipe(Effect.provide(handlerLayers(db)));
-    });
+          expect(result.status).toBe(state);
+          expect(result.lastSampleAt).toBe("2024-01-01T00:00:30.000Z");
+        }).pipe(Effect.provide(handlerLayers(db)));
+      }
+    );
 
     it.effect(
-      "reports noInfo with the last recorded ping when the monitor stopped reporting",
+      "reports noInfo with the last recorded ping when no host has a standing ping",
       () => {
         const db = createMockLiveQuestDB({
           latestPingTimestamp: "2023-12-31T20:00:00.000Z",
@@ -522,35 +499,46 @@ describe("Connectivity Status Handlers", () => {
       }
     );
 
-    it.effect("skips the fallback query when the window has a cycle", () => {
+    it.effect("asks for the newest ping alongside the state", () => {
       const onLatestPingQuery = vi.fn();
-      const db = createMockLiveQuestDB({
-        liveRow: {
-          timestamp: "2024-01-01T00:00:30.000Z",
-          cycle_status: "up",
-        },
-        onLatestPingQuery,
-      });
+      const db = createMockLiveQuestDB({ state: "up", onLatestPingQuery });
 
       return Effect.gen(function* () {
         yield* getLiveConnectivityHandler();
 
-        expect(onLatestPingQuery).not.toHaveBeenCalled();
+        expect(onLatestPingQuery).toHaveBeenCalledTimes(1);
       }).pipe(Effect.provide(handlerLayers(db)));
     });
 
-    it.effect("sizes the window from the configured ping interval", () => {
-      const onLiveQuery = vi.fn();
-      const db = createMockLiveQuestDB({ onLiveQuery });
+    it.effect(
+      "reads the state at the clock with the configured interval and hosts",
+      () => {
+        const onLiveQuery = vi.fn();
+        const db = createMockLiveQuestDB({ onLiveQuery });
+
+        return Effect.gen(function* () {
+          yield* atNow();
+          yield* getLiveConnectivityHandler();
+
+          expect(onLiveQuery).toHaveBeenCalledWith({
+            nowMs: NOW,
+            intervalMs: 300_000,
+            hosts: ["8.8.8.8", "cloudflare.com"],
+          });
+        }).pipe(
+          Effect.provide(handlerLayers(db, 300, ["8.8.8.8", "cloudflare.com"]))
+        );
+      }
+    );
+
+    it.effect("sizes the window as 2.5 configured ping intervals", () => {
+      const db = createMockLiveQuestDB({});
 
       return Effect.gen(function* () {
         const result = yield* getLiveConnectivityHandler();
-        const now = yield* Clock.currentTimeMillis;
 
-        // 300s interval doubles to a 600s window, well past the 60s floor.
-        expect(result.windowSeconds).toBe(600);
-        const [sinceIso] = onLiveQuery.mock.calls[0];
-        expect(now - Date.parse(sinceIso)).toBe(600_000);
+        // 300s interval gives a 750s window, well past the 60s floor.
+        expect(result.windowSeconds).toBe(750);
       }).pipe(Effect.provide(handlerLayers(db, 300)));
     });
 
@@ -594,13 +582,12 @@ describe("Connectivity Status Handlers", () => {
     const outageRun = (
       runId: number,
       startSeconds: number,
-      lastSeconds: number,
+      endSeconds: number,
       overrides: Partial<OutageRun> = {}
     ): OutageRun => ({
       run_id: runId,
       start_time: new Date(START + startSeconds * 1000).toISOString(),
-      last_time: new Date(START + lastSeconds * 1000).toISOString(),
-      recovered_time: null,
+      end_time: new Date(START + endSeconds * 1000).toISOString(),
       had_down: true,
       max_packet_loss: 100,
       peak_latency: null,
@@ -610,7 +597,7 @@ describe("Connectivity Status Handlers", () => {
 
     const dbWithRuns = (
       runs: readonly OutageRun[],
-      onQuery?: (params: QueryOutageParams) => void
+      onQuery?: (params: QueryStateParams) => void
     ): QuestDBService => ({
       ...createMockQuestDB([]),
       queryOutageRuns: (params) => {
@@ -626,11 +613,12 @@ describe("Connectivity Status Handlers", () => {
 
     it.effect("returns outages newest first with the window in meta", () => {
       const db = dbWithRuns([
-        outageRun(1, 0, 0, { affected_hosts: ["8.8.8.8"] }),
-        outageRun(2, 60, 60, { affected_hosts: ["8.8.8.8"] }),
+        outageRun(1, 0, 30, { affected_hosts: ["8.8.8.8"] }),
+        outageRun(2, 60, 90, { affected_hosts: ["8.8.8.8"] }),
       ]);
 
       return Effect.gen(function* () {
+        yield* atNow();
         const result = yield* getOutagesHandler({ query });
 
         expect(result.data.map((outage) => outage.start)).toEqual([
@@ -655,6 +643,7 @@ describe("Connectivity Status Handlers", () => {
       const db = dbWithRuns([]);
 
       return Effect.gen(function* () {
+        yield* atNow();
         const result = yield* getOutagesHandler({ query });
 
         expect(result.data).toEqual([]);
@@ -666,11 +655,12 @@ describe("Connectivity Status Handlers", () => {
       "caps the log at the 500 newest and reports the full count",
       () => {
         const runs = Array.from({ length: 600 }, (_, i) =>
-          outageRun(i + 1, i * 60, i * 60)
+          outageRun(i + 1, i * 60, i * 60 + 30)
         );
         const db = dbWithRuns(runs);
 
         return Effect.gen(function* () {
+          yield* atNow();
           const result = yield* getOutagesHandler({
             query: {
               startTime: "2024-01-01T00:00:00Z",
@@ -692,20 +682,26 @@ describe("Connectivity Status Handlers", () => {
       }
     );
 
-    it.effect("queries the requested window", () => {
-      const onQuery = vi.fn();
-      const db = dbWithRuns([], onQuery);
+    it.effect(
+      "queries the requested window with the clock, the interval and the hosts",
+      () => {
+        const onQuery = vi.fn();
+        const db = dbWithRuns([], onQuery);
 
-      return Effect.gen(function* () {
-        yield* getOutagesHandler({ query });
+        return Effect.gen(function* () {
+          yield* atNow();
+          yield* getOutagesHandler({ query });
 
-        expect(onQuery).toHaveBeenCalledWith({
-          startTime: new Date("2024-01-01T00:00:00Z"),
-          endTime: new Date("2024-01-01T01:00:00Z"),
-          mergeGapMs: 75_000,
-        });
-      }).pipe(Effect.provide(handlerLayers(db)));
-    });
+          expect(onQuery).toHaveBeenCalledWith({
+            startTime: new Date("2024-01-01T00:00:00Z"),
+            endTime: new Date("2024-01-01T01:00:00Z"),
+            nowMs: NOW,
+            intervalMs: 30_000,
+            hosts: ["8.8.8.8", "1.1.1.1"],
+          });
+        }).pipe(Effect.provide(handlerLayers(db)));
+      }
+    );
 
     it.effect(
       "defaults to the trailing 24 hours and reports that window",
@@ -714,71 +710,75 @@ describe("Connectivity Status Handlers", () => {
         const db = dbWithRuns([], onQuery);
 
         return Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis;
+          yield* atNow();
           const result = yield* getOutagesHandler({ query: {} });
 
-          expect(onQuery).toHaveBeenCalledWith({
-            startTime: new Date(now - 24 * 60 * 60 * 1000),
-            endTime: new Date(now),
-            mergeGapMs: 75_000,
-          });
+          expect(onQuery).toHaveBeenCalledWith(
+            expect.objectContaining({
+              startTime: new Date(NOW - 24 * 60 * 60 * 1000),
+              endTime: new Date(NOW),
+            })
+          );
           expect(result.meta).toMatchObject({
-            startTime: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
-            endTime: new Date(now).toISOString(),
+            startTime: new Date(NOW - 24 * 60 * 60 * 1000).toISOString(),
+            endTime: new Date(NOW).toISOString(),
           });
         }).pipe(Effect.provide(handlerLayers(db)));
       }
     );
 
-    it.effect("measures the cycle period over the window it reports", () => {
-      const onPeriod = vi.fn();
-      const db: QuestDBService = {
-        ...dbWithRuns([]),
-        queryCyclePeriod: (params) => {
-          onPeriod(params);
-          return Effect.succeed(null);
-        },
-      };
+    it.effect(
+      "clips an outage that began before the window to its start",
+      () => {
+        const db = dbWithRuns([outageRun(1, -120, 300)]);
+
+        return Effect.gen(function* () {
+          yield* atNow();
+          const result = yield* getOutagesHandler({ query });
+
+          expect(result.data[0]).toMatchObject({
+            start: "2024-01-01T00:00:00.000Z",
+            end: "2024-01-01T00:05:00.000Z",
+            durationSeconds: 300,
+          });
+        }).pipe(Effect.provide(handlerLayers(db)));
+      }
+    );
+
+    it.effect("clips an outage still running to the window end", () => {
+      const db = dbWithRuns([outageRun(1, 3_500, 4_000)]);
 
       return Effect.gen(function* () {
-        yield* getOutagesHandler({ query });
+        yield* atNow();
+        const result = yield* getOutagesHandler({ query });
 
-        expect(onPeriod).toHaveBeenCalledWith({
-          startTime: new Date("2024-01-01T00:00:00Z"),
-          endTime: new Date("2024-01-01T01:00:00Z"),
+        expect(result.data[0]).toMatchObject({
+          end: "2024-01-01T01:00:00.000Z",
+          durationSeconds: 100,
         });
       }).pipe(Effect.provide(handlerLayers(db)));
     });
 
     it.effect(
-      "sizes the merge gap and each outage's end from the measured period",
+      "clips an outage to the present when the window ends later",
       () => {
-        const onQuery = vi.fn();
-        const runs = [outageRun(1, 0, 100)];
-        const measured: QuestDBService = {
-          ...dbWithRuns(runs, onQuery),
-          queryCyclePeriod: () => Effect.succeed(100_000),
-        };
+        const db = dbWithRuns([outageRun(1, 3_500, 4_000)]);
 
         return Effect.gen(function* () {
-          const withPeriod = yield* getOutagesHandler({ query }).pipe(
-            Effect.provide(handlerLayers(measured))
-          );
-          const withoutPeriod = yield* getOutagesHandler({ query }).pipe(
-            Effect.provide(handlerLayers(dbWithRuns(runs, onQuery)))
-          );
+          yield* atNow(START + 3_700_000);
+          const result = yield* getOutagesHandler({
+            query: {
+              startTime: "2024-01-01T00:00:00Z",
+              endTime: "2024-01-01T06:00:00Z",
+            },
+          });
 
-          expect(onQuery).toHaveBeenNthCalledWith(
-            1,
-            expect.objectContaining({ mergeGapMs: 250_000 })
-          );
-          expect(onQuery).toHaveBeenNthCalledWith(
-            2,
-            expect.objectContaining({ mergeGapMs: 75_000 })
-          );
-          expect(withPeriod.data[0].durationSeconds).toBe(200);
-          expect(withoutPeriod.data[0].durationSeconds).toBe(130);
-        });
+          expect(result.data[0]).toMatchObject({
+            end: "2024-01-01T01:01:40.000Z",
+            durationSeconds: 200,
+          });
+          expect(result.meta.endTime).toBe("2024-01-01T06:00:00.000Z");
+        }).pipe(Effect.provide(handlerLayers(db)));
       }
     );
 
@@ -786,6 +786,7 @@ describe("Connectivity Status Handlers", () => {
       const db = dbWithRuns([]);
 
       return Effect.gen(function* () {
+        yield* atNow();
         const result = yield* getOutagesHandler({
           query: {
             startTime: "2024-01-01T00:00:00Z",
@@ -854,6 +855,7 @@ describe("Connectivity Status Handlers", () => {
         };
 
         return Effect.gen(function* () {
+          yield* atNow();
           const exit = yield* Effect.exit(getOutagesHandler({ query }));
 
           expect(Exit.isFailure(exit)).toBe(true);

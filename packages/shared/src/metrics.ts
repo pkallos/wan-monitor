@@ -38,6 +38,8 @@ export const NetworkMetric = Schema.Struct({
   downloadBandwidth: Schema.optional(Schema.Number),
   uploadBandwidth: Schema.optional(Schema.Number),
   connectivityStatus: Schema.optional(ConnectivityStatusSchema),
+  /** Milliseconds the ping ran from `timestamp`; absent for speed tests. */
+  durationMs: Schema.optional(Schema.Number),
   serverLocation: Schema.optional(Schema.String),
   isp: Schema.optional(Schema.String),
   externalIp: Schema.optional(Schema.String),

@@ -1,9 +1,14 @@
 import { expect, test } from "@playwright/test";
+import {
+  pingStampMs,
+  SEEDED_OUTAGE_FIRST_CYCLE,
+  seededNowMs,
+} from "./fixtures/seed";
 
 /**
  * The summary-backed parts of the dashboard: the incidents card, the hosts
- * table and the stat rail. The seed puts one four-cycle outage and one
- * two-cycle degraded period inside the last 24 hours, across two hosts (see
+ * table and the stat rail. The seed puts an outage of one hour and a degraded
+ * period of 30 minutes inside the last 24 hours, across two hosts (see
  * `e2e/fixtures/seed.ts`); the live monitor may add rows of its own, so
  * assertions ask for at least the seeded facts rather than exact counts.
  */
@@ -53,6 +58,34 @@ test.describe("Dashboard insights", () => {
       /\d+ incidents? in the last 30 days: .*outages? lasting/
     );
     await expect(log).not.toContainText("No incidents in this range.");
+  });
+
+  test("the seeded outage reads as one hour long, from the start of its first cycle", async ({
+    page,
+  }) => {
+    const log = page.getByTestId("incident-log");
+    // The incidents table's own Start format, in the browser's locale and zone.
+    // Locales that put a narrow no-break space before AM or PM read as a plain
+    // space in the cell's accessible name.
+    const startText = await page.evaluate(
+      (startMs) =>
+        new Date(startMs)
+          .toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })
+          .replace(/\s+/g, " "),
+      pingStampMs(seededNowMs(), SEEDED_OUTAGE_FIRST_CYCLE)
+    );
+
+    const outage = log.getByRole("row").filter({
+      has: page.getByRole("cell", { name: startText, exact: true }),
+    });
+    await expect(outage).toHaveCount(1, { timeout: 15_000 });
+    await expect(outage).toContainText("Down");
+    await expect(outage.getByRole("cell").nth(2)).toHaveText("1h");
   });
 
   test("the ribbon letters its incidents, and clicking a chip pins the cell it began in", async ({

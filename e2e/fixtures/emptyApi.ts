@@ -24,9 +24,6 @@ const emptyRange = {
   latencyP95: null,
   avgPacketLoss: null,
   avgJitter: null,
-  uptimePercentage: null,
-  availabilityPercentage: null,
-  coveragePercentage: 0,
 };
 
 const emptySpeed = {
@@ -120,7 +117,7 @@ export const stubEmptyApi = async (
           expectedBuckets: 288,
           observedBuckets: 0,
           coveragePercentage: 0,
-          observedCycles: 0,
+          observedSeconds: 0,
           expectedSampleIntervalSeconds: 30,
         },
       })

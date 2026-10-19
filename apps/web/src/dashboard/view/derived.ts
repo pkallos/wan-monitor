@@ -118,7 +118,7 @@ export const lastSampleOf = (
       lastSampleText(status, maybeLastSampleAtMs, nowMs),
   });
 
-/** The ping interval the host list reports, which sets how stale a running incident's last cycle may be. */
+/** The ping interval the host list reports, which sets how stale a running incident's last ping may be. */
 const pingIntervalOf = (pingHosts: Model["pingHosts"]): Option.Option<number> =>
   Option.map(
     AsyncData.getData(pingHosts),

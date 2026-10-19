@@ -152,6 +152,7 @@ const resolveDashboardEntry = (
         maybeUptimePercentage: Option.some(100),
         maybeAvailabilityPercentage: Option.some(100),
         coveragePercentage: 100,
+        observedSeconds: 86_400,
         startTimeMs: 0,
         endTimeMs: 3_600_000,
         granularity: "1m",

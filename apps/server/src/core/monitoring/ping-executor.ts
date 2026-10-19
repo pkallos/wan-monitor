@@ -1,5 +1,5 @@
 import type { NetworkMetric } from "@shared/metrics";
-import { Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, Layer } from "effect";
 import { ConfigService } from "@/infrastructure/config/config";
 import { QuestDB } from "@/infrastructure/database/questdb";
 import { type PingResult, PingService } from "@/infrastructure/ping/service";
@@ -55,13 +55,25 @@ export class PingExecutor extends Context.Service<
 // Helper: Convert PingResult to NetworkMetric
 // ============================================================================
 
+/**
+ * What the writer records about a ping besides its result: the configured host
+ * it was requested for (a resolved name is never stored), the instant the ping
+ * started, and how long it ran.
+ */
+interface PingStamp {
+  readonly host: string;
+  readonly timestamp: Date;
+  readonly durationMs: number;
+}
+
 const pingResultToMetric = (
   result: PingResult,
-  timestamp: Date
+  { host, timestamp, durationMs }: PingStamp
 ): NetworkMetric => ({
   timestamp,
   source: "ping" as const,
-  host: result.host,
+  host,
+  durationMs,
   latency: result.latency,
   packetLoss: result.packetLoss,
   jitter: result.stddev,
@@ -92,67 +104,67 @@ export const PingExecutorLive = Layer.effect(
         )
       );
 
-    // `timestamp` is shared across every host in one cycle (see `executeHosts`)
-    // rather than stamped per-host at completion, so quorum queries can group
-    // a cycle's rows by exact timestamp equality instead of a fragile
-    // read-time time-window heuristic that a slow DNS lookup could break.
-    const executePingAt = (
-      host: string,
-      timestamp: Date
-    ): Effect.Effect<PingExecutionResult, never> =>
-      pingService.ping(host).pipe(
-        // Success path - write metric to database
-        Effect.flatMap((result) =>
-          persist(host, pingResultToMetric(result, timestamp)).pipe(
-            Effect.map(
-              (write): PingExecutionResult => ({
-                host,
-                success: true,
-                result,
-                ...write,
-              })
-            )
-          )
-        ),
-        // Failure path - write "down" metric with no latency (NULL in DB)
-        // Omitting latency ensures avg() aggregations aren't skewed by failures
-        Effect.catch((pingError) =>
-          persist(host, {
-            timestamp,
-            source: "ping",
-            host,
-            // latency omitted - no measurement available on failure
-            packetLoss: 100,
-            connectivityStatus: "down",
-          }).pipe(
-            Effect.map(
-              (write): PingExecutionResult => ({
-                host,
-                success: false,
-                error: pingError._tag,
-                ...write,
-              })
-            )
-          )
-        )
-      );
-
     const executePing = (
       host: string
     ): Effect.Effect<PingExecutionResult, never> =>
-      executePingAt(host, new Date());
+      Effect.gen(function* () {
+        const startMs = yield* Clock.currentTimeMillis;
+        const stamp = (endMs: number): PingStamp => ({
+          host,
+          timestamp: new Date(startMs),
+          // A wall clock that steps back mid-ping must not record a negative run.
+          durationMs: Math.max(0, endMs - startMs),
+        });
+
+        return yield* pingService.ping(host).pipe(
+          // Success path - write metric to database
+          Effect.flatMap((result) =>
+            Clock.currentTimeMillis.pipe(
+              Effect.flatMap((endMs) =>
+                persist(host, pingResultToMetric(result, stamp(endMs)))
+              ),
+              Effect.map(
+                (write): PingExecutionResult => ({
+                  host,
+                  success: true,
+                  result,
+                  ...write,
+                })
+              )
+            )
+          ),
+          // Failure path - write "down" metric with no latency (NULL in DB)
+          // Omitting latency ensures avg() aggregations aren't skewed by failures
+          Effect.catch((pingError) =>
+            Clock.currentTimeMillis.pipe(
+              Effect.flatMap((endMs) => {
+                const { timestamp, durationMs } = stamp(endMs);
+                return persist(host, {
+                  timestamp,
+                  source: "ping",
+                  host,
+                  packetLoss: 100,
+                  connectivityStatus: "down",
+                  durationMs,
+                });
+              }),
+              Effect.map(
+                (write): PingExecutionResult => ({
+                  host,
+                  success: false,
+                  error: pingError._tag,
+                  ...write,
+                })
+              )
+            )
+          )
+        );
+      });
 
     const executeHosts = (
       hosts: readonly string[]
     ): Effect.Effect<readonly PingExecutionResult[]> =>
-      Effect.sync(() => new Date()).pipe(
-        Effect.flatMap((cycleTimestamp) =>
-          Effect.all(
-            hosts.map((host) => executePingAt(host, cycleTimestamp)),
-            { concurrency: "unbounded" }
-          )
-        )
-      );
+      Effect.all(hosts.map(executePing), { concurrency: "unbounded" });
 
     const executeAll = (): Effect.Effect<readonly PingExecutionResult[]> =>
       executeHosts(config.ping.hosts);

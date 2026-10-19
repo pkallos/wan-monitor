@@ -33,6 +33,22 @@ const window = {
   endTime: new Date("2024-01-02T00:00:00Z"),
 };
 
+const stateWindow = {
+  ...window,
+  nowMs: Date.parse("2024-01-03T00:00:00Z"),
+  intervalMs: 30_000,
+  hosts: ["8.8.8.8"],
+};
+const liveParams = {
+  nowMs: stateWindow.nowMs,
+  intervalMs: stateWindow.intervalMs,
+  hosts: stateWindow.hosts,
+};
+const windowUptime = {
+  ...stateWindow,
+  windowStartTimes: [new Date("2023-12-31T00:00:00Z")],
+};
+
 const systemError = (message: string, code: string) =>
   Object.assign(new Error(message), { code });
 
@@ -46,12 +62,12 @@ const queries: readonly [
   [
     "queryConnectivityStatus",
     "connectivity status",
-    (db) => db.queryConnectivityStatus(window),
+    (db) => db.queryConnectivityStatus({ ...stateWindow, granularity: "5m" }),
   ],
   [
     "queryLiveConnectivity",
     "live connectivity",
-    (db) => db.queryLiveConnectivity("2024-01-01T00:00:00.000Z"),
+    (db) => db.queryLiveConnectivity(liveParams),
   ],
   [
     "queryEarliestTimestamp",
@@ -65,12 +81,12 @@ const queries: readonly [
   ],
   ["querySummaryStats", "summary stats", (db) => db.querySummaryStats(window)],
   ["queryHostStats", "host stats", (db) => db.queryHostStats(window)],
+  ["queryOutageRuns", "outage runs", (db) => db.queryOutageRuns(stateWindow)],
   [
-    "queryOutageRuns",
-    "outage runs",
-    (db) => db.queryOutageRuns({ ...window, mergeGapMs: 75_000 }),
+    "queryWindowUptime",
+    "window uptime",
+    (db) => db.queryWindowUptime(windowUptime),
   ],
-  ["queryCyclePeriod", "cycle period", (db) => db.queryCyclePeriod(window)],
 ];
 
 const stubbedSenderConfig = "http::addr=localhost:9;protocol_version=2;";
@@ -255,69 +271,142 @@ describe.each(queries)("%s", (_name, failureLabel, run) => {
 });
 
 describe("queryOutageRuns", () => {
-  const mergeGapMs = 75_000;
+  const hostRow = (overrides: Record<string, unknown>) => ({
+    run_id: 1,
+    start_time: "2024-01-01T00:00:00.000000Z",
+    end_time: "2024-01-01T00:01:00.000000Z",
+    had_down: 0,
+    host: "8.8.8.8",
+    affected: 1,
+    max_packet_loss: 20,
+    peak_latency: 40,
+    ...overrides,
+  });
 
-  it.effect("fails when only the affected hosts query fails", () =>
+  it.effect("folds each run's host rows into one run", () =>
     withStubbedPgClient(
-      (sql) =>
-        sql.includes("DISTINCT")
-          ? Promise.reject(new Error("invalid column: nope"))
-          : Promise.resolve({ rows: [] }),
+      () =>
+        Promise.resolve({
+          rows: [
+            hostRow({ run_id: 1, host: "1.1.1.1", affected: 0 }),
+            hostRow({ run_id: 1, host: "8.8.8.8", peak_latency: 90 }),
+            hostRow({
+              run_id: 2,
+              start_time: "2024-01-01T01:00:00.000000Z",
+              end_time: "2024-01-01T01:00:30.000000Z",
+              had_down: 1,
+              host: "8.8.8.8",
+              max_packet_loss: 100,
+              peak_latency: null,
+            }),
+            hostRow({
+              run_id: 2,
+              start_time: "2024-01-01T01:00:00.000000Z",
+              end_time: "2024-01-01T01:00:30.000000Z",
+              had_down: 1,
+              host: "1.1.1.1",
+              max_packet_loss: 100,
+              peak_latency: null,
+            }),
+          ],
+        }),
       (db) =>
         Effect.gen(function* () {
-          const error = yield* Effect.flip(
-            db.queryOutageRuns({ ...window, mergeGapMs })
-          );
+          const runs = yield* db.queryOutageRuns(stateWindow);
 
-          expect(error).toBeInstanceOf(DatabaseQueryError);
-          expect(error).toMatchObject({
-            message: "Failed to query outage hosts: invalid column: nope",
-          });
+          expect(runs.map((run) => run.affected_hosts)).toEqual([
+            ["8.8.8.8"],
+            ["8.8.8.8", "1.1.1.1"],
+          ]);
+          expect(runs.map((run) => run.had_down)).toEqual([false, true]);
+          expect(runs.map((run) => run.peak_latency)).toEqual([90, null]);
+          expect(runs[0]?.end_time).toBe("2024-01-01T00:01:00.000000Z");
         })
     )
   );
 
-  it.effect("attaches each run's hosts from the two queries", () =>
+  it.effect("sends the bound hosts after the window to the database", () => {
+    const seen: unknown[][] = [];
+    return withStubbedPgClient(
+      () => Promise.resolve({ rows: [] }),
+      (db, _disconnects, conn) =>
+        Effect.gen(function* () {
+          yield* db.queryOutageRuns(stateWindow);
+          const call = vi.mocked(conn.pgClient.query).mock.calls[0];
+          seen.push(call?.[1] as unknown[]);
+
+          expect(seen[0]?.at(-1)).toBe("8.8.8.8");
+          expect(seen[0]?.slice(0, 6)).toEqual([
+            window.startTime.getTime() * 1000,
+            window.endTime.getTime() * 1000,
+            (window.startTime.getTime() - 3_600_000) * 1000,
+            (window.endTime.getTime() + 3_600_000) * 1000,
+            stateWindow.nowMs * 1000,
+            30_000_000,
+          ]);
+        })
+    );
+  });
+});
+
+describe("queryLiveConnectivity", () => {
+  it.effect.each([
+    [1, "up"],
+    [2, "degraded"],
+    [3, "down"],
+  ] as const)("names state code %i %s", ([state, status]) =>
     withStubbedPgClient(
-      (sql) =>
-        Promise.resolve({
-          rows: sql.includes("DISTINCT")
-            ? [
-                { run_id: 2, host: "8.8.8.8" },
-                { run_id: 2, host: "1.1.1.1" },
-              ]
-            : [
-                {
-                  run_id: 1,
-                  start_time: "2024-01-01T00:00:00.000Z",
-                  last_time: "2024-01-01T00:01:00.000Z",
-                  recovered_time: null,
-                  had_down: 0,
-                  max_packet_loss: 20,
-                  peak_latency: 40,
-                },
-                {
-                  run_id: 2,
-                  start_time: "2024-01-01T01:00:00.000Z",
-                  last_time: "2024-01-01T01:00:30.000Z",
-                  recovered_time: null,
-                  had_down: 1,
-                  max_packet_loss: 100,
-                  peak_latency: null,
-                },
-              ],
-        }),
+      () => Promise.resolve({ rows: [{ state: String(state) }] }),
       (db) =>
         Effect.gen(function* () {
-          const runs = yield* db.queryOutageRuns({ ...window, mergeGapMs });
-
-          expect(runs.map((run) => run.affected_hosts)).toEqual([
-            [],
-            ["8.8.8.8", "1.1.1.1"],
-          ]);
-          expect(runs.map((run) => run.had_down)).toEqual([false, true]);
+          expect(yield* db.queryLiveConnectivity(liveParams)).toBe(status);
         })
     )
+  );
+
+  it.effect("reads state code 0 as no status", () =>
+    withStubbedPgClient(
+      () => Promise.resolve({ rows: [{ state: 0 }] }),
+      (db) =>
+        Effect.gen(function* () {
+          expect(yield* db.queryLiveConnectivity(liveParams)).toBeNull();
+        })
+    )
+  );
+});
+
+describe("queryWindowUptime", () => {
+  it.effect(
+    "returns up and observed time per window, a null sum as no time",
+    () =>
+      withStubbedPgClient(
+        () =>
+          Promise.resolve({
+            rows: [
+              {
+                up_0: "86400000000",
+                observed_0: "86400000000",
+                up_1: null,
+                observed_1: null,
+              },
+            ],
+          }),
+        (db) =>
+          Effect.gen(function* () {
+            const windows = yield* db.queryWindowUptime({
+              ...windowUptime,
+              windowStartTimes: [
+                new Date("2023-12-31T00:00:00Z"),
+                new Date("2023-12-25T00:00:00Z"),
+              ],
+            });
+
+            expect(windows).toEqual([
+              { up_micros: 86_400_000_000, observed_micros: 86_400_000_000 },
+              { up_micros: 0, observed_micros: 0 },
+            ]);
+          })
+      )
   );
 });
 
@@ -342,31 +431,32 @@ describe("query results", () => {
     )
   );
 
-  it.effect("reads string counts from pg as numbers", () =>
+  it.effect("reads string durations from pg as numbers", () =>
     withStubbedPgClient(
       () =>
         Promise.resolve({
           rows: [
             {
-              timestamp: "2024-01-01T12:00:00.000Z",
-              up_count: "12",
-              down_count: "0",
-              degraded_count: "0",
-              total_count: "12",
+              bucket: "2024-01-01T12:00:00.000Z",
+              up_micros: "12000000",
+              degraded_micros: "0",
+              down_micros: "0",
             },
           ],
         }),
       (db) =>
         Effect.gen(function* () {
-          const rows = yield* db.queryConnectivityStatus(window);
+          const rows = yield* db.queryConnectivityStatus({
+            ...stateWindow,
+            granularity: "5m",
+          });
 
           expect(rows).toEqual([
             {
-              timestamp: "2024-01-01T12:00:00.000Z",
-              up_count: 12,
-              down_count: 0,
-              degraded_count: 0,
-              total_count: 12,
+              bucket: "2024-01-01T12:00:00.000Z",
+              up_micros: 12_000_000,
+              degraded_micros: 0,
+              down_micros: 0,
             },
           ]);
         })
@@ -412,19 +502,19 @@ describe("queries over no rows", () => {
     ["querySpeedtests", (db: QuestDBService) => db.querySpeedtests(window), []],
     [
       "queryConnectivityStatus",
-      (db: QuestDBService) => db.queryConnectivityStatus(window),
+      (db: QuestDBService) =>
+        db.queryConnectivityStatus({ ...stateWindow, granularity: "5m" }),
       [],
     ],
     ["queryHostStats", (db: QuestDBService) => db.queryHostStats(window), []],
     [
       "queryOutageRuns",
-      (db: QuestDBService) => db.queryOutageRuns({ ...window, mergeGapMs: 1 }),
+      (db: QuestDBService) => db.queryOutageRuns(stateWindow),
       [],
     ],
     [
       "queryLiveConnectivity",
-      (db: QuestDBService) =>
-        db.queryLiveConnectivity("2024-01-01T00:00:00.000Z"),
+      (db: QuestDBService) => db.queryLiveConnectivity(liveParams),
       null,
     ],
     [
@@ -443,9 +533,9 @@ describe("queries over no rows", () => {
       noSummary,
     ],
     [
-      "queryCyclePeriod",
-      (db: QuestDBService) => db.queryCyclePeriod(window),
-      null,
+      "queryWindowUptime",
+      (db: QuestDBService) => db.queryWindowUptime(windowUptime),
+      [{ up_micros: 0, observed_micros: 0 }],
     ],
   ] as const)(
     "%s returns its empty result without an error",

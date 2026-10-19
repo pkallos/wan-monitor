@@ -1,4 +1,8 @@
-import type { DatabaseHealth, NetworkMetric } from "@shared/metrics";
+import type {
+  ConnectivityStatus,
+  DatabaseHealth,
+  NetworkMetric,
+} from "@shared/metrics";
 import type { Metric } from "@wan-monitor/shared";
 import {
   Context,
@@ -23,43 +27,44 @@ import {
 } from "@/infrastructure/database/questdb/errors";
 import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
 import {
-  attachOutageHosts,
-  toCyclePeriodMs,
   toMetric,
+  toOutageRuns,
+  toWindowUptimes,
 } from "@/infrastructure/database/questdb/mappers";
 import {
   type ConnectivityStatusRow,
   ConnectivityStatusRowSchema,
-  CyclePeriodRowSchema,
   type HostStatsRow,
   HostStatsRowSchema,
-  type LiveConnectivityRow,
   LiveConnectivityRowSchema,
   MetricRowSchema,
-  OutageHostRowSchema,
   type OutageRun,
-  OutageRunRowSchema,
+  OutageRunHostRowSchema,
+  type QueryConnectivityParams,
   type QueryMetricsParams,
-  type QueryOutageParams,
   type QuerySpeedtestsParams,
+  type QueryStateParams,
   type QueryWindowParams,
+  type QueryWindowUptimeParams,
   type SummaryStatsRow,
   SummaryStatsRowSchema,
+  stateOf,
   TimestampRowSchema,
+  type WindowUptime,
+  WindowUptimeRowSchema,
 } from "@/infrastructure/database/questdb/model";
 import { configurePgTypeParsers } from "@/infrastructure/database/questdb/pgwire";
 import {
   buildQueryConnectivityStatus,
-  buildQueryCyclePeriod,
   buildQueryEarliestTimestamp,
   buildQueryHostStats,
   buildQueryLatestPingTimestamp,
   buildQueryLiveConnectivity,
   buildQueryMetrics,
-  buildQueryOutageHosts,
   buildQueryOutageRuns,
   buildQuerySpeedtests,
   buildQuerySummaryStats,
+  buildQueryWindowUptime,
   type SqlQuerySpec,
 } from "@/infrastructure/database/questdb/queries";
 import {
@@ -90,15 +95,16 @@ export interface QuestDBService {
     DatabaseQueryError | DatabaseUnavailable
   >;
   readonly queryConnectivityStatus: (
-    params: QueryMetricsParams
+    params: QueryConnectivityParams
   ) => Effect.Effect<
     readonly ConnectivityStatusRow[],
     DatabaseQueryError | DatabaseUnavailable
   >;
+  /** The state at `nowMs`; null when no host has a standing ping. */
   readonly queryLiveConnectivity: (
-    sinceIso: string
+    params: Pick<QueryStateParams, "nowMs" | "intervalMs" | "hosts">
   ) => Effect.Effect<
-    LiveConnectivityRow | null,
+    ConnectivityStatus | null,
     DatabaseQueryError | DatabaseUnavailable
   >;
   readonly queryEarliestTimestamp: () => Effect.Effect<
@@ -119,14 +125,18 @@ export interface QuestDBService {
     DatabaseQueryError | DatabaseUnavailable
   >;
   readonly queryOutageRuns: (
-    params: QueryOutageParams
+    params: QueryStateParams
   ) => Effect.Effect<
     readonly OutageRun[],
     DatabaseQueryError | DatabaseUnavailable
   >;
-  readonly queryCyclePeriod: (
-    params: QueryWindowParams
-  ) => Effect.Effect<number | null, DatabaseQueryError | DatabaseUnavailable>;
+  /** Up and observed time of each trailing window, in the order of `windowStartTimes`. */
+  readonly queryWindowUptime: (
+    params: QueryWindowUptimeParams
+  ) => Effect.Effect<
+    readonly WindowUptime[],
+    DatabaseQueryError | DatabaseUnavailable
+  >;
   readonly health: () => Effect.Effect<
     DatabaseHealth,
     DatabaseConnectionError | DatabaseUnavailable
@@ -255,19 +265,21 @@ const make = Effect.gen(function* () {
       MetricRowSchema
     ).pipe(Effect.map((rows) => rows.map(toMetric)));
 
-  const queryConnectivityStatus = (params: QueryMetricsParams) =>
+  const queryConnectivityStatus = (params: QueryConnectivityParams) =>
     runRows(
       buildQueryConnectivityStatus(params, table),
       "connectivity status",
       ConnectivityStatusRowSchema
     );
 
-  const queryLiveConnectivity = (sinceIso: string) =>
+  const queryLiveConnectivity = (
+    params: Pick<QueryStateParams, "nowMs" | "intervalMs" | "hosts">
+  ) =>
     runRows(
-      buildQueryLiveConnectivity({ sinceIso }, table),
+      buildQueryLiveConnectivity(params, table),
       "live connectivity",
       LiveConnectivityRowSchema
-    ).pipe(Effect.map((rows) => rows[0] ?? null));
+    ).pipe(Effect.map((rows) => (rows[0] ? stateOf(rows[0].state) : null)));
 
   const queryEarliestTimestamp = () =>
     runRows(
@@ -297,30 +309,22 @@ const make = Effect.gen(function* () {
       HostStatsRowSchema
     );
 
-  const queryOutageRuns = (params: QueryOutageParams) =>
-    Effect.all(
-      {
-        runs: runRows(
-          buildQueryOutageRuns(params, table),
-          "outage runs",
-          OutageRunRowSchema
-        ),
-        hosts: runRows(
-          buildQueryOutageHosts(params, table),
-          "outage hosts",
-          OutageHostRowSchema
-        ),
-      },
-      { concurrency: "unbounded" }
-    ).pipe(Effect.map(({ runs, hosts }) => attachOutageHosts(runs, hosts)));
-
-  const queryCyclePeriod = (params: QueryWindowParams) =>
+  const queryOutageRuns = (params: QueryStateParams) =>
     runRows(
-      buildQueryCyclePeriod(params, table),
-      "cycle period",
-      CyclePeriodRowSchema
+      buildQueryOutageRuns(params, table),
+      "outage runs",
+      OutageRunHostRowSchema
+    ).pipe(Effect.map(toOutageRuns));
+
+  const queryWindowUptime = (params: QueryWindowUptimeParams) =>
+    runRows(
+      buildQueryWindowUptime(params, table),
+      "window uptime",
+      WindowUptimeRowSchema
     ).pipe(
-      Effect.map((rows) => toCyclePeriodMs(rows[0]?.period_micros ?? null))
+      Effect.map((rows) =>
+        toWindowUptimes(rows[0] ?? {}, params.windowStartTimes.length)
+      )
     );
 
   const health = () =>
@@ -349,7 +353,7 @@ const make = Effect.gen(function* () {
     querySummaryStats,
     queryHostStats,
     queryOutageRuns,
-    queryCyclePeriod,
+    queryWindowUptime,
     health,
     close,
   } satisfies QuestDBService;

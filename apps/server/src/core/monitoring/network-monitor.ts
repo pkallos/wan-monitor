@@ -171,7 +171,7 @@ export const NetworkMonitorLive = Layer.effect(
         yield* executePingCycle;
 
         // fixed, not spaced: cycle starts stay on the interval grid instead of
-        // drifting by each cycle's length; outage detection reads that period.
+        // drifting by each cycle's length.
         yield* executePingCycle.pipe(
           Effect.schedule(Schedule.fixed(`${pingIntervalSeconds} seconds`)),
           Effect.forkScoped

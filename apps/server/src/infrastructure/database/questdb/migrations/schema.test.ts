@@ -5,6 +5,7 @@ import {
 } from "@wan-monitor/shared/db-schema";
 import {
   describeDrift,
+  driftRemedies,
   type LiveColumn,
   needsRebuild,
   rebuildCopySql,
@@ -180,7 +181,7 @@ describe("describeDrift", () => {
 
     expect(describeDrift(drift)).toEqual([
       "timestamp is TIMESTAMP_NS, expected TIMESTAMP",
-      "the designated timestamp is not timestamp of type TIMESTAMP",
+      "the designated timestamp is not the timestamp column of type TIMESTAMP",
       "unexpected column note",
       "missing column isp",
     ]);
@@ -192,6 +193,89 @@ describe("describeDrift", () => {
         schemaDrift(live(NETWORK_METRICS_COLUMNS), NETWORK_METRICS_COLUMNS)
       )
     ).toEqual([]);
+  });
+});
+
+describe("driftRemedies", () => {
+  const remedies = (actual: readonly LiveColumn[]) =>
+    driftRemedies(
+      schemaDrift(actual, NETWORK_METRICS_COLUMNS),
+      "t",
+      NETWORK_METRICS_COLUMNS
+    );
+
+  it("is empty when nothing drifted", () => {
+    expect(remedies(live(NETWORK_METRICS_COLUMNS))).toEqual([]);
+  });
+
+  it("prints one ALTER statement in backticks per missing column", () => {
+    const messages = remedies(
+      live(
+        NETWORK_METRICS_COLUMNS.filter(
+          (column) => !["isp", "duration_ms"].includes(column.name)
+        )
+      )
+    );
+
+    expect(messages).toEqual([
+      "Add isp with `ALTER TABLE t ADD COLUMN isp STRING;`.",
+      "Add duration_ms with `ALTER TABLE t ADD COLUMN duration_ms DOUBLE;`.",
+    ]);
+  });
+
+  it("tells the operator to drop an extra column themselves and prints no statement", () => {
+    const messages = remedies([
+      ...live(NETWORK_METRICS_COLUMNS),
+      { name: "note", type: "STRING", designated: false },
+      { name: "memo", type: "STRING", designated: false },
+    ]);
+
+    expect(messages).toEqual([
+      "Unexpected columns (note, memo) are never dropped automatically: drop them yourself once their data is no longer needed.",
+    ]);
+  });
+
+  it.each([
+    ["a retyped column", withType("isp", "VARCHAR")],
+    ["a retyped designated timestamp", withType("timestamp", "TIMESTAMP_NS")],
+    [
+      "another designated timestamp",
+      live(NETWORK_METRICS_COLUMNS).map((column) => ({
+        ...column,
+        designated: column.name === "source",
+      })),
+    ],
+  ])("asks for a backup for %s", (_name, actual) => {
+    expect(remedies(actual)).toEqual([
+      "Restore t from a backup taken before its schema diverged.",
+    ]);
+  });
+
+  it("asks for a backup, never an ADD COLUMN, when the timestamp column is missing", () => {
+    const messages = remedies(
+      live(
+        NETWORK_METRICS_COLUMNS.filter((column) => column.name !== "timestamp")
+      )
+    );
+
+    expect(messages).toEqual([
+      "Restore t from a backup taken before its schema diverged.",
+    ]);
+  });
+
+  it("combines every kind of drift, each remedy once", () => {
+    const messages = remedies([
+      ...withType("isp", "VARCHAR").filter(
+        (column) => column.name !== "duration_ms"
+      ),
+      { name: "note", type: "STRING", designated: false },
+    ]);
+
+    expect(messages).toEqual([
+      "Add duration_ms with `ALTER TABLE t ADD COLUMN duration_ms DOUBLE;`.",
+      "Unexpected columns (note) are never dropped automatically: drop them yourself once their data is no longer needed.",
+      "Restore t from a backup taken before its schema diverged.",
+    ]);
   });
 });
 

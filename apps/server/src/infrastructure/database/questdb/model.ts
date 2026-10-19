@@ -40,24 +40,47 @@ export const MetricRowSchema = Schema.Struct({
   internal_ip: OptionalText,
 });
 
+/**
+ * WAN state codes the SQL pipeline computes. Numeric because `lag()` rejects
+ * STRING columns; 0 means no host has a standing ping.
+ */
+export const WAN_STATE = {
+  noData: 0,
+  up: 1,
+  degraded: 2,
+  down: 3,
+} as const;
+
+/** The status a state code names; null for no data. */
+export const stateOf = (code: number): ConnectivityStatus | null => {
+  switch (code) {
+    case WAN_STATE.up:
+      return "up";
+    case WAN_STATE.degraded:
+      return "degraded";
+    case WAN_STATE.down:
+      return "down";
+    default:
+      return null;
+  }
+};
+
+/** Time spent in each state inside one ribbon bucket, in microseconds. */
 export const ConnectivityStatusRowSchema = Schema.Struct({
-  timestamp: Schema.String,
-  up_count: PgNumber,
-  down_count: PgNumber,
-  degraded_count: PgNumber,
-  total_count: PgNumber,
+  bucket: Schema.String,
+  up_micros: PgNumber,
+  degraded_micros: PgNumber,
+  down_micros: PgNumber,
 });
 export type ConnectivityStatusRow = typeof ConnectivityStatusRowSchema.Type;
 
-export type CycleStatus = ConnectivityStatus;
-
+/** The state code at the query's `now`. */
 export const LiveConnectivityRowSchema = Schema.Struct({
-  timestamp: Schema.String,
-  cycle_status: ConnectivityStatusSchema,
+  state: PgNumber,
 });
 export type LiveConnectivityRow = typeof LiveConnectivityRowSchema.Type;
 
-/** Latency, loss and jitter over every ping cycle in a window; null with no cycles. */
+/** Latency, loss and jitter over every ping in a window; null with no pings. */
 export const SummaryStatsRowSchema = Schema.Struct({
   latency_p50: NullableNumber,
   latency_p95: NullableNumber,
@@ -80,38 +103,53 @@ export const HostStatsRowSchema = Schema.Struct({
 export type HostStatsRow = typeof HostStatsRowSchema.Type;
 
 /**
- * A maximal run of non-up ping cycles, as numbered by `buildQueryOutageRuns`.
- * Times are those of the first and last non-up cycle in the run.
+ * One host's contribution to a maximal run of degraded or down time, as
+ * returned by `buildQueryOutageRuns`. The run's `start_time` and `end_time`
+ * are unclipped state edges; a row exists for every host with a ping paired
+ * with the run, and `affected` says whether a qualifying ping of that host
+ * failed or lost packets.
  */
-export const OutageRunRowSchema = Schema.Struct({
+export const OutageRunHostRowSchema = Schema.Struct({
   run_id: PgNumber,
   start_time: Schema.String,
-  last_time: Schema.String,
-  /** The up cycle recorded within the merge gap after the run, if there was one. */
-  recovered_time: Schema.NullOr(Schema.String),
-  /** True when any cycle in the run was down rather than merely degraded. */
+  end_time: Schema.String,
+  /** True when any state in the run was down rather than merely degraded. */
   had_down: PgFlag,
+  host: Schema.String,
+  /** True when a qualifying ping of the host was down or lossy. */
+  affected: PgFlag,
   max_packet_loss: NullableNumber,
   peak_latency: NullableNumber,
 });
-export type OutageRunRow = typeof OutageRunRowSchema.Type;
+export type OutageRunHostRow = typeof OutageRunHostRowSchema.Type;
 
-/** A host that was down or at or over the loss floor somewhere in an outage run. */
-export const OutageHostRowSchema = Schema.Struct({
-  run_id: PgNumber,
-  host: Schema.String,
-});
-export type OutageHostRow = typeof OutageHostRowSchema.Type;
-
-/** An outage run with the hosts that were down or at or over the loss floor in it. */
-export interface OutageRun extends OutageRunRow {
+/** An outage run with the hosts that failed or lost packets in it. */
+export interface OutageRun {
+  readonly run_id: number;
+  readonly start_time: string;
+  readonly end_time: string;
+  readonly had_down: boolean;
+  readonly max_packet_loss: number | null;
+  readonly peak_latency: number | null;
   readonly affected_hosts: readonly string[];
 }
 
-/** The median gap between ping cycles; null when the window holds fewer than two. */
-export const CyclePeriodRowSchema = Schema.Struct({
-  period_micros: NullableNumber,
-});
+/** The column holding `kind` time for the `index`th window of `buildQueryWindowUptime`. */
+export const windowColumn = (kind: "up" | "observed", index: number): string =>
+  `${kind}_${index}`;
+
+/** The one row of `buildQueryWindowUptime`: `up_<i>` and `observed_<i>` microseconds per window. */
+export const WindowUptimeRowSchema = Schema.Record(
+  Schema.String,
+  NullableNumber
+);
+export type WindowUptimeRow = typeof WindowUptimeRowSchema.Type;
+
+/** Time a trailing window spent up, and time it was observed at all, in microseconds. */
+export interface WindowUptime {
+  readonly up_micros: number;
+  readonly observed_micros: number;
+}
 
 /** A single timestamp aggregate, null when no row matched. */
 export const TimestampRowSchema = Schema.Struct({
@@ -123,12 +161,23 @@ export interface QueryWindowParams {
   readonly endTime: Date;
 }
 
-export interface QueryOutageParams extends QueryWindowParams {
-  /**
-   * Longest time between two non-up cycles that still reads as one outage;
-   * an up cycle between them always splits it.
-   */
-  readonly mergeGapMs: number;
+/** A window together with what the WAN state pipeline needs to read it. */
+export interface QueryStateParams extends QueryWindowParams {
+  /** The reading clock: nothing is observed past it. */
+  readonly nowMs: number;
+  readonly intervalMs: number;
+  /** `PING_HOSTS`: hosts whose missing round is bridged. */
+  readonly hosts: readonly string[];
+}
+
+export interface QueryConnectivityParams extends QueryStateParams {
+  readonly granularity: Granularity;
+}
+
+export interface QueryWindowUptimeParams
+  extends Omit<QueryStateParams, "startTime"> {
+  /** Start of each trailing window; `endTime` is shared. */
+  readonly windowStartTimes: readonly Date[];
 }
 
 export interface QueryMetricsParams extends QueryWindowParams {
@@ -136,7 +185,7 @@ export interface QueryMetricsParams extends QueryWindowParams {
   readonly limit?: number;
   readonly granularity?: Granularity;
   readonly source?: MetricSource;
-  /** `p50` leaves the 95th percentile out of aggregated rows, which is a pass over the window of its own. */
+  /** `p50` leaves the 95th percentile out of aggregated rows, since computing it takes a pass over the window of its own. */
   readonly percentiles?: "p50" | "p50-p95";
 }
 

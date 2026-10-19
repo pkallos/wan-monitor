@@ -41,7 +41,7 @@ export const CELL_LABELS: Record<CellStatus, string> = {
   notMonitored: "Before monitoring started",
 };
 
-/** How a bucket's cycles split between the three states, as percentages. */
+/** How a bucket's time splits between the three states, as percentages. */
 export type CellShares = Readonly<{
   up: number;
   degraded: number;
@@ -52,7 +52,7 @@ export interface Cell {
   readonly startMs: number;
   readonly endMs: number;
   readonly status: CellStatus;
-  /** None for a bucket the monitor produced no cycles in. */
+  /** None for a bucket the monitor held no data for. */
   readonly maybeShares: Option.Option<CellShares>;
   /** The bucket the present moment falls in, still filling. */
   readonly isCurrent: boolean;
@@ -179,7 +179,7 @@ export const cellTitle = (cell: Cell, granularity: Granularity): string => {
 
 const shareText = (value: number): string => `${Number(value.toFixed(1))}%`;
 
-/** The states present in a bucket, the first as "97.5% of checks up" and the rest as "2.5% down". */
+/** The states present in a bucket, the first as "97.5% of the time up" and the rest as "2.5% down". */
 const shareClauses = ({ up, degraded, down }: CellShares): Array<string> =>
   Array_.map(
     Array_.filter(
@@ -192,11 +192,11 @@ const shareClauses = ({ up, degraded, down }: CellShares): Array<string> =>
     ),
     ([state, share], index) =>
       index === 0
-        ? `${shareText(share)} of checks ${state}`
+        ? `${shareText(share)} of the time ${state}`
         : `${shareText(share)} ${state}`
   );
 
-/** The status and the share of each state present: "Down: 97.5% of checks up, 2.5% down.". */
+/** The status and the share of each state present: "Down: 97.5% of the time up, 2.5% down." */
 export const cellBody = (cell: Cell): string => {
   const label = CELL_LABELS[cell.status];
   const clauses = Option.match(cell.maybeShares, {

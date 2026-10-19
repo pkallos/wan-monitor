@@ -17,6 +17,8 @@ export const writeMetricToSender = (
     row = row.floatColumn("packet_loss", metric.packetLoss);
   if (metric.connectivityStatus)
     row = row.stringColumn("connectivity_status", metric.connectivityStatus);
+  if (metric.durationMs !== undefined)
+    row = row.floatColumn("duration_ms", metric.durationMs);
   if (metric.downloadBandwidth !== undefined)
     row = row.intColumn("download_bandwidth", metric.downloadBandwidth);
   if (metric.uploadBandwidth !== undefined)

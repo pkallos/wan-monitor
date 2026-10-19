@@ -55,11 +55,13 @@ const SpeedtestTimelineWindow = S.Struct({
 
 const ConnectivityStatusData = S.Struct({
   points: S.Array(ConnectivityStatusPointSchema),
-  /** None when the window held no ping cycles: uptime is unanswerable, not 0%. */
+  /** None when the window held no monitored time: uptime is unanswerable, not 0%. */
   maybeUptimePercentage: S.Option(S.Number),
   /** None under the same no-data condition as `maybeUptimePercentage`. */
   maybeAvailabilityPercentage: S.Option(S.Number),
   coveragePercentage: S.Number,
+  /** Seconds of the window with ping data: the time the uptime figure covers. */
+  observedSeconds: S.Number,
   startTimeMs: S.Number,
   endTimeMs: S.Number,
   granularity: GranularitySchema,

@@ -11,11 +11,12 @@ import {
   type QuestDBService,
 } from "@/infrastructure/database/questdb";
 import type {
-  ConnectivityStatusRow,
   HostStatsRow,
-  QueryMetricsParams,
+  QueryWindowUptimeParams,
   SummaryStatsRow,
+  WindowUptime,
 } from "@/infrastructure/database/questdb/model";
+import { makeTestConfigLayer } from "@/test/config";
 import { invalidTimeRangeOf } from "@/test/invalid-time-range";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
 
@@ -39,7 +40,12 @@ const baseDb: QuestDBService = {
 };
 
 const layers = (db: Partial<QuestDBService>) =>
-  Layer.succeed(QuestDB, { ...baseDb, ...db });
+  Layer.mergeAll(
+    Layer.succeed(QuestDB, { ...baseDb, ...db }),
+    makeTestConfigLayer({
+      ping: { intervalSeconds: 45, hosts: ["8.8.8.8", "1.1.1.1"] },
+    })
+  );
 
 const statsRow = (
   overrides: Partial<SummaryStatsRow> = {}
@@ -51,16 +57,14 @@ const statsRow = (
   ...overrides,
 });
 
-const connectivityRow = (
-  counts: Pick<
-    ConnectivityStatusRow,
-    "up_count" | "degraded_count" | "down_count"
-  >
-): ConnectivityStatusRow => ({
-  timestamp: "2024-01-01T00:00:00Z",
-  ...counts,
-  total_count: counts.up_count + counts.degraded_count + counts.down_count,
+const seconds = (up: number, observed: number): WindowUptime => ({
+  up_micros: up * 1_000_000,
+  observed_micros: observed * 1_000_000,
 });
+
+const unavailable = Effect.fail(
+  new DatabaseUnavailable({ message: "connection refused" })
+);
 
 const summaryQuery = {
   startTime: new Date(END - 2 * DAY).toISOString(),
@@ -69,47 +73,37 @@ const summaryQuery = {
 
 describe("Summary Handlers", () => {
   describe("getSummary", () => {
-    it.effect(
-      "summarizes the range from the stats and connectivity rows",
-      () => {
-        const db: Partial<QuestDBService> = {
-          querySummaryStats: () => Effect.succeed(statsRow()),
-          queryConnectivityStatus: () =>
-            Effect.succeed([
-              connectivityRow({
-                up_count: 90,
-                degraded_count: 6,
-                down_count: 4,
-              }),
-            ]),
-        };
+    it.effect("summarizes the range from the stats alone", () => {
+      const db: Partial<QuestDBService> = {
+        querySummaryStats: () => Effect.succeed(statsRow()),
+      };
 
-        return Effect.gen(function* () {
-          const { range } = yield* getSummaryHandler({ query: summaryQuery });
+      return Effect.gen(function* () {
+        const { range } = yield* getSummaryHandler({ query: summaryQuery });
 
-          expect(range).toMatchObject({
-            latencyP50: 20,
-            latencyP95: 45,
-            avgPacketLoss: 0.5,
-            avgJitter: 2,
-            uptimePercentage: 90,
-            availabilityPercentage: 96,
-          });
-          expect(range.coveragePercentage).toBeGreaterThan(0);
-        }).pipe(Effect.provide(layers(db)));
-      }
-    );
+        expect(range).toEqual({
+          latencyP50: 20,
+          latencyP95: 45,
+          avgPacketLoss: 0.5,
+          avgJitter: 2,
+        });
+      }).pipe(Effect.provide(layers(db)));
+    });
 
     it.effect("reports nulls, not zeros, for a range with no data", () => {
       return Effect.gen(function* () {
         const result = yield* getSummaryHandler({ query: summaryQuery });
 
-        expect(result.range).toMatchObject({
+        expect(result.range).toEqual({
           latencyP50: null,
+          latencyP95: null,
           avgPacketLoss: null,
-          uptimePercentage: null,
-          availabilityPercentage: null,
-          coveragePercentage: 0,
+          avgJitter: null,
+        });
+        expect(result.windows).toEqual({
+          last24h: { uptimePercentage: null },
+          last7d: { uptimePercentage: null },
+          last30d: { uptimePercentage: null },
         });
         expect(result.hosts).toEqual([]);
         expect(result.speed).toMatchObject({ downloadMedian: null, count: 0 });
@@ -141,58 +135,46 @@ describe("Summary Handlers", () => {
       }).pipe(Effect.provide(layers(db)));
     });
 
-    it.effect("anchors the 24h, 7d and 30d windows at the end time", () => {
-      const calls: QueryMetricsParams[] = [];
-      const db: Partial<QuestDBService> = {
-        queryConnectivityStatus: (params) => {
-          calls.push(params);
-          return Effect.succeed([]);
-        },
-      };
+    it.effect(
+      "reads the 24h, 7d and 30d windows in one query anchored at the end time",
+      () => {
+        const calls: QueryWindowUptimeParams[] = [];
+        const db: Partial<QuestDBService> = {
+          queryWindowUptime: (params) => {
+            calls.push(params);
+            return Effect.succeed([]);
+          },
+        };
 
-      return Effect.gen(function* () {
-        yield* getSummaryHandler({ query: summaryQuery });
+        return Effect.gen(function* () {
+          yield* TestClock.setTime(END + HOUR);
+          yield* getSummaryHandler({ query: summaryQuery });
 
-        const trailing = (spanMs: number, granularity: string) =>
-          expect.objectContaining({
-            startTime: new Date(END - spanMs),
-            endTime: new Date(END),
-            granularity,
-          });
-        expect(calls).toEqual(
-          expect.arrayContaining([
-            trailing(DAY, "5m"),
-            trailing(7 * DAY, "1h"),
-            trailing(30 * DAY, "1h"),
-          ])
-        );
-      }).pipe(Effect.provide(layers(db)));
-    });
+          expect(calls).toEqual([
+            {
+              endTime: new Date(END),
+              nowMs: END + HOUR,
+              intervalMs: 45_000,
+              hosts: ["8.8.8.8", "1.1.1.1"],
+              windowStartTimes: [
+                new Date(END - DAY),
+                new Date(END - 7 * DAY),
+                new Date(END - 30 * DAY),
+              ],
+            },
+          ]);
+        }).pipe(Effect.provide(layers(db)));
+      }
+    );
 
     it.effect("reports each trailing window's own uptime", () => {
       const db: Partial<QuestDBService> = {
-        queryConnectivityStatus: ({ startTime }) => {
-          const spanMs = END - (startTime?.getTime() ?? END);
-          return Effect.succeed([
-            spanMs === DAY
-              ? connectivityRow({
-                  up_count: 100,
-                  degraded_count: 0,
-                  down_count: 0,
-                })
-              : spanMs === 7 * DAY
-                ? connectivityRow({
-                    up_count: 80,
-                    degraded_count: 10,
-                    down_count: 10,
-                  })
-                : connectivityRow({
-                    up_count: 60,
-                    degraded_count: 20,
-                    down_count: 20,
-                  }),
-          ]);
-        },
+        queryWindowUptime: () =>
+          Effect.succeed([
+            seconds(86_400, 86_400),
+            seconds(80, 100),
+            seconds(60, 100),
+          ]),
       };
 
       return Effect.gen(function* () {
@@ -208,6 +190,24 @@ describe("Summary Handlers", () => {
         expect(windows.last30d).toEqual({ uptimePercentage: 60 });
       }).pipe(Effect.provide(layers(db)));
     });
+
+    it.effect(
+      "reports a null uptime for a window with no observed time",
+      () => {
+        const db: Partial<QuestDBService> = {
+          queryWindowUptime: () =>
+            Effect.succeed([seconds(0, 0), seconds(0, 3600), seconds(0, 0)]),
+        };
+
+        return Effect.gen(function* () {
+          const { windows } = yield* getSummaryHandler({ query: summaryQuery });
+
+          expect(windows.last24h).toEqual({ uptimePercentage: null });
+          expect(windows.last7d).toEqual({ uptimePercentage: 0 });
+          expect(windows.last30d).toEqual({ uptimePercentage: null });
+        }).pipe(Effect.provide(layers(db)));
+      }
+    );
 
     it.effect("rejects a start after the end without querying", () => {
       const onStats = vi.fn();
@@ -330,17 +330,13 @@ describe("Summary Handlers", () => {
       }).pipe(Effect.provide(layers(db)));
     });
 
-    it.effect(
-      "maps an unreachable database to the shared 503 error body",
-      () => {
-        const db: Partial<QuestDBService> = {
-          queryHostStats: () =>
-            Effect.fail(
-              new DatabaseUnavailable({ message: "connection refused" })
-            ),
-        };
-
-        return Effect.gen(function* () {
+    it.effect.each([
+      ["host stats", { queryHostStats: () => unavailable }],
+      ["window uptime", { queryWindowUptime: () => unavailable }],
+    ] as const)(
+      "maps an unreachable database in the %s query to the shared 503 error body",
+      ([, db]) =>
+        Effect.gen(function* () {
           const exit = yield* Effect.exit(
             getSummaryHandler({ query: summaryQuery })
           );
@@ -353,8 +349,7 @@ describe("Summary Handlers", () => {
               expect(error.value).toBeInstanceOf(DbUnavailable);
             }
           }
-        }).pipe(Effect.provide(layers(db)));
-      }
+        }).pipe(Effect.provide(layers(db)))
     );
   });
 });

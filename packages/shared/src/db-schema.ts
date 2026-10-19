@@ -49,6 +49,7 @@ export const NETWORK_METRICS_COLUMNS: readonly ColumnDefinition[] = [
   { name: "isp", type: "STRING" },
   { name: "external_ip", type: "STRING" },
   { name: "internal_ip", type: "STRING" },
+  { name: "duration_ms", type: "DOUBLE" },
 ];
 
 /**

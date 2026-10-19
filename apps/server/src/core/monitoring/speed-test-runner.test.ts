@@ -292,6 +292,7 @@ describe("SpeedTestRunner", () => {
               internalIp: "192.168.1.100",
             },
           ]);
+          expect(written[0]).not.toHaveProperty("durationMs");
         })
       ).pipe(
         Effect.provide(runnerLayer(succeeding(result), capturing(written)))

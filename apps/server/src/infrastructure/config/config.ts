@@ -206,7 +206,8 @@ const makeConfig = Effect.gen(function* () {
   const pingTrainCount = yield* Config.Number("PING_TRAIN_COUNT").pipe(
     Config.withDefault(10)
   );
-  const pingIntervalSeconds = yield* Config.Number(
+  const pingIntervalSeconds = yield* Config.schema(
+    PositiveIntFromStringSchema,
     "PING_INTERVAL_SECONDS"
   ).pipe(Config.withDefault(30));
   const pingHostsStr = yield* Config.String("PING_HOSTS").pipe(
