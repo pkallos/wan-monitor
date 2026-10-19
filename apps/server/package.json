@@ -16,16 +16,16 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0",
+    "@effect/platform-node": "4.0.5",
     "@questdb/nodejs-client": "^4.2.0",
-    "effect": "4.0.0",
+    "effect": "4.0.5",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.1",
     "ping": "^1.0.0",
     "speedtest-net": "2.2.0"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.0",
+    "@effect/vitest": "4.0.5",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
