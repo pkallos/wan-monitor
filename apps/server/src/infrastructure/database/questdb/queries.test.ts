@@ -2,25 +2,25 @@ import {
   NETWORK_METRICS_COLUMNS,
   NETWORK_METRICS_TABLE,
 } from "@shared/db-schema";
-import { PACKET_LOSS_THRESHOLDS } from "@wan-monitor/shared";
 import { describe, expect, it } from "vitest";
 import type {
+  QueryConnectivityParams,
   QueryMetricsParams,
   QuerySpeedtestsParams,
+  QueryStateParams,
+  QueryWindowUptimeParams,
 } from "@/infrastructure/database/questdb/model";
 import {
   buildQueryConnectivityStatus,
-  buildQueryCyclePeriod,
   buildQueryEarliestTimestamp,
   buildQueryHostStats,
   buildQueryLatestPingTimestamp,
   buildQueryLiveConnectivity,
   buildQueryMetrics,
-  buildQueryOutageHosts,
   buildQueryOutageRuns,
   buildQuerySpeedtests,
   buildQuerySummaryStats,
-  CYCLE_STATUS_CASE,
+  buildQueryWindowUptime,
 } from "@/infrastructure/database/questdb/queries";
 
 const TABLE = NETWORK_METRICS_TABLE;
@@ -36,8 +36,38 @@ const metrics = (params: Partial<QueryMetricsParams> = {}) =>
   buildQueryMetrics({ ...window, ...params }, TABLE);
 const speedtests = (params: Partial<QuerySpeedtestsParams> = {}) =>
   buildQuerySpeedtests({ ...window, ...params }, TABLE);
-const connectivity = (params: Partial<QueryMetricsParams> = {}) =>
-  buildQueryConnectivityStatus({ ...window, ...params }, TABLE);
+
+const NOW_MS = Date.parse("2024-01-03T00:00:00Z");
+const INTERVAL_MS = 30_000;
+const PRE_ROLL_MS = 3_600_000;
+const HOSTS = ["8.8.8.8", "1.1.1.1"];
+
+const state = (params: Partial<QueryStateParams> = {}): QueryStateParams => ({
+  ...window,
+  nowMs: NOW_MS,
+  intervalMs: INTERVAL_MS,
+  hosts: HOSTS,
+  ...params,
+});
+
+const connectivity = (params: Partial<QueryConnectivityParams> = {}) =>
+  buildQueryConnectivityStatus(
+    { ...state(), granularity: "5m", ...params },
+    TABLE
+  );
+
+const startMs = window.startTime.getTime();
+const endMs = window.endTime.getTime();
+
+/** The six leading binds of a state statement for `window`, in microseconds. */
+const WINDOW_BINDS = [
+  startMs * 1000,
+  endMs * 1000,
+  (startMs - PRE_ROLL_MS) * 1000,
+  (endMs + PRE_ROLL_MS) * 1000,
+  NOW_MS * 1000,
+  INTERVAL_MS * 1000,
+];
 
 describe("buildQueryMetrics", () => {
   it("builds a raw query over the window with no filters", () => {
@@ -52,10 +82,19 @@ describe("buildQueryMetrics", () => {
   });
 
   it("selects the table's columns in declaration order for raw rows", () => {
-    const columns = NETWORK_METRICS_COLUMNS.map((c) => c.name).join(", ");
+    const columns = NETWORK_METRICS_COLUMNS.filter(
+      (c) => c.name !== "duration_ms"
+    )
+      .map((c) => c.name)
+      .join(", ");
 
     expect(metrics().query).toContain(`SELECT ${columns}\n`);
     expect(speedtests().query).toContain(`SELECT ${columns}\n`);
+  });
+
+  it("leaves duration_ms out of raw rows, which no response carries", () => {
+    expect(metrics().query).not.toContain("duration_ms");
+    expect(speedtests().query).not.toContain("duration_ms");
   });
 
   it("filters by host", () => {
@@ -105,12 +144,12 @@ describe("buildQueryMetrics", () => {
     const aggregated = (params: Partial<QueryMetricsParams>) =>
       metrics({ granularity: "1h", ...params });
 
-    it("takes the median and the 95th percentile over per-cycle means across hosts", () => {
+    it("takes the median and the 95th percentile over every row in the bucket", () => {
       const { query } = aggregated({ source: "ping" });
 
       expect(query).toContain("approx_percentile(latency, 0.5");
       expect(query).toContain("approx_percentile(latency, 0.95");
-      expect(query).toContain("SAMPLE BY 1s");
+      expect(query).not.toContain("SAMPLE BY 1s");
     });
 
     it("skips the 95th percentile when only the median is asked for", () => {
@@ -121,17 +160,14 @@ describe("buildQueryMetrics", () => {
       expect(query).not.toContain("latency_p95");
     });
 
-    it("skips the per-cycle collapse for a single host, which has one row per cycle", () => {
-      const { query } = aggregated({ host: "8.8.8.8", percentiles: "p50" });
+    it("reads the table directly, with or without a host", () => {
+      for (const params of [{}, { host: "8.8.8.8" }] as const) {
+        const { query } = aggregated({ ...params, percentiles: "p50" });
 
-      expect(query).not.toContain("SAMPLE BY 1s");
-      expect(query).toContain("AND host = $3");
-    });
-
-    it("keeps the per-cycle collapse for all hosts even when only the median is asked for", () => {
-      expect(aggregated({ percentiles: "p50" }).query).toContain(
-        "SAMPLE BY 1s"
-      );
+        expect(query).toContain(`FROM ${TABLE}`);
+        expect(query).not.toContain("SAMPLE BY 1s");
+      }
+      expect(aggregated({ host: "8.8.8.8" }).query).toContain("AND host = $3");
     });
   });
 
@@ -245,63 +281,92 @@ describe("buildQuerySpeedtests", () => {
 });
 
 describe("buildQueryConnectivityStatus", () => {
-  it("builds a ping-only query over the window at the default granularity", () => {
-    const result = connectivity();
-
-    expect(result.query).toContain(`FROM ${TABLE}`);
-    expect(result.query).toContain("WHERE timestamp >= $1");
-    expect(result.query).toContain("AND timestamp <= $2");
-    expect(result.query).toContain("AND source = 'ping'");
-    expect(result.query).toContain("SAMPLE BY 5m");
-    expect(result.params).toEqual(WINDOW_PARAMS);
-  });
-
-  it("uses a custom granularity", () => {
-    expect(connectivity({ granularity: "1m" }).query).toContain("SAMPLE BY 1m");
-  });
-
-  it("includes the connectivity status aggregations", () => {
+  it("builds the state pipeline over ping rows at the granularity", () => {
     const { query } = connectivity();
 
-    expect(query).toContain("down_count");
-    expect(query).toContain("degraded_count");
-    expect(query).toContain("up_count");
-    expect(query).toContain("total_count");
-    expect(query).toContain("connectivity_status = 'down'");
-  });
-
-  // Lossy but reachable samples (>= 50% loss) count as degraded, and latency
-  // never decides a sample's state.
-  it("classifies via connectivity_status without a packet-loss ceiling or latency gap", () => {
-    const { query } = connectivity();
-
-    expect(query).not.toContain("packet_loss < 50");
-    expect(query).not.toContain("latency < 0");
-    expect(query).not.toContain("latency >= 0");
-    expect(query).not.toContain("latency > 0");
-  });
-
-  // Regression guard for the quorum fix: a single failing host among several
-  // must not be able to mark a cycle (and therefore a bucket) down on its own.
-  it("classifies per cycle: down requires every host in the cycle to fail", () => {
-    expect(connectivity().query).toContain(
-      "SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) = count()"
+    expect(query).toContain(`FROM ${TABLE}`);
+    expect(query).toContain("source = 'ping'");
+    expect(query).toContain("SAMPLE BY 5m ALIGN TO CALENDAR");
+    expect(connectivity({ granularity: "1m" }).query).toContain(
+      "SAMPLE BY 1m ALIGN TO CALENDAR"
     );
   });
 
-  it("classifies packet loss at a 10% degraded floor", () => {
-    expect(connectivity().query).toContain("MAX(packet_loss) >= 10");
-  });
-
-  it("groups cycles by exact timestamp before bucketing by granularity", () => {
+  it("returns time per state in microseconds", () => {
     const { query } = connectivity();
 
-    expect(query).toContain("SAMPLE BY 1s");
-    expect(query).toContain("SAMPLE BY 5m");
+    expect(query).toContain("up_micros");
+    expect(query).toContain("degraded_micros");
+    expect(query).toContain("down_micros");
+    expect(query).toContain("SELECT pt bucket");
   });
 
-  it("orders by timestamp ascending", () => {
-    expect(connectivity().query).toContain("ORDER BY timestamp ASC");
+  it("binds the window, the first bucket, the bucket width and the hosts as integers", () => {
+    const { params } = connectivity();
+
+    expect(params).toEqual([
+      ...WINDOW_BINDS,
+      Date.parse("2024-01-01T00:00:00Z") * 1000,
+      300_000 * 1000,
+      ...HOSTS,
+    ]);
+  });
+
+  it("aligns the first bucket to the grid below the window start", () => {
+    const { params } = connectivity({
+      startTime: new Date("2024-01-01T00:07:30Z"),
+      granularity: "5m",
+    });
+
+    expect(params[6]).toBe(Date.parse("2024-01-01T00:05:00Z") * 1000);
+  });
+
+  it("inlines the marker count, one per bucket, because long_sequence rejects a bind", () => {
+    expect(connectivity().query).toContain("long_sequence(288)");
+    expect(connectivity({ granularity: "1h" }).query).toContain(
+      "long_sequence(24)"
+    );
+  });
+
+  it("counts markers only up to now when the window ends later", () => {
+    const { query } = connectivity({
+      nowMs: Date.parse("2024-01-01T01:00:00Z"),
+      granularity: "5m",
+    });
+
+    expect(query).toContain("long_sequence(12)");
+  });
+
+  it("keeps at least one marker for a window that starts after now", () => {
+    const { query } = connectivity({
+      nowMs: Date.parse("2023-12-31T00:00:00Z"),
+    });
+
+    expect(query).toContain("long_sequence(1)");
+  });
+
+  it("clips the window end and the scan end to now", () => {
+    const nowMs = Date.parse("2024-01-01T12:00:00Z");
+    const { params } = connectivity({ nowMs });
+
+    expect(params[1]).toBe(nowMs * 1000);
+    expect(params[3]).toBe(nowMs * 1000);
+    expect(params[4]).toBe(nowMs * 1000);
+  });
+
+  it("reads every host as unconfigured when none is configured", () => {
+    const { query, params } = connectivity({ hosts: [] });
+
+    expect(query).toContain("host IN (NULL)");
+    expect(params).toHaveLength(8);
+  });
+
+  it("numbers the host placeholders after the bucket binds", () => {
+    expect(connectivity().query).toContain("host IN ($9, $10)");
+  });
+
+  it("classifies packet loss at the 10% degraded floor", () => {
+    expect(connectivity().query).toContain("packet_loss >= 10");
   });
 });
 
@@ -316,25 +381,102 @@ describe("buildQueryEarliestTimestamp", () => {
 });
 
 describe("buildQueryLiveConnectivity", () => {
-  const SINCE = "2024-01-01T00:00:00.000Z";
+  const live = () =>
+    buildQueryLiveConnectivity(
+      { nowMs: NOW_MS, intervalMs: INTERVAL_MS, hosts: HOSTS },
+      TABLE
+    );
 
-  it("bounds the window from below only", () => {
-    const result = buildQueryLiveConnectivity({ sinceIso: SINCE }, TABLE);
+  it("reads the state of the stretch that reaches now, one row", () => {
+    const { query } = live();
 
-    expect(result.query).toContain("WHERE timestamp >= $1");
-    // No upper bound: a row written moments ago must not be excluded by
-    // clock skew between the monitor and the API process.
-    expect(result.query).not.toContain("timestamp <=");
-    expect(result.params).toEqual([SINCE]);
+    expect(query).toContain("SELECT st state FROM states");
+    expect(query).toContain("e >= cast($5 as timestamp)");
+    expect(query).toContain("LIMIT 1");
   });
 
-  it("reads ping cycles only, newest first, one row", () => {
-    const { query } = buildQueryLiveConnectivity({ sinceIso: SINCE }, TABLE);
+  it("binds a one-millisecond window ending now, as integers", () => {
+    const { params } = live();
 
-    expect(query).toContain("AND source = 'ping'");
-    expect(query).toContain("SAMPLE BY 1s");
-    expect(query).toContain("ORDER BY timestamp DESC");
-    expect(query).toContain("LIMIT 1");
+    expect(params).toEqual([
+      (NOW_MS - 1) * 1000,
+      NOW_MS * 1000,
+      (NOW_MS - 1 - PRE_ROLL_MS) * 1000,
+      NOW_MS * 1000,
+      NOW_MS * 1000,
+      INTERVAL_MS * 1000,
+      ...HOSTS,
+    ]);
+  });
+});
+
+describe("buildQueryOutageRuns", () => {
+  it("binds the window and the hosts as integers and names", () => {
+    expect(buildQueryOutageRuns(state(), TABLE).params).toEqual([
+      ...WINDOW_BINDS,
+      ...HOSTS,
+    ]);
+  });
+
+  it("keeps runs that overlap the window and pairs each ping with a run", () => {
+    const { query } = buildQueryOutageRuns(state(), TABLE);
+
+    expect(query).toContain("e > cast($1 as timestamp)");
+    expect(query).toContain("s < cast($2 as timestamp)");
+    expect(query).toContain("ASOF JOIN");
+  });
+
+  it("reads every host as unconfigured when none is configured", () => {
+    const { query, params } = buildQueryOutageRuns(state({ hosts: [] }), TABLE);
+
+    expect(query).toContain("host IN (NULL)");
+    expect(params).toEqual(WINDOW_BINDS);
+  });
+});
+
+describe("buildQueryWindowUptime", () => {
+  const windowStartTimes = [
+    new Date(endMs - 24 * 3_600_000),
+    new Date(endMs - 7 * 24 * 3_600_000),
+    new Date(endMs - 30 * 24 * 3_600_000),
+  ];
+  const uptime = (over: Partial<QueryWindowUptimeParams> = {}) =>
+    buildQueryWindowUptime({ ...state(), windowStartTimes, ...over }, TABLE);
+
+  it("scans from the widest window and binds each window start after the shared six", () => {
+    const widest = windowStartTimes[2]?.getTime() ?? 0;
+    const { params } = uptime();
+
+    expect(params).toEqual([
+      widest * 1000,
+      endMs * 1000,
+      (widest - PRE_ROLL_MS) * 1000,
+      (endMs + PRE_ROLL_MS) * 1000,
+      NOW_MS * 1000,
+      INTERVAL_MS * 1000,
+      ...windowStartTimes.map((start) => start.getTime() * 1000),
+      ...HOSTS,
+    ]);
+  });
+
+  it("returns an up and an observed column for every window", () => {
+    const { query } = uptime();
+
+    for (const i of [0, 1, 2]) {
+      expect(query).toContain(`up_${i}`);
+      expect(query).toContain(`observed_${i}`);
+    }
+    expect(query).toContain("host IN ($10, $11)");
+  });
+
+  it("finds the widest window whatever the order", () => {
+    const reversed = uptime({
+      windowStartTimes: [...windowStartTimes].reverse(),
+    });
+
+    expect(reversed.params[0]).toBe(
+      (windowStartTimes[2]?.getTime() ?? 0) * 1000
+    );
   });
 });
 
@@ -349,30 +491,7 @@ describe("buildQueryLatestPingTimestamp", () => {
   });
 });
 
-describe("CYCLE_STATUS_CASE", () => {
-  it("reads the degraded floor from the shared constant", () => {
-    expect(CYCLE_STATUS_CASE).toContain(
-      `MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor}`
-    );
-  });
-
-  // The live indicator and the historical timeline must classify a cycle
-  // identically, so both embed this one string rather than their own copy.
-  it("is embedded verbatim by both cycle-classifying queries", () => {
-    const historical = connectivity();
-    const live = buildQueryLiveConnectivity(
-      { sinceIso: "2024-01-01T00:00:00.000Z" },
-      TABLE
-    );
-
-    expect(historical.query).toContain(CYCLE_STATUS_CASE);
-    expect(live.query).toContain(CYCLE_STATUS_CASE);
-  });
-});
-
 describe("table name parameterization", () => {
-  const outageWindow = { ...window, mergeGapMs: 75_000 };
-
   it.each([
     ["buildQueryMetrics", buildQueryMetrics(window, CUSTOM_TABLE)],
     [
@@ -382,12 +501,18 @@ describe("table name parameterization", () => {
     ["buildQuerySpeedtests", buildQuerySpeedtests(window, CUSTOM_TABLE)],
     [
       "buildQueryConnectivityStatus",
-      buildQueryConnectivityStatus(window, CUSTOM_TABLE),
+      buildQueryConnectivityStatus(
+        { ...state(), granularity: "5m" },
+        CUSTOM_TABLE
+      ),
     ],
     ["buildQueryEarliestTimestamp", buildQueryEarliestTimestamp(CUSTOM_TABLE)],
     [
       "buildQueryLiveConnectivity",
-      buildQueryLiveConnectivity({ sinceIso: "2024-01-01" }, CUSTOM_TABLE),
+      buildQueryLiveConnectivity(
+        { nowMs: NOW_MS, intervalMs: INTERVAL_MS, hosts: HOSTS },
+        CUSTOM_TABLE
+      ),
     ],
     [
       "buildQueryLatestPingTimestamp",
@@ -395,43 +520,31 @@ describe("table name parameterization", () => {
     ],
     ["buildQuerySummaryStats", buildQuerySummaryStats(window, CUSTOM_TABLE)],
     ["buildQueryHostStats", buildQueryHostStats(window, CUSTOM_TABLE)],
-    ["buildQueryOutageRuns", buildQueryOutageRuns(outageWindow, CUSTOM_TABLE)],
+    ["buildQueryOutageRuns", buildQueryOutageRuns(state(), CUSTOM_TABLE)],
     [
-      "buildQueryOutageHosts",
-      buildQueryOutageHosts(outageWindow, CUSTOM_TABLE),
+      "buildQueryWindowUptime",
+      buildQueryWindowUptime(
+        { ...state(), windowStartTimes: [window.startTime] },
+        CUSTOM_TABLE
+      ),
     ],
-    ["buildQueryCyclePeriod", buildQueryCyclePeriod(window, CUSTOM_TABLE)],
   ])("%s targets the table it is given", (_name, spec) => {
     expect(spec.query).toContain(`FROM ${CUSTOM_TABLE}`);
     expect(spec.query).not.toContain(`FROM ${TABLE}\n`);
   });
 });
 
-describe.each([
-  ["buildQuerySummaryStats", buildQuerySummaryStats],
-  ["buildQueryCyclePeriod", buildQueryCyclePeriod],
-] as const)("%s", (_name, build) => {
+describe("buildQuerySummaryStats", () => {
   it("binds the window as ISO timestamp parameters", () => {
-    expect(build(window, TABLE).params).toEqual(WINDOW_PARAMS);
-  });
-});
-
-const outageWindow = { ...window, mergeGapMs: 75_000 };
-
-describe.each([
-  ["buildQueryOutageRuns", buildQueryOutageRuns],
-  ["buildQueryOutageHosts", buildQueryOutageHosts],
-] as const)("%s", (_name, build) => {
-  it("binds the window and the merge gap in microseconds", () => {
-    expect(build(outageWindow, TABLE).params).toEqual([
-      ...WINDOW_PARAMS,
-      75_000_000,
-    ]);
+    expect(buildQuerySummaryStats(window, TABLE).params).toEqual(WINDOW_PARAMS);
   });
 
-  it("rounds a fractional merge gap to whole microseconds", () => {
-    const result = build({ ...window, mergeGapMs: 1000.0004 }, TABLE);
+  it("takes percentiles, loss and jitter over every ping row", () => {
+    const { query } = buildQuerySummaryStats(window, TABLE);
 
-    expect(result.params[2]).toBe(1_000_000);
+    expect(query).toContain("approx_percentile(latency, 0.5");
+    expect(query).toContain("approx_percentile(latency, 0.95");
+    expect(query).toContain("AND source = 'ping'");
+    expect(query).not.toContain("SAMPLE BY");
   });
 });

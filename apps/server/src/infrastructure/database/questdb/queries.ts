@@ -1,14 +1,24 @@
 import { NETWORK_METRICS_COLUMNS } from "@shared/db-schema";
 import {
-  DEFAULT_GRANULARITY,
+  alignTimestampToMs,
+  granularityToMs,
   PACKET_LOSS_THRESHOLDS,
 } from "@wan-monitor/shared";
-import type {
-  QueryMetricsParams,
-  QueryOutageParams,
-  QuerySpeedtestsParams,
-  QueryWindowParams,
+import {
+  type QueryConnectivityParams,
+  type QueryMetricsParams,
+  type QuerySpeedtestsParams,
+  type QueryStateParams,
+  type QueryWindowParams,
+  type QueryWindowUptimeParams,
+  WAN_STATE,
+  windowColumn,
 } from "@/infrastructure/database/questdb/model";
+import {
+  RESOLUTION_FLOOR_HALF_PERIODS,
+  stateParams,
+  wanStatesSql,
+} from "@/infrastructure/database/questdb/wan-state";
 
 export interface SqlQuerySpec {
   readonly query: string;
@@ -29,9 +39,12 @@ const windowParams = ({
   endTime.toISOString(),
 ];
 
-const RAW_COLUMNS = NETWORK_METRICS_COLUMNS.map((column) => column.name).join(
-  ", "
-);
+// `duration_ms` feeds no response, so raw rows leave it out.
+const RAW_COLUMNS = NETWORK_METRICS_COLUMNS.filter(
+  (column) => column.name !== "duration_ms"
+)
+  .map((column) => column.name)
+  .join(", ");
 
 export const buildQueryMetrics = (
   params: QueryMetricsParams,
@@ -70,33 +83,7 @@ export const buildQueryMetrics = (
               AND timestamp <= $2
               ${hostFilter}
               ${sourceFilter}`;
-  // For one host every reading counts, as in the host summary. Across hosts,
-  // the inner SAMPLE BY 1s collapses each ping cycle to one row so the
-  // bucket's figures cover the same per-cycle population as the summary.
-  const aggregatedFrom =
-    params.host === undefined
-      ? `(
-            SELECT
-              timestamp,
-              source,
-              first(host) as host,
-              avg(latency) as latency,
-              avg(jitter) as jitter,
-              avg(packet_loss) as packet_loss,
-              last(connectivity_status) as connectivity_status,
-              avg(download_bandwidth) as download_bandwidth,
-              avg(upload_bandwidth) as upload_bandwidth,
-              last(server_location) as server_location,
-              last(isp) as isp,
-              last(external_ip) as external_ip,
-              last(internal_ip) as internal_ip
-            FROM ${table}
-            ${windowFilter}
-            SAMPLE BY 1s
-          )`
-      : `${table}
-            ${windowFilter}`;
-  // Each percentile is a pass of its own over every cycle in the window, so
+  // Each percentile is a pass of its own over every row in the window, so
   // the 95th is only computed for callers that draw it.
   const p95Column =
     params.percentiles === "p50"
@@ -121,7 +108,8 @@ export const buildQueryMetrics = (
             last(isp) as isp,
             last(external_ip) as external_ip,
             last(internal_ip) as internal_ip
-          FROM ${aggregatedFrom}
+          FROM ${table}
+          ${windowFilter}
           SAMPLE BY ${granularity} ALIGN TO CALENDAR
           ORDER BY timestamp DESC
           ${limitClause}
@@ -194,47 +182,29 @@ export const buildQueryEarliestTimestamp = (table: string): SqlQuerySpec => ({
 });
 
 /**
- * Reduces one ping cycle (the rows sharing a write timestamp, grouped by
- * `SAMPLE BY 1s`) to a single quorum-based state. Shared by the historical
- * rollup and the live indicator so the two can never disagree about what
- * "degraded" means:
- *   - down:     every host in the cycle failed. One host down out of several is
- *               a target/path problem, not a WAN outage.
- *   - degraded: not down, but at least one host failed or exceeded the loss
- *               floor. No upper packet-loss bound: any reachable-but-lossy
- *               cycle is degraded, including 50-99% loss.
- *   - up:       every host reachable and under the loss floor.
- * Latency is intentionally not used: a sample can be a valid reachable
- * measurement with no latency reading.
- */
-export const CYCLE_STATUS_CASE = `CASE
-              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) = count() THEN 'down'
-              WHEN SUM(CASE WHEN connectivity_status = 'down' THEN 1 ELSE 0 END) > 0
-                OR MAX(packet_loss) >= ${PACKET_LOSS_THRESHOLDS.degradedFloor} THEN 'degraded'
-              ELSE 'up'
-            END`;
-
-/**
- * Most recent ping cycle at or after `sinceIso`, for the live connectivity
- * indicator. Deliberately unbounded at the top so a row written moments ago
- * isn't excluded by clock skew between the monitor and the API process.
+ * The state at `nowMs`, taken from the stretch that reaches it. This runs the
+ * same pipeline the reports use, over `[nowMs - 1 ms, nowMs]`. No row means no
+ * host has a standing ping.
  */
 export const buildQueryLiveConnectivity = (
-  { sinceIso }: { readonly sinceIso: string },
+  {
+    nowMs,
+    intervalMs,
+    hosts,
+  }: Pick<QueryStateParams, "nowMs" | "intervalMs" | "hosts">,
   table: string
 ): SqlQuerySpec => ({
-  query: `
-        SELECT
-          timestamp,
-          ${CYCLE_STATUS_CASE} as cycle_status
-        FROM ${table}
-        WHERE timestamp >= $1
-          AND source = 'ping'
-        SAMPLE BY 1s
-        ORDER BY timestamp DESC
-        LIMIT 1
-      `,
-  params: [sinceIso],
+  query: `WITH ${wanStatesSql(table, 7, hosts.length)}
+        SELECT st state FROM states WHERE e >= cast($5 as timestamp) AND st > ${WAN_STATE.noData} LIMIT 1`,
+  params: [
+    ...stateParams({
+      startTime: new Date(nowMs - 1),
+      endTime: new Date(nowMs),
+      nowMs,
+      intervalMs,
+    }),
+    ...hosts,
+  ],
 });
 
 /**
@@ -247,57 +217,88 @@ export const buildQueryLatestPingTimestamp = (table: string): SqlQuerySpec => ({
   params: [],
 });
 
+/**
+ * Time per state in each ribbon bucket. The state stretches are cut at every
+ * bucket edge (`$7` is the first bucket's start and `$8` the bucket width, both
+ * microseconds), so each bucket gets exactly the time that fell in it. The
+ * marker count is inlined because `long_sequence` rejects a bind variable.
+ * `ALIGN TO CALENDAR` pins bucket boundaries to epoch-floored intervals,
+ * matching the bucket grid that coverage is counted over; a bucket with no
+ * observed time is absent.
+ */
 export const buildQueryConnectivityStatus = (
-  params: QueryMetricsParams,
+  params: QueryConnectivityParams,
   table: string
 ): SqlQuerySpec => {
-  const granularity = params.granularity ?? DEFAULT_GRANULARITY;
+  const widthMs = granularityToMs(params.granularity);
+  const firstBucketMs = alignTimestampToMs(
+    params.startTime.getTime(),
+    params.granularity
+  );
+  const lastMs = Math.min(params.endTime.getTime(), params.nowMs);
+  const markers = Math.max(1, Math.ceil((lastMs - firstBucketMs) / widthMs));
 
-  // Connectivity classification is quorum-based across a ping cycle (all
-  // hosts pinged together — see `pingResultToMetric`'s shared `timestamp`),
-  // not per host-row: the inner query reduces each cycle to one of three
-  // states via `CYCLE_STATUS_CASE`, then the outer query buckets cycles by
-  // granularity. `up_count + degraded_count + down_count` always equals
-  // `total_count` for every output bucket.
-  //
-  // `ALIGN TO CALENDAR` pins bucket boundaries to epoch-floored intervals,
-  // matching `expectedBucketCount`'s alignment so the coverage ratio compares
-  // two counts of the same grid. Buckets with no ping cycles are absent from
-  // the result rather than zero-filled, which is what makes a missing bucket
-  // readable as "the collector wasn't running".
-  const query = `
-        SELECT
-          bucket_ts as timestamp,
-          SUM(CASE WHEN cycle_status = 'down' THEN 1 ELSE 0 END) as down_count,
-          SUM(CASE WHEN cycle_status = 'degraded' THEN 1 ELSE 0 END) as degraded_count,
-          SUM(CASE WHEN cycle_status = 'up' THEN 1 ELSE 0 END) as up_count,
-          count() as total_count
-        FROM (
-          (SELECT
-            timestamp as bucket_ts,
-            ${CYCLE_STATUS_CASE} as cycle_status
-          FROM ${table}
-          WHERE timestamp >= $1
-            AND timestamp <= $2
-            AND source = 'ping'
-          SAMPLE BY 1s
-          )
-        )
-        SAMPLE BY ${granularity} ALIGN TO CALENDAR
-        ORDER BY timestamp ASC
-      `;
-
-  return { query, params: windowParams(params) };
+  return {
+    query: `WITH ${wanStatesSql(table, 9, params.hosts.length)},
+pts AS (SELECT pt, st, e FROM (
+     SELECT CASE WHEN s < cast($1 as timestamp) THEN cast($1 as timestamp) ELSE s END pt, st, e FROM states
+       WHERE e > cast($1 as timestamp) AND s < cast($2 as timestamp)
+     UNION ALL
+     SELECT cast($7 as timestamp) + (x - 1) * $8 pt, cast(NULL as int) st, cast(NULL as timestamp) e FROM long_sequence(${markers}))
+   WHERE pt >= cast($1 as timestamp) AND pt < cast($2 as timestamp) ORDER BY pt),
+grp AS (SELECT pt, st, e, sum(CASE WHEN st IS NULL THEN 0 ELSE 1 END) OVER (ORDER BY pt ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) g FROM pts),
+carried AS (SELECT pt, first_value(st) OVER (PARTITION BY g ORDER BY pt) st, first_value(e) OVER (PARTITION BY g ORDER BY pt) e,
+     lead(pt) OVER (ORDER BY pt) nx FROM grp),
+pieces AS (SELECT pt, st, datediff('u', pt, CASE WHEN nx IS NULL OR nx > e THEN (CASE WHEN e > cast($2 as timestamp) THEN cast($2 as timestamp) ELSE e END) ELSE nx END) dur
+   FROM carried WHERE st > ${WAN_STATE.noData} AND e > pt)
+SELECT pt bucket,
+  sum(CASE WHEN st = ${WAN_STATE.up} THEN dur ELSE 0 END) up_micros,
+  sum(CASE WHEN st = ${WAN_STATE.degraded} THEN dur ELSE 0 END) degraded_micros,
+  sum(CASE WHEN st = ${WAN_STATE.down} THEN dur ELSE 0 END) down_micros
+FROM ((SELECT pt, st, dur FROM pieces WHERE dur > 0 ORDER BY pt) timestamp(pt))
+SAMPLE BY ${params.granularity} ALIGN TO CALENDAR`,
+    params: [
+      ...stateParams(params),
+      firstBucketMs * 1000,
+      widthMs * 1000,
+      ...params.hosts,
+    ],
+  };
 };
 
-/** Precision for the cycle period, where a sub-millisecond error matters. */
-const MAX_PERCENTILE_PRECISION = 5;
+/**
+ * Uptime inputs for several trailing windows that share an end, from one state
+ * pipeline over the widest. One row: `up_<i>` and `observed_<i>` microseconds
+ * for window `i`, with the window starts bound from `$7`.
+ */
+export const buildQueryWindowUptime = (
+  params: QueryWindowUptimeParams,
+  table: string
+): SqlQuerySpec => {
+  const windows = params.windowStartTimes;
+  const widest = new Date(Math.min(...windows.map((start) => start.getTime())));
+  const columns = windows.map((_, i) => {
+    const w = `$${7 + i}`;
+    const clipped = `datediff('u', CASE WHEN s < cast(${w} as timestamp) THEN cast(${w} as timestamp) ELSE s END, CASE WHEN e > cast($2 as timestamp) THEN cast($2 as timestamp) ELSE e END)`;
+    return `sum(CASE WHEN st = ${WAN_STATE.up} AND e > cast(${w} as timestamp) THEN ${clipped} ELSE 0 END) ${windowColumn("up", i)}, sum(CASE WHEN st > ${WAN_STATE.noData} AND e > cast(${w} as timestamp) THEN ${clipped} ELSE 0 END) ${windowColumn("observed", i)}`;
+  });
+
+  return {
+    query: `WITH ${wanStatesSql(table, 7 + windows.length, params.hosts.length)}
+        SELECT ${columns.join(",\n  ")}
+        FROM states WHERE st > ${WAN_STATE.noData} AND s < cast($2 as timestamp)`,
+    params: [
+      ...stateParams({ ...params, startTime: widest }),
+      ...windows.map((start) => start.getTime() * 1000),
+      ...params.hosts,
+    ],
+  };
+};
 
 /**
- * Latency percentiles, mean loss and mean jitter over every ping cycle in the
- * window. Each cycle is first collapsed to one row (the mean across its hosts)
- * so a cycle with more hosts doesn't weigh more. Always yields exactly one row,
- * with nulls when the window holds no cycles.
+ * Latency percentiles, mean loss and mean jitter over every ping row in the
+ * window. Always yields exactly one row, with nulls when the window holds no
+ * pings.
  */
 export const buildQuerySummaryStats = (
   params: QueryWindowParams,
@@ -309,28 +310,19 @@ export const buildQuerySummaryStats = (
           approx_percentile(latency, 0.95, ${PERCENTILE_PRECISION}) as latency_p95,
           avg(packet_loss) as avg_packet_loss,
           avg(jitter) as avg_jitter
-        FROM (
-          (SELECT
-            timestamp,
-            avg(latency) as latency,
-            avg(packet_loss) as packet_loss,
-            avg(jitter) as jitter
-          FROM ${table}
-          WHERE timestamp >= $1
-            AND timestamp <= $2
-            AND source = 'ping'
-          SAMPLE BY 1s
-          )
-        )
+        FROM ${table}
+        WHERE timestamp >= $1
+          AND timestamp <= $2
+          AND source = 'ping'
       `,
   params: windowParams(params),
 });
 
 /**
  * Per-host latency percentiles, loss, jitter and answered share, plus the
- * host's newest sample classified the way a cycle is: down, lossy (degraded),
- * or up. A host's answered share counts every non-down sample, so lossy but
- * answered samples count as answered.
+ * status of the host's newest ping (down, degraded or up), using the same
+ * thresholds as a state. A host's answered share counts every non-down ping,
+ * so lossy but answered pings count as answered.
  */
 export const buildQueryHostStats = (
   params: QueryWindowParams,
@@ -359,167 +351,45 @@ export const buildQueryHostStats = (
   params: windowParams(params),
 });
 
-const outageParams = (
-  params: QueryOutageParams
-): readonly (string | number)[] => [
-  ...windowParams(params),
-  Math.round(params.mergeGapMs * 1000),
-];
-
 /**
- * Every non-up ping cycle in the window, numbered with the outage it belongs
- * to ($3 is the merge gap in microseconds). A non-up cycle starts a new outage
- * when it is the first cycle of the window, follows an up cycle, or sits more
- * than the merge gap after the previous cycle; `run_id` is the running count
- * of those starts. A cycle followed by an up cycle within the merge gap
- * carries that up cycle's time as `recovered_at`. Up cycles are dropped only
- * after `lag` and `lead` have read them.
- */
-const numberedOutageCycles = (table: string): string => `
-          SELECT
-            timestamp,
-            is_down,
-            max_packet_loss,
-            peak_latency,
-            recovered_at,
-            sum(starts_run) OVER (ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as run_id
-          FROM (
-            SELECT
-              timestamp,
-              is_down,
-              max_packet_loss,
-              peak_latency,
-              CASE
-                WHEN previous_non_up IS NULL OR previous_non_up = 0
-                  OR datediff('u', previous_timestamp, timestamp) > $3 THEN 1
-                ELSE 0
-              END as starts_run,
-              CASE
-                WHEN next_non_up = 0
-                  AND datediff('u', timestamp, next_timestamp) <= $3 THEN next_timestamp
-              END as recovered_at
-            FROM (
-              SELECT
-                timestamp,
-                non_up,
-                is_down,
-                max_packet_loss,
-                peak_latency,
-                lag(non_up) OVER (ORDER BY timestamp) as previous_non_up,
-                lag(timestamp) OVER (ORDER BY timestamp) as previous_timestamp,
-                lead(non_up) OVER (ORDER BY timestamp) as next_non_up,
-                lead(timestamp) OVER (ORDER BY timestamp) as next_timestamp
-              FROM (
-                SELECT
-                  timestamp,
-                  CASE WHEN cycle_status = 'up' THEN 0 ELSE 1 END as non_up,
-                  CASE WHEN cycle_status = 'down' THEN 1 ELSE 0 END as is_down,
-                  max_packet_loss,
-                  peak_latency
-                FROM (
-                  SELECT
-                    timestamp,
-                    ${CYCLE_STATUS_CASE} as cycle_status,
-                    MAX(packet_loss) as max_packet_loss,
-                    MAX(latency) as peak_latency
-                  FROM ${table}
-                  WHERE timestamp >= $1
-                    AND timestamp <= $2
-                    AND source = 'ping'
-                  SAMPLE BY 1s
-                )
-              )
-            )
-            WHERE non_up = 1
-          )`;
-
-/**
- * The outage runs in the window, oldest first: one row per maximal run of
- * non-up ping cycles, with its first and last cycle, the up cycle that
- * followed it within the merge gap (null when none did), a flag for whether
- * any cycle was down, and its worst loss and highest latency. The rows scale
- * with the number of outages rather than the number of cycles inside them.
- * The hosts behind each run come from `buildQueryOutageHosts`.
+ * One row per (outage run, host) for the runs of degraded or down time that
+ * overlap the window, oldest run first. A run is a maximal stretch of
+ * consecutive degraded or down states; its start and end are the state edges,
+ * unclipped. A host's ping qualifies when it stands for at least half a
+ * spacing within the run, or for all of a run shorter than half a spacing. `affected` is set
+ * when a qualifying ping was down or lossy, and the loss and latency are the
+ * worst over the host's qualifying pings. A host whose pings do not qualify
+ * still gets a row, with `affected` unset and no loss or latency, so a run no
+ * ping qualifies for is still returned. Each ping row is paired with the last
+ * run that starts before the ping's hold ends, through an `ASOF JOIN` keyed
+ * one microsecond before the hold's end.
  */
 export const buildQueryOutageRuns = (
-  params: QueryOutageParams,
+  params: QueryStateParams,
   table: string
 ): SqlQuerySpec => ({
-  query: `
-        SELECT
-          run_id,
-          min(timestamp) as start_time,
-          max(timestamp) as last_time,
-          max(recovered_at) as recovered_time,
-          max(is_down) as had_down,
-          max(max_packet_loss) as max_packet_loss,
-          max(peak_latency) as peak_latency
-        FROM (${numberedOutageCycles(table)}
-        )
-        GROUP BY run_id
-        ORDER BY run_id
-      `,
-  params: outageParams(params),
-});
-
-/**
- * One row per (outage run, host) for every host that was down or at or over
- * the loss floor in a cycle of that run, numbered as in
- * `buildQueryOutageRuns`. Kept apart from the runs query because QuestDB caps a
- * whole query's `string_agg` output at 1 MB, which a long outage on a host that
- * never answers would exceed.
- */
-export const buildQueryOutageHosts = (
-  params: QueryOutageParams,
-  table: string
-): SqlQuerySpec => ({
-  query: `
-        SELECT DISTINCT runs.run_id, affected.host
-        FROM (
-          SELECT timestamp, host, count() as sample_count
-          FROM ${table}
-          WHERE timestamp >= $1
-            AND timestamp <= $2
-            AND source = 'ping'
-            AND (
-              connectivity_status = 'down'
-              OR packet_loss >= ${PACKET_LOSS_THRESHOLDS.degradedFloor}
-            )
-          SAMPLE BY 1s
-        ) affected
-        JOIN (${numberedOutageCycles(table)}
-        ) runs ON affected.timestamp = runs.timestamp
-      `,
-  params: outageParams(params),
-});
-
-/**
- * Median gap, in microseconds, between consecutive ping cycles in the window.
- * Cycles land one configured interval plus the ping train's own duration
- * apart, so the real period is measured rather than assumed. A cycle is the
- * set of rows sharing one timestamp, so distinct timestamps are the cycles.
- * One row; null when the window holds fewer than two cycles.
- */
-export const buildQueryCyclePeriod = (
-  params: QueryWindowParams,
-  table: string
-): SqlQuerySpec => ({
-  query: `
-        SELECT approx_percentile(gap, 0.5, ${MAX_PERCENTILE_PRECISION}) as period_micros
-        FROM (
-          SELECT datediff('u', previous_timestamp, timestamp) as gap
-          FROM (
-            SELECT timestamp, lag(timestamp) OVER (ORDER BY timestamp) as previous_timestamp
-            FROM (
-              SELECT DISTINCT timestamp
-              FROM ${table}
-              WHERE timestamp >= $1
-                AND timestamp <= $2
-                AND source = 'ping'
-            )
-          )
-        )
-        WHERE gap IS NOT NULL
-      `,
-  params: windowParams(params),
+  query: `WITH ${wanStatesSql(table, 7, params.hosts.length)},
+flagged AS (SELECT s, e, st, p, nonup, CASE WHEN nonup = 1 AND (prev_nonup IS NULL OR prev_nonup = 0) THEN 1 ELSE 0 END starts
+   FROM (SELECT s, e, st, p, nonup, lag(nonup) OVER (ORDER BY s) prev_nonup
+         FROM (SELECT s, e, st, p, CASE WHEN st >= ${WAN_STATE.degraded} THEN 1 ELSE 0 END nonup FROM states))),
+run_numbered AS (SELECT s, e, st, p, nonup, sum(starts) OVER (ORDER BY s ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) run_id FROM flagged),
+runs AS (SELECT run_id, min(s) start_time, max(e) end_time, max(CASE WHEN st = ${WAN_STATE.down} THEN 1 ELSE 0 END) had_down, max(p) p
+   FROM run_numbered WHERE nonup = 1 AND e > cast($1 as timestamp) AND s < cast($2 as timestamp) GROUP BY run_id ORDER BY start_time),
+hit AS (SELECT r.run_id run_id, r.start_time start_time, r.end_time end_time, r.had_down had_down, r.p rp, x.ts ts, x.he he, x.host host, x.b b, x.packet_loss packet_loss, x.latency latency
+   FROM ((SELECT dateadd('u', -1, he) hold_key, ts, he, host, b, packet_loss, latency FROM holds ORDER BY hold_key) timestamp(hold_key)) x
+   ASOF JOIN ((SELECT run_id, start_time, end_time, had_down, p FROM runs ORDER BY start_time) timestamp(start_time)) r),
+held AS (SELECT run_id, start_time, end_time, had_down, rp, host, b, packet_loss, latency,
+     datediff('u', CASE WHEN ts > start_time THEN ts ELSE start_time END, CASE WHEN he < end_time THEN he ELSE end_time END) overlap,
+     datediff('u', start_time, end_time) span
+   FROM hit WHERE run_id IS NOT NULL AND ts < end_time),
+scored AS (SELECT run_id, start_time, end_time, had_down, host, b, packet_loss, latency,
+     CASE WHEN overlap >= rp * ${RESOLUTION_FLOOR_HALF_PERIODS} / 2 OR overlap = span THEN 1 ELSE 0 END qualifies
+   FROM held)
+SELECT run_id, first(start_time) start_time, first(end_time) end_time, first(had_down) had_down, host,
+  max(CASE WHEN qualifies = 1 THEN b ELSE 0 END) affected,
+  max(CASE WHEN qualifies = 1 THEN packet_loss END) max_packet_loss,
+  max(CASE WHEN qualifies = 1 THEN latency END) peak_latency
+FROM scored
+GROUP BY run_id, host ORDER BY run_id, host`,
+  params: [...stateParams(params), ...params.hosts],
 });

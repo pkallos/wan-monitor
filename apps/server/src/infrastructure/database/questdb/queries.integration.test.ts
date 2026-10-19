@@ -1,19 +1,20 @@
 import type { NetworkMetric } from "@shared/metrics";
 import type { Metric } from "@wan-monitor/shared";
-import { Effect } from "effect";
+import { Array as Arr, Effect, Schedule } from "effect";
 import { DatabaseError, Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { DatabaseQueryError } from "@/infrastructure/database/questdb/errors";
-import { SchemaMigrator } from "@/infrastructure/database/questdb/migrations/service";
+import { MIGRATIONS } from "@/infrastructure/database/questdb/migrations/registry";
 import { pgConnectionSettings } from "@/infrastructure/database/questdb/pgwire";
-import type { QuestDB } from "@/infrastructure/database/questdb/service";
+import { QuestDB } from "@/infrastructure/database/questdb/service";
+import { createLegacyTable } from "@/infrastructure/database/questdb/test-utils/legacy-table";
 import {
   createSeedDataset,
   seedDatabase,
 } from "@/infrastructure/database/questdb/test-utils/seed";
 import {
-  createMigratorTestLayer,
   createTestLayer,
+  dropTableFamily,
   isQuestDBAvailable,
   queryQuestDB,
   setupIntegrationTest,
@@ -337,17 +338,17 @@ describe("Metrics Aggregation Integration Tests", () => {
     );
 
     it.skipIf(skipTests)(
-      "should take bucket percentiles over per-cycle means, as the summary does",
+      "should take bucket percentiles over every ping row, as the summary does",
       async () => {
         const program = Effect.gen(function* () {
           const db = yield* setupIntegrationTest();
 
           const startTime = new Date("2026-01-01T00:00:00.000Z");
-          const cycleCount = 20;
+          const pingCount = 20;
           const readings: NetworkMetric[] = Array.from(
-            { length: cycleCount },
-            (_, cycle) => {
-              const timestamp = new Date(startTime.getTime() + cycle * 10_000);
+            { length: pingCount },
+            (_, ping) => {
+              const timestamp = new Date(startTime.getTime() + ping * 10_000);
               return [
                 { host: "8.8.8.8", latency: 10 },
                 { host: "1.1.1.1", latency: 90 },
@@ -364,20 +365,30 @@ describe("Metrics Aggregation Integration Tests", () => {
           ).flat();
           yield* seedDatabase(db, readings);
 
-          const buckets = yield* db.queryMetrics({
+          const window = {
             startTime,
-            endTime: new Date(startTime.getTime() + cycleCount * 10_000),
+            endTime: new Date(startTime.getTime() + pingCount * 10_000),
+          };
+          const buckets = yield* db.queryMetrics({
+            ...window,
             granularity: "15m",
             source: "ping",
           });
+          const summary = yield* db.querySummaryStats(window);
 
-          // Every cycle averages to 50 ms. Over the raw rows the median would
-          // land on 10 or 90 ms instead.
+          // Half the rows read 10 ms and half read 90 ms, so the median lands
+          // on one of them rather than on their 50 ms mean, and the 95th on 90.
           expect(buckets.length).toBeGreaterThan(0);
           for (const bucket of buckets) {
-            expect(Math.abs((bucket.latency_p50 ?? 0) - 50)).toBeLessThan(1);
-            expect(Math.abs((bucket.latency_p95 ?? 0) - 50)).toBeLessThan(1);
+            expect(
+              [10, 90].some(
+                (reading) => Math.abs((bucket.latency_p50 ?? 0) - reading) < 1
+              )
+            ).toBe(true);
+            expect(Math.abs((bucket.latency_p95 ?? 0) - 90)).toBeLessThan(1);
           }
+          expect(summary.latency_p50).toBe(buckets[0]?.latency_p50);
+          expect(summary.latency_p95).toBe(buckets[0]?.latency_p95);
 
           yield* teardownIntegrationTest(db);
         });
@@ -856,36 +867,74 @@ describe("Metrics Aggregation Integration Tests", () => {
         };
       });
 
-    const migrateTestTable = Effect.gen(function* () {
-      const migrator = yield* SchemaMigrator;
-      yield* migrator.migrate({ canRewriteTables: true });
-    }).pipe(Effect.provide(createMigratorTestLayer(TEST_TABLE)));
+    const untilTheSchemaIsUpToDate = Schedule.spaced("200 millis").pipe(
+      Schedule.upTo({ duration: "30 seconds" })
+    );
+    const newestVersion = Arr.lastNonEmpty(MIGRATIONS).version;
 
     it.skipIf(skipTests)(
       "read like tests that stored no reading, raw and averaged",
       async () => {
-        const program = Effect.gen(function* () {
+        // A table the migrations have never seen: ILP creates it, and the
+        // service layer migrates it on connect, running v3 over the zeros.
+        const legacyName = `${TEST_TABLE}_zero_${Date.now().toString(36)}`;
+        const legacyRow = (
+          row: typeof real | typeof asOlderVersionsStoredIt
+        ) => ({
+          timestampMs: row.timestamp.getTime(),
+          source: row.source,
+          latency: row.latency,
+          downloadBandwidth: row.downloadBandwidth,
+          uploadBandwidth: row.uploadBandwidth,
+        });
+        await Effect.runPromise(dropTableFamily(legacyName));
+        await Effect.runPromise(
+          createLegacyTable(legacyName, [
+            legacyRow(real),
+            legacyRow(asOlderVersionsStoredIt),
+          ])
+        );
+
+        const expectedProgram = Effect.gen(function* () {
           const db = yield* setupIntegrationTest();
           yield* seedDatabase(db, [real, asNowStored]);
           const expected = yield* readBack(db);
           yield* teardownIntegrationTest(db);
-
-          yield* seedDatabase(db, [real, asOlderVersionsStoredIt]);
-          // The service layer already migrated the empty table, so the ledger
-          // is dropped to run the migrations against the seeded rows.
-          yield* Effect.promise(() =>
-            queryQuestDB(`DROP TABLE IF EXISTS ${TEST_TABLE}_migrations`)
+          return expected;
+        });
+        // Its own layer, not nested inside the one above: a nested layer
+        // reuses the outer layer's connection, which is bound to TEST_TABLE.
+        const actualProgram = Effect.gen(function* () {
+          const migrated = yield* QuestDB;
+          yield* migrated.health().pipe(Effect.retry(untilTheSchemaIsUpToDate));
+          yield* Effect.tryPromise(() =>
+            queryQuestDB(`SELECT max(version) FROM ${legacyName}_migrations`)
+          ).pipe(
+            Effect.flatMap((rows) =>
+              rows[0]?.[0] === newestVersion
+                ? Effect.void
+                : Effect.fail(new Error("migrations still running"))
+            ),
+            Effect.retry(untilTheSchemaIsUpToDate)
           );
-          yield* migrateTestTable;
-          const actual = yield* readBack(db);
-          yield* teardownIntegrationTest(db);
+          return yield* readBack(migrated);
+        });
+
+        try {
+          const expected = await Effect.runPromise(
+            Effect.provide(expectedProgram, testLayer)
+          );
+          const actual = await Effect.runPromise(
+            Effect.provide(actualProgram, createTestLayer(legacyName))
+          );
 
           expect(actual).toEqual(expected);
           expect(actual.bucketedViaSpeedtests).toEqual([[250, 20]]);
-        });
-
-        await Effect.runPromise(Effect.provide(program, testLayer));
-      }
+        } finally {
+          await Effect.runPromise(dropTableFamily(legacyName));
+        }
+      },
+      60_000
     );
   });
 
@@ -1013,8 +1062,14 @@ describe("Metrics Aggregation Integration Tests", () => {
         connectivityStatus: statuses[i],
       }));
 
+    const live = (nowOffsetMs: number) => ({
+      nowMs: baseMs + nowOffsetMs,
+      intervalMs: 30_000,
+      hosts: ["8.8.8.8", "1.1.1.1"],
+    });
+
     it.skipIf(skipTests)(
-      "returns the newest ping cycle in the window, classified by quorum",
+      "reads the state every standing ping votes at now, not an earlier one",
       async () => {
         const program = Effect.gen(function* () {
           const db = yield* setupIntegrationTest();
@@ -1025,13 +1080,8 @@ describe("Metrics Aggregation Integration Tests", () => {
             ...cycle(60_000, ["up", "up"]),
           ]);
 
-          const row = yield* db.queryLiveConnectivity(baseTime.toISOString());
-
-          expect(row).not.toBeNull();
-          expect(row?.cycle_status).toBe("up");
-          expect(new Date(row?.timestamp as string).getTime()).toBe(
-            baseMs + 60_000
-          );
+          expect(yield* db.queryLiveConnectivity(live(70_000))).toBe("up");
+          expect(yield* db.queryLiveConnectivity(live(10_000))).toBe("down");
 
           yield* teardownIntegrationTest(db);
         });
@@ -1041,16 +1091,16 @@ describe("Metrics Aggregation Integration Tests", () => {
     );
 
     it.skipIf(skipTests)(
-      "classifies the newest cycle as degraded when one host fails",
+      "reads the state as degraded when one host fails",
       async () => {
         const program = Effect.gen(function* () {
           const db = yield* setupIntegrationTest();
 
           yield* seedDatabase(db, cycle(0, ["up", "down"]));
 
-          const row = yield* db.queryLiveConnectivity(baseTime.toISOString());
-
-          expect(row?.cycle_status).toBe("degraded");
+          expect(yield* db.queryLiveConnectivity(live(10_000))).toBe(
+            "degraded"
+          );
 
           yield* teardownIntegrationTest(db);
         });
@@ -1060,18 +1110,14 @@ describe("Metrics Aggregation Integration Tests", () => {
     );
 
     it.skipIf(skipTests)(
-      "returns null when every ping predates the window",
+      "returns null once every standing ping has lapsed",
       async () => {
         const program = Effect.gen(function* () {
           const db = yield* setupIntegrationTest();
 
           yield* seedDatabase(db, cycle(0, ["up", "up"]));
 
-          const row = yield* db.queryLiveConnectivity(
-            new Date(baseMs + 60_000).toISOString()
-          );
-
-          expect(row).toBeNull();
+          expect(yield* db.queryLiveConnectivity(live(300_000))).toBeNull();
 
           yield* teardownIntegrationTest(db);
         });
@@ -1079,6 +1125,18 @@ describe("Metrics Aggregation Integration Tests", () => {
         await Effect.runPromise(Effect.provide(program, testLayer));
       }
     );
+
+    it.skipIf(skipTests)("returns null when the table is empty", async () => {
+      const program = Effect.gen(function* () {
+        const db = yield* setupIntegrationTest();
+
+        expect(yield* db.queryLiveConnectivity(live(0))).toBeNull();
+
+        yield* teardownIntegrationTest(db);
+      });
+
+      await Effect.runPromise(Effect.provide(program, testLayer));
+    });
 
     it.skipIf(skipTests)(
       "reports the newest ping of any age as the fallback timestamp",

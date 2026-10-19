@@ -1,4 +1,7 @@
-import { NETWORK_METRICS_COLUMNS } from "@wan-monitor/shared/db-schema";
+import {
+  type ColumnDefinition,
+  NETWORK_METRICS_COLUMNS,
+} from "@wan-monitor/shared/db-schema";
 import { Effect } from "effect";
 import {
   type MigrationContext,
@@ -6,6 +9,7 @@ import {
   type MigrationRow,
 } from "@/infrastructure/database/questdb/migrations/migration";
 import type { LiveColumn } from "@/infrastructure/database/questdb/migrations/schema";
+import { NETWORK_METRICS_V2_COLUMNS } from "@/infrastructure/database/questdb/migrations/v2-conform-network-metrics";
 
 export interface FakeWalStatus {
   readonly suspended: boolean;
@@ -18,11 +22,16 @@ export interface FakeDigest {
   readonly groups: readonly MigrationRow[];
 }
 
-export const canonicalLiveColumns: readonly LiveColumn[] =
-  NETWORK_METRICS_COLUMNS.map((column) => ({
+const asLive = (columns: readonly ColumnDefinition[]): readonly LiveColumn[] =>
+  columns.map((column) => ({
     ...column,
     designated: column.name === "timestamp",
   }));
+
+export const canonicalLiveColumns = asLive(NETWORK_METRICS_COLUMNS);
+
+/** A table as it stands once v2 has run, before any later migration added a column. */
+export const v2LiveColumns = asLive(NETWORK_METRICS_V2_COLUMNS);
 
 export const sameDigest: FakeDigest = {
   totals: { row_count: "3", nn_latency: "3" },
@@ -172,3 +181,7 @@ export const terminal = (message: string): MigrationError =>
 
 export const transient = (message: string): MigrationError =>
   new MigrationError({ step: "test", message, kind: "transient" });
+
+/** The statements a remedy message prints between literal backticks, in order. */
+export const backticked = (message: string): readonly string[] =>
+  [...message.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? "");

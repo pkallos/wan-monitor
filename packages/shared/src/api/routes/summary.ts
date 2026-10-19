@@ -17,15 +17,11 @@ export const GetSummaryQuery = Schema.Struct({
 });
 
 const RangeSummarySchema = Schema.Struct({
-  /** Percentiles of per-cycle latency (mean across hosts); null with no data. */
+  /** Approximate percentiles of latency over every ping in the range; null with no data. */
   latencyP50: NullableNumber,
   latencyP95: NullableNumber,
   avgPacketLoss: NullableNumber,
   avgJitter: NullableNumber,
-  /** Same definitions as `/connectivity-status`'s meta; null with no ping cycles. */
-  uptimePercentage: NullableNumber,
-  availabilityPercentage: NullableNumber,
-  coveragePercentage: Schema.Number,
 });
 
 const UptimeWindowSchema = Schema.Struct({
@@ -39,12 +35,11 @@ const HostSummarySchema = Schema.Struct({
   avgPacketLoss: NullableNumber,
   avgJitter: NullableNumber,
   /**
-   * Share of this host's ping samples that were answered, as a percentage. One
-   * sample is written per host per cycle, and a lossy but answered sample
-   * counts as answered.
+   * Share of this host's pings that were answered, as a percentage. A lossy
+   * but answered ping counts as answered.
    */
   availabilityPercentage: NullableNumber,
-  /** The host's newest sample in the range: down, lossy (degraded), or up. */
+  /** The host's newest ping in the range: down, lossy (degraded), or up. */
   lastStatus: ConnectivityStatusSchema,
 });
 

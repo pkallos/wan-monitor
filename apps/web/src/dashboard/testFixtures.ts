@@ -21,9 +21,6 @@ export const rangeSummary = (
   latencyP95: 31.8,
   avgPacketLoss: 0.5,
   avgJitter: 2.1,
-  uptimePercentage: 99.4,
-  availabilityPercentage: 99.8,
-  coveragePercentage: 100,
   ...overrides,
 });
 

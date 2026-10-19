@@ -331,38 +331,38 @@ describe("cellBody", () => {
 
   test("says a fully up bucket was up", () => {
     expect(cellBody(cell("up", { up: 100, degraded: 0, down: 0 }))).toBe(
-      "Up: 100% of checks up."
+      "Up: 100% of the time up."
     );
   });
 
   test("names the status and the share of each state present", () => {
     expect(cellBody(cell("down", { up: 97.5, degraded: 0, down: 2.5 }))).toBe(
-      "Down: 97.5% of checks up, 2.5% down."
+      "Down: 97.5% of the time up, 2.5% down."
     );
     expect(cellBody(cell("degraded", { up: 70, degraded: 30, down: 0 }))).toBe(
-      "Degraded: 70% of checks up, 30% degraded."
+      "Degraded: 70% of the time up, 30% degraded."
     );
   });
 
   test("leads with the first state present even when it is not up", () => {
     expect(cellBody(cell("down", { up: 0, degraded: 40, down: 60 }))).toBe(
-      "Down: 40% of checks degraded, 60% down."
+      "Down: 40% of the time degraded, 60% down."
     );
     expect(cellBody(cell("down", { up: 0, degraded: 0, down: 100 }))).toBe(
-      "Down: 100% of checks down."
+      "Down: 100% of the time down."
     );
   });
 
   test("lists all three shares when all are present", () => {
     expect(cellBody(cell("down", { up: 50, degraded: 25, down: 25 }))).toBe(
-      "Down: 50% of checks up, 25% degraded, 25% down."
+      "Down: 50% of the time up, 25% degraded, 25% down."
     );
   });
 
   test("rounds a share to one decimal and drops a trailing zero", () => {
     expect(
       cellBody(cell("degraded", { up: 66.666, degraded: 33.334, down: 0 }))
-    ).toBe("Degraded: 66.7% of checks up, 33.3% degraded.");
+    ).toBe("Degraded: 66.7% of the time up, 33.3% degraded.");
   });
 
   test("says only the status, as a sentence, for a bucket with no readings", () => {

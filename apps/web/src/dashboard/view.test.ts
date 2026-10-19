@@ -85,7 +85,6 @@ import {
   outageFixture,
   outagesData,
   outagesResponse,
-  rangeSummary,
   summaryData,
   summaryResponse,
   withTimeZone,
@@ -270,6 +269,7 @@ describe("dashboard view", () => {
             maybeUptimePercentage: Option.none(),
             maybeAvailabilityPercentage: Option.none(),
             coveragePercentage: 0,
+            observedSeconds: 0,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m" as const,
@@ -355,6 +355,7 @@ describe("dashboard view", () => {
             maybeUptimePercentage: Option.some(99.6),
             maybeAvailabilityPercentage: Option.some(99.9),
             coveragePercentage: 100,
+            observedSeconds: 86_400,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m" as const,
@@ -611,10 +612,10 @@ describe("dashboard view", () => {
       );
     });
 
-    test("allows the newest cycle to be as late as two of the configured ping intervals", () => {
-      const endedNineMinutesAgo = outageFixture({
+    test("allows the newest ping to be as late as 2.5 of the configured ping intervals", () => {
+      const endedElevenMinutesAgo = outageFixture({
         start: "2026-07-28T11:30:00.000Z",
-        end: "2026-07-28T11:51:00.000Z",
+        end: "2026-07-28T11:49:00.000Z",
         status: "down",
       });
       const slowMonitor = PingHostsAsyncData.Success({
@@ -624,7 +625,7 @@ describe("dashboard view", () => {
       Scene.scene(
         { update: boundUpdate, view },
         Scene.given({
-          ...withLog("down", [endedNineMinutesAgo]),
+          ...withLog("down", [endedElevenMinutesAgo]),
           pingHosts: slowMonitor,
         }),
         acknowledgeAllChartMounts(),
@@ -633,7 +634,7 @@ describe("dashboard view", () => {
       );
       Scene.scene(
         { update: boundUpdate, view },
-        Scene.given(withLog("down", [endedNineMinutesAgo])),
+        Scene.given(withLog("down", [endedElevenMinutesAgo])),
         acknowledgeAllChartMounts(),
         resolveAllChartSyncs(),
         Scene.expect(Scene.testId("open-incident")).not.toExist()
@@ -962,6 +963,7 @@ describe("dashboard view", () => {
           maybeUptimePercentage: Option.some(100),
           maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
+          observedSeconds: 86_400,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m" as const,
@@ -1006,6 +1008,7 @@ describe("dashboard view", () => {
           maybeUptimePercentage: Option.some(50),
           maybeAvailabilityPercentage: Option.some(50),
           coveragePercentage: 100,
+          observedSeconds: 86_400,
           startTimeMs,
           endTimeMs: startTimeMs + 10 * 60 * 1000,
           granularity: "5m" as const,
@@ -1053,6 +1056,7 @@ describe("dashboard view", () => {
           maybeUptimePercentage: Option.some(50),
           maybeAvailabilityPercentage: Option.some(50),
           coveragePercentage: 100,
+          observedSeconds: 86_400,
           startTimeMs,
           endTimeMs: startTimeMs + 10 * 60 * 1000,
           granularity: "5m" as const,
@@ -1417,6 +1421,7 @@ describe("dashboard view", () => {
           maybeUptimePercentage: Option.some(100),
           maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
+          observedSeconds: 86_400,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m" as const,
@@ -1483,6 +1488,7 @@ describe("dashboard view", () => {
             maybeUptimePercentage: Option.some(100),
             maybeAvailabilityPercentage: Option.some(100),
             coveragePercentage: 100,
+            observedSeconds: 86_400,
             startTimeMs: 0,
             endTimeMs: 3_600_000,
             granularity: "1m",
@@ -1842,6 +1848,7 @@ describe("dashboard view", () => {
           maybeUptimePercentage: Option.some(100),
           maybeAvailabilityPercentage: Option.some(100),
           coveragePercentage: 100,
+          observedSeconds: 86_400,
           startTimeMs: 0,
           endTimeMs: 3_600_000,
           granularity: "1m" as const,
@@ -1922,6 +1929,7 @@ describe("dashboard view", () => {
               maybeUptimePercentage: Option.some(100),
               maybeAvailabilityPercentage: Option.some(100),
               coveragePercentage: 100,
+              observedSeconds: 86_400,
               startTimeMs: 0,
               endTimeMs: 3_600_000,
               granularity: "1m",
@@ -1958,6 +1966,7 @@ describe("dashboard view: insights", () => {
         maybeUptimePercentage: Option.some(99.4),
         maybeAvailabilityPercentage: Option.some(99.8),
         coveragePercentage: 100,
+        observedSeconds: 86_400,
         startTimeMs: 0,
         endTimeMs: 3_600_000,
         granularity: "1m" as const,
@@ -2058,6 +2067,7 @@ describe("dashboard view: insights", () => {
                 maybeUptimePercentage: Option.some(99.4),
                 maybeAvailabilityPercentage: Option.some(99.8),
                 coveragePercentage: 100,
+                observedSeconds: 86_400,
                 startTimeMs: 0,
                 endTimeMs: 3_600_000,
                 granularity: "1h" as const,
@@ -2175,11 +2185,11 @@ describe("dashboard view: insights", () => {
         settled(),
         Scene.expect(Scene.testId("rail-loss")).toContainText("0.50%"),
         Scene.expect(Scene.testId("rail-loss")).toContainText(
-          "Averaged over all checks"
+          "Averaged over all pings"
         ),
         Scene.expect(Scene.testId("rail-jitter")).toContainText("2.1"),
         Scene.expect(Scene.testId("rail-jitter")).toContainText(
-          "Averaged over all checks"
+          "Averaged over all pings"
         )
       );
     });
@@ -2207,25 +2217,16 @@ describe("dashboard view: insights", () => {
       );
     });
 
-    test("shows a dash, not 0%, for a range that held no ping cycles", () => {
+    test("shows a dash, not 0%, when the connectivity window has no uptime", () => {
       show(
         settled({
-          summary: SummaryAsyncData.Success({
-            data: summaryData(
-              summaryResponse({
-                range: rangeSummary({
-                  uptimePercentage: null,
-                  availabilityPercentage: null,
-                }),
-              })
-            ),
-          }),
           connectivityStatus: ConnectivityStatusAsyncData.Success({
             data: {
               points: [],
               maybeUptimePercentage: Option.none(),
               maybeAvailabilityPercentage: Option.none(),
               coveragePercentage: 0,
+              observedSeconds: 0,
               startTimeMs: 0,
               endTimeMs: 3_600_000,
               granularity: "1m" as const,
@@ -2240,7 +2241,7 @@ describe("dashboard view: insights", () => {
       );
     });
 
-    test("falls back to the connectivity window's uptime when the summary fails", () => {
+    test("shows the connectivity window's uptime when the summary fails", () => {
       show(
         settled({ summary: SummaryAsyncData.Failure({ error: "db down" }) }),
         Scene.expect(Scene.testId("uptime-figure")).toHaveText("99.40%")
@@ -2274,6 +2275,7 @@ describe("dashboard view: insights", () => {
             maybeUptimePercentage: Option.some(99.4),
             maybeAvailabilityPercentage: Option.some(99.8),
             coveragePercentage: 100,
+            observedSeconds: 86_400,
             startTimeMs,
             endTimeMs: startTimeMs + hours * 3_600_000 - 1,
             granularity: "1h" as const,
@@ -2310,6 +2312,7 @@ describe("dashboard view: insights", () => {
             maybeUptimePercentage: Option.none(),
             maybeAvailabilityPercentage: Option.none(),
             coveragePercentage: 100,
+            observedSeconds: 86_400,
             startTimeMs: start,
             endTimeMs: start + count * intervalMs - 1,
             granularity,
@@ -2379,7 +2382,7 @@ describe("dashboard view: insights", () => {
             "Jul 26, 11 AM to 12 PM."
           ),
           Scene.expect(Scene.role("tooltip")).toContainText(
-            "Degraded: 70% of checks up, 30% degraded."
+            "Degraded: 70% of the time up, 30% degraded."
           )
         );
       });
@@ -2400,7 +2403,7 @@ describe("dashboard view: insights", () => {
         Scene.expect(Scene.role("tooltip")).toContainText("No data"),
         Scene.keydown(Scene.testId("availability-ribbon"), "ArrowRight"),
         Scene.expect(Scene.role("tooltip")).toContainText(
-          "Degraded: 70% of checks up, 30% degraded."
+          "Degraded: 70% of the time up, 30% degraded."
         ),
         Scene.keydown(Scene.testId("availability-ribbon"), "End"),
         Scene.expect(Scene.role("tooltip")).toContainText("No data"),
@@ -2465,7 +2468,7 @@ describe("dashboard view: insights", () => {
         Scene.keydown(Scene.testId("availability-ribbon"), "ArrowRight"),
         Scene.keydown(Scene.testId("availability-ribbon"), "ArrowRight"),
         Scene.expect(Scene.testId("ribbon-announcement")).toContainText(
-          "Degraded: 70% of checks up, 30% degraded."
+          "Degraded: 70% of the time up, 30% degraded."
         ),
         Scene.keydown(Scene.testId("availability-ribbon-touch"), "ArrowRight"),
         Scene.expect(Scene.testId("ribbon-announcement")).toContainText(
@@ -2481,7 +2484,7 @@ describe("dashboard view: insights", () => {
         ribbonModel(),
         Scene.click(Scene.testId("ribbon-day-cell-3")),
         Scene.expect(Scene.testId("ribbon-announcement")).toContainText(
-          "Down: 100% of checks down."
+          "Down: 100% of the time down."
         )
       );
     });
@@ -2514,6 +2517,35 @@ describe("dashboard view: insights", () => {
       );
     });
 
+    test("words the chip of an outage with no listed host without a hosts clause", () => {
+      show(
+        {
+          ...ribbonModel(),
+          outages: OutagesAsyncData.Success({
+            data: outagesData(
+              outagesResponse([
+                outageFixture({
+                  start: "2026-07-26T13:10:00.000Z",
+                  end: "2026-07-26T13:40:00.000Z",
+                  durationSeconds: 1800,
+                  affectedHosts: [],
+                  maxPacketLoss: 0,
+                }),
+              ])
+            ),
+          }),
+        },
+        Scene.expect(Scene.testId("incident-chip-A")).toHaveAttr(
+          "aria-label",
+          `Incident A: Down, ${formatDateTime("2026-07-26T13:10:00.000Z")} to ${formatDateTime("2026-07-26T13:40:00.000Z")}, 30m. Max loss 0%. Show on ribbon`
+        ),
+        Scene.expect(Scene.testId("incident-log")).toContainText("30m"),
+        Scene.expect(Scene.testId("incident-log")).not.toContainText(
+          "undefined"
+        )
+      );
+    });
+
     test("marks a running incident's chip as ongoing", () => {
       show(
         {
@@ -2537,6 +2569,7 @@ describe("dashboard view: insights", () => {
               maybeUptimePercentage: Option.some(99.4),
               maybeAvailabilityPercentage: Option.some(99.8),
               coveragePercentage: 100,
+              observedSeconds: 86_400,
               startTimeMs: Date.parse("2026-07-28T10:00:00.000Z"),
               endTimeMs: NOW_MS,
               granularity: "1h" as const,
@@ -2637,6 +2670,7 @@ describe("dashboard view: insights", () => {
             maybeUptimePercentage: Option.none(),
             maybeAvailabilityPercentage: Option.none(),
             coveragePercentage: 100,
+            observedSeconds: 86_400,
             startTimeMs: Date.parse("2026-07-28T10:00:00.000Z"),
             endTimeMs: NOW_MS + 1,
             granularity: "1h" as const,
@@ -2781,6 +2815,22 @@ describe("dashboard view: insights", () => {
   describe("data fetched for another range", () => {
     // Everything in `settled()` answers the 30 day default; the selection has
     // since moved to 24 hours and no new answer has landed.
+    const DAY_MS = 86_400_000;
+    const request = {
+      dateRange: Preset({ preset: "last24h" }),
+      maybeEarliestDataMs: Option.none<number>(),
+    };
+    const dayWindow = {
+      points: [],
+      maybeUptimePercentage: Option.some(99.4),
+      maybeAvailabilityPercentage: Option.some(99.8),
+      coveragePercentage: 50,
+      observedSeconds: DAY_MS / 2000,
+      startTimeMs: 0,
+      endTimeMs: DAY_MS,
+      granularity: "5m" as const,
+      request: DEFAULT_REQUEST,
+    };
     const onAnotherRange = (overrides: Record<string, unknown> = {}) =>
       settled({
         dateRange: Preset({ preset: "last24h" }),
@@ -2839,6 +2889,7 @@ describe("dashboard view: insights", () => {
               maybeUptimePercentage: Option.none(),
               maybeAvailabilityPercentage: Option.none(),
               coveragePercentage: 100,
+              observedSeconds: 86_400,
               startTimeMs: startMs,
               endTimeMs: startMs + 7 * 3_600_000 - 1,
               granularity: "1h" as const,
@@ -2856,22 +2907,6 @@ describe("dashboard view: insights", () => {
     });
 
     describe("the coverage note beside the uptime figure", () => {
-      const DAY_MS = 86_400_000;
-      const request = {
-        dateRange: Preset({ preset: "last24h" }),
-        maybeEarliestDataMs: Option.none<number>(),
-      };
-      const dayWindow = {
-        points: [],
-        maybeUptimePercentage: Option.some(99.4),
-        maybeAvailabilityPercentage: Option.some(99.8),
-        coveragePercentage: 50,
-        startTimeMs: 0,
-        endTimeMs: DAY_MS,
-        granularity: "5m" as const,
-        request: DEFAULT_REQUEST,
-      };
-
       test("reads nothing while the selected range's window is being fetched", () => {
         show(
           onAnotherRange({
@@ -2908,6 +2943,19 @@ describe("dashboard view: insights", () => {
         );
       });
 
+      test("reads the covered time from the observed seconds, not from the range's span", () => {
+        show(
+          onAnotherRange({
+            connectivityStatus: ConnectivityStatusAsyncData.Success({
+              data: { ...dayWindow, observedSeconds: 3 * 3600, request },
+            }),
+          }),
+          Scene.expect(Scene.testId("coverage-note")).toHaveText(
+            "The monitor has data for 3 hours of this period, and uptime covers only that time."
+          )
+        );
+      });
+
       test("says nothing when the monitor covered the whole period", () => {
         show(
           onAnotherRange({
@@ -2921,25 +2969,52 @@ describe("dashboard view: insights", () => {
     });
 
     test("a figure answering the selected range is shown", () => {
-      const request = {
-        dateRange: Preset({ preset: "last24h" }),
-        maybeEarliestDataMs: Option.none<number>(),
-      };
       show(
         onAnotherRange({
-          summary: SummaryAsyncData.Success({
-            data: summaryData(
-              summaryResponse({
-                range: rangeSummary({ uptimePercentage: 97.5 }),
-              }),
-              request
-            ),
+          connectivityStatus: ConnectivityStatusAsyncData.Success({
+            data: {
+              ...dayWindow,
+              maybeUptimePercentage: Option.some(97.5),
+              request,
+            },
           }),
         }),
         Scene.expect(Scene.testId("uptime-figure")).toHaveText("97.50%"),
         Scene.expect(Scene.testId("uptime-label")).toHaveText(
           "uptime over the last 24 hours"
         )
+      );
+    });
+
+    test("the incident totals and trailing windows keep their own loading states while the uptime figure waits", () => {
+      show(
+        onAnotherRange({
+          summary: SummaryAsyncData.Success({
+            data: summaryData(summaryResponse(), request),
+          }),
+        }),
+        Scene.expect(
+          Scene.role("status", { name: "Loading status" })
+        ).toExist(),
+        Scene.expect(Scene.testId("uptime-figure")).not.toExist(),
+        Scene.expect(
+          Scene.role("status", { name: "Loading outage summary" })
+        ).toExist(),
+        Scene.expect(Scene.testId("uptime-last24h")).toExist()
+      );
+    });
+
+    test("the figure shows a skeleton while only the summary answers the selected range", () => {
+      show(
+        onAnotherRange({
+          summary: SummaryAsyncData.Success({
+            data: summaryData(summaryResponse(), request),
+          }),
+        }),
+        Scene.expect(
+          Scene.role("status", { name: "Loading status" })
+        ).toExist(),
+        Scene.expect(Scene.testId("uptime-figure")).not.toExist()
       );
     });
   });
@@ -3083,7 +3158,7 @@ describe("dashboard view: insights", () => {
   });
 
   describe("uptime", () => {
-    test("shows the 24 hour, 7 day and 30 day windows and says how a check is counted", () => {
+    test("shows the 24 hour, 7 day and 30 day windows and says how uptime is counted", () => {
       show(
         settled(),
         Scene.expect(Scene.testId("uptime-last24h")).toContainText("99.90"),
@@ -3091,7 +3166,7 @@ describe("dashboard view: insights", () => {
         Scene.expect(Scene.testId("uptime-last30d")).toContainText("99.60"),
         Scene.expect(
           Scene.text(
-            "A check counts as up when every host answers with under 10% packet loss, down when no host answers, and degraded otherwise."
+            "Uptime is the share of monitored time with every host answering and under 10% packet loss. Time when every host failed counts as down. Any other time with a host failing or losing 10% or more of its packets counts as degraded."
           )
         ).toExist()
       );

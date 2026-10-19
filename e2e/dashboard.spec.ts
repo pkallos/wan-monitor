@@ -287,7 +287,7 @@ test.describe("Dashboard renders seeded data (PHI-93)", () => {
     // Which grey label a cell with no readings gets depends on whether the
     // earliest-timestamp fetch has landed, so every status is acceptable.
     await expect(tooltip).toHaveText(
-      /(\d+(\.\d+)?% (of checks )?(up|degraded|down)|No data|Before monitoring started)\.$/
+      /(\d+(\.\d+)?% (of the time )?(up|degraded|down)|No data|Before monitoring started)\.$/
     );
 
     expect(await documentBox()).toEqual(boxBefore);

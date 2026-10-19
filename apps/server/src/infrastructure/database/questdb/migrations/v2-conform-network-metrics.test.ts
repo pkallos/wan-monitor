@@ -2,12 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { conformNetworkMetrics } from "@/infrastructure/database/questdb/migrations/v2-conform-network-metrics";
 import {
-  canonicalLiveColumns,
   createFakeContext,
+  v2LiveColumns,
 } from "@/infrastructure/database/questdb/test-utils/fake-migration-context";
 
 const retyped = (name: string, type: string) =>
-  canonicalLiveColumns.map((column) =>
+  v2LiveColumns.map((column) =>
     column.name === name ? { ...column, type } : column
   );
 
@@ -21,7 +21,10 @@ const run = (
   const fake = createFakeContext({
     table: "metrics",
     tables: ["metrics"],
-    columns,
+    columns:
+      columns === undefined
+        ? undefined
+        : { ...columns, metrics__previous: columns.metrics ?? v2LiveColumns },
     canRewriteTables,
   });
   return { ...fake, up: conformNetworkMetrics.up(fake.ctx) };
@@ -33,7 +36,7 @@ describe("conform-network-metrics", () => {
   });
 
   it.effect("leaves a conforming table alone", () => {
-    const { up, statements } = run({ metrics: canonicalLiveColumns });
+    const { up, statements } = run({ metrics: v2LiveColumns });
 
     return Effect.gen(function* () {
       yield* up;
@@ -44,7 +47,7 @@ describe("conform-network-metrics", () => {
 
   it.effect("leaves a table with a missing column alone", () => {
     const { up, statements } = run({
-      metrics: canonicalLiveColumns.filter((column) => column.name !== "isp"),
+      metrics: v2LiveColumns.filter((column) => column.name !== "isp"),
     });
 
     return Effect.gen(function* () {
@@ -74,7 +77,7 @@ describe("conform-network-metrics", () => {
   it.effect("refuses a table with a column the schema does not have", () => {
     const { up, statements } = run({
       metrics: [
-        ...canonicalLiveColumns,
+        ...v2LiveColumns,
         { name: "note", type: "STRING", designated: false },
       ],
     });
@@ -108,7 +111,7 @@ describe("conform-network-metrics", () => {
     });
 
     it.effect("still leaves a conforming table alone", () => {
-      const { up, statements } = run({ metrics: canonicalLiveColumns }, false);
+      const { up, statements } = run({ metrics: v2LiveColumns }, false);
 
       return Effect.gen(function* () {
         yield* up;
@@ -121,7 +124,7 @@ describe("conform-network-metrics", () => {
       const { up } = run(
         {
           metrics: [
-            ...canonicalLiveColumns,
+            ...v2LiveColumns,
             { name: "note", type: "STRING", designated: false },
           ],
         },

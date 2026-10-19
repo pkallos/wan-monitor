@@ -8,6 +8,7 @@ import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeMetricToSender } from "@/infrastructure/database/questdb/ilp";
+import { readDigest } from "@/infrastructure/database/questdb/migrations/introspect";
 import {
   type Migration,
   type MigrationContext,
@@ -19,14 +20,20 @@ import {
   NETWORK_METRICS_SHAPE,
 } from "@/infrastructure/database/questdb/migrations/registry";
 import { runMigrations } from "@/infrastructure/database/questdb/migrations/runner";
+import type { TableShape } from "@/infrastructure/database/questdb/migrations/schema";
 import {
   MIGRATION_STATEMENT_TIMEOUT_MS,
   pgMigrationContext,
   SchemaMigrator,
 } from "@/infrastructure/database/questdb/migrations/service";
 import { isDuplicateColumnError } from "@/infrastructure/database/questdb/migrations/v1-create-network-metrics";
+import {
+  NETWORK_METRICS_GROUP_COLUMNS,
+  NETWORK_METRICS_V2_COLUMNS,
+} from "@/infrastructure/database/questdb/migrations/v2-conform-network-metrics";
 import { nullZeroSpeedtestSpeeds } from "@/infrastructure/database/questdb/migrations/v3-null-zero-speedtest-speeds";
 import { pgConnectionSettings } from "@/infrastructure/database/questdb/pgwire";
+import { backticked } from "@/infrastructure/database/questdb/test-utils/fake-migration-context";
 import {
   createLegacyTable,
   type LegacyRow,
@@ -137,6 +144,29 @@ const connectPgClient = async (): Promise<Client> => {
   });
   await client.connect();
   return client;
+};
+
+/** The schema a table has before v4 adds `duration_ms`. */
+const V2_SHAPE: TableShape = {
+  columns: NETWORK_METRICS_V2_COLUMNS,
+  groupColumns: NETWORK_METRICS_GROUP_COLUMNS,
+};
+
+const withClient = async <T>(
+  use: (client: Client) => Promise<T>
+): Promise<T> => {
+  const client = await connectPgClient();
+  try {
+    return await use(client);
+  } finally {
+    await client.end();
+  }
+};
+
+const runStatements = async (statements: readonly string[]): Promise<void> => {
+  for (const statement of statements) {
+    await queryQuestDB(statement);
+  }
 };
 
 const canonicalColumns = NETWORK_METRICS_COLUMNS.map((column) => ({
@@ -417,7 +447,7 @@ describe.skipIf(skip)(
       await queryQuestDB(
         buildCreateTableSql(
           family.table,
-          NETWORK_METRICS_COLUMNS.filter(
+          NETWORK_METRICS_V2_COLUMNS.filter(
             (column) => !dropped.includes(column.name)
           )
         )
@@ -503,7 +533,9 @@ describe.skipIf(skip)(
 
     describe("recovery from an interrupted rebuild", () => {
       const seedCanonical = async (table: string, rows: number) => {
-        await queryQuestDB(buildCreateTableSql(table));
+        await queryQuestDB(
+          buildCreateTableSql(table, NETWORK_METRICS_V2_COLUMNS)
+        );
         await queryQuestDB(
           `INSERT INTO ${table} (timestamp, source, host, latency, connectivity_status)
          SELECT cast(${T0 * 1000}L + (x - 1) * ${CYCLE_MS * 1000}L as timestamp), 'ping', '8.8.8.8', 20.0 + x, 'up'
@@ -611,11 +643,11 @@ describe.skipIf(skip)(
     });
 
     describe("verification of the copy", () => {
-      const columnList = NETWORK_METRICS_COLUMNS.map(
+      const columnList = NETWORK_METRICS_V2_COLUMNS.map(
         (column) => column.name
       ).join(", ");
       const selectCasts = (shiftMicros = 0) =>
-        NETWORK_METRICS_COLUMNS.map((column) =>
+        NETWORK_METRICS_V2_COLUMNS.map((column) =>
           column.name === "timestamp" && shiftMicros !== 0
             ? `dateadd('u', ${shiftMicros}, cast(timestamp as TIMESTAMP))`
             : `cast(${column.name} as ${column.type})`
@@ -753,17 +785,6 @@ describe.skipIf(skip)(
     });
 
     describe("v3: speed tests stored as 0", () => {
-      const withClient = async <T>(
-        use: (client: Client) => Promise<T>
-      ): Promise<T> => {
-        const client = await connectPgClient();
-        try {
-          return await use(client);
-        } finally {
-          await client.end();
-        }
-      };
-
       const runV3 = (client: Client, canRewriteTables = true) =>
         Effect.runPromise(
           nullZeroSpeedtestSpeeds.up(
@@ -792,7 +813,7 @@ describe.skipIf(skip)(
           Effect.runPromise(
             runMigrations(pgMigrationContext(client, family.table, true), {
               migrations: MIGRATIONS.slice(0, 2),
-              target: NETWORK_METRICS_SHAPE,
+              target: V2_SHAPE,
             })
           )
         );
@@ -815,7 +836,7 @@ describe.skipIf(skip)(
           Effect.runPromise(
             runMigrations(pgMigrationContext(client, family.table, true), {
               migrations: MIGRATIONS.slice(0, 2),
-              target: NETWORK_METRICS_SHAPE,
+              target: V2_SHAPE,
             })
           )
         );
@@ -921,7 +942,7 @@ describe.skipIf(skip)(
           expect(await ledgerVersions()).toEqual([-3, 1, 2]);
         });
 
-        it("keeps refusing on every later start, and stops once the ledger is dropped", async () => {
+        it("keeps refusing on every later start, and stops once the printed statement is run", async () => {
           await damagedRun();
 
           for (let start = 0; start < 2; start += 1) {
@@ -930,13 +951,17 @@ describe.skipIf(skip)(
             expect(error.kind).toBe("terminal");
             expect(error.message).toContain("earlier start");
             expect(error.message).toContain("len_isp");
+            expect(error.message).not.toContain(`drop ${family.ledger}`);
           }
           expect(await ledgerVersions()).toEqual([-3, 1, 2]);
 
-          await queryQuestDB(`DROP TABLE ${family.ledger}`);
+          const [accept] = backticked((await migrationFailure()).message);
+          if (accept === undefined) throw new Error("no statement printed");
+          await queryQuestDB(accept);
           await migrate();
 
-          expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+          expect(await ledgerVersions()).toEqual([-3, ...ALL_VERSIONS]);
+          expect(await columnsOf(family.table)).toEqual(canonicalColumns);
         });
       });
 
@@ -965,6 +990,91 @@ describe.skipIf(skip)(
       });
     });
 
+    describe("v4: ping duration", () => {
+      const migrateToV3 = () =>
+        withClient((client) =>
+          Effect.runPromise(
+            runMigrations(pgMigrationContext(client, family.table, true), {
+              migrations: MIGRATIONS.slice(0, 3),
+              target: V2_SHAPE,
+            })
+          )
+        );
+
+      const v2Digest = () =>
+        withClient((client) =>
+          Effect.runPromise(
+            readDigest(
+              pgMigrationContext(client, family.table, true),
+              family.table,
+              NETWORK_METRICS_V2_COLUMNS,
+              NETWORK_METRICS_GROUP_COLUMNS
+            )
+          )
+        );
+
+      const sequencerTxn = async () =>
+        (
+          await queryQuestDB(
+            `SELECT sequencerTxn FROM wal_tables() WHERE name = '${family.table}'`
+          )
+        )[0]?.[0];
+
+      it("adds a DOUBLE column to a v3 table without changing a stored value, and is a no-op when run again", async () => {
+        const rows = legacyRows();
+        await migrateToV3();
+        await writeThroughProductionWriter(family.table, rows);
+        expect(await ledgerVersions()).toEqual([1, 2, 3]);
+        const digestBefore = await v2Digest();
+        const id = await tableId(family.table);
+
+        await migrate();
+
+        expect(await columnsOf(family.table)).toEqual(canonicalColumns);
+        expect(await v2Digest()).toEqual(digestBefore);
+        expect(await tableId(family.table)).toBe(id);
+        expect(await storedRows(family.table)).toEqual(expectedRows(rows));
+        expect(
+          await queryQuestDB(`SELECT count(duration_ms) FROM ${family.table}`)
+        ).toEqual([[0]]);
+        expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+
+        const txn = await sequencerTxn();
+        await migrate();
+
+        expect(await sequencerTxn()).toBe(txn);
+        expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+      });
+
+      it("accepts a duration_ms that ILP created before the migration ran", async () => {
+        await migrateToV3();
+        const sender = await Sender.fromConfig(
+          `http::addr=${new URL(QUESTDB_HTTP_URL).host};`
+        );
+        try {
+          await sender
+            .table(family.table)
+            .symbol("source", "ping")
+            .symbol("host", "8.8.8.8")
+            .floatColumn("latency", 21.5)
+            .floatColumn("duration_ms", 2400.5)
+            .at(BigInt(T0) * 1_000_000n, "ns");
+          await sender.flush();
+        } finally {
+          await sender.close();
+        }
+        await Effect.runPromise(waitForRowCount(1, "30 seconds", family.table));
+
+        await migrate();
+
+        expect(await columnsOf(family.table)).toEqual(canonicalColumns);
+        expect(
+          await queryQuestDB(`SELECT duration_ms FROM ${family.table}`)
+        ).toEqual([[2400.5]]);
+        expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+      });
+    });
+
     it("refuses a table that ILP recreated with the wrong types after the ledger was written", async () => {
       await migrate();
       await queryQuestDB(`DROP TABLE ${family.table}`);
@@ -974,7 +1084,139 @@ describe.skipIf(skip)(
 
       expect(error.kind).toBe("terminal");
       expect(error.message).toContain("TIMESTAMP_NS");
-      expect(error.message).toContain(family.ledger);
+      expect(error.message).toContain("backup");
+      expect(error.message).not.toContain(family.ledger);
+    });
+
+    it("follows the remedy for a missing table and gets it back with duration_ms", async () => {
+      await migrate();
+      await queryQuestDB(`DROP TABLE ${family.table}`);
+
+      const error = await migrationFailure();
+
+      expect(error.message).toContain(`Drop ${family.ledger} and restart`);
+
+      await queryQuestDB(`DROP TABLE ${family.ledger}`);
+      await migrate();
+
+      expect(await columnsOf(family.table)).toEqual(canonicalColumns);
+      expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+    });
+
+    describe("when the schema drifted after the migrations were recorded", () => {
+      const waitForColumn = async (name: string, present: boolean) => {
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          const names = (await columnsOf(family.table)).map((c) => c.name);
+          if (names.includes(name) === present) return;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        throw new Error(`${name} was not ${present ? "added" : "dropped"}`);
+      };
+
+      it.each(["isp", "duration_ms"])(
+        "prints the ALTER that restores a dropped %s, and a rerun succeeds once it is run",
+        async (column) => {
+          await migrate();
+          await queryQuestDB(
+            `ALTER TABLE ${family.table} DROP COLUMN ${column}`
+          );
+          await waitForColumn(column, false);
+
+          const error = await migrationFailure();
+
+          expect(error.kind).toBe("terminal");
+          expect(error.message).toContain(`missing column ${column}`);
+          expect(error.message).not.toContain("ADD COLUMN timestamp");
+          expect(error.message).not.toContain(`drop ${family.ledger}`);
+          const statements = backticked(error.message);
+          expect(statements).toHaveLength(1);
+
+          await runStatements(statements);
+          await waitForColumn(column, true);
+          await migrate();
+
+          expect(await ledgerVersions()).toEqual(ALL_VERSIONS);
+        }
+      );
+    });
+
+    describe("when the ledger was lost", () => {
+      it("refuses before v2 touches the table, and the printed statement accepts it as it is", async () => {
+        const rows = legacyRows();
+        await migrate();
+        await writeThroughProductionWriter(family.table, rows);
+        await queryQuestDB(`DROP TABLE ${family.ledger}`);
+        const id = await tableId(family.table);
+        const digest = () =>
+          withClient((client) =>
+            Effect.runPromise(
+              readDigest(
+                pgMigrationContext(client, family.table, true),
+                family.table,
+                NETWORK_METRICS_V2_COLUMNS,
+                NETWORK_METRICS_GROUP_COLUMNS
+              )
+            )
+          );
+        const digestBefore = await digest();
+
+        const error = await migrationFailure();
+
+        expect(error.kind).toBe("terminal");
+        expect(error.message).toContain("duration_ms");
+        expect(error.message).not.toContain("drop them yourself");
+        const newest = MIGRATIONS.at(-1);
+        expect(backticked(error.message)).toEqual([
+          `INSERT INTO ${family.ledger} VALUES (${newest?.version}, '${newest?.name}', now())`,
+        ]);
+        expect(await tableId(family.table)).toBe(id);
+        expect(await tableNames()).toEqual(
+          [family.table, family.ledger].sort()
+        );
+
+        await runStatements(backticked(error.message));
+        await migrate();
+
+        expect(await tableId(family.table)).toBe(id);
+        expect(await columnsOf(family.table)).toEqual(canonicalColumns);
+        expect(await digest()).toEqual(digestBefore);
+        expect(await storedRows(family.table)).toEqual(expectedRows(rows));
+      });
+    });
+
+    describe("a sticky failure of a migration newer than v4", () => {
+      const stickyV5: Migration = {
+        version: 5,
+        name: "sticky-v5",
+        up: () => Effect.fail(stickyError("verify", "damaged")),
+      };
+
+      it("is cleared by running the printed statement", async () => {
+        await withClient(async (client) => {
+          const ctx = pgMigrationContext(client, family.table, true);
+          const plan = {
+            migrations: [...MIGRATIONS, stickyV5],
+            target: NETWORK_METRICS_SHAPE,
+          };
+          await Effect.runPromise(Effect.flip(runMigrations(ctx, plan)));
+          expect(await ledgerVersions()).toEqual([-5, ...ALL_VERSIONS]);
+
+          const refusal = await Effect.runPromise(
+            Effect.flip(runMigrations(ctx, plan))
+          );
+          const statements = backticked(refusal.message);
+          expect(refusal.message).toContain("earlier start");
+          expect(statements).toEqual([
+            `INSERT INTO ${family.ledger} VALUES (5, 'sticky-v5', now())`,
+          ]);
+
+          await runStatements(statements);
+          await Effect.runPromise(runMigrations(ctx, plan));
+
+          expect(await ledgerVersions()).toEqual([-5, ...ALL_VERSIONS, 5]);
+        });
+      });
     });
   }
 );

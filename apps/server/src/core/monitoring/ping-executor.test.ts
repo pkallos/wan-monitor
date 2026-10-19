@@ -1,5 +1,6 @@
-import { Effect, Layer, Logger } from "effect";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "@effect/vitest";
+import { Duration, Effect, Fiber, Layer, Logger } from "effect";
+import { TestClock } from "effect/testing";
 import {
   PingExecutor,
   PingExecutorLive,
@@ -14,6 +15,7 @@ import {
   PingHostUnreachableError,
   type PingResult,
   PingService,
+  PingTimeoutError,
 } from "@/infrastructure/ping/service";
 import { makeTestConfigLayer } from "@/test/config";
 import { emptyAnalyticsQueries } from "@/test/questdb-stubs";
@@ -333,41 +335,214 @@ describe("PingExecutor", () => {
       expect(mockPing).toHaveBeenCalledWith("custom.host");
       expect(mockPing).toHaveBeenCalledWith("another.host");
     });
+  });
 
-    it("should stamp every host in a cycle with the identical timestamp, even when one fails", async () => {
-      mockPing.mockImplementation((host: string) =>
-        host === "flaky.host"
-          ? Effect.fail(
-              new PingHostUnreachableError({
-                host,
-                message: "Host unreachable",
+  describe("start stamp and duration", () => {
+    const START_MS = Date.parse("2026-07-01T00:00:00Z");
+    const DELAYS_MS = [2400, 8000, 25] as const;
+
+    const answered = (host: string): PingResult => ({
+      host,
+      alive: true,
+      latency: 12.0,
+      packetLoss: 0,
+    });
+
+    const written = () => mockWriteMetric.mock.calls.map(([metric]) => metric);
+
+    const runOnClock = (host: string, delayMs: number) =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(START_MS);
+        const executor = yield* PingExecutor;
+        const fiber = yield* Effect.forkChild(executor.executePing(host));
+        yield* TestClock.adjust(Duration.millis(delayMs));
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestLive));
+
+    for (const delayMs of DELAYS_MS) {
+      it.effect(
+        `stamps an answered ping with its start and records ${delayMs} ms`,
+        () => {
+          mockPing.mockImplementation((host: string) =>
+            Effect.sleep(Duration.millis(delayMs)).pipe(
+              Effect.as(answered(host))
+            )
+          );
+          mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+          return runOnClock("8.8.8.8", delayMs).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                const [metric] = written();
+                expect(metric.timestamp.getTime()).toBe(START_MS);
+                expect(metric.durationMs).toBe(delayMs);
               })
             )
-          : Effect.succeed({
-              host,
-              alive: true,
-              latency: 12.0,
-              packetLoss: 0,
-            } satisfies PingResult)
+          );
+        }
       );
-      mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
 
-      const program = Effect.gen(function* () {
+      it.effect(
+        `stamps a failed ping with its start and records ${delayMs} ms`,
+        () => {
+          mockPing.mockImplementation((host: string) =>
+            Effect.sleep(Duration.millis(delayMs)).pipe(
+              Effect.andThen(
+                Effect.fail(
+                  new PingHostUnreachableError({
+                    host,
+                    message: "Host unreachable",
+                  })
+                )
+              )
+            )
+          );
+          mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+          return runOnClock("8.8.8.8", delayMs).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                const [metric] = written();
+                expect(metric.timestamp.getTime()).toBe(START_MS);
+                expect(metric.durationMs).toBe(delayMs);
+                expect(metric.connectivityStatus).toBe("down");
+                expect(metric.packetLoss).toBe(100);
+                expect(metric.latency).toBeUndefined();
+              })
+            )
+          );
+        }
+      );
+    }
+
+    it.effect(
+      "records no negative duration when the clock steps back during a ping",
+      () => {
+        mockPing.mockImplementation((host: string) =>
+          TestClock.setTime(START_MS - 5000).pipe(Effect.as(answered(host)))
+        );
+        mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+        return runOnClock("8.8.8.8", 0).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              expect(written()[0].timestamp.getTime()).toBe(START_MS);
+              expect(written()[0].durationMs).toBe(0);
+            })
+          )
+        );
+      }
+    );
+
+    it.effect("measures the ping only, not the write that follows", () => {
+      mockPing.mockImplementation((host: string) =>
+        Effect.sleep(Duration.millis(100)).pipe(Effect.as(answered(host)))
+      );
+      mockWriteMetric.mockReturnValue(
+        Effect.sleep(Duration.millis(5000)).pipe(Effect.as(undefined))
+      );
+
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(START_MS);
         const executor = yield* PingExecutor;
-        return yield* executor.executeHosts(["stable.host", "flaky.host"]);
-      });
-
-      await Effect.runPromise(Effect.provide(program, TestLive));
-
-      const timestamps = mockWriteMetric.mock.calls.map(
-        ([metric]) => metric.timestamp
-      );
-      expect(timestamps).toHaveLength(2);
-      expect(timestamps[0]).toBeInstanceOf(Date);
-      // A downstream quorum query groups a cycle by exact timestamp equality
-      // (see buildQueryConnectivityStatus), so every host in one executeHosts
-      // call must share the identical Date instance value, not just be close.
-      expect(timestamps[0].getTime()).toBe(timestamps[1].getTime());
+        const fiber = yield* Effect.forkChild(executor.executePing("8.8.8.8"));
+        yield* TestClock.adjust(Duration.millis(6000));
+        yield* Fiber.join(fiber);
+        expect(written()[0].durationMs).toBe(100);
+      }).pipe(Effect.provide(TestLive));
     });
+
+    it.effect(
+      "writes the requested host when the ping resolves to another name",
+      () => {
+        mockPing.mockImplementation(() =>
+          Effect.succeed(answered("edge.cdn.example.net"))
+        );
+        mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+        return runOnClock("www.example.com", 0).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              expect(written()[0].host).toBe("www.example.com");
+            })
+          )
+        );
+      }
+    );
+
+    it.effect.each([
+      [
+        "an unreachable host",
+        (host: string) =>
+          new PingHostUnreachableError({ host, message: "Host unreachable" }),
+      ],
+      [
+        "a timeout",
+        (host: string) => new PingTimeoutError({ host, timeoutMs: 5000 }),
+      ],
+    ] as const)(
+      "writes the requested host when a ping ends in %s naming another host",
+      ([, failure]) => {
+        mockPing.mockImplementation(() =>
+          Effect.fail(failure("edge.cdn.example.net"))
+        );
+        mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+        return runOnClock("www.example.com", 0).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              expect(written()).toHaveLength(1);
+              expect(written()[0].host).toBe("www.example.com");
+              expect(written()[0].connectivityStatus).toBe("down");
+            })
+          )
+        );
+      }
+    );
+
+    it.effect(
+      "writes the requested host when an unreachable result names another host",
+      () => {
+        mockPing.mockImplementation(() =>
+          Effect.succeed({ ...answered("edge.cdn.example.net"), alive: false })
+        );
+        mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+        return runOnClock("www.example.com", 0).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              expect(written()[0].host).toBe("www.example.com");
+              expect(written()[0].connectivityStatus).toBe("down");
+            })
+          )
+        );
+      }
+    );
+
+    it.effect(
+      "gives a manual ping through executeHosts the same stamp and duration",
+      () => {
+        mockPing.mockImplementation((host: string) =>
+          Effect.sleep(Duration.millis(300)).pipe(Effect.as(answered(host)))
+        );
+        mockWriteMetric.mockReturnValue(Effect.succeed(undefined));
+
+        return Effect.gen(function* () {
+          yield* TestClock.setTime(START_MS);
+          const executor = yield* PingExecutor;
+          const fiber = yield* Effect.forkChild(
+            executor.executeHosts(["8.8.8.8", "1.1.1.1"])
+          );
+          yield* TestClock.adjust(Duration.millis(300));
+          yield* Fiber.join(fiber);
+          expect(written().map((metric) => metric.timestamp.getTime())).toEqual(
+            [START_MS, START_MS]
+          );
+          expect(written().map((metric) => metric.durationMs)).toEqual([
+            300, 300,
+          ]);
+        }).pipe(Effect.provide(TestLive));
+      }
+    );
   });
 });

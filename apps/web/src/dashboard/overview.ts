@@ -26,7 +26,7 @@ export type ConnectionState = ConnectivityStatus | "checking";
 export type ConnectionStatus = Readonly<{ label: string }>;
 
 // The label speaks in reachability ("Online"), not in the history ribbon's
-// per-cycle vocabulary ("Up").
+// per-bucket vocabulary ("Up").
 export const CONNECTION_STATUS: Record<ConnectionState, ConnectionStatus> = {
   up: { label: "Online" },
   degraded: { label: "Degraded" },
@@ -77,21 +77,18 @@ export const describeRange = (selection: DateRangeSelection): string =>
 
 /**
  * What the uptime figure rests on when the monitor did not observe the whole
- * range: the covered time, taken as the coverage share of the range's span.
+ * range: the time with data, as the server counted it.
  */
 export const coverageNote = (
   coveragePercentage: number,
-  spanMs: number
+  observedSeconds: number
 ): Option.Option<string> => {
   if (coveragePercentage >= 100) return Option.none();
   if (coveragePercentage <= 0) {
     return Option.some("The monitor has no data for this period.");
   }
-  const coveredSeconds = Math.round(
-    (spanMs / 1000) * (coveragePercentage / 100)
-  );
   return Option.some(
-    `The monitor has data for ${formatLongDuration(coveredSeconds)} of this period, and uptime covers only that time.`
+    `The monitor has data for ${formatLongDuration(observedSeconds)} of this period, and uptime covers only that time.`
   );
 };
 
@@ -148,14 +145,14 @@ export const railStats = ({
     label: "Packet loss",
     value: fixed(range.avgPacketLoss, 2),
     unit: "%",
-    sub: "Averaged over all checks",
+    sub: "Averaged over all pings",
   },
   {
     key: "jitter",
     label: "Jitter",
     value: fixed(range.avgJitter, 1),
     unit: "ms",
-    sub: "Averaged over all checks",
+    sub: "Averaged over all pings",
   },
   {
     key: "download",

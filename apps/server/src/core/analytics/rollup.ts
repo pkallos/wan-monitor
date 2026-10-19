@@ -1,32 +1,33 @@
+import type { ConnectivityStatus } from "@shared/metrics";
 import {
   DEGRADED_BUCKET_MIN_SHARE,
-  expectedBucketCount,
   type Granularity,
+  granularityToMs,
 } from "@wan-monitor/shared";
-import type {
-  ConnectivityStatusRow,
-  CycleStatus,
-} from "@/infrastructure/database/questdb/model";
+import type { ConnectivityStatusRow } from "@/infrastructure/database/questdb/model";
+
+const MICROS_PER_SECOND = 1_000_000;
 
 /**
- * Status of a rollup bucket from the cycle counts inside it. Any down cycle
- * makes the bucket down; degraded needs a meaningful share of degraded cycles,
- * not the instant a single cycle crosses the packet-loss floor, so one blip in
- * a coarse bucket doesn't paint the whole bucket.
+ * Status of a rollup bucket from the time spent in each state inside it. Any
+ * down time makes the bucket down; degraded needs a meaningful share of the
+ * bucket's observed time, not the first second at or above the packet-loss
+ * floor, so one blip in a coarse bucket does not paint the whole bucket. Durations are
+ * microseconds.
  */
 export const bucketStatus = ({
   down,
   degraded,
-  total,
+  observed,
 }: {
   readonly down: number;
   readonly degraded: number;
-  readonly total: number;
-}): CycleStatus => {
+  readonly observed: number;
+}): ConnectivityStatus => {
   if (down > 0) {
     return "down";
   }
-  return total > 0 && degraded / total >= DEGRADED_BUCKET_MIN_SHARE
+  return observed > 0 && degraded / observed >= DEGRADED_BUCKET_MIN_SHARE
     ? "degraded"
     : "up";
 };
@@ -37,24 +38,39 @@ export interface ConnectivitySummary {
   readonly expectedBuckets: number;
   readonly observedBuckets: number;
   readonly coveragePercentage: number;
-  readonly observedCycles: number;
+  readonly observedSeconds: number;
 }
+
+/**
+ * Number of buckets the half-open range [startMs, endMs) touches, including a
+ * partial first or last bucket, since the ribbon holds time in those too.
+ */
+const bucketsTouched = (
+  startMs: number,
+  endMs: number,
+  granularity: Granularity
+): number => {
+  if (endMs <= startMs) {
+    return 0;
+  }
+  const widthMs = granularityToMs(granularity);
+  return Math.floor((endMs - 1) / widthMs) - Math.floor(startMs / widthMs) + 1;
+};
 
 /**
  * Uptime, availability and coverage for a window from its connectivity rollup
  * rows.
  *
- * Uptime counts strictly `up` cycles and availability counts `up` plus
- * `degraded`. Both are P(state | the collector was running): unmonitored
- * stretches leave the denominator and show up as lower coverage instead. With
- * no cycles the ratios are null, because nothing observed is not the same as
- * observing a total outage.
+ * Uptime is up time over observed time, and availability is up plus degraded
+ * time over observed time. Both are P(state | a host was being watched): time with no
+ * standing ping leaves the denominator and shows up as lower coverage instead.
+ * With no observed time the ratios are null, because nothing observed is not
+ * the same as observing a total outage.
  *
- * A failed ping still writes a row, so an empty bucket means the collector
- * wasn't running, and every bucket with cycles is present in `rows`. The
- * query's upper bound is inclusive while `expectedBucketCount` counts the
- * half-open [start, end), so a window ending on a boundary can observe one
- * bucket more than expected; clamping keeps coverage a percentage.
+ * A bucket is present in `rows` when it holds observed time. `endMs` is the
+ * window's end clipped to the present. Coverage counts every bucket the
+ * half-open [start, end) touches, partial first and last ones included, and is
+ * clamped to 100 as a guard.
  */
 export const summarizeConnectivity = (
   rows: readonly ConnectivityStatusRow[],
@@ -62,18 +78,22 @@ export const summarizeConnectivity = (
   endMs: number,
   granularity: Granularity
 ): ConnectivitySummary => {
-  const observedCycles = rows.reduce((sum, row) => sum + row.total_count, 0);
-  const upCycles = rows.reduce((sum, row) => sum + row.up_count, 0);
-  const degradedCycles = rows.reduce((sum, row) => sum + row.degraded_count, 0);
-  const expectedBuckets = expectedBucketCount(startMs, endMs, granularity);
+  const upMicros = rows.reduce((sum, row) => sum + row.up_micros, 0);
+  const degradedMicros = rows.reduce(
+    (sum, row) => sum + row.degraded_micros,
+    0
+  );
+  const downMicros = rows.reduce((sum, row) => sum + row.down_micros, 0);
+  const observedMicros = upMicros + degradedMicros + downMicros;
+  const expectedBuckets = bucketsTouched(startMs, endMs, granularity);
   const observedBuckets = rows.length;
 
   return {
     uptimePercentage:
-      observedCycles > 0 ? (upCycles / observedCycles) * 100 : null,
+      observedMicros > 0 ? (upMicros / observedMicros) * 100 : null,
     availabilityPercentage:
-      observedCycles > 0
-        ? ((upCycles + degradedCycles) / observedCycles) * 100
+      observedMicros > 0
+        ? ((upMicros + degradedMicros) / observedMicros) * 100
         : null,
     expectedBuckets,
     observedBuckets,
@@ -81,6 +101,6 @@ export const summarizeConnectivity = (
       expectedBuckets > 0
         ? Math.min(100, (observedBuckets / expectedBuckets) * 100)
         : 0,
-    observedCycles,
+    observedSeconds: observedMicros / MICROS_PER_SECOND,
   };
 };

@@ -59,6 +59,7 @@ export const SucceededFetchConnectivityStatus = m(
     maybeUptimePercentage: S.Option(S.Number),
     maybeAvailabilityPercentage: S.Option(S.Number),
     coveragePercentage: S.Number,
+    observedSeconds: S.Number,
     startTimeMs: S.Number,
     endTimeMs: S.Number,
     granularity: GranularitySchema,

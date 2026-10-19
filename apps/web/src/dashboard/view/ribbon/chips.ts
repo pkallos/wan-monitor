@@ -36,7 +36,11 @@ const chipAria = (
   const when = chip.isOngoing
     ? `${formatDateTime(outage.start)}, ongoing`
     : `${formatDateTime(outage.start)} to ${formatDateTime(outage.end)}, ${formatDuration(outage.durationSeconds)}`;
-  return `Incident ${chip.ref}: ${CELL_LABELS[chip.status]}, ${when}. Hosts: ${affectedHostsText(outage.affectedHosts, hosts)}. Max loss ${lossText(outage.maxPacketLoss)}. Show on ribbon`;
+  const hostsClause =
+    outage.affectedHosts.length === 0
+      ? ""
+      : ` Hosts: ${affectedHostsText(outage.affectedHosts, hosts)}.`;
+  return `Incident ${chip.ref}: ${CELL_LABELS[chip.status]}, ${when}.${hostsClause} Max loss ${lossText(outage.maxPacketLoss)}. Show on ribbon`;
 };
 
 /** One incident's chip: sized by its duration beside the ribbon, a 44px touch target below it. */

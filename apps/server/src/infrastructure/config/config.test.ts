@@ -368,6 +368,29 @@ describe("ConfigService", () => {
     );
   });
 
+  describe("PING_INTERVAL_SECONDS", () => {
+    it("defaults to 30 seconds", async () => {
+      const config = await loadConfig({});
+
+      expect(config.ping.intervalSeconds).toBe(30);
+    });
+
+    it("reads whole seconds", async () => {
+      const config = await loadConfig({ PING_INTERVAL_SECONDS: "900" });
+
+      expect(config.ping.intervalSeconds).toBe(900);
+    });
+
+    it.each(["0", "-30", "1.5", "abc", "30s"])(
+      "fails to load for %j and names the variable, since every report reads its spacing from it",
+      async (raw) => {
+        const message = await failureMessage({ PING_INTERVAL_SECONDS: raw });
+
+        expect(message).toContain("PING_INTERVAL_SECONDS");
+      }
+    );
+  });
+
   describe("LOG_LEVEL", () => {
     it("defaults to Info when unset", async () => {
       const config = await loadConfig({});

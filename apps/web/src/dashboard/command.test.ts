@@ -512,7 +512,7 @@ describe("fetchConnectivityStatus", () => {
             expectedBuckets: 0,
             observedBuckets: 0,
             coveragePercentage: 0,
-            observedCycles: 0,
+            observedSeconds: 0,
             expectedSampleIntervalSeconds: 30,
           },
         })
@@ -559,7 +559,7 @@ describe("fetchConnectivityStatus", () => {
             expectedBuckets: 60,
             observedBuckets: 60,
             coveragePercentage: 100,
-            observedCycles: 120,
+            observedSeconds: 3600,
             expectedSampleIntervalSeconds: 30,
           },
         })
@@ -581,6 +581,7 @@ describe("fetchConnectivityStatus", () => {
       maybeUptimePercentage: Option.some(99.9),
       maybeAvailabilityPercentage: Option.some(99.95),
       coveragePercentage: 100,
+      observedSeconds: 3600,
       granularity: "1m",
     });
     if (result._tag === "SucceededFetchConnectivityStatus") {
@@ -605,7 +606,7 @@ describe("fetchConnectivityStatus", () => {
             expectedBuckets: 60,
             observedBuckets: 0,
             coveragePercentage: 0,
-            observedCycles: 0,
+            observedSeconds: 0,
             expectedSampleIntervalSeconds: 30,
           },
         })
@@ -617,6 +618,7 @@ describe("fetchConnectivityStatus", () => {
       maybeUptimePercentage: Option.none(),
       maybeAvailabilityPercentage: Option.none(),
       coveragePercentage: 0,
+      observedSeconds: 0,
     });
   });
 

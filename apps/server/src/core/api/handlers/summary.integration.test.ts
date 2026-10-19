@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { getOutagesHandler } from "@/core/api/handlers/connectivity-status";
 import { getSummaryHandler } from "@/core/api/handlers/summary";
 import { MIGRATIONS } from "@/infrastructure/database/questdb/migrations/registry";
+import type { QueryStateParams } from "@/infrastructure/database/questdb/model";
 import { QuestDB } from "@/infrastructure/database/questdb/service";
 import {
   createLegacyTable,
@@ -23,6 +24,7 @@ import {
   TEST_TABLE,
   teardownIntegrationTest,
 } from "@/infrastructure/database/questdb/test-utils/setup";
+import { referenceOf } from "@/infrastructure/database/questdb/test-utils/wan-state-reference";
 import { makeTestConfigLayer } from "@/test/config";
 
 /**
@@ -31,9 +33,6 @@ import { makeTestConfigLayer } from "@/test/config";
  */
 describe("Summary Integration Tests", () => {
   const skipTests = !isQuestDBAvailable();
-  // The seeded cycles are one minute apart but the configured interval is the
-  // 30s default, so a figure that is right only for the measured period shows
-  // up as wrong.
   const testLayer = Layer.mergeAll(createTestLayer(), makeTestConfigLayer());
 
   /** 00:00 PST on 2024-02-10. */
@@ -42,8 +41,20 @@ describe("Summary Integration Tests", () => {
   const HOUR = 60 * MINUTE;
   /** Cycles land 30s past the minute, so none sits on a window bound. */
   const at = (minute: number): number => T0 + minute * MINUTE + 30_000;
-  /** 2.5 periods of the 30s cycle spacing the grouping tests use. */
-  const MERGE_GAP_MS = 75_000;
+  /** The reading clock for the direct queries: long after every fixture. */
+  const FAR_NOW_MS = T0 + 365 * 24 * HOUR;
+  const stateParams = (
+    startMs: number,
+    endMs: number,
+    overrides: Partial<QueryStateParams> = {}
+  ): QueryStateParams => ({
+    startTime: new Date(startMs),
+    endTime: new Date(endMs),
+    nowMs: FAR_NOW_MS,
+    intervalMs: 30_000,
+    hosts: ["8.8.8.8"],
+    ...overrides,
+  });
   const WINDOW = {
     startTime: new Date(T0).toISOString(),
     endTime: new Date(T0 + HOUR).toISOString(),
@@ -145,29 +156,44 @@ describe("Summary Integration Tests", () => {
 
         const summary = yield* getSummaryHandler({ query: WINDOW });
 
-        // Per-cycle latency: 52 cycles at 20, one at 30, three at 50, and the
-        // three down cycles carry none. Percentiles are approximate.
-        expect(summary.range.latencyP50).toBeCloseTo(20, 0);
+        // Percentiles and means run over every ping row, not over per-cycle
+        // means. The 111 rows that carry a latency are 52 at 10 ms (8.8.8.8
+        // up), 53 at 30 ms (1.1.1.1 up), 3 at 40 ms and 3 at 60 ms, so the
+        // median lands on 30 ms and the 95th on the 30 to 40 ms boundary.
+        // Percentiles are approximate.
+        const pings = [...scenario()];
+        expect(summary.range.latencyP50).toBeCloseTo(30, 0);
         expect(summary.range.latencyP95).toBeGreaterThanOrEqual(29.5);
-        expect(summary.range.latencyP95).toBeLessThanOrEqual(50.5);
-        // Per-cycle mean loss: 3 cycles at 100, 3 at 10, one at 50, rest 0.
-        expect(summary.range.avgPacketLoss).toBeCloseTo(380 / 59, 5);
-        // Failed samples carry no jitter, so only measured samples average in.
-        expect(summary.range.avgJitter).toBeCloseTo(2, 5);
-        expect(summary.range.uptimePercentage).toBeCloseTo((52 / 59) * 100, 5);
-        expect(summary.range.availabilityPercentage).toBeCloseTo(
-          (56 / 59) * 100,
+        expect(summary.range.latencyP95).toBeLessThanOrEqual(40.5);
+        expect(summary.range.avgPacketLoss).toBeCloseTo(
+          pings.reduce((sum, row) => sum + (row.packetLoss ?? 0), 0) /
+            pings.length,
           5
         );
-        expect(summary.range.coveragePercentage).toBe(100);
+        // Failed pings carry no jitter, so only measured pings average in.
+        expect(summary.range.avgJitter).toBeCloseTo(2, 5);
+        expect(summary.range).not.toHaveProperty("uptimePercentage");
+        expect(summary.range).not.toHaveProperty("availabilityPercentage");
+        expect(summary.range).not.toHaveProperty("coveragePercentage");
 
-        // The trailing windows all reach back over the seeded hour.
+        // The trailing windows all reach back over the seeded hour, so each
+        // reads the share of monitored time that was up.
+        const expected = referenceOf(pings, {
+          startMs: T0,
+          endMs: T0 + HOUR,
+          nowMs: FAR_NOW_MS,
+          intervalMs: 30_000,
+          hosts: ["8.8.8.8"],
+        });
         for (const window of [
           summary.windows.last24h,
           summary.windows.last7d,
           summary.windows.last30d,
         ]) {
-          expect(window.uptimePercentage).toBeCloseTo((52 / 59) * 100, 5);
+          expect(window.uptimePercentage).toBeCloseTo(
+            (expected.upMs / expected.observedMs) * 100,
+            5
+          );
         }
 
         expect(summary.hosts.map((host) => host.host)).toEqual([
@@ -190,39 +216,6 @@ describe("Summary Integration Tests", () => {
           uploadMedian: 40,
           count: 3,
         });
-
-        yield* teardownIntegrationTest(db);
-      });
-
-      await Effect.runPromise(Effect.provide(program, testLayer));
-    }
-  );
-
-  it.skipIf(skipTests)(
-    "measures the median spacing between cycles, ignoring a gap",
-    async () => {
-      const program = Effect.gen(function* () {
-        const db = yield* setupIntegrationTest();
-        const window = {
-          startTime: new Date(T0),
-          endTime: new Date(T0 + HOUR),
-        };
-        yield* seedDatabase(db, [
-          ...cycle(at(0), "up"),
-          ...cycle(at(0) + 40_500, "up"),
-          ...cycle(at(0) + 81_000, "up"),
-          // A long gap must not drag the median up.
-          ...cycle(at(20), "up"),
-          ...cycle(at(20) + 40_500, "up"),
-        ]);
-
-        expect(yield* db.queryCyclePeriod(window)).toBe(40_500);
-        expect(
-          yield* db.queryCyclePeriod({
-            startTime: new Date(at(0) - 1000),
-            endTime: new Date(at(0) + 1000),
-          })
-        ).toBeNull();
 
         yield* teardownIntegrationTest(db);
       });
@@ -503,11 +496,9 @@ describe("Summary Integration Tests", () => {
           },
         ]);
 
-        const runs = yield* db.queryOutageRuns({
-          startTime: new Date(T0),
-          endTime: new Date(startMs(cycleCount)),
-          mergeGapMs: MERGE_GAP_MS,
-        });
+        const runs = yield* db.queryOutageRuns(
+          stateParams(T0, startMs(cycleCount))
+        );
 
         expect(runs).toHaveLength(1);
         expect([...(runs[0]?.affected_hosts ?? [])].sort()).toEqual([
@@ -564,11 +555,12 @@ describe("Summary Integration Tests", () => {
           },
         ]);
 
-        const runs = yield* db.queryOutageRuns({
-          startTime: new Date(T0),
-          endTime: new Date(at(cycleCount)),
-          mergeGapMs: 2.5 * cycleMs,
-        });
+        const runs = yield* db.queryOutageRuns(
+          stateParams(T0, at(cycleCount), {
+            intervalMs: cycleMs,
+            hosts: [host],
+          })
+        );
 
         expect(runs.map((run) => Date.parse(run.start_time))).toEqual([
           at(5_000),
@@ -584,7 +576,7 @@ describe("Summary Integration Tests", () => {
   );
 
   describe.skipIf(skipTests)("outage grouping", () => {
-    type Span = readonly [firstSecond: number, lastSecond: number];
+    type Span = readonly [startSecond: number, endSecond: number];
 
     const outageRuns = (cycles: readonly SeededCycle[]) =>
       Effect.gen(function* () {
@@ -594,19 +586,15 @@ describe("Summary Integration Tests", () => {
           cycles.flatMap(([seconds, kind]) => cycle(T0 + seconds * 1000, kind))
         );
 
-        const runs = yield* db.queryOutageRuns({
-          startTime: new Date(T0),
-          endTime: new Date(T0 + HOUR),
-          mergeGapMs: MERGE_GAP_MS,
-        });
+        const runs = yield* db.queryOutageRuns(stateParams(T0, T0 + HOUR));
 
         yield* teardownIntegrationTest(db);
         return runs;
       }).pipe(Effect.provide(testLayer));
 
-    const spanOf = (run: { start_time: string; last_time: string }): Span => [
+    const spanOf = (run: { start_time: string; end_time: string }): Span => [
       (Date.parse(run.start_time) - T0) / 1000,
-      (Date.parse(run.last_time) - T0) / 1000,
+      (Date.parse(run.end_time) - T0) / 1000,
     ];
 
     it.each<[string, readonly SeededCycle[], readonly Span[]]>([
@@ -619,7 +607,7 @@ describe("Summary Integration Tests", () => {
           [90, "down"],
           [120, "up"],
         ],
-        [[30, 90]],
+        [[30, 120]],
       ],
       [
         "does not split a run at a degraded cycle between down ones",
@@ -628,7 +616,7 @@ describe("Summary Integration Tests", () => {
           [60, "degraded"],
           [90, "down"],
         ],
-        [[30, 90]],
+        [[30, 120]],
       ],
       [
         "bridges a single missing cycle",
@@ -639,7 +627,7 @@ describe("Summary Integration Tests", () => {
           [120, "down"],
           [150, "up"],
         ],
-        [[30, 120]],
+        [[30, 150]],
       ],
       [
         "splits at two missing cycles",
@@ -648,27 +636,27 @@ describe("Summary Integration Tests", () => {
           [120, "down"],
         ],
         [
-          [30, 30],
-          [120, 120],
+          [30, 60],
+          [120, 180],
         ],
       ],
       [
-        "merges two non-up cycles exactly the merge gap apart",
+        "bridges two pings exactly 2.5 spacings apart",
         [
           [0, "down"],
           [75, "down"],
         ],
-        [[0, 75]],
+        [[0, 135]],
       ],
       [
-        "splits two non-up cycles a second past the merge gap",
+        "splits two pings a second past 2.5 spacings",
         [
           [0, "down"],
           [76, "down"],
         ],
         [
-          [0, 0],
-          [76, 76],
+          [0, 30],
+          [76, 136],
         ],
       ],
       [
@@ -679,8 +667,8 @@ describe("Summary Integration Tests", () => {
           [60, "down"],
         ],
         [
-          [0, 0],
-          [60, 60],
+          [0, 30],
+          [60, 90],
         ],
       ],
       [
@@ -689,7 +677,7 @@ describe("Summary Integration Tests", () => {
           [0, "up"],
           [300, "down"],
         ],
-        [[300, 300]],
+        [[300, 360]],
       ],
       [
         "starts a run that touches the window start at its first cycle",
@@ -698,7 +686,7 @@ describe("Summary Integration Tests", () => {
           [30, "down"],
           [60, "up"],
         ],
-        [[0, 30]],
+        [[0, 60]],
       ],
       [
         "finds nothing when every cycle is up",
@@ -750,11 +738,7 @@ describe("Summary Integration Tests", () => {
           lossy(60, 50, 200),
         ]);
 
-        const runs = yield* db.queryOutageRuns({
-          startTime: new Date(T0),
-          endTime: new Date(T0 + HOUR),
-          mergeGapMs: MERGE_GAP_MS,
-        });
+        const runs = yield* db.queryOutageRuns(stateParams(T0, T0 + HOUR));
         const outages = yield* getOutagesHandler({ query: WINDOW });
 
         yield* teardownIntegrationTest(db);
@@ -782,16 +766,20 @@ describe("Summary Integration Tests", () => {
   describe.skipIf(skipTests)("window bounds", () => {
     /**
      * A down cycle stamped on one end of the window and an up cycle 30s inside
-     * it, so every query that bounds the window must keep the boundary cycle.
+     * it. The host figures keep both boundary cycles, since a ping stamped on
+     * either bound is in the range. An outage needs time inside the window, so
+     * a down cycle that begins exactly at the window end makes none.
      */
-    it.each<[string, readonly SeededCycle[], number]>([
+    it.each<
+      [string, readonly SeededCycle[], readonly (readonly [number, string[]])[]]
+    >([
       [
         "start",
         [
           [0, "down"],
           [30, "up"],
         ],
-        0,
+        [[0, ["1.1.1.1", "8.8.8.8"]]],
       ],
       [
         "end",
@@ -799,11 +787,11 @@ describe("Summary Integration Tests", () => {
           [3570, "up"],
           [3600, "down"],
         ],
-        3600,
+        [],
       ],
     ])(
       "includes a cycle stamped exactly on the window %s",
-      async (_side, cycles, downSecond) => {
+      async (_side, cycles, expectedRuns) => {
         const window = {
           startTime: new Date(T0),
           endTime: new Date(T0 + HOUR),
@@ -818,11 +806,7 @@ describe("Summary Integration Tests", () => {
           );
 
           const hostStats = yield* db.queryHostStats(window);
-          const runs = yield* db.queryOutageRuns({
-            ...window,
-            mergeGapMs: MERGE_GAP_MS,
-          });
-          const period = yield* db.queryCyclePeriod(window);
+          const runs = yield* db.queryOutageRuns(stateParams(T0, T0 + HOUR));
 
           expect(hostStats.map((host) => host.total_count)).toEqual([2, 2]);
           expect(
@@ -830,8 +814,7 @@ describe("Summary Integration Tests", () => {
               (Date.parse(run.start_time) - T0) / 1000,
               [...run.affected_hosts].sort(),
             ])
-          ).toEqual([[downSecond, ["1.1.1.1", "8.8.8.8"]]]);
-          expect(period).toBe(30_000);
+          ).toEqual(expectedRuns);
 
           yield* teardownIntegrationTest(db);
         });
@@ -990,7 +973,7 @@ describe("Summary Integration Tests", () => {
           })
       );
 
-      it("is migrated on connect, then measures the cycle period and outage durations", async () => {
+      it("is migrated on connect, then reads outage durations from its rows", async () => {
         const designatedType = async () =>
           (
             await queryQuestDB(
@@ -1012,19 +995,15 @@ describe("Summary Integration Tests", () => {
               )
             );
 
-          const period = yield* db.queryCyclePeriod({
-            startTime: new Date(T0),
-            endTime: new Date(T0 + HOUR),
-          });
           const result = yield* getOutagesHandler({ query: WINDOW });
-          return { period, outages: result.data };
+          return { outages: result.data };
         }).pipe(Effect.provide(legacyLayer));
 
         const before = await designatedType();
         let after: Awaited<ReturnType<typeof designatedType>>;
         let ledger: readonly (readonly unknown[])[];
         let leftovers: readonly (readonly unknown[])[];
-        let result: { period: number | null; outages: unknown };
+        let result: { outages: unknown };
         try {
           result = await Effect.runPromise(program);
           after = await designatedType();
@@ -1037,7 +1016,7 @@ describe("Summary Integration Tests", () => {
         } finally {
           await Effect.runPromise(dropTableFamily(legacyName));
         }
-        const { period, outages } = result;
+        const { outages } = result;
 
         expect(before).toEqual(["TIMESTAMP_NS"]);
         expect(after).toEqual(["TIMESTAMP"]);
@@ -1045,7 +1024,6 @@ describe("Summary Integration Tests", () => {
           MIGRATIONS.map((migration) => [migration.version])
         );
         expect(leftovers).toEqual([]);
-        expect(period).toBe(CYCLE_MS);
         expect(outages).toEqual([
           {
             start: new Date(atCycle(60)).toISOString(),

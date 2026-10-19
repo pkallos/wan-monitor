@@ -9,6 +9,7 @@ import {
 import { runMigrations } from "@/infrastructure/database/questdb/migrations/runner";
 import type { TableShape } from "@/infrastructure/database/questdb/migrations/schema";
 import {
+  backticked,
   canonicalLiveColumns,
   createFakeContext,
   terminal,
@@ -244,7 +245,8 @@ describe("runMigrations", () => {
 
         expect(error.kind).toBe("terminal");
         expect(error.message).toContain("isp is VARCHAR, expected STRING");
-        expect(error.message).toContain("metrics_migrations");
+        expect(error.message).toContain("backup");
+        expect(error.message).not.toContain("metrics_migrations");
       });
     }
   );
@@ -315,6 +317,9 @@ describe("runMigrations", () => {
 
         expect(error.kind).toBe("terminal");
         expect(error.message).toContain("unexpected column note");
+        expect(error.message).toContain("never dropped automatically");
+        expect(backticked(error.message)).toEqual([]);
+        expect(error.message).not.toContain("metrics_migrations");
       })
     );
 
@@ -326,6 +331,37 @@ describe("runMigrations", () => {
 
         expect(error.kind).toBe("terminal");
         expect(error.message).toContain("missing column isp");
+        expect(backticked(error.message)).toEqual([
+          "ALTER TABLE metrics ADD COLUMN isp STRING;",
+        ]);
+        expect(error.message).not.toContain("metrics_migrations");
+      })
+    );
+
+    it.effect("prints one statement per missing column", () =>
+      Effect.gen(function* () {
+        const error = yield* refusal(
+          canonicalLiveColumns.filter(
+            (column) => !["isp", "duration_ms"].includes(column.name)
+          )
+        );
+
+        expect(backticked(error.message)).toEqual([
+          "ALTER TABLE metrics ADD COLUMN isp STRING;",
+          "ALTER TABLE metrics ADD COLUMN duration_ms DOUBLE;",
+        ]);
+      })
+    );
+
+    it.effect("never offers to add a missing timestamp column", () =>
+      Effect.gen(function* () {
+        const error = yield* refusal(
+          canonicalLiveColumns.filter((column) => column.name !== "timestamp")
+        );
+
+        expect(error.message).toContain("missing column timestamp");
+        expect(error.message).toContain("backup");
+        expect(error.message).not.toContain("ADD COLUMN timestamp");
       })
     );
 
@@ -425,12 +461,42 @@ describe("runMigrations", () => {
             expect(error.kind).toBe("terminal");
             expect(error.message).toContain("Migration v2 (step-2)");
             expect(error.message).toContain("damaged");
-            expect(error.message).toContain("drop metrics_migrations");
+            expect(error.message).not.toContain("drop metrics_migrations");
+            expect(backticked(error.message)).toEqual([ledgerInsert(2)]);
           }
           expect(statements.filter((sql) => sql === "-- up v2")).toHaveLength(
             1
           );
           expect(ledger).toEqual([1]);
+        });
+      }
+    );
+
+    it.effect(
+      "is cleared by running the printed statement, which skips the migration",
+      () => {
+        const { ctx, ledger, statements } = setup();
+
+        return Effect.gen(function* () {
+          yield* Effect.flip(
+            run(ctx, [
+              migration(1),
+              migration(2, stickyError("verify", "damaged")),
+            ])
+          );
+          const refusal = yield* Effect.flip(
+            run(ctx, [migration(1), migration(2)])
+          );
+          const [accept] = backticked(refusal.message);
+          if (accept === undefined) throw new Error("no statement printed");
+
+          yield* ctx.query(accept);
+          yield* run(ctx, [migration(1), migration(2)]);
+
+          expect(ledger).toEqual([1, 2]);
+          expect(statements.filter((sql) => sql === "-- up v2")).toHaveLength(
+            1
+          );
         });
       }
     );

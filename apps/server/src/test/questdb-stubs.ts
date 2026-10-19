@@ -2,8 +2,9 @@ import { Effect } from "effect";
 import type { QuestDBService } from "@/infrastructure/database/questdb";
 
 /**
- * Empty-result implementations of the summary, host, outage run and cycle period
- * queries, for mock `QuestDBService` objects whose test never reads them.
+ * Empty-result implementations of the summary, host, outage run and window
+ * uptime queries, for mock `QuestDBService` objects whose test never reads
+ * them.
  */
 export const emptyAnalyticsQueries = {
   querySummaryStats: () =>
@@ -15,11 +16,11 @@ export const emptyAnalyticsQueries = {
     }),
   queryHostStats: () => Effect.succeed([]),
   queryOutageRuns: () => Effect.succeed([]),
-  queryCyclePeriod: () => Effect.succeed(null),
+  queryWindowUptime: () => Effect.succeed([]),
 } satisfies Pick<
   QuestDBService,
   | "querySummaryStats"
   | "queryHostStats"
   | "queryOutageRuns"
-  | "queryCyclePeriod"
+  | "queryWindowUptime"
 >;

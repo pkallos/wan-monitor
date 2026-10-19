@@ -50,7 +50,7 @@ describe("lastSampleText", () => {
     );
   });
 
-  test("omits the line when a reachable cycle carries no sample time", () => {
+  test("omits the line when a reachable status carries no sample time", () => {
     expect(lastSampleText("up", Option.none(), NOW_MS)).toEqual(Option.none());
   });
 
@@ -225,14 +225,15 @@ describe("networkText", () => {
 });
 
 describe("coverageNote", () => {
-  const DAY_MS = 86_400_000;
+  const HOUR_SECONDS = 3600;
+  const DAY_SECONDS = 86_400;
 
   test("says nothing when the monitor covered the whole range", () => {
-    expect(coverageNote(100, DAY_MS)).toEqual(Option.none());
+    expect(coverageNote(100, DAY_SECONDS)).toEqual(Option.none());
   });
 
-  test("gives the covered time as the coverage share of the range, in long words", () => {
-    expect(coverageNote((23 / 24) * 100, DAY_MS)).toEqual(
+  test("gives the observed time in long words", () => {
+    expect(coverageNote((23 / 24) * 100, 23 * HOUR_SECONDS)).toEqual(
       Option.some(
         "The monitor has data for 23 hours of this period, and uptime covers only that time."
       )
@@ -240,20 +241,28 @@ describe("coverageNote", () => {
   });
 
   test("works in minutes and days too", () => {
-    expect(coverageNote(50, 2 * 3_600_000)).toEqual(
+    expect(coverageNote(50, HOUR_SECONDS)).toEqual(
       Option.some(
         "The monitor has data for 1 hour of this period, and uptime covers only that time."
       )
     );
-    expect(coverageNote(25, 30 * DAY_MS)).toEqual(
+    expect(coverageNote(25, 7.5 * DAY_SECONDS)).toEqual(
       Option.some(
         "The monitor has data for 7 days 12 hours of this period, and uptime covers only that time."
       )
     );
   });
 
+  test("reads the observed seconds, not a share of the range", () => {
+    expect(coverageNote(50, 2 * HOUR_SECONDS)).toEqual(
+      Option.some(
+        "The monitor has data for 2 hours of this period, and uptime covers only that time."
+      )
+    );
+  });
+
   test("says there is no data when nothing was covered", () => {
-    expect(coverageNote(0, DAY_MS)).toEqual(
+    expect(coverageNote(0, 0)).toEqual(
       Option.some("The monitor has no data for this period.")
     );
   });
@@ -472,8 +481,8 @@ describe("unreportedRailStats", () => {
     );
     expect(unreportedRailStats.map((stat) => stat.sub)).toEqual([
       "95th percentile -",
-      "Averaged over all checks",
-      "Averaged over all checks",
+      "Averaged over all pings",
+      "Averaged over all pings",
       "Median",
       "Median",
     ]);
@@ -507,12 +516,12 @@ describe("railStats", () => {
     expect(byKey().loss).toMatchObject({
       value: "0.50",
       unit: "%",
-      sub: "Averaged over all checks",
+      sub: "Averaged over all pings",
     });
     expect(byKey().jitter).toMatchObject({
       value: "2.1",
       unit: "ms",
-      sub: "Averaged over all checks",
+      sub: "Averaged over all pings",
     });
   });
 

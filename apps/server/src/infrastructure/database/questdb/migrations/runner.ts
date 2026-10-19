@@ -4,6 +4,10 @@ import {
   listColumns,
 } from "@/infrastructure/database/questdb/migrations/introspect";
 import {
+  acceptAsAppliedSql,
+  ledgerName,
+} from "@/infrastructure/database/questdb/migrations/ledger";
+import {
   type Migration,
   type MigrationContext,
   MigrationError,
@@ -12,6 +16,7 @@ import {
 import { recoverTableState } from "@/infrastructure/database/questdb/migrations/rebuild";
 import {
   describeDrift,
+  driftRemedies,
   schemaDrift,
   type TableShape,
 } from "@/infrastructure/database/questdb/migrations/schema";
@@ -23,8 +28,6 @@ export interface MigrationPlan {
   /** Called with a short description of each step before it starts. */
   readonly onProgress?: (step: string) => Effect.Effect<void>;
 }
-
-const ledgerName = (table: string): string => `${table}_migrations`;
 
 const terminal = (message: string): MigrationError =>
   terminalError("check", message);
@@ -38,8 +41,9 @@ const appliedVersion = (
     )
     .pipe(Effect.map((rows) => Number(rows[0]?.v ?? 0)));
 
-// A failed in-place migration is recorded as a row with the negated version.
-// Reads of applied versions ignore it; running the migration again refuses.
+// A migration that fails with a sticky error is recorded as a row with the
+// negated version. Reads of applied versions ignore that row, and any rerun of
+// the migration is refused.
 const recordedFailure = (
   ctx: MigrationContext,
   migration: Migration
@@ -74,7 +78,7 @@ const apply = (
     if (earlier !== undefined) {
       return yield* Effect.fail(
         terminal(
-          `Migration v${migration.version} (${migration.name}) failed verification on an earlier start and is not run again. ${earlier} To accept the table as it is instead, drop ${ledgerName(ctx.table)} and restart.`
+          `Migration v${migration.version} (${migration.name}) failed verification on an earlier start and is not run again. ${earlier} The migration's in-place change already ran. To accept the table as it is, record only this version as applied with \`${acceptAsAppliedSql(ledgerName(ctx.table), migration)}\`. The server continues on its next retry or restart.`
         )
       );
     }
@@ -95,9 +99,7 @@ const apply = (
         )
       )
     );
-    yield* ctx.query(
-      `INSERT INTO ${ledgerName(ctx.table)} VALUES (${migration.version}, '${migration.name}', now())`
-    );
+    yield* ctx.query(acceptAsAppliedSql(ledgerName(ctx.table), migration));
     yield* Effect.logInfo(
       `QuestDB migration v${migration.version} (${migration.name}) applied in ${Duration.toMillis(elapsed)}ms`
     );
@@ -116,13 +118,15 @@ const verifySchema = (
         )
       );
     }
-    const drift = describeDrift(
-      schemaDrift(yield* listColumns(ctx, ctx.table), target.columns)
+    const drift = schemaDrift(
+      yield* listColumns(ctx, ctx.table),
+      target.columns
     );
-    if (drift.length > 0) {
+    const differences = describeDrift(drift);
+    if (differences.length > 0) {
       return yield* Effect.fail(
         terminal(
-          `${ctx.table} does not match the schema this build expects (${drift.join("; ")}). Restore it from a backup, or drop ${ledger} and restart to re-run the migrations. Unexpected columns are never dropped automatically: drop them yourself.`
+          `${ctx.table} does not match the schema this build expects (${differences.join("; ")}). ${driftRemedies(drift, ctx.table, target.columns).join(" ")}`
         )
       );
     }

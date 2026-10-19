@@ -1,11 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { InvalidTimeRange } from "@shared/api/errors";
 import { Cause, Effect, Exit, Option } from "effect";
-import {
-  coverageGranularity,
-  resolveWindow,
-  validateWindow,
-} from "@/core/analytics/window";
+import { resolveWindow, validateWindow } from "@/core/analytics/window";
 
 const NOW = Date.parse("2024-06-01T12:00:00Z");
 const DAY = 86_400_000;
@@ -121,18 +117,4 @@ describe("validateWindow", () => {
       expect(yield* validateWindow(long)).toEqual(long);
     })
   );
-});
-
-describe("coverageGranularity", () => {
-  const hourMs = 3_600_000;
-
-  it("uses 5m buckets for windows up to two days", () => {
-    expect(coverageGranularity(hourMs)).toBe("5m");
-    expect(coverageGranularity(48 * hourMs)).toBe("5m");
-  });
-
-  it("falls back to 1h buckets for longer windows so row counts stay bounded", () => {
-    expect(coverageGranularity(48 * hourMs + 1)).toBe("1h");
-    expect(coverageGranularity(30 * 24 * hourMs)).toBe("1h");
-  });
 });

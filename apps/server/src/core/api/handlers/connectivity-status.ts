@@ -10,12 +10,7 @@ import {
 } from "@wan-monitor/shared";
 import { Clock, Effect, type Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
-import {
-  MAX_OUTAGES,
-  outageMergeGapMs,
-  summarizeOutages,
-} from "@/core/analytics/outages";
-import { cyclePeriodMs } from "@/core/analytics/period";
+import { MAX_OUTAGES, summarizeOutages } from "@/core/analytics/outages";
 import { bucketStatus, summarizeConnectivity } from "@/core/analytics/rollup";
 import {
   resolveWindow,
@@ -29,7 +24,8 @@ import { QuestDB } from "@/infrastructure/database/questdb";
 
 const loadConnectivityStatus = (
   query: Schema.Schema.Type<typeof GetConnectivityStatusQuery>,
-  { startMs, endMs }: TimeWindow
+  { startMs, endMs }: TimeWindow,
+  nowMs: number
 ) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
@@ -44,27 +40,31 @@ const loadConnectivityStatus = (
       startTime,
       endTime,
       granularity,
+      nowMs,
+      intervalMs: config.ping.intervalSeconds * 1000,
+      hosts: config.ping.hosts,
     });
 
     const data = rows.map((row) => {
-      const total = row.total_count || 1;
+      const observed = row.up_micros + row.degraded_micros + row.down_micros;
+      const share = (micros: number) => (micros / observed) * 100;
       return {
-        timestamp: row.timestamp,
+        timestamp: row.bucket,
         status: bucketStatus({
-          down: row.down_count,
-          degraded: row.degraded_count,
-          total: row.total_count,
+          down: row.down_micros,
+          degraded: row.degraded_micros,
+          observed,
         }),
-        upPercentage: (row.up_count / total) * 100,
-        downPercentage: (row.down_count / total) * 100,
-        degradedPercentage: (row.degraded_count / total) * 100,
+        upPercentage: share(row.up_micros),
+        downPercentage: share(row.down_micros),
+        degradedPercentage: share(row.degraded_micros),
       };
     });
 
     const connectivity = summarizeConnectivity(
       rows,
-      startTime.getTime(),
-      endTime.getTime(),
+      startMs,
+      Math.min(endMs, nowMs),
       granularity
     );
 
@@ -90,68 +90,67 @@ export const getConnectivityStatusHandler = ({
     const window = yield* validateWindow(
       resolveWindow(query, now, SUMMARY_WINDOWS_MS.last24h)
     );
-    return yield* loadConnectivityStatus(query, window);
+    return yield* loadConnectivityStatus(query, window, now);
   });
 
 /**
  * Answers "is the link up right now", independent of any date range the
- * dashboard has selected. The trailing window is sized from the server's own
- * `PING_INTERVAL_SECONDS`, which the browser has no way to know, so the
- * freshness decision lives here rather than in the client.
+ * dashboard has selected, from the same state pipeline the reports use. The
+ * pipeline needs the server's own `PING_INTERVAL_SECONDS` and `PING_HOSTS`,
+ * which the browser has no way to know. With no host holding a ping, the status
+ * is `noInfo` and `lastSampleAt` says when the monitor last reported.
  */
 export const getLiveConnectivityHandler = () =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
     const config = yield* ConfigService;
-    const now = yield* Clock.currentTimeMillis;
+    const nowMs = yield* Clock.currentTimeMillis;
 
-    const windowSeconds = liveConnectivityWindowSeconds(
-      config.ping.intervalSeconds
+    const { state, lastSampleAt } = yield* Effect.all(
+      {
+        state: db.queryLiveConnectivity({
+          nowMs,
+          intervalMs: config.ping.intervalSeconds * 1000,
+          hosts: config.ping.hosts,
+        }),
+        lastSampleAt: db.queryLatestPingTimestamp(),
+      },
+      { concurrency: "unbounded" }
     );
-    const sinceIso = new Date(now - windowSeconds * 1000).toISOString();
 
-    const row = yield* db.queryLiveConnectivity(sinceIso);
-    if (row !== null) {
-      return {
-        status: row.cycle_status,
-        lastSampleAt: row.timestamp,
-        windowSeconds,
-      };
-    }
-
-    // Only reached when the window is empty, so the extra round trip stays off
-    // the healthy path: it turns silence into "no data since <timestamp>".
-    const lastSampleAt = yield* db.queryLatestPingTimestamp();
-    return { status: "noInfo" as const, lastSampleAt, windowSeconds };
+    return {
+      status: state ?? ("noInfo" as const),
+      lastSampleAt,
+      windowSeconds: liveConnectivityWindowSeconds(config.ping.intervalSeconds),
+    };
   }).pipe(withApiErrors("Failed to query live connectivity"));
 
-const loadOutages = ({ startMs, endMs }: TimeWindow) =>
+const loadOutages = ({ startMs, endMs }: TimeWindow, nowMs: number) =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
     const config = yield* ConfigService;
 
-    const window = {
-      startTime: new Date(startMs),
-      endTime: new Date(endMs),
-    };
-    const measuredPeriodMs = yield* db.queryCyclePeriod(window);
-    const periodMs = cyclePeriodMs(
-      measuredPeriodMs,
-      config.ping.intervalSeconds
-    );
+    const startTime = new Date(startMs);
+    const endTime = new Date(endMs);
     const runs = yield* db.queryOutageRuns({
-      ...window,
-      mergeGapMs: outageMergeGapMs(periodMs),
+      startTime,
+      endTime,
+      nowMs,
+      intervalMs: config.ping.intervalSeconds * 1000,
+      hosts: config.ping.hosts,
     });
 
-    const outages = summarizeOutages(runs, { periodMs, rangeEndMs: endMs });
+    const outages = summarizeOutages(runs, {
+      rangeStartMs: startMs,
+      rangeEndMs: Math.min(endMs, nowMs),
+    });
     const data = outages.slice(0, MAX_OUTAGES);
 
     return {
       data,
       meta: {
-        startTime: window.startTime.toISOString(),
-        endTime: window.endTime.toISOString(),
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
         count: data.length,
         totalCount: outages.length,
       },
@@ -159,7 +158,7 @@ const loadOutages = ({ startMs, endMs }: TimeWindow) =>
   }).pipe(withApiErrors("Failed to query outages"));
 
 /**
- * The outage log for a window: runs of non-up ping cycles (see
+ * The outage log for a window: runs of degraded or down time (see
  * `buildQueryOutageRuns` and `summarizeOutages`), newest first and capped at
  * `MAX_OUTAGES`. Windows wider than `MAX_OUTAGE_SPAN_DAYS` are rejected before
  * any query runs. `meta` carries the resolved window, which is the default
@@ -176,7 +175,7 @@ export const getOutagesHandler = ({
       resolveWindow(query, now, SUMMARY_WINDOWS_MS.last24h),
       MAX_OUTAGE_SPAN_DAYS
     );
-    return yield* loadOutages(window);
+    return yield* loadOutages(window, now);
   });
 
 export const ConnectivityStatusGroupLive = HttpApiBuilder.group(

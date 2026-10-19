@@ -58,7 +58,6 @@ import {
   currentOutages,
   lastSampleOf,
   openIncidentOf,
-  summaryOf,
   trailingWindowsOf,
 } from "@/dashboard/view/derived";
 import { WRAP_CLASS } from "@/dashboard/view/layout";
@@ -355,23 +354,15 @@ const openIncidentLine = (
   });
 
 const uptimeFigure = (model: Model): Option.Option<number> =>
-  Option.orElse(
-    Option.flatMap(summaryOf(model), ({ range }) =>
-      Option.fromNullishOr(range.uptimePercentage)
-    ),
-    () =>
-      Option.flatMap(
-        currentConnectivity(model),
-        (status) => status.maybeUptimePercentage
-      )
+  Option.flatMap(
+    currentConnectivity(model),
+    (status) => status.maybeUptimePercentage
   );
 
 // A figure waits for an answer to the selected range; a failed fetch is not
 // waited for, since its figures read "-" and the banner says why.
 const areFiguresLoading = (model: Model): boolean =>
-  Option.isNone(summaryOf(model)) &&
   Option.isNone(currentConnectivity(model)) &&
-  !AsyncData.hasError(model.summary) &&
   !AsyncData.hasError(model.connectivityStatus);
 
 // The outage log answers separately from the summary, so its line waits on its
@@ -402,10 +393,7 @@ const outageSummary = (h: HtmlBuilder<Message>, model: Model): Html =>
 const coverageLine = (h: HtmlBuilder<Message>, model: Model): Html =>
   Option.match(
     Option.flatMap(currentConnectivity(model), (status) =>
-      coverageNote(
-        status.coveragePercentage,
-        status.endTimeMs - status.startTimeMs
-      )
+      coverageNote(status.coveragePercentage, status.observedSeconds)
     ),
     {
       onNone: () => h.empty,
@@ -420,7 +408,10 @@ const coverageLine = (h: HtmlBuilder<Message>, model: Model): Html =>
     }
   );
 
-const rangeFigures = (h: HtmlBuilder<Message>, model: Model): Html => {
+// Only the uptime figure waits for the selected range's connectivity answer,
+// which can take seconds on a long range. The incident totals and the trailing
+// windows have their own fetches and their own loading states.
+const uptimeHeadline = (h: HtmlBuilder<Message>, model: Model): Html => {
   const uptime = uptimeFigure(model);
 
   if (areFiguresLoading(model)) {
@@ -430,11 +421,7 @@ const rangeFigures = (h: HtmlBuilder<Message>, model: Model): Html => {
         h.AriaLabel("Loading status"),
         h.Class("mt-5 flex flex-col gap-3 lg:mt-[22px]"),
       ],
-      [
-        skeleton(h, "h-14 w-56"),
-        skeleton(h, "h-4 w-48"),
-        skeleton(h, "h-6 w-52"),
-      ]
+      [skeleton(h, "h-14 w-56"), skeleton(h, "h-4 w-48")]
     );
   }
 
@@ -469,14 +456,22 @@ const rangeFigures = (h: HtmlBuilder<Message>, model: Model): Html => {
         ],
         [`uptime over ${describeRange(model.dateRange)}`]
       ),
+    ]
+  );
+};
+
+const rangeFigures = (h: HtmlBuilder<Message>, model: Model): Html =>
+  h.div(
+    [],
+    [
+      uptimeHeadline(h, model),
       outageSummary(h, model),
       coverageLine(h, model),
       uptimeWindows(h, model),
     ]
   );
-};
 
-const UPTIME_NOTE = `A check counts as up when every host answers with under ${PACKET_LOSS_THRESHOLDS.degradedFloor}% packet loss, down when no host answers, and degraded otherwise.`;
+const UPTIME_NOTE = `Uptime is the share of monitored time with every host answering and under ${PACKET_LOSS_THRESHOLDS.degradedFloor}% packet loss. Time when every host failed counts as down. Any other time with a host failing or losing ${PACKET_LOSS_THRESHOLDS.degradedFloor}% or more of its packets counts as degraded.`;
 
 const WINDOWS = [
   ["last24h", "24h"],

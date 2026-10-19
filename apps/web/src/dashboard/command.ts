@@ -191,6 +191,7 @@ export const fetchConnectivityStatus = ({
         response.meta.availabilityPercentage
       ),
       coveragePercentage: response.meta.coveragePercentage,
+      observedSeconds: response.meta.observedSeconds,
       startTimeMs: Date.parse(startTime),
       endTimeMs: Date.parse(endTime),
       granularity: granularityForRange(window),

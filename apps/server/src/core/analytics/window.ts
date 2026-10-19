@@ -1,5 +1,4 @@
 import { InvalidTimeRange } from "@shared/api/errors";
-import type { Granularity } from "@shared/api/routes/metrics";
 import { Effect } from "effect";
 
 export interface TimeWindow {
@@ -18,16 +17,6 @@ export const SUMMARY_WINDOWS_MS = {
   last7d: 7 * DAY_MS,
   last30d: 30 * DAY_MS,
 } as const;
-
-const FINE_COVERAGE_MAX_SPAN_MS = 2 * DAY_MS;
-
-/**
- * Bucket width used to measure how much of a window the monitor observed. The
- * dashboard's default (5m) for short windows; hourly beyond two days so a
- * 30-day window reads 720 rows rather than 8640.
- */
-export const coverageGranularity = (spanMs: number): Granularity =>
-  spanMs <= FINE_COVERAGE_MAX_SPAN_MS ? "5m" : "1h";
 
 /**
  * Resolves an optional ISO start and end into a window. A missing end is

@@ -83,6 +83,18 @@ fork the stream with `Effect.forkChild`, yield until the listener is attached, d
 `Effect.yieldNow` so the stream takes it in, then `TestClock.adjust`. Check an unfinished stream with
 `fiber.pollUnsafe()`, which is `undefined` until the fiber exits.
 
+## A fixed clock around real I/O
+
+`TestClock` stalls code that polls a real service, such as `seedDatabase`'s wait for QuestDB's row count. For a handler that reads `Clock.currentTimeMillis` but runs against a real database, write the rows on the live clock and provide a fixed `Clock.Clock` to the handler call only:
+
+```ts
+handler.pipe(Effect.provideService(Clock.Clock, fixedClock(nowMs)), Effect.provide(layer));
+```
+
+`fixedClock` is a `Clock.Clock` whose time readings return `nowMs`. See `apps/server/src/core/api/handlers/time-model.integration.test.ts`, which also gives each case its own table and runs the real migrations through `seedTable`.
+
+A layer built inside another `Effect.provide` of the same service reuses the outer layer's connection, so a test that needs a second table runs its second program in its own `Effect.runPromise`, as `queries.integration.test.ts` does for its legacy table.
+
 ## Suppressing log noise
 
 ```ts

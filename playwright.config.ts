@@ -55,6 +55,12 @@ export default defineConfig({
         DB_PG_PORT: "8912",
         DB_PROTOCOL: "http",
         WAN_MONITOR_PASSWORD: "",
+        // The seeded pings are 15 minutes apart. The server holds a host's
+        // spacing between half and twice this interval, so the seeded rows read
+        // as evenly spaced for any interval from 450 to 1800 seconds. With
+        // reuseExistingServer, a dev server already running at an interval
+        // outside that range makes the one-hour outage test fail locally.
+        PING_INTERVAL_SECONDS: "900",
       },
     },
     {

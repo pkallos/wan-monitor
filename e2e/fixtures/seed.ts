@@ -8,6 +8,10 @@
  * Data is anchored to "now" (offsets back from the current time) so the most
  * recent ping/speedtest always fall inside the dashboard's now-minus-24h query
  * window, regardless of what time of day the suite runs.
+ *
+ * The server migrates the metrics table before globalSetup runs the seed. The
+ * seed then recreates it from `buildCreateTableSql()`, so the table carries
+ * every column through `duration_ms` and matches the migration ledger.
  */
 
 import {
@@ -31,6 +35,7 @@ const COLUMNS = [
   "isp",
   "external_ip",
   "internal_ip",
+  "duration_ms",
 ].join(", ");
 
 const TABLE = NETWORK_METRICS_TABLE;
@@ -92,25 +97,69 @@ const isoAt = (epochMs: number): string =>
 
 const SEEDED_HOSTS = ["8.8.8.8", "1.1.1.1"] as const;
 
+const CYCLE_MS = 15 * 60 * 1000;
+/** The stamps of consecutive hosts in a cycle differ by a few seconds. */
+const HOST_STAGGER_MS = 4000;
+/** Cycles at or after this index carry no `duration_ms`, as rows written before the column existed do. */
+const FIRST_UNTIMED_CYCLE = 48;
+const ANSWERED_DURATION_MS = 2400;
+const FAILED_DURATION_MS = 8000;
+
 /** Cycles (counted back from now, 15 minutes apart) in which every host fails. */
 const OUTAGE_CYCLES = new Set([30, 31, 32, 33]);
 /** Cycles in which one host answers but drops 30% of its packets: degraded, not down. */
 const DEGRADED_CYCLES = new Set([60, 61]);
 
+/** When a host's ping of a cycle started: cycles count back from now, and each later host starts a little earlier. */
+export const pingStampMs = (
+  nowMs: number,
+  cycle: number,
+  hostIndex = 0
+): number => nowMs - cycle * CYCLE_MS - hostIndex * HOST_STAGGER_MS;
+
+/** The first cycle of the seeded outage, which is where the outage log says it began. */
+export const SEEDED_OUTAGE_FIRST_CYCLE = Math.max(...OUTAGE_CYCLES);
+
+const NOW_ENV = "E2E_SEED_NOW_MS";
+
+/** Records the seed's "now" for the test workers, which start after globalSetup and inherit its environment. */
+const publishSeedNow = (nowMs: number): void => {
+  process.env[NOW_ENV] = String(nowMs);
+};
+
+/** The "now" the seed was anchored to. */
+export const seededNowMs = (): number => {
+  const nowMs = Number(process.env[NOW_ENV]);
+  if (!Number.isFinite(nowMs)) {
+    throw new Error(`${NOW_ENV} is unset: globalSetup has not seeded`);
+  }
+  return nowMs;
+};
+
 /**
  * 96 cycles at 15-minute intervals across the last 24h, ending at now, one row
- * per host per cycle. One four-cycle outage and one two-cycle degraded period
- * sit inside the window, so the incidents card and the ribbon have
+ * per host per cycle. The seeded server runs at a 15-minute ping interval (see
+ * playwright.config.ts), so each host's rows read as evenly spaced. Three
+ * incidents sit inside the window: a one-hour outage across both hosts (cycles
+ * 30 to 33), a 15-minute outage (cycle 50) and a 30-minute degraded period on
+ * one host (cycles 60 and 61). The incidents card and the ribbon have
  * something to show.
  */
 const buildPingRows = (nowMs: number): string[] => {
   const rows: string[] = [];
   for (let i = 0; i < 96; i++) {
-    const ts = isoAt(nowMs - i * 15 * 60 * 1000);
     for (const [hostIndex, host] of SEEDED_HOSTS.entries()) {
-      if (OUTAGE_CYCLES.has(i)) {
+      const ts = isoAt(pingStampMs(nowMs, i, hostIndex));
+      const isFailed = OUTAGE_CYCLES.has(i);
+      const durationMs =
+        i >= FIRST_UNTIMED_CYCLE
+          ? "null"
+          : isFailed
+            ? FAILED_DURATION_MS
+            : ANSWERED_DURATION_MS;
+      if (isFailed) {
         rows.push(
-          `('${ts}', 'ping', '${host}', null, null, 100, 'down', null, null, null, null, null, null)`
+          `('${ts}', 'ping', '${host}', null, null, 100, 'down', null, null, null, null, null, null, ${durationMs})`
         );
         continue;
       }
@@ -121,7 +170,7 @@ const buildPingRows = (nowMs: number): string[] => {
       const packetLoss = isDegraded ? 30 : i % 20 === 0 ? i % 5 : 0;
       const connectivity = i !== 0 && i % 50 === 0 ? "down" : "up";
       rows.push(
-        `('${ts}', 'ping', '${host}', ${latency}, ${jitter}, ${packetLoss}, '${connectivity}', null, null, null, null, null, null)`
+        `('${ts}', 'ping', '${host}', ${latency}, ${jitter}, ${packetLoss}, '${connectivity}', null, null, null, null, null, null, ${durationMs})`
       );
     }
   }
@@ -136,7 +185,7 @@ const buildSpeedtestRows = (nowMs: number): string[] => {
     const download = (100 + i * 5) * 1_000_000; // 100-125 Mbps in bps
     const upload = (10 + i * 2) * 1_000_000; // 10-20 Mbps in bps
     rows.push(
-      `('${ts}', 'speedtest', 'speedtest.net', null, null, null, 'up', ${download}, ${upload}, 'San Francisco, CA', 'TestISP', '1.2.3.4', '192.168.1.100')`
+      `('${ts}', 'speedtest', 'speedtest.net', null, null, null, 'up', ${download}, ${upload}, 'San Francisco, CA', 'TestISP', '1.2.3.4', '192.168.1.100', null)`
     );
   }
   return rows;
@@ -180,10 +229,12 @@ const waitForRowCount = async (
 
 /**
  * Seed a fresh, deterministic dataset: 96 ping cycles (two hosts each) and 6
- * speedtest metrics spanning the last 24 hours. Resets the schema first so the result is idempotent.
+ * speedtest metrics spanning the last 24 hours. Resets the schema first so the
+ * result is idempotent, and publishes the seed's "now" for `seededNowMs`.
  */
 export const seedTestDatabase = async (baseUrl: string): Promise<void> => {
   const nowMs = Date.now();
+  publishSeedNow(nowMs);
   const pingRows = buildPingRows(nowMs);
   const speedtestRows = buildSpeedtestRows(nowMs);
 

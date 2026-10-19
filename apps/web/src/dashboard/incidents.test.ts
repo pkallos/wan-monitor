@@ -393,7 +393,7 @@ describe("openIncident", () => {
 
   test("shows a running outage in a custom range that ends later today", () => {
     const endsTonight = "2026-10-16T07:00:00.000Z";
-    const runningToTheNextCycle = outage({
+    const runningToTheNextPing = outage({
       start: "2026-10-15T11:30:00.000Z",
       end: "2026-10-15T12:00:30.000Z",
       status: "down",
@@ -401,15 +401,15 @@ describe("openIncident", () => {
 
     expect(
       openIncident(
-        logEndingAt(endsTonight, runningToTheNextCycle),
+        logEndingAt(endsTonight, runningToTheNextPing),
         "down",
         Option.none()
       )
-    ).toEqual(Option.some(runningToTheNextCycle));
+    ).toEqual(Option.some(runningToTheNextPing));
   });
 
-  test("tolerates a ping cycle that arrived a little late", () => {
-    const lateCycle = outage({
+  test("tolerates a ping that arrived a little late", () => {
+    const latePing = outage({
       start: "2026-10-15T11:30:00.000Z",
       end: "2026-10-15T11:59:20.000Z",
       status: "down",
@@ -417,11 +417,11 @@ describe("openIncident", () => {
 
     expect(
       openIncident(
-        logEndingAt("2026-10-16T07:00:00.000Z", lateCycle),
+        logEndingAt("2026-10-16T07:00:00.000Z", latePing),
         "down",
         Option.none()
       )
-    ).toEqual(Option.some(lateCycle));
+    ).toEqual(Option.some(latePing));
   });
 
   test("is none in a future-ending range when the newest incident ended well before now", () => {
@@ -455,34 +455,42 @@ describe("openIncident", () => {
     ).toEqual(Option.none());
   });
 
-  test("tolerates a cycle as late as the live window allows, two ping intervals", () => {
-    const missedACycle = outage({
+  test("tolerates a ping as late as the live window allows, two and a half ping intervals", () => {
+    const twelveMinutesLate = outage({
       start: "2026-10-15T11:30:00.000Z",
-      end: "2026-10-15T11:51:00.000Z",
+      end: "2026-10-15T11:48:00.000Z",
       status: "down",
     });
-    const slowMonitor = Option.some(600);
+    const thirteenMinutesLate = outage({
+      start: "2026-10-15T11:30:00.000Z",
+      end: "2026-10-15T11:47:00.000Z",
+      status: "down",
+    });
+    const fiveMinuteInterval = Option.some(300);
 
-    expect(openIncident(log(missedACycle), "down", slowMonitor)).toEqual(
-      Option.some(missedACycle)
-    );
-    expect(openIncident(log(missedACycle), "down", Option.some(30))).toEqual(
-      Option.none()
-    );
+    expect(
+      openIncident(log(twelveMinutesLate), "down", fiveMinuteInterval)
+    ).toEqual(Option.some(twelveMinutesLate));
+    expect(
+      openIncident(log(thirteenMinutesLate), "down", fiveMinuteInterval)
+    ).toEqual(Option.none());
+    expect(
+      openIncident(log(twelveMinutesLate), "down", Option.some(30))
+    ).toEqual(Option.none());
   });
 
   test("falls back to the 60 second floor while the ping interval is unknown", () => {
-    const lateCycle = outage({
+    const latePing = outage({
       start: "2026-10-15T11:30:00.000Z",
       end: "2026-10-15T11:58:30.000Z",
       status: "down",
     });
 
-    expect(openIncident(log(lateCycle), "down", Option.none())).toEqual(
+    expect(openIncident(log(latePing), "down", Option.none())).toEqual(
       Option.none()
     );
-    expect(openIncident(log(lateCycle), "down", Option.some(60))).toEqual(
-      Option.some(lateCycle)
+    expect(openIncident(log(latePing), "down", Option.some(60))).toEqual(
+      Option.some(latePing)
     );
   });
 });
