@@ -1,4 +1,4 @@
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option, Redacted } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { KeyValueStore } from "effect/persistence";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -87,7 +87,15 @@ const capturingHttpClient = (
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) => {
-      capturedParams.push(Array.from(request.urlParams));
+      capturedParams.push(
+        Array.from(
+          request.urlParams,
+          ([key, value]): readonly [string, string] => [
+            key,
+            String(Redacted.isRedacted(value) ? Redacted.value(value) : value),
+          ]
+        )
+      );
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,
