@@ -4,7 +4,7 @@ import {
   Authorization,
   Unauthorized,
 } from "@shared/api/middlewares/authorization";
-import { Context, Data, Effect, Layer, Option } from "effect";
+import { Clock, Context, Data, Effect, Layer, Option } from "effect";
 import { HttpServerRequest } from "effect/http";
 import {
   type JwtError,
@@ -95,6 +95,15 @@ export const AuthServiceLive = Layer.effect(
 // ============================================================================
 // HTTP Middleware (uses AuthService to enforce auth on protected routes)
 // ============================================================================
+export const anonymousUser: Effect.Effect<AuthenticatedUserValue> = Effect.map(
+  Clock.currentTimeMillis,
+  (nowMillis) => ({
+    username: "anonymous",
+    iat: nowMillis / 1000,
+    exp: nowMillis / 1000 + 86400,
+  })
+);
+
 export const AuthorizationLive = Layer.effect(
   Authorization,
   Effect.gen(function* () {
@@ -115,14 +124,10 @@ export const AuthorizationLive = Layer.effect(
             )
           );
 
-        const anonymous: AuthenticatedUserValue = {
-          username: "anonymous",
-          iat: Date.now() / 1000,
-          exp: Date.now() / 1000 + 86400,
-        };
+        const user = payload ?? (yield* anonymousUser);
 
         return yield* httpEffect.pipe(
-          Effect.provideService(AuthenticatedUser, payload ?? anonymous)
+          Effect.provideService(AuthenticatedUser, user)
         );
       });
   })

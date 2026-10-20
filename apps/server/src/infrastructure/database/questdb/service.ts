@@ -5,6 +5,7 @@ import type {
 } from "@shared/metrics";
 import type { Metric } from "@wan-monitor/shared";
 import {
+  Clock,
   Context,
   Duration,
   Effect,
@@ -329,8 +330,9 @@ const make = Effect.gen(function* () {
       yield* connection.ping;
 
       const { connectedSince } = yield* connection.getState;
+      const nowMillis = yield* Clock.currentTimeMillis;
       const uptime = Option.isSome(connectedSince)
-        ? (Date.now() - connectedSince.value.getTime()) / 1000
+        ? (nowMillis - connectedSince.value.getTime()) / 1000
         : 0;
 
       return { connected: true, uptime } satisfies DatabaseHealth;

@@ -1,4 +1,10 @@
-import { expect, type Page, type Response, test } from "@playwright/test";
+import {
+  expect,
+  type Page,
+  type Request,
+  type Response,
+  test,
+} from "@playwright/test";
 
 /**
  * The interactive parts of the network quality charts: the all-hosts and
@@ -19,12 +25,36 @@ const loaded = async (page: Page) => {
 const isMetricsResponse = (response: Response) =>
   /\/api\/metrics\?/.test(response.url()) && response.ok();
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const metricsWindowMs = (url: string) => {
+  const params = new URL(url).searchParams;
+  return (
+    Date.parse(params.get("endTime") ?? "") -
+    Date.parse(params.get("startTime") ?? "")
+  );
+};
+
+/** A metrics request for a window of at most a week, which the default 30 day range never requests. */
+const isWeekMetricsRequest = (request: Request) =>
+  /\/api\/metrics\?/.test(request.url()) &&
+  metricsWindowMs(request.url()) < 8 * DAY_MS;
+
 /** Resolves once the next refresh has come back from the API. */
 const refreshedOnce = async (page: Page) => {
   const settled = page.waitForResponse(isMetricsResponse);
   await page.getByRole("button", { name: "Refresh now" }).click();
   await settled;
 };
+
+/** Resolves once the frame after the current one has painted. */
+const afterNextPaint = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
 
 const storedLatencyView = (page: Page) =>
   page.evaluate(
@@ -44,12 +74,33 @@ test.describe("Network quality charts", () => {
     ).toBeVisible({ timeout: 15_000 });
     await page.setViewportSize({ width: 900, height: 800 });
     await page.setViewportSize({ width: 1280, height: 720 });
+    const weekRequests: Request[] = [];
+    page.on("request", (request) => {
+      if (isWeekMetricsRequest(request)) weekRequests.push(request);
+    });
     await page.getByRole("button", { name: "7d" }).click();
     await expect(page.getByRole("button", { name: "7d" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );
-    await page.waitForTimeout(500);
+    // The latency chart names its range, and says "Loading." until data for
+    // that range has been handled, so this holds only once the 7d response has
+    // rendered.
+    await expect(
+      page
+        .locator('[aria-label="Latency chart"]')
+        .getByRole("img", { name: /^For the last 7 days\. (?!Loading\.$)/ })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("status", { name: /^Loading .* chart$/ })
+    ).toHaveCount(0);
+    expect(weekRequests).not.toHaveLength(0);
+    await Promise.all(
+      weekRequests.map(async (request) =>
+        (await request.response())?.finished()
+      )
+    );
+    await afterNextPaint(page);
 
     expect(errors).toEqual([]);
   });
@@ -227,12 +278,7 @@ test.describe("Network quality charts", () => {
           .getByRole("group", { name: "Latency chart" })
           .getByRole("img", { name: /^For .* averages/ })
       ).toBeVisible({ timeout: 15_000 });
-      await page.evaluate(
-        () =>
-          new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-          )
-      );
+      await afterNextPaint(page);
       const box = await canvas.boundingBox();
       expect(box).not.toBeNull();
       const { x, y, width, height } = box ?? {

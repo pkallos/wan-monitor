@@ -1,119 +1,78 @@
-import { ConfigProvider, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
+import { QuestDB, QuestDBLive } from "@/infrastructure/database/questdb";
+import { seedDatabase } from "@/infrastructure/database/questdb/test-utils/seed";
 import {
-  ConfigService,
-  ConfigServiceLive,
-} from "@/infrastructure/config/config";
-import {
-  DatabaseConnectionError,
-  DatabaseWriteError,
-  QuestDB,
-  QuestDBLive,
-} from "@/infrastructure/database/questdb";
+  createTestLayer,
+  isQuestDBAvailable,
+  setupIntegrationTest,
+  teardownIntegrationTest,
+} from "@/infrastructure/database/questdb/test-utils/setup";
 import { makeTestConfigLayer } from "@/test/config";
 
-describe("ConfigService", () => {
-  it("should load config with default values", async () => {
-    const program = Effect.gen(function* () {
-      const config = yield* ConfigService;
-      return config;
-    });
-
-    // Use an empty ConfigProvider so this test verifies the built-in defaults
-    // in isolation, independent of any DB_* env vars set by the caller
-    // (e.g. the integration test runner exports DB_PORT/DB_PG_PORT).
-    const TestConfigLive = ConfigServiceLive.pipe(
-      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
-    );
-
-    const result = await Effect.runPromise(
-      Effect.provide(program, TestConfigLive)
-    );
-
-    expect(result).toHaveProperty("server");
-    expect(result).toHaveProperty("database");
-    expect(result.server.port).toBe(3001);
-    expect(result.server.host).toBe("0.0.0.0");
-    expect(result.database.host).toBe("localhost");
-    expect(result.database.port).toBe(9000);
-    expect(result.database.pgPort).toBe(8812);
-    expect(result.database.protocol).toBe("http");
-    expect(result.database.autoFlushRows).toBe(100);
-    expect(result.database.autoFlushInterval).toBe(1000);
-    expect(result.database.requestTimeout).toBe(10000);
-    expect(result.database.retryTimeout).toBe(1000);
-  });
-});
-
-describe("QuestDB Service Types", () => {
-  it("should export QuestDB service tag", () => {
-    expect(QuestDB).toBeDefined();
-  });
-
-  it("should export error types", () => {
-    const connError = new DatabaseConnectionError({ message: "test" });
-    expect(connError._tag).toBe("DatabaseConnectionError");
-    expect(connError.message).toBe("test");
-
-    const writeError = new DatabaseWriteError({ message: "test" });
-    expect(writeError._tag).toBe("DatabaseWriteError");
-    expect(writeError.message).toBe("test");
-  });
-
-  it("should create QuestDBLive layer", () => {
-    expect(QuestDBLive).toBeDefined();
-  });
-});
-
 describe("QuestDB Integration", () => {
-  const isQuestDBAvailable = process.env.QUESTDB_AVAILABLE === "true";
+  const skipTests = !isQuestDBAvailable();
 
-  it.skipIf(!isQuestDBAvailable)(
+  it.skipIf(skipTests)(
     "should connect to QuestDB and pass health check",
     async () => {
-      const MainLive = Layer.provide(QuestDBLive, ConfigServiceLive);
-
       const program = Effect.gen(function* () {
-        const db = yield* QuestDB;
-        // Wait for connection to be established
-        yield* Effect.sleep("2000 millis");
-        const health = yield* db.health();
-        return health;
+        const db = yield* setupIntegrationTest();
+        return yield* db.health();
       });
 
-      const result = await Effect.runPromise(Effect.provide(program, MainLive));
+      const result = await Effect.runPromise(
+        Effect.provide(program, createTestLayer())
+      );
 
       expect(result.connected).toBe(true);
-      expect(result.uptime).toBeTypeOf("number");
+      expect(result.uptime).toBeGreaterThanOrEqual(0);
     }
   );
 
-  it.skipIf(!isQuestDBAvailable)("should write metric to QuestDB", async () => {
-    const MainLive = Layer.provide(QuestDBLive, ConfigServiceLive);
+  it.skipIf(skipTests)(
+    "should write a metric that QuestDB then returns",
+    async () => {
+      const timestamp = new Date("2024-01-15T18:00:00Z");
+      const program = Effect.gen(function* () {
+        const db = yield* setupIntegrationTest();
+        yield* seedDatabase(db, [
+          {
+            timestamp,
+            source: "ping",
+            host: "8.8.8.8",
+            latency: 25.5,
+            packetLoss: 0,
+            connectivityStatus: "up",
+          },
+        ]);
 
-    const program = Effect.gen(function* () {
-      const db = yield* QuestDB;
-      // Wait for connection to be established
-      yield* Effect.sleep("2000 millis");
-      yield* db.writeMetric({
-        timestamp: new Date(),
+        const metrics = yield* db.queryMetrics({
+          startTime: new Date(timestamp.getTime() - 60_000),
+          endTime: new Date(timestamp.getTime() + 60_000),
+        });
+        yield* teardownIntegrationTest(db);
+        return metrics;
+      });
+
+      const metrics = await Effect.runPromise(
+        Effect.provide(program, createTestLayer())
+      );
+
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0]).toMatchObject({
         source: "ping",
         host: "8.8.8.8",
         latency: 25.5,
-        packetLoss: 0,
-        connectivityStatus: "up",
+        packet_loss: 0,
+        connectivity_status: "up",
       });
-      return true;
-    });
+    }
+  );
 
-    const result = await Effect.runPromise(Effect.provide(program, MainLive));
-    expect(result).toBe(true);
-  });
-
-  it.skipIf(!isQuestDBAvailable)(
+  it.skipIf(skipTests)(
     "should fail health check when database is unreachable",
     async () => {
-      // Create a config that points to wrong host
       const BadConfigLive = makeTestConfigLayer({
         database: { host: "nonexistent-host" },
         ping: { hosts: ["8.8.8.8", "1.1.1.1"] },

@@ -82,6 +82,21 @@ describe("SpeedTest - timeout functionality", () => {
     }
   );
 
+  it.effect("stamps the result with the Clock time", () => {
+    const service = makeSpeedTestService(
+      () => Promise.resolve(mockSpeedTestResult),
+      5
+    );
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(1_700_000_000_000);
+
+      const result = yield* service.runTest();
+
+      expect(result.timestamp.getTime()).toBe(1_700_000_000_000);
+    }).pipe(Effect.provide(Layer.succeed(References.MinimumLogLevel, "None")));
+  });
+
   it.live(
     "should return SpeedTestTimeoutError when executor exceeds timeout",
     () => {

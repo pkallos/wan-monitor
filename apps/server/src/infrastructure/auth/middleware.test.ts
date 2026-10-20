@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Result } from "effect";
+import { TestClock } from "effect/testing";
 import { JwtService, JwtServiceLive } from "@/infrastructure/auth/jwt";
 import {
   AuthorizationLive,
   AuthService,
   AuthServiceLive,
+  anonymousUser,
   MissingAuthHeaderError,
   UnauthorizedError,
 } from "@/infrastructure/auth/middleware";
@@ -271,4 +273,33 @@ describe("AuthorizationLive Middleware", () => {
       }).pipe(Effect.provide(AuthServiceTest));
     });
   });
+});
+
+describe("anonymousUser", () => {
+  it.effect("stamps iat and exp from the Clock", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(1_700_000_000_000);
+
+      const user = yield* anonymousUser;
+
+      expect(user).toEqual({
+        username: "anonymous",
+        iat: 1_700_000_000,
+        exp: 1_700_000_000 + 86_400,
+      });
+    })
+  );
+
+  it.effect("follows the Clock as it advances", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(1_700_000_000_000);
+      const first = yield* anonymousUser;
+
+      yield* TestClock.adjust("90 seconds");
+      const second = yield* anonymousUser;
+
+      expect(second.iat - first.iat).toBe(90);
+      expect(second.exp - first.exp).toBe(90);
+    })
+  );
 });

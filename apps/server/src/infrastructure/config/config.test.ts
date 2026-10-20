@@ -106,6 +106,22 @@ describe("ConfigService", () => {
     expect(Redacted.value(jwtSecret)).toBe("not-the-default");
   });
 
+  it("uses the server and database defaults when the environment is empty", async () => {
+    const config = await loadConfig({});
+
+    expect(config.server).toEqual({ port: 3001, host: "0.0.0.0" });
+    expect(config.database).toMatchObject({
+      host: "localhost",
+      port: 9000,
+      pgPort: 8812,
+      protocol: "http",
+      autoFlushRows: 100,
+      autoFlushInterval: 1000,
+      requestTimeout: 10000,
+      retryTimeout: 1000,
+    });
+  });
+
   it("fails to load when DB_PROTOCOL is not http or tcp", async () => {
     const exit = await loadConfigExit({ DB_PROTOCOL: "grpc" });
 

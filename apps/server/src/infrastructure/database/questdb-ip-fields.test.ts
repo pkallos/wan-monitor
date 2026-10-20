@@ -1,5 +1,4 @@
 import type { NetworkMetric } from "@shared/metrics";
-import type { Metric } from "@wan-monitor/shared";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { seedDatabase } from "@/infrastructure/database/questdb/test-utils/seed";
@@ -134,27 +133,4 @@ describe("QuestDB IP Fields Schema Mapping", () => {
       await Effect.runPromise(Effect.provide(program, testLayer));
     }
   );
-
-  it("should include IP fields in Metric type definition", () => {
-    // Type-level test - this will fail at compile time if types are wrong
-    const mockRow: Metric = {
-      timestamp: new Date().toISOString(),
-      source: "speedtest",
-      host: "test.com",
-      latency: 10,
-      jitter: 2,
-      packet_loss: 0,
-      connectivity_status: "up",
-      download_speed: 100,
-      upload_speed: 50,
-      server_location: "Test Location",
-      isp: "Test ISP",
-      external_ip: "203.0.113.1",
-      internal_ip: "192.168.1.1",
-    };
-
-    // Verify the type includes IP fields
-    expect(mockRow).toHaveProperty("external_ip");
-    expect(mockRow).toHaveProperty("internal_ip");
-  });
 });

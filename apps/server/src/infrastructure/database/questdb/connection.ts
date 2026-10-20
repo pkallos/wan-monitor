@@ -284,10 +284,13 @@ const make = Effect.gen(function* () {
   };
 
   const setLastError = (message: string): Effect.Effect<void> =>
-    Ref.update(stateRef, (s) => ({
-      ...s,
-      lastError: Option.some({ message, timestamp: new Date() }),
-    }));
+    Effect.gen(function* () {
+      const timestamp = new Date(yield* Clock.currentTimeMillis);
+      yield* Ref.update(stateRef, (s) => ({
+        ...s,
+        lastError: Option.some({ message, timestamp }),
+      }));
+    });
 
   const migrationRetryMs = (failures: number): number =>
     Math.min(
@@ -361,21 +364,23 @@ const make = Effect.gen(function* () {
           attachPgErrorHandler(conn, conn.pgClient);
           attachPgErrorHandler(conn, conn.healthPool);
 
+          const connectedSince = new Date(yield* Clock.currentTimeMillis);
           yield* Ref.set(stateRef, {
             connection: Option.some(conn),
             isConnecting: false,
             lastError: Option.none(),
-            connectedSince: Option.some(new Date()),
+            connectedSince: Option.some(connectedSince),
           });
 
           yield* Effect.logInfo("QuestDB connected successfully");
         } else {
+          const timestamp = new Date(yield* Clock.currentTimeMillis);
           yield* Ref.update(stateRef, (s) => ({
             ...s,
             isConnecting: false,
             lastError: Option.some({
               message: "Connection attempt timed out",
-              timestamp: new Date(),
+              timestamp,
             }),
           }));
 
