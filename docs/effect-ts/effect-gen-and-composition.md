@@ -76,9 +76,13 @@ first, then the layers they use (QuestDB) are released.
 - **`NodeRuntime.runMain(effect)`** — the process entry point (`apps/server/src/index.ts`). It
   interrupts the main fiber on SIGINT and SIGTERM so scope finalizers run, logs a failure's cause, and
   exits with code 130 after an interrupt or 1 after a failure.
-- **`Effect.runFork(effect)`** — starts the effect as a fiber and returns immediately; used for
-  fire-and-forget error recovery (`connection.ts`'s `Effect.runFork(markDisconnected(error.message))`
-  inside a synchronous callback).
+- **`FiberSet.makeRuntime()`**: yields a run function that starts an effect as a fiber and returns
+  immediately. Use it for fire-and-forget work inside a synchronous callback, such as
+  `connection.ts`'s `runFork(markDisconnected(conn, error.message))` in a pg `error` handler. Create
+  it once in the layer's `make`: the fibers it starts inherit the layer's context (logger, clock), and
+  closing the layer's scope interrupts them, which a bare `Effect.runFork` does neither.
+- **`Effect.runFork(effect)`**: starts the effect as a fiber outside any scope and returns
+  immediately. Nothing interrupts the fiber when a scope closes.
 - **`Effect.runPromise(effect)`** / **`Effect.runPromiseExit(effect)`** — used at the boundary between
   Effect and a non-Effect caller that wants a `Promise` (test files that `await` an Effect program;
   Foldkit's own runtime handles this boundary for `Command`/`flags` Effects in `apps/web`).

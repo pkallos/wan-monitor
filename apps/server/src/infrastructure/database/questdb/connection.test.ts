@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "@effect/vitest";
 import { Sender } from "@questdb/nodejs-client";
 import {
+  Clock,
   Context,
   Deferred,
   Duration,
@@ -409,7 +410,10 @@ describe("QuestDBConnection integration tests", () => {
         const stateBefore = yield* connection.getState;
         expect(Option.isSome(stateBefore.connection)).toBe(true);
 
-        yield* connection.markDisconnected("Test error");
+        yield* connection.markDisconnected(
+          yield* connection.getConnection,
+          "Test error"
+        );
 
         const stateAfter = yield* connection.getState;
         expect(Option.isNone(stateAfter.connection)).toBe(true);
@@ -439,15 +443,23 @@ describe("QuestDBConnection integration tests", () => {
         on: vi.fn(),
       };
 
-      vi.mocked(Sender.fromConfig).mockResolvedValue(asSender(mockSender));
+      vi.mocked(Sender.fromConfig)
+        .mockResolvedValueOnce(asSender(mockSender))
+        .mockImplementation(() => new Promise(() => undefined));
       mockPool(mockPgClient);
 
       return Effect.gen(function* () {
         const connection = yield* QuestDBConnection;
         yield* Effect.sleep(Duration.millis(6000));
 
-        yield* connection.getState;
+        const state = yield* connection.getState;
         expect(healthCheckCount).toBeGreaterThan(1);
+        expect(Option.isNone(state.connection)).toBe(true);
+        expect(Option.map(state.lastError, (error) => error.message)).toEqual(
+          Option.some("Health check failed")
+        );
+        expect(Sender.fromConfig).toHaveBeenCalledTimes(2);
+        expect(mockSender.close).toHaveBeenCalledTimes(1);
       }).pipe(Effect.provide(connectionLayer(TestConfigLayer)));
     });
 
@@ -728,7 +740,10 @@ describe("QuestDBConnection integration tests", () => {
         expect(attempts).toBe(3);
         yield* untilConnected(connection);
 
-        yield* connection.markDisconnected("connection dropped");
+        yield* connection.markDisconnected(
+          yield* connection.getConnection,
+          "connection dropped"
+        );
         yield* TestClock.adjust(Duration.seconds(5));
         expect(attempts).toBe(4);
 
@@ -885,7 +900,10 @@ describe("QuestDBConnection integration tests", () => {
             yield* untilConnected(connection);
             expect(seen).toEqual([true]);
 
-            yield* connection.markDisconnected("connection dropped");
+            yield* connection.markDisconnected(
+              yield* connection.getConnection,
+              "connection dropped"
+            );
             yield* TestClock.adjust(Duration.seconds(5));
             yield* untilConnected(connection);
 
@@ -1020,7 +1038,10 @@ describe("closing a connection whose flush never settles", () => {
         yield* untilConnected(connection);
 
         const fiber = yield* Effect.forkChild(
-          connection.markDisconnected("write timed out")
+          connection.markDisconnected(
+            yield* connection.getConnection,
+            "write timed out"
+          )
         );
         yield* TestClock.adjust(Duration.millis(flushBoundMs - 1));
         yield* settlePromises;
@@ -1129,10 +1150,14 @@ describe("closing a connection whose flush never settles", () => {
         yield* settlePromises;
 
         yield* TestClock.adjust(Duration.millis(1000));
-        yield* Effect.forkChild(connection.markDisconnected("first"));
+        yield* Effect.forkChild(
+          connection.markDisconnected(yield* connection.getConnection, "first")
+        );
         yield* TestClock.adjust(Duration.millis(4500));
         yield* settlePromises;
-        yield* Effect.forkChild(connection.markDisconnected("second"));
+        yield* Effect.forkChild(
+          connection.markDisconnected(yield* connection.getConnection, "second")
+        );
         yield* TestClock.adjust(Duration.millis(500));
         yield* settlePromises;
         yield* TestClock.adjust(Duration.millis(4000));
@@ -1338,7 +1363,10 @@ describe("the health pool beside the query pool", () => {
         const connection = yield* connected;
 
         const fiber = yield* Effect.forkChild(
-          connection.markDisconnected("health check hung")
+          connection.markDisconnected(
+            yield* connection.getConnection,
+            "health check hung"
+          )
         );
         yield* TestClock.adjust(Duration.millis(4999));
         yield* settlePromises;
@@ -1522,4 +1550,240 @@ describe("the health pool beside the query pool", () => {
       })
     );
   });
+});
+
+describe("a disconnect report about a connection", () => {
+  const settlePromises = Effect.promise(
+    () => new Promise((resolve) => setTimeout(resolve, 20))
+  );
+
+  /** Records what each opened sender and pool is asked to close, in opening order. */
+  const trackOpenedConnections = (
+    firstFlush: () => Promise<void> = async () => undefined
+  ) => {
+    const senderCloses: ReturnType<typeof vi.fn>[] = [];
+    const queryEnds: ReturnType<typeof vi.fn>[] = [];
+    const healthEnds: ReturnType<typeof vi.fn>[] = [];
+    const queryPoolErrorHandlers: ((error: Error) => void)[] = [];
+
+    vi.mocked(Sender.fromConfig).mockImplementation(async () => {
+      const close = vi.fn().mockResolvedValue(undefined);
+      senderCloses.push(close);
+      const flush =
+        senderCloses.length === 1 ? firstFlush : async () => undefined;
+      return asSender({ flush: vi.fn().mockImplementation(flush), close });
+    });
+    vi.mocked(Pool).mockImplementation(function (
+      this: unknown,
+      config?: { max?: number }
+    ) {
+      const end = vi.fn().mockResolvedValue(undefined);
+      const isHealthPool = config?.max === 1;
+      (isHealthPool ? healthEnds : queryEnds).push(end);
+      return asPool({
+        query: vi.fn().mockResolvedValue({ rows: [] }),
+        end,
+        on: vi.fn().mockImplementation((event: string, handler: unknown) => {
+          if (
+            !isHealthPool &&
+            event === "error" &&
+            typeof handler === "function"
+          ) {
+            queryPoolErrorHandlers.push((error) => handler(error));
+          }
+        }),
+      });
+    });
+
+    return { senderCloses, queryEnds, healthEnds, queryPoolErrorHandlers };
+  };
+
+  /** Drops the current connection and waits for the loop to open its replacement. */
+  const replaceConnection = (connection: QuestDBConnectionService) =>
+    Effect.gen(function* () {
+      const replaced = yield* connection.getConnection;
+      yield* connection.markDisconnected(replaced, "connection dropped");
+      yield* TestClock.adjust(Duration.seconds(5));
+      yield* untilConnected(connection);
+      yield* settlePromises;
+      return replaced;
+    });
+
+  const connected = Effect.gen(function* () {
+    const { connection } = yield* connectInScope(() => Effect.void);
+    yield* untilConnected(connection);
+    yield* settlePromises;
+    return connection;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.effect(
+    "closes once and keeps the first report's reason when reported twice at once",
+    () => {
+      const opened = trackOpenedConnections();
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+        const current = yield* connection.getConnection;
+        const reportedAt = yield* Clock.currentTimeMillis;
+
+        yield* Effect.all(
+          [
+            connection.markDisconnected(current, "first"),
+            connection.markDisconnected(current, "second"),
+          ],
+          { concurrency: "unbounded" }
+        );
+
+        const state = yield* connection.getState;
+        expect(opened.senderCloses[0]).toHaveBeenCalledTimes(1);
+        expect(opened.queryEnds[0]).toHaveBeenCalledTimes(1);
+        expect(opened.healthEnds[0]).toHaveBeenCalledTimes(1);
+        expect(Option.map(state.lastError, (error) => error.message)).toEqual(
+          Option.some("first")
+        );
+        expect(
+          Option.map(state.lastError, (error) => error.timestamp.getTime())
+        ).toEqual(Option.some(reportedAt));
+      });
+    }
+  );
+
+  it.effect(
+    "leaves the replacement and its pools untouched once the connection is replaced",
+    () => {
+      const opened = trackOpenedConnections();
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+        const replaced = yield* replaceConnection(connection);
+        const replacement = yield* connection.getConnection;
+        const before = yield* connection.getState;
+
+        yield* connection.markDisconnected(replaced, "late failure");
+
+        const after = yield* connection.getState;
+        expect(replacement).not.toBe(replaced);
+        expect(Option.getOrUndefined(after.connection)).toBe(replacement);
+        expect(after.lastError).toEqual(before.lastError);
+        expect(after.connectedSince).toEqual(before.connectedSince);
+        expect(opened.senderCloses[1]).not.toHaveBeenCalled();
+        expect(opened.queryEnds[1]).not.toHaveBeenCalled();
+        expect(opened.healthEnds[1]).not.toHaveBeenCalled();
+      });
+    }
+  );
+
+  it.effect("changes nothing when nothing is connected", () => {
+    const opened = trackOpenedConnections();
+
+    return Effect.gen(function* () {
+      const connection = yield* connected;
+      const current = yield* connection.getConnection;
+      yield* connection.markDisconnected(current, "first");
+      const before = yield* connection.getState;
+
+      yield* connection.markDisconnected(current, "second");
+
+      expect(yield* connection.getState).toEqual(before);
+      expect(opened.queryEnds[0]).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it.effect(
+    "keeps the replacement connected when the replaced query pool emits an error",
+    () => {
+      const opened = trackOpenedConnections();
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+        yield* replaceConnection(connection);
+        const replacement = yield* connection.getConnection;
+
+        opened.queryPoolErrorHandlers[0]?.(new Error("late idle client error"));
+        yield* settlePromises;
+
+        const state = yield* connection.getState;
+        expect(opened.queryPoolErrorHandlers).toHaveLength(2);
+        expect(Option.getOrUndefined(state.connection)).toBe(replacement);
+        expect(Option.isNone(state.lastError)).toBe(true);
+        expect(opened.queryEnds[1]).not.toHaveBeenCalled();
+        expect(opened.healthEnds[1]).not.toHaveBeenCalled();
+      });
+    }
+  );
+
+  it.effect("disconnects when the current query pool emits an error", () => {
+    const opened = trackOpenedConnections();
+
+    return Effect.gen(function* () {
+      const connection = yield* connected;
+
+      opened.queryPoolErrorHandlers[0]?.(new Error("idle client died"));
+      yield* settlePromises;
+
+      const state = yield* connection.getState;
+      expect(Option.isNone(state.connection)).toBe(true);
+      expect(opened.queryEnds[0]).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it.effect(
+    "bounds the close of a connection whose flush hangs by the test clock after a pool error",
+    () => {
+      let releaseFlush: (() => void) | undefined;
+      const opened = trackOpenedConnections(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseFlush = resolve;
+          })
+      );
+
+      return Effect.gen(function* () {
+        yield* connected;
+
+        opened.queryPoolErrorHandlers[0]?.(new Error("idle client died"));
+        yield* settlePromises;
+        const closedBeforeBound = opened.senderCloses[0]?.mock.calls.length;
+        yield* TestClock.adjust(Duration.millis(5000));
+        yield* settlePromises;
+
+        releaseFlush?.();
+        expect(closedBeforeBound).toBe(0);
+        expect(opened.senderCloses[0]).toHaveBeenCalledTimes(1);
+      });
+    }
+  );
+
+  it.effect(
+    "leaves an in-progress reconnect alone when the dropped connection reports again",
+    () => {
+      const opened = trackOpenedConnections();
+
+      return Effect.gen(function* () {
+        const connection = yield* connected;
+        const dropped = yield* connection.getConnection;
+        vi.mocked(Sender.fromConfig).mockImplementation(
+          () => new Promise(() => undefined)
+        );
+        yield* connection.markDisconnected(dropped, "dropped");
+        yield* TestClock.adjust(Duration.seconds(5));
+        yield* settlePromises;
+        const reconnecting = yield* connection.getState;
+
+        yield* connection.markDisconnected(dropped, "late");
+
+        const after = yield* connection.getState;
+        expect(reconnecting.isConnecting).toBe(true);
+        expect(after).toEqual(reconnecting);
+        expect(Option.map(after.lastError, (error) => error.message)).toEqual(
+          Option.some("dropped")
+        );
+        expect(opened.senderCloses[0]).toHaveBeenCalledTimes(1);
+      });
+    }
+  );
 });
