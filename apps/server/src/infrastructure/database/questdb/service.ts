@@ -181,19 +181,18 @@ const make = Effect.gen(function* () {
       })
     );
 
-  const withDisconnectOnUnavailable = <
-    A,
-    E extends DatabaseQueryError | DatabaseWriteError,
-  >(
-    effect: Effect.Effect<A, E | DatabaseUnavailable>
-  ) =>
-    effect.pipe(
-      Effect.catchTag("DatabaseUnavailable", (error) =>
-        connection
-          .markDisconnected(error.message)
-          .pipe(Effect.andThen(Effect.fail(error)))
-      )
-    );
+  const withDisconnectOnUnavailable =
+    (conn: QuestDBRawConnection) =>
+    <A, E extends DatabaseQueryError | DatabaseWriteError>(
+      effect: Effect.Effect<A, E | DatabaseUnavailable>
+    ) =>
+      effect.pipe(
+        Effect.catchTag("DatabaseUnavailable", (error) =>
+          connection
+            .markDisconnected(conn, error.message)
+            .pipe(Effect.andThen(Effect.fail(error)))
+        )
+      );
 
   const runIlp = (
     operation: "write" | "flush",
@@ -208,9 +207,8 @@ const make = Effect.gen(function* () {
             try: () => send(conn),
             catch: classifyWriteError(action, protocol),
           })
-        )
-      ),
-      withDisconnectOnUnavailable
+        ).pipe(withDisconnectOnUnavailable(conn))
+      )
     );
 
   // The sender batches rows across calls and drops a rejected batch, so each
@@ -238,7 +236,7 @@ const make = Effect.gen(function* () {
         Effect.tryPromise({
           try: () => conn.pgClient.query(spec.query, Array.from(spec.params)),
           catch: classifyQueryError(label),
-        })
+        }).pipe(withDisconnectOnUnavailable(conn))
       ),
       Effect.flatMap((result) =>
         Schema.decodeUnknownEffect(Schema.Array(schema))(result.rows).pipe(
@@ -249,8 +247,7 @@ const make = Effect.gen(function* () {
               })
           )
         )
-      ),
-      withDisconnectOnUnavailable
+      )
     );
 
   const queryMetrics = (params: QueryMetricsParams) =>

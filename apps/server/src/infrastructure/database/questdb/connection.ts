@@ -1,5 +1,15 @@
 import { Sender } from "@questdb/nodejs-client";
-import { Context, Duration, Effect, Layer, Option, Ref, Result } from "effect";
+import {
+  Clock,
+  Context,
+  Duration,
+  Effect,
+  FiberSet,
+  Layer,
+  Option,
+  Ref,
+  Result,
+} from "effect";
 import { Pool, type PoolConfig } from "pg";
 import { type AppConfig, ConfigService } from "@/infrastructure/config/config";
 import {
@@ -83,7 +93,14 @@ export interface QuestDBConnectionService {
     DatabaseUnavailable
   >;
   readonly getState: Effect.Effect<QuestDBConnectionState>;
-  readonly markDisconnected: (error: string) => Effect.Effect<void>;
+  /**
+   * Closes `connection` and records `reason`, but only while it is still the
+   * current connection; a report about a replaced one changes nothing.
+   */
+  readonly markDisconnected: (
+    connection: QuestDBRawConnection,
+    reason: string
+  ) => Effect.Effect<void>;
   /** A `SELECT 1` on the connection's own health pool, so it never waits behind API queries. */
   readonly ping: Effect.Effect<
     void,
@@ -111,6 +128,7 @@ const make = Effect.gen(function* () {
     yield* Ref.make<QuestDBConnectionState<OpenConnection>>(initialState);
   const failedMigrationsRef = yield* Ref.make(0);
   const senderCreatedRef = yield* Ref.make(false);
+  const runFork = yield* FiberSet.makeRuntime();
 
   const buildSenderConnectionString = (): string => {
     const {
@@ -215,30 +233,53 @@ const make = Effect.gen(function* () {
     return { sender, pgClient, healthPool } satisfies OpenConnection;
   });
 
-  const markDisconnected = (error: string): Effect.Effect<void> =>
+  const markDisconnected = (
+    connection: QuestDBRawConnection,
+    reason: string
+  ): Effect.Effect<void> =>
     Effect.gen(function* () {
-      // Taking the connection out of state first means overlapping disconnects
-      // never close it twice, nor close a connection made while this one closes.
-      const previous = yield* Ref.modify(stateRef, (state) => [
-        state.connection,
-        {
-          connection: Option.none(),
-          isConnecting: false,
-          lastError: Option.some({ message: error, timestamp: new Date() }),
-          connectedSince: Option.none(),
-        } satisfies QuestDBConnectionState<OpenConnection>,
-      ]);
+      const now = yield* Clock.currentTimeMillis;
+      // Only the connection still in state is taken out, so overlapping or late
+      // reports never close one twice or take down its replacement.
+      const closing = yield* Ref.modify(
+        stateRef,
+        (
+          state
+        ): [
+          Option.Option<OpenConnection>,
+          QuestDBConnectionState<OpenConnection>,
+        ] =>
+          Option.isSome(state.connection) &&
+          state.connection.value === connection
+            ? [
+                state.connection,
+                {
+                  connection: Option.none(),
+                  isConnecting: false,
+                  lastError: Option.some({
+                    message: reason,
+                    timestamp: new Date(now),
+                  }),
+                  connectedSince: Option.none(),
+                },
+              ]
+            : [Option.none(), state]
+      );
 
-      if (Option.isSome(previous)) {
-        yield* closeConnection(previous.value).pipe(Effect.ignore);
+      if (Option.isNone(closing)) {
+        yield* Effect.logDebug(
+          `Ignored disconnect report for a QuestDB connection no longer in use: ${reason}`
+        );
+        return;
       }
 
-      yield* Effect.logWarning(`QuestDB disconnected: ${error}`);
+      yield* closeConnection(closing.value).pipe(Effect.ignore);
+      yield* Effect.logWarning(`QuestDB disconnected: ${reason}`);
     });
 
-  const attachPgErrorHandler = (pool: Pool): void => {
+  const attachPgErrorHandler = (conn: OpenConnection, pool: Pool): void => {
     pool.on("error", (error: Error) => {
-      Effect.runFork(markDisconnected(error.message));
+      runFork(markDisconnected(conn, error.message));
     });
   };
 
@@ -317,8 +358,8 @@ const make = Effect.gen(function* () {
         if (Option.isSome(result)) {
           const conn = result.value;
           yield* Ref.set(senderCreatedRef, true);
-          attachPgErrorHandler(conn.pgClient);
-          attachPgErrorHandler(conn.healthPool);
+          attachPgErrorHandler(conn, conn.pgClient);
+          attachPgErrorHandler(conn, conn.healthPool);
 
           yield* Ref.set(stateRef, {
             connection: Option.some(conn),
@@ -359,7 +400,7 @@ const make = Effect.gen(function* () {
         );
 
         if (!healthOk) {
-          yield* markDisconnected("Health check failed");
+          yield* markDisconnected(conn, "Health check failed");
         } else {
           yield* Effect.sleep(Duration.millis(healthCheckIntervalMs));
         }

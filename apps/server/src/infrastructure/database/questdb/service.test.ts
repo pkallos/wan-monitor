@@ -93,8 +93,8 @@ const stubbedSenderConfig = "http::addr=localhost:9;protocol_version=2;";
 
 /**
  * Runs `use` against the QuestDB service wired to a connection whose Postgres
- * client answers every query with `respond`, and reports each message the
- * service passed to `markDisconnected`. The sender is built from
+ * client answers every query with `respond`, and reports each reason and
+ * connection the service passed to `markDisconnected`. The sender is built from
  * `senderConfig`, which points at a closed port.
  */
 const withStubbedPgClient = <A, E>(
@@ -102,7 +102,8 @@ const withStubbedPgClient = <A, E>(
   use: (
     db: QuestDBService,
     disconnects: readonly string[],
-    conn: QuestDBRawConnection
+    conn: QuestDBRawConnection,
+    reportedConnections: readonly QuestDBRawConnection[]
   ) => Effect.Effect<A, E>,
   senderConfig = stubbedSenderConfig,
   protocol: "http" | "tcp" = "http"
@@ -120,6 +121,7 @@ const withStubbedPgClient = <A, E>(
     }),
     (conn) => {
       const disconnects: string[] = [];
+      const reportedConnections: QuestDBRawConnection[] = [];
       const connection = Layer.succeed(QuestDBConnection, {
         getConnection: Effect.succeed(conn),
         getState: Effect.succeed({
@@ -128,8 +130,9 @@ const withStubbedPgClient = <A, E>(
           lastError: Option.none(),
           connectedSince: Option.none(),
         }),
-        markDisconnected: (error) =>
+        markDisconnected: (reported, error) =>
           Effect.sync(() => {
+            reportedConnections.push(reported);
             disconnects.push(error);
           }),
         ping: Effect.void,
@@ -137,7 +140,7 @@ const withStubbedPgClient = <A, E>(
       });
       return Effect.gen(function* () {
         const db = yield* QuestDB;
-        return yield* use(db, disconnects, conn);
+        return yield* use(db, disconnects, conn, reportedConnections);
       }).pipe(
         Effect.provide(
           QuestDBOverConnection.pipe(
@@ -167,7 +170,7 @@ describe.each(queries)("%s", (_name, failureLabel, run) => {
           Promise.reject(
             systemError("connect ECONNREFUSED 127.0.0.1:8812", "ECONNREFUSED")
           ),
-        (db, disconnects) =>
+        (db, disconnects, conn, reportedConnections) =>
           Effect.gen(function* () {
             const error = yield* Effect.flip(run(db));
 
@@ -178,6 +181,10 @@ describe.each(queries)("%s", (_name, failureLabel, run) => {
             expect(new Set(disconnects)).toEqual(
               new Set(["connect ECONNREFUSED 127.0.0.1:8812"])
             );
+            expect(reportedConnections.length).toBeGreaterThan(0);
+            expect(
+              reportedConnections.every((reported) => reported === conn)
+            ).toBe(true);
           })
       )
   );
@@ -550,6 +557,64 @@ describe("queries over no rows", () => {
   );
 });
 
+describe("when nothing is connected", () => {
+  const unplugged = (disconnects: string[]) =>
+    QuestDBOverConnection.pipe(
+      Layer.provide(
+        Layer.merge(
+          Layer.succeed(QuestDBConnection, {
+            getConnection: Effect.fail(
+              new DatabaseUnavailable({ message: "Database not connected" })
+            ),
+            getState: Effect.succeed({
+              connection: Option.none(),
+              isConnecting: false,
+              lastError: Option.none(),
+              connectedSince: Option.none(),
+            }),
+            markDisconnected: (_connection, error) =>
+              Effect.sync(() => {
+                disconnects.push(error);
+              }),
+            ping: Effect.void,
+            close: Effect.void,
+          }),
+          makeTestConfigLayer()
+        )
+      )
+    );
+
+  it.effect.each(queries)(
+    "%s fails as unavailable without reporting a disconnect",
+    ([, , run]) => {
+      const disconnects: string[] = [];
+
+      return Effect.gen(function* () {
+        const db = yield* QuestDB;
+
+        const error = yield* Effect.flip(run(db));
+
+        expect(error).toBeInstanceOf(DatabaseUnavailable);
+        expect(error).toMatchObject({ message: "Database not connected" });
+        expect(disconnects).toEqual([]);
+      }).pipe(Effect.provide(unplugged(disconnects)));
+    }
+  );
+
+  it.effect("flush fails as unavailable without reporting a disconnect", () => {
+    const disconnects: string[] = [];
+
+    return Effect.gen(function* () {
+      const db = yield* QuestDB;
+
+      const error = yield* Effect.flip(db.flush());
+
+      expect(error).toBeInstanceOf(DatabaseUnavailable);
+      expect(disconnects).toEqual([]);
+    }).pipe(Effect.provide(unplugged(disconnects)));
+  });
+});
+
 describe("health", () => {
   const healthLayer = (
     connection: Pick<
@@ -650,7 +715,7 @@ describe("writeMetric", () => {
     () =>
       withStubbedPgClient(
         () => Promise.resolve({ rows: [] }),
-        (db, disconnects, conn) =>
+        (db, disconnects, conn, reportedConnections) =>
           Effect.gen(function* () {
             vi.spyOn(conn.sender, "at").mockRejectedValue(
               systemError("read ECONNRESET", "ECONNRESET")
@@ -661,6 +726,8 @@ describe("writeMetric", () => {
             expect(error).toBeInstanceOf(DatabaseUnavailable);
             expect(error).toMatchObject({ message: "read ECONNRESET" });
             expect(disconnects).toEqual(["read ECONNRESET"]);
+            expect(reportedConnections).toHaveLength(1);
+            expect(reportedConnections[0]).toBe(conn);
           })
       )
   );
