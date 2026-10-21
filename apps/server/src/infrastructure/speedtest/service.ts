@@ -1,4 +1,4 @@
-import { Duration, Effect, Layer } from "effect";
+import { Clock, Duration, Effect, Layer } from "effect";
 import speedTest from "speedtest-net";
 import { ConfigService } from "@/infrastructure/config/config";
 import {
@@ -78,7 +78,7 @@ export const makeSpeedTestService = (
         const uploadSpeedMbps = bandwidthToMbps(result.upload?.bandwidth);
 
         const speedTestResult: SpeedTestResult = {
-          timestamp: new Date(),
+          timestamp: new Date(yield* Clock.currentTimeMillis),
           downloadSpeed: downloadSpeedMbps,
           uploadSpeed: uploadSpeedMbps,
           latency: result.ping?.latency,

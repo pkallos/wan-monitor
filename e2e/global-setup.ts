@@ -14,7 +14,6 @@ const isCI = Boolean(process.env.CI);
 
 export default async function globalSetup(): Promise<void> {
   if (!isCI) {
-    // eslint-disable-next-line no-console
     console.log("[e2e] starting questdb-test container...");
     execSync("docker compose --profile test up -d questdb-test", {
       stdio: "inherit",

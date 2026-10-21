@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 
 /**
  * PHI-94: Date range + auto-refresh controls update dashboard data.
@@ -194,11 +194,15 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
     await page.clock.install();
 
     const metricsRequests: string[] = [];
+    const inFlight = new Set<Request>();
     page.on("request", (request) => {
       if (request.url().includes(METRICS_PATH)) {
         metricsRequests.push(request.url());
+        inFlight.add(request);
       }
     });
+    page.on("requestfinished", (request) => inFlight.delete(request));
+    page.on("requestfailed", (request) => inFlight.delete(request));
 
     await page.goto("/");
     await expect(
@@ -223,13 +227,19 @@ test.describe("PHI-94: date range + auto-refresh controls", () => {
     ).toBeVisible();
 
     // Let any in-flight refetch settle, then snapshot the count.
-    await page.waitForTimeout(500);
+    await expect.poll(() => inFlight.size).toBe(0);
     const countWhilePaused = metricsRequests.length;
 
-    // Even jumping well past two intervals fires no background request.
+    // Jumping well past two intervals must not fire a background refetch. The
+    // manual refresh below is the one request that may follow, so the count
+    // lands on exactly one more only if no tick fetched.
     await page.clock.fastForward(65_000);
-    await page.waitForTimeout(500);
-    expect(metricsRequests.length).toBe(countWhilePaused);
+    const refreshed = page.waitForResponse(
+      (response) => response.url().includes(METRICS_PATH) && response.ok()
+    );
+    await page.getByRole("button", { name: "Refresh now" }).click();
+    await refreshed;
+    expect(metricsRequests.length).toBe(countWhilePaused + 1);
 
     // Resume: the interval restarts and a refetch fires on the next tick.
     await page.getByRole("button", { name: "Resume auto-refresh" }).click();

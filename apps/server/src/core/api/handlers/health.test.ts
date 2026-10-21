@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { HealthUnhealthy } from "@shared/api/errors";
-import { Effect, Layer, Result } from "effect";
+import { DateTime, Effect, Layer, Result } from "effect";
+import { TestClock } from "effect/testing";
 import { getLiveHandler, getReadyHandler } from "@/core/api/handlers/health";
 import {
   QuestDB,
@@ -41,6 +42,20 @@ describe("Health Handlers", () => {
       }).pipe(Effect.provide(QuestDBTest));
     });
 
+    it.effect("stamps the response with the Clock time", () => {
+      const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(true));
+
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(1_700_000_000_000);
+
+        const result = yield* getReadyHandler();
+
+        expect(DateTime.toEpochMillis(result.timestamp)).toBe(
+          1_700_000_000_000
+        );
+      }).pipe(Effect.provide(QuestDBTest));
+    });
+
     it.effect("fails when database is unhealthy", () => {
       const QuestDBTest = Layer.succeed(QuestDB, createMockQuestDB(false));
 
@@ -65,5 +80,33 @@ describe("Health Handlers", () => {
         expect(result.timestamp).toBeDefined();
       });
     });
+
+    it.effect("stamps the response with the Clock time", () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(1_700_000_000_000);
+
+        const result = yield* getLiveHandler();
+
+        expect(DateTime.toEpochMillis(result.timestamp)).toBe(
+          1_700_000_000_000
+        );
+      })
+    );
+
+    it.effect("reads the Clock on every call, not once at construction", () =>
+      Effect.gen(function* () {
+        const handler = getLiveHandler();
+
+        yield* TestClock.setTime(1_700_000_000_000);
+        const first = yield* handler;
+        yield* TestClock.setTime(1_700_000_060_000);
+        const second = yield* handler;
+
+        expect(DateTime.toEpochMillis(first.timestamp)).toBe(1_700_000_000_000);
+        expect(DateTime.toEpochMillis(second.timestamp)).toBe(
+          1_700_000_060_000
+        );
+      })
+    );
   });
 });

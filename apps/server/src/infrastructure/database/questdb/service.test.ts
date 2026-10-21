@@ -642,6 +642,19 @@ describe("health", () => {
     connectedSince: Option.none(),
   };
 
+  const connectedFor = (connectedSinceMs: number | undefined) =>
+    healthLayer({
+      getConnection: Effect.fail(new DatabaseUnavailable({ message: "" })),
+      getState: Effect.succeed({
+        ...notConnected,
+        connectedSince: Option.map(
+          Option.fromNullishOr(connectedSinceMs),
+          (ms) => new Date(ms)
+        ),
+      }),
+      ping: Effect.void,
+    });
+
   const failsWith = (error: DatabaseUnavailable | DatabaseConnectionError) =>
     Effect.gen(function* () {
       const db = yield* QuestDB;
@@ -667,24 +680,36 @@ describe("health", () => {
 
   it.effect("reports connected, with the uptime, once the ping succeeds", () =>
     Effect.gen(function* () {
+      yield* TestClock.setTime(1_700_000_000_000);
       const db = yield* QuestDB;
 
       const health = yield* db.health();
 
       expect(health.connected).toBe(true);
-      expect(health.uptime).toBeGreaterThan(0);
-    }).pipe(
-      Effect.provide(
-        healthLayer({
-          getConnection: Effect.fail(new DatabaseUnavailable({ message: "" })),
-          getState: Effect.succeed({
-            ...notConnected,
-            connectedSince: Option.some(new Date(Date.now() - 5000)),
-          }),
-          ping: Effect.void,
-        })
-      )
-    )
+      expect(health.uptime).toBe(5);
+    }).pipe(Effect.provide(connectedFor(1_700_000_000_000 - 5000)))
+  );
+
+  it.effect("grows the uptime as the Clock advances", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(1_700_000_000_000);
+      const db = yield* QuestDB;
+
+      const before = yield* db.health();
+      yield* TestClock.adjust(Duration.seconds(30));
+      const after = yield* db.health();
+
+      expect(before.uptime).toBe(5);
+      expect(after.uptime).toBe(35);
+    }).pipe(Effect.provide(connectedFor(1_700_000_000_000 - 5000)))
+  );
+
+  it.effect("reports no uptime while no connection time is recorded", () =>
+    Effect.gen(function* () {
+      const db = yield* QuestDB;
+
+      expect((yield* db.health()).uptime).toBe(0);
+    }).pipe(Effect.provide(connectedFor(undefined)))
   );
 });
 

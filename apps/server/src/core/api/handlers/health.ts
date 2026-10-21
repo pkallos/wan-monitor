@@ -8,11 +8,9 @@ export const getReadyHandler = () =>
   Effect.gen(function* () {
     const db = yield* QuestDB;
     yield* db.health();
+    const timestamp = yield* DateTime.now;
 
-    return {
-      status: "ok",
-      timestamp: DateTime.nowUnsafe(),
-    };
+    return { status: "ok", timestamp };
   }).pipe(
     Effect.catch((error) =>
       Effect.fail(
@@ -22,10 +20,7 @@ export const getReadyHandler = () =>
   );
 
 export const getLiveHandler = () =>
-  Effect.succeed({
-    status: "ok",
-    timestamp: DateTime.nowUnsafe(),
-  });
+  DateTime.now.pipe(Effect.map((timestamp) => ({ status: "ok", timestamp })));
 
 export const HealthGroupLive = HttpApiBuilder.group(
   WanMonitorApi,

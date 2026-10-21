@@ -22,6 +22,7 @@ import {
   QuestDBConnection,
   QuestDBConnectionOverMigrator,
   type QuestDBConnectionService,
+  type QuestDBConnectionState,
   queryPoolConfig,
 } from "@/infrastructure/database/questdb/connection";
 import {
@@ -89,16 +90,23 @@ const connectionLayer = (
     Layer.mergeAll(config, migrator)
   );
 
-/** Lets the real promises behind a successful connection settle. */
-const untilConnected = (connection: QuestDBConnectionService) =>
+/** Lets the real promises behind a connection attempt settle until `done` accepts the state. */
+const untilState = (
+  connection: QuestDBConnectionService,
+  done: (state: QuestDBConnectionState) => boolean
+) =>
   Effect.gen(function* () {
     for (let polls = 0; polls < 200; polls += 1) {
-      if (Option.isSome((yield* connection.getState).connection)) return;
+      if (done(yield* connection.getState)) return;
       yield* Effect.promise(
         () => new Promise((resolve) => setTimeout(resolve, 5))
       );
     }
   });
+
+/** Lets the real promises behind a successful connection settle. */
+const untilConnected = (connection: QuestDBConnectionService) =>
+  untilState(connection, (state) => Option.isSome(state.connection));
 
 /** Builds the connection layer into a scope the test may close early. */
 const connectInScope = (migrate: SchemaMigratorService["migrate"]) =>
@@ -1786,4 +1794,99 @@ describe("a disconnect report about a connection", () => {
       });
     }
   );
+});
+
+describe("connection timestamps follow the Clock", () => {
+  const startedAt = 1_700_000_000_000;
+  const settledAt = startedAt + 5000;
+
+  /** Holds a connection step open so the test fixes the Clock before it finishes. */
+  const gate = () => {
+    let open: () => void = () => undefined;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { opened, open };
+  };
+
+  const lastErrorMillis = (state: QuestDBConnectionState) =>
+    Option.map(state.lastError, (error) => error.timestamp.getTime());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.effect("stamps connectedSince when the connection opens", () => {
+    healthyConnection();
+    const { opened, open } = gate();
+    const sender = asSender({
+      flush: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    vi.mocked(Sender.fromConfig).mockImplementation(async () => {
+      await opened;
+      return sender;
+    });
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(startedAt);
+      const { connection } = yield* connectInScope(() => Effect.void);
+      yield* TestClock.setTime(settledAt);
+      open();
+
+      yield* untilConnected(connection);
+
+      const state = yield* connection.getState;
+      expect(
+        Option.map(state.connectedSince, (date) => date.getTime())
+      ).toEqual(Option.some(settledAt));
+    });
+  });
+
+  it.effect(
+    "stamps lastError with the Clock time when a connection attempt fails",
+    () => {
+      const { opened, open } = gate();
+      vi.mocked(Sender.fromConfig).mockImplementation(async () => {
+        await opened;
+        throw new Error("Connection failed");
+      });
+
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(startedAt);
+        const { connection } = yield* connectInScope(() => Effect.void);
+        yield* TestClock.setTime(settledAt);
+        open();
+
+        yield* untilState(connection, (state) =>
+          Option.isSome(state.lastError)
+        );
+
+        expect(lastErrorMillis(yield* connection.getState)).toEqual(
+          Option.some(settledAt)
+        );
+      });
+    }
+  );
+
+  it.effect("stamps lastError when a migration fails", () => {
+    const { opened, open } = gate();
+
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(startedAt);
+      const { connection } = yield* connectInScope(() =>
+        Effect.promise(() => opened).pipe(
+          Effect.andThen(Effect.fail(failing("transient")))
+        )
+      );
+      yield* TestClock.setTime(settledAt);
+      open();
+
+      yield* untilState(connection, (state) => Option.isSome(state.lastError));
+
+      expect(lastErrorMillis(yield* connection.getState)).toEqual(
+        Option.some(settledAt)
+      );
+    });
+  });
 });
