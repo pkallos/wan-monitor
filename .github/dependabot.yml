@@ -20,6 +20,11 @@ updates:
       # outside foldkit's peer range, so before merging one of these PRs
       # confirm that `pnpm view foldkit peerDependencies` names the effect
       # version the PR installs.
+      # The root package.json overrides @effect/platform-node-shared to
+      # <4.1.0, because its ^4.0.x dependency range resolves to the 4.1 line,
+      # which peers on effect ^4.1.0. Drop the override when the group moves to
+      # effect 4.1; that move also needs the KeyValueStore fakes in the web
+      # tests to implement `keys`.
       effect:
         patterns:
           - "effect"
