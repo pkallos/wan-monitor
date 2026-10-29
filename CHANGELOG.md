@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.4
+
+### Patch Changes
+
+- [#451](https://github.com/pkallos/wan-monitor/pull/451) [`c666aa8`](https://github.com/pkallos/wan-monitor/commit/c666aa8e794dbdbe2d0192cbc2e1443dbe010887) Thanks [@pkallos](https://github.com/pkallos)! - Update Effect to 4.1 and Foldkit to 0.170.
+
 ## 1.5.3
 
 ### Patch Changes
