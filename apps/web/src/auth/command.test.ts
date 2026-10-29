@@ -33,6 +33,7 @@ const failingKeyValueStore = Layer.succeed(
       ),
     clear: Effect.succeed(undefined),
     size: Effect.succeed(0),
+    keys: Effect.succeed([]),
   })
 );
 

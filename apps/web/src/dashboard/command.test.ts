@@ -123,6 +123,7 @@ const failingKeyValueStore = Layer.succeed(
     remove: () => Effect.succeed(undefined),
     clear: Effect.succeed(undefined),
     size: Effect.succeed(0),
+    keys: Effect.succeed([]),
   })
 );
 
