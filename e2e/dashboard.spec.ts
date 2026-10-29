@@ -89,6 +89,30 @@ test.describe("WAN Monitor Dashboard", () => {
     await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
   });
 
+  test("should close the date range picker when clicking page content outside it", async ({
+    page,
+  }) => {
+    await expect(
+      page.getByRole("heading", { name: "WAN Monitor" })
+    ).toBeVisible({ timeout: 10000 });
+
+    await page.locator("#date-range-picker-button").click();
+    const apply = page.getByRole("button", { name: "Apply" });
+    await expect(apply).toBeVisible();
+
+    // A raw mouse click at the centre of a figure below the header: a locator
+    // click would refuse to run if anything covered the figure, and covering
+    // it is what a working dismissal does.
+    const figure = await page.getByTestId("uptime-figure").boundingBox();
+    if (figure === null) throw new Error("uptime figure has no layout box");
+    await page.mouse.click(
+      figure.x + figure.width / 2,
+      figure.y + figure.height / 2
+    );
+
+    await expect(apply).toBeHidden();
+  });
+
   test("should allow changing the date range", async ({ page }) => {
     await expect(
       page.getByRole("heading", { name: "WAN Monitor" })
