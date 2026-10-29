@@ -8,9 +8,12 @@ jobs:
   changeset:
     runs-on: ubuntu-latest
     # The version PR itself bumps package versions but carries no changesets
-    # of its own, and would otherwise always fail this check.
+    # of its own, and would otherwise always fail this check. Dependabot
+    # attaches its no-changeset label after it opens a PR, so the opened run
+    # sees no label; dependabot PRs are skipped by author.
     if: >-
       github.head_ref != 'changeset-release/main' &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
       !contains(github.event.pull_request.labels.*.name, 'no-changeset')
     steps:
       - name: Checkout

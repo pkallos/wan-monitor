@@ -7,8 +7,9 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
-    # no-changeset exempts dependency bumps from the changeset-check gate -
-    # they don't carry release notes of their own.
+    # no-changeset marks dependency bumps as having no release notes of their
+    # own. The changeset check skips dependabot PRs by author, since this label
+    # arrives after the PR opens.
     labels:
       - "dependencies"
       - "no-changeset"
@@ -146,8 +147,9 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
-    # no-changeset exempts dependency bumps from the changeset-check gate -
-    # they don't carry release notes of their own.
+    # no-changeset marks dependency bumps as having no release notes of their
+    # own. The changeset check skips dependabot PRs by author, since this label
+    # arrives after the PR opens.
     labels:
       - "dependencies"
       - "no-changeset"
