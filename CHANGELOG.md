@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.2
+
+### Patch Changes
+
+- [#438](https://github.com/pkallos/wan-monitor/pull/438) [`d95bbdc`](https://github.com/pkallos/wan-monitor/commit/d95bbdc6d2bd67a503aafed129ac86b5e478331d) Thanks [@pkallos](https://github.com/pkallos)! - The Docker image build no longer hangs on arm64, so releases publish to Docker Hub again.
+
+- [#435](https://github.com/pkallos/wan-monitor/pull/435) [`d1be7fe`](https://github.com/pkallos/wan-monitor/commit/d1be7fef4c5ffbd7a1ab0e84a4fa76a96e15e864) Thanks [@pkallos](https://github.com/pkallos)! - A QuestDB error that reaches the server after its connection was replaced no longer disconnects the new connection.
+
+- [#436](https://github.com/pkallos/wan-monitor/pull/436) [`e9eaa41`](https://github.com/pkallos/wan-monitor/commit/e9eaa410976e657d0958289e1c1cb1000a47a1a1) Thanks [@pkallos](https://github.com/pkallos)! - Read server time through the Effect Clock and replace placebo tests and fixed test sleeps with real assertions.
+
 ## 1.5.1
 
 ### Patch Changes
