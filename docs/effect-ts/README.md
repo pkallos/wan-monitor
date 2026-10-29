@@ -18,13 +18,14 @@ trust a cached copy or a blog post written against v3.
 
 ## Libraries in use
 
-Versions live in the workspace `package.json` files (`apps/server`, `apps/web`, `packages/shared`, and
-the root, `apps/server` and `apps/web` for `@effect/vitest`); this table deliberately carries none. The packages
-are pinned exactly, not with caret ranges, because Foldkit peer-pins `effect` to an exact version, so `effect`, the
-`@effect/*` packages, `foldkit` and `@foldkit/*` have to move together. Verify with
+Versions live in the workspace `package.json` files (`apps/server`, `apps/web` and `packages/shared`, plus the
+root for `@effect/vitest`); this table deliberately carries none. The packages are pinned exactly, not with caret
+ranges. Foldkit and `@foldkit/*` declare an exact `effect` peer of 4.0.0, so `effect`, the `@effect/*` packages,
+`foldkit` and `@foldkit/*` move together across minor versions. The repo runs later 4.0.x patches, so pnpm reports
+that peer as unmet, which is expected. Verify with
 `pnpm view <pkg> version` before bumping (see the "Verify dependency versions" rule in `AGENTS.md`),
 and read the [4.0.0 release notes](https://github.com/Effect-TS/effect/releases/tag/effect%404.0.0)
-for what changed first.
+first to see what changed.
 
 | Package | Where | What we use it for |
 | --- | --- | --- |
