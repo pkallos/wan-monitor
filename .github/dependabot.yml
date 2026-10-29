@@ -14,13 +14,24 @@ updates:
       - "dependencies"
       - "no-changeset"
     groups:
-      # Effect ecosystem, including foldkit - foldkit and @foldkit/* peer-pin
-      # an exact effect version, so effect, foldkit and @foldkit/* move
-      # together. There is no update-types filter, so every bump that isn't
-      # ignored lands in the one group. Dependabot can propose an effect version
-      # outside foldkit's peer range, so before merging one of these PRs
-      # confirm that `pnpm view foldkit peerDependencies` names the effect
-      # version the PR installs.
+      # Effect ecosystem, including foldkit. foldkit and @foldkit/* declare an
+      # exact effect peer, 4.0.0 for the versions in use. The repo runs later
+      # 4.0.x patches, so pnpm reports that peer as unmet, which is expected.
+      # effect, foldkit and @foldkit/* still move together: move effect to a new
+      # minor only alongside a foldkit release built against that minor. There is
+      # no update-types filter, so every bump that isn't ignored lands in the one
+      # group.
+      #
+      # The root package.json scopes an override to @effect/platform-node 4.0.x,
+      # because its caret range on @effect/platform-node-shared otherwise
+      # resolves to the 4.1 line, which peers on effect ^4.1.0. The override
+      # stops covering the direct @effect/platform-node dependency once that
+      # moves to 4.1.
+      #
+      # Keep foldkit, @foldkit/ui and @foldkit/vite-plugin on their current
+      # versions in group PRs: @foldkit/ui 0.170 leaves the date range picker
+      # open when page content outside it is clicked. The move to effect 4.1 also
+      # needs the KeyValueStore fakes in the web tests to implement `keys`.
       effect:
         patterns:
           - "effect"

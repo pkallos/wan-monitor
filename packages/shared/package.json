@@ -27,7 +27,7 @@
     "format:check": "biome format ."
   },
   "dependencies": {
-    "effect": "4.0.5"
+    "effect": "4.0.7"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^5.0.5",
