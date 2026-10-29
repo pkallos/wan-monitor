@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.3
+
+### Patch Changes
+
+- [#448](https://github.com/pkallos/wan-monitor/pull/448) [`ee5c9d2`](https://github.com/pkallos/wan-monitor/commit/ee5c9d2a22cbbb2e25f0829c7d6fe83fe426e02e) Thanks [@pkallos](https://github.com/pkallos)! - Update Effect to 4.0.7, which stops the server from hanging when a client disconnects before the response is written.
+
 ## 1.5.2
 
 ### Patch Changes
