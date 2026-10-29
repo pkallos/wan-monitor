@@ -14,7 +14,11 @@
 # Using bookworm (Debian) instead of Alpine to ensure native modules are
 # compiled with glibc, matching the Ubuntu production image.
 # This stage installs deps ONCE and is shared by frontend/backend builders.
-FROM node:24-bookworm AS deps
+# Both build stages run on the build host's own platform, never under QEMU:
+# Vite's bundler (rolldown) hangs when emulated, which stalled the arm64 release
+# build until the job timed out. Only the production stage below is built for
+# each target platform.
+FROM --platform=$BUILDPLATFORM node:24-bookworm AS deps
 
 # Install build dependencies for native modules (lzma-native requires liblzma-dev)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -63,14 +67,17 @@ RUN pnpm install --frozen-lockfile
 # Build all packages (frontend + backend + shared)
 RUN pnpm build
 
-# Deploy web and server with production dependencies using pnpm deploy
-# This creates standalone directories with proper node_modules structure
-# NOTE: pnpm deploy reuses packages from the existing pnpm store in node_modules,
-# but native modules like lzma-native must still be compiled for the target arch.
-# This step takes ~2-3min on AMD64 and ~7-8min on ARM64 (QEMU emulation).
-# The entire layer output is cached, so subsequent builds with no changes are instant.
-RUN pnpm --filter=@wan-monitor/web deploy --prod /tmp/web-deploy && \
-    pnpm --filter=@wan-monitor/server deploy --prod /tmp/server-deploy
+# Deploy the server with production dependencies using pnpm deploy
+# This creates a standalone directory with proper node_modules structure.
+# The same node_modules ships in every platform's image, so it must be pure
+# JavaScript; the check fails the build if a dependency adds a native addon.
+RUN pnpm --filter=@wan-monitor/server deploy --prod /tmp/server-deploy && \
+    native="$(find /tmp/server-deploy/node_modules -name '*.node' | head -n 1)" && \
+    if [ -n "$native" ]; then \
+      echo "native addon in production dependencies: $native" >&2; \
+      echo "build the production node_modules on each target platform instead" >&2; \
+      exit 1; \
+    fi
 
 # -----------------------------------------------------------------------------
 # Stage 4: Production Runtime (All-in-One)

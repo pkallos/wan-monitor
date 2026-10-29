@@ -236,6 +236,7 @@ jobs:
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     # Skip Docker build on draft PRs to save CI time
     if: github.event.pull_request.draft == false || github.event_name == 'push'
     permissions:
@@ -245,6 +246,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+
+      # The release image is also built for arm64, under QEMU emulation
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
       # Use Docker Buildx for better caching support
       - name: Set up Docker Buildx
@@ -264,3 +269,13 @@ jobs:
 
       - name: Boot check
         run: sh scripts/docker-smoke.sh wan-monitor:test
+
+      # Catches an arm64-only build failure or hang before it reaches a release
+      - name: Build Docker image (arm64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
